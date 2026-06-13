@@ -10,11 +10,10 @@
 # ghcr.io/dasklaus00/printloom.
 #
 # ── Updates ─────────────────────────────────────────────────────────────────
+#  • NUR auf Knopfdruck — KEIN automatisches Update im Hintergrund.
 #  • Im WebUI (System-Seite): Kanal Latest/Beta wählen → „Update installieren /
-#    wechseln". Die App zieht das gewählte Image und startet sich neu
-#    (nutzt den gemounteten Docker-Socket → erledigt auch den KANALWECHSEL).
-#  • Automatisch im Hintergrund: Watchtower prüft alle 5 Min auf einen neuen Build
-#    des AKTIVEN Kanals und aktualisiert.
+#    wechseln" (mit Backup-Hinweis). Die App zieht das gewählte Image und startet
+#    sich neu (nutzt den gemounteten Docker-Socket → erledigt auch den KANALWECHSEL).
 #
 # ── Kanal wählen ──────────────────────────────────────────────────────────────
 #  Standard ist "latest" (stabil). Für Beta in der .env  PRINTLOOM_CHANNEL=beta
@@ -66,9 +65,11 @@ services:
       # Nur für ein PRIVATES ghcr-Package: nach `docker login ghcr.io` einkommentieren:
       # - /root/.docker/config.json:/config.json:ro
     environment:
-      - WATCHTOWER_POLL_INTERVAL=300
+      # Nur manuelles Update über die HTTP-API (= In-App-Button). KEIN Hintergrund-
+      # Poll: WATCHTOWER_HTTP_API_PERIODIC_POLLS bleibt aus → nichts aktualisiert
+      # sich von allein.
       - WATCHTOWER_HTTP_API_UPDATE=true
-      - WATCHTOWER_HTTP_API_PERIODIC_POLLS=true
+      - WATCHTOWER_HTTP_API_PERIODIC_POLLS=false
       - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_TOKEN:-change-me-update-token}
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_RESTARTING=true

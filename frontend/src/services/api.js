@@ -109,11 +109,7 @@ export const systemService = {
   testNotification: () => api.post('/system/notify/test'),
   exportBackup:     () => api.get('/system/backup'),
   importBackup:     (data) => api.post('/system/backup/restore', data),
-  getMarketplace:   () => api.get('/system/marketplace'),
-  saveMarketplace:  (data) => api.put('/system/marketplace', data),
   getLangInstalled: () => api.get('/system/lang/installed'),
-  getLangCatalog:   () => api.get('/system/lang/catalog'),
-  installLang:      (code) => api.post('/system/lang/install', { code }),
   importLang:       (pack) => api.post('/system/lang/import', pack),
   deleteLang:       (code) => api.delete(`/system/lang/${code}`),
 }
@@ -159,16 +155,6 @@ export const profileService = {
   listLocal:   ()        => api.get('/profiles/local'),
   saveLocal:   (profile) => api.post('/profiles/local', profile),
   deleteLocal: (name)    => api.delete(`/profiles/local/${encodeURIComponent(name)}`),
-}
-
-// Marketplace: browser → local backend proxy → external server (token stays server-side)
-export const marketplaceService = {
-  me:           ()                  => api.get('/marketplace/me'),
-  listProfiles: (search = '', page = 1) => api.get('/marketplace/profiles', { params: { search, page } }),
-  getProfile:   (id)                => api.get(`/marketplace/profiles/${id}`),
-  upload:       (name, description, data) => api.post('/marketplace/profiles', { name, description, data }),
-  update:       (id, name, description, data) => api.put(`/marketplace/profiles/${id}`, { name, description, data }),
-  remove:       (id)                => api.delete(`/marketplace/profiles/${id}`),
 }
 
 export const klipperConfigService = {

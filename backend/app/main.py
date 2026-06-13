@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pathlib import Path
 
-from app.routers import config, queue, files, devices, control, printer, calibration, rack_manager, system, autofarm, project, profiles, marketplace, filaments, push, folders
+from app.routers import config, queue, files, devices, control, printer, calibration, rack_manager, system, autofarm, project, profiles, filaments, push, folders
 from app.db.database import init_db
 import logging
 
@@ -39,7 +39,6 @@ app.include_router(system.router,        prefix="/api/system",        tags=["Sys
 app.include_router(autofarm.router,      prefix="/api/autofarm",      tags=["AutoFarm"])
 app.include_router(project.router,       prefix="/api/project",        tags=["Project"])
 app.include_router(profiles.router,      prefix="/api/profiles",       tags=["Profiles"])
-app.include_router(marketplace.router,   prefix="/api/marketplace",    tags=["Marketplace"])
 app.include_router(filaments.router,     prefix="/api/filaments",       tags=["Filaments"])
 app.include_router(push.router,          prefix="/api/push",            tags=["Web-Push"])
 app.include_router(folders.router,       prefix="/api/folders",         tags=["Folders"])

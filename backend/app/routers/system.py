@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from app.services import storage, appsettings
+from app.services import storage
 from app.db.database import SessionLocal
 from app.models.models import Device, PrinterType
 from app.services.bambu_mqtt import BambuLabMQTT
@@ -416,32 +416,7 @@ async def import_backup(backup: dict):
     return {"success": True, "restored": restored}
 
 
-# ─── Marketplace settings (server URL + om4d_ token) ─────────────────────────
-
-class MarketplaceIn(BaseModel):
-    server_url: Optional[str] = None
-    token: Optional[str] = None
-
-
-@router.get("/marketplace")
-async def get_marketplace():
-    """Return marketplace config. The token is never sent back, only whether one is set."""
-    mp = appsettings.read_marketplace()
-    return {"server_url": mp["server_url"], "token_set": bool(mp["token"])}
-
-
-@router.put("/marketplace")
-async def save_marketplace(data: MarketplaceIn):
-    payload = {}
-    if data.server_url is not None:
-        payload["server_url"] = data.server_url
-    if data.token is not None:
-        payload["token"] = data.token
-    mp = appsettings.write_marketplace(payload)
-    return {"server_url": mp["server_url"], "token_set": bool(mp["token"])}
-
-
-# ─── Multi-target health (printer · klipper · server) ────────────────────────
+# ─── Multi-target health (printer · klipper) ─────────────────────────────────
 
 async def _health_printer() -> dict:
     """Best-effort: is a Bambu printer reachable via MQTT? Short timeout, never raises."""
@@ -488,36 +463,11 @@ async def _health_klipper() -> dict:
         return {"status": "offline", "detail": "Nicht erreichbar"}
 
 
-async def _health_server() -> dict:
-    """Best-effort: marketplace server reachable / token valid?"""
-    mp = appsettings.read_marketplace()
-    base, token = mp["server_url"], mp["token"]
-    if not base:
-        return {"status": "unconfigured", "detail": "Keine Server-URL"}
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            if token:
-                r = await client.get(f"{base}/api/me", headers={"Authorization": f"Bearer {token}"})
-                if r.status_code == 200:
-                    return {"status": "online", "detail": "verbunden"}
-                if r.status_code in (401, 403):
-                    return {"status": "unauth", "detail": "Token ungültig"}
-                return {"status": "offline", "detail": f"HTTP {r.status_code}"}
-            r = await client.get(f"{base}/healthz")
-            if r.status_code == 200:
-                return {"status": "unauth", "detail": "Kein Token gesetzt"}
-            return {"status": "offline", "detail": f"HTTP {r.status_code}"}
-    except Exception:
-        return {"status": "offline", "detail": "Nicht erreichbar"}
-
-
 @router.get("/health/targets")
 async def health_targets():
-    """Aggregated health of printer, klipper and marketplace server (best-effort, parallel)."""
-    printer, klipper, server = await asyncio.gather(
-        _health_printer(), _health_klipper(), _health_server()
-    )
-    return {"printer": printer, "klipper": klipper, "server": server}
+    """Aggregated health of printer and klipper (best-effort, parallel)."""
+    printer, klipper = await asyncio.gather(_health_printer(), _health_klipper())
+    return {"printer": printer, "klipper": klipper}
 
 
 # ─── Language packs (downloadable from the marketplace catalog) ──────────────
@@ -543,54 +493,6 @@ class LangPackIn(BaseModel):
 async def lang_installed():
     """Installed language packs, ready for the frontend to merge into i18n."""
     return _read_langpacks()
-
-
-@router.get("/lang/catalog")
-async def lang_catalog():
-    """List language packs available on the configured marketplace server."""
-    mp = appsettings.read_marketplace()
-    base = mp["server_url"]
-    if not base:
-        raise HTTPException(400, "Kein Marktplatz-Server konfiguriert")
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(f"{base}/api/langpacks")
-        if r.status_code != 200:
-            raise HTTPException(502, f"Katalog nicht verfügbar (HTTP {r.status_code})")
-        return r.json()
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Katalog nicht erreichbar: {e}")
-
-
-@router.post("/lang/install")
-async def lang_install(body: LangPackIn):
-    """Install a pack: download {server}/api/langpacks/{code} and store it locally."""
-    code = (body.code or "").strip().lower()
-    if not code:
-        raise HTTPException(400, "Kein Sprachcode angegeben")
-    mp = appsettings.read_marketplace()
-    base = mp["server_url"]
-    if not base:
-        raise HTTPException(400, "Kein Marktplatz-Server konfiguriert")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/api/langpacks/{code}")
-        if r.status_code != 200:
-            raise HTTPException(502, f"Pack nicht gefunden (HTTP {r.status_code})")
-        pack = r.json()
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Pack nicht erreichbar: {e}")
-    translations = pack.get("translations") or pack.get("data") or {}
-    if not isinstance(translations, dict) or not translations:
-        raise HTTPException(400, "Pack enthält keine Übersetzungen")
-    packs = _read_langpacks()
-    packs[code] = {"name": pack.get("name", code.upper()), "translations": translations}
-    storage.write_json(_langpacks_file(), packs)
-    return {"success": True, "code": code, "installed": list(packs.keys())}
 
 
 @router.post("/lang/import")

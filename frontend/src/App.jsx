@@ -176,7 +176,7 @@ function App() {
     return () => clearInterval(t)
   }, [])
 
-  /* ── Multi-target health: printer · klipper · server ──────── */
+  /* ── Multi-target health: printer · klipper ──────────────── */
   useEffect(() => {
     const check = () =>
       healthService.targets()
@@ -243,7 +243,6 @@ function App() {
           <span className="hidden md:inline text-xs font-mono text-surface-700 select-none">v{VERSION}</span>
           <StatusPill label="Drucker" target={online === false ? { status: 'offline', detail: 'Backend offline' } : targets?.printer} />
           <StatusPill label="Klipper" target={online === false ? { status: 'offline', detail: 'Backend offline' } : targets?.klipper} />
-          <StatusPill label="Server"  target={online === false ? { status: 'offline', detail: 'Backend offline' } : targets?.server} />
         </div>
       </header>
 

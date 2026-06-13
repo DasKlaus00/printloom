@@ -79,17 +79,16 @@ Printloom has two release channels:
 | **Latest** | `:latest` | Stable releases (default)       |
 | **Beta**   | `:beta`   |  active dev     |
 
-In the **System** page you can:
+Updates happen **only when you press the button** — there is **no automatic
+background update**. In the **System** page you can:
 
 - **Check** whether a newer build of the active channel is available, and
-- **Update / switch channels with one click** — Printloom pulls the chosen image and
-  recreates itself (this uses the mounted Docker socket; it also performs the channel
-  switch).
+- **Update / switch channels with one click** — after a short *back-up-your-config*
+  reminder, Printloom pulls the chosen image and recreates itself (this uses the
+  mounted Docker socket; it also performs the channel switch).
 
-In the background, **Watchtower** keeps the active channel up to date automatically.
 If you prefer not to give the app Docker access, remove the `docker.sock` mount from
-the `printloom` service — Watchtower then still auto-updates the active channel, but
-channel switching from the UI is disabled.
+the `printloom` service — updating then needs a manual `docker compose pull && up -d`.
 
 ---
 

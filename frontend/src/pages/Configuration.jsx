@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { deviceService, configService, deviceSettingsService, systemService, marketplaceService, autofarmService, rackManagerService, printerService } from '../services/api'
+import { deviceService, configService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
 import { availableLanguages, setLanguage, useLanguage } from '../services/i18n'
 
 /* ─── Language & downloadable language packs ─────────────────────── */
 function LanguagePacks() {
   const { lang } = useLanguage()
   const [installed, setInstalled] = useState({})
-  const [catalog, setCatalog]     = useState(null)  // null = not loaded
   const [status, setStatus]       = useState(null)
   const [busy, setBusy]           = useState(false)
   const fileRef = useRef()
@@ -14,28 +13,6 @@ function LanguagePacks() {
   const loadInstalled = () => systemService.getLangInstalled()
     .then(r => setInstalled(r.data || {})).catch(() => {})
   useEffect(() => { loadInstalled() }, [])
-
-  const loadCatalog = async () => {
-    setBusy(true); setStatus(null)
-    try {
-      const r = await systemService.getLangCatalog()
-      setCatalog(Array.isArray(r.data) ? r.data : (r.data?.items || r.data?.langpacks || []))
-    } catch (e) {
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
-      setCatalog([])
-    } finally { setBusy(false) }
-  }
-
-  const install = async (code) => {
-    setBusy(true); setStatus(null)
-    try {
-      await systemService.installLang(code)
-      await loadInstalled()
-      setStatus({ ok: true, msg: `Sprachpaket „${code}" installiert. Zum Aktivieren auswählen.` })
-    } catch (e) {
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
-    } finally { setBusy(false) }
-  }
 
   const importFile = (e) => {
     const file = e.target.files?.[0]; e.target.value = ''
@@ -106,111 +83,10 @@ function LanguagePacks() {
 
       {/* Actions */}
       <div className="flex items-center gap-2 flex-wrap border-t border-surface-800/50 pt-3">
-        <button onClick={loadCatalog} disabled={busy} className="btn btn-secondary btn-sm">Katalog laden</button>
         <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={importFile} />
         <button onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm">Pack importieren</button>
       </div>
 
-      {/* Catalog list */}
-      {catalog && (
-        <div className="space-y-1.5">
-          {!catalog.length && <p className="text-xs text-surface-700">Keine Pakete im Katalog.</p>}
-          {catalog.map((c) => (
-            <div key={c.code} className="flex items-center gap-2 text-xs rounded-lg border border-surface-800/60 bg-surface-900/40 p-2">
-              <span className="font-mono text-surface-300">{(c.code || '').toUpperCase()}</span>
-              <span className="text-surface-500 flex-1 truncate">{c.name || c.code}</span>
-              <button onClick={() => install(c.code)} disabled={busy} className="btn btn-ghost btn-sm">Installieren</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {status && (
-        <div className={`text-[11px] font-mono px-2 py-1 rounded border ${
-          status.ok ? 'text-emerald-400 border-emerald-900/50 bg-emerald-950/20'
-                    : 'text-red-400 border-red-900/50 bg-red-950/20'}`}>
-          {status.msg}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/* ─── Marketplace connection (server URL + om4d_ token) ──────────── */
-function MarketplaceSettings() {
-  const [serverUrl, setServerUrl] = useState('')
-  const [tokenSet, setTokenSet]   = useState(false)
-  const [token, setToken]         = useState('')
-  const [saving, setSaving]       = useState(false)
-  const [status, setStatus]       = useState(null)  // {ok, msg}
-
-  const load = () => systemService.getMarketplace()
-    .then(r => { setServerUrl(r.data.server_url || ''); setTokenSet(!!r.data.token_set) })
-    .catch(() => {})
-  useEffect(() => { load() }, [])
-
-  const save = async () => {
-    setSaving(true); setStatus(null)
-    try {
-      const payload = { server_url: serverUrl }
-      if (token) payload.token = token
-      await systemService.saveMarketplace(payload)
-      setToken(''); await load()
-      setStatus({ ok: true, msg: 'Gespeichert.' })
-    } catch (e) {
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
-    } finally { setSaving(false) }
-  }
-
-  const test = async () => {
-    setStatus(null)
-    try {
-      const r = await marketplaceService.me()
-      const u = r.data?.username || r.data?.name || 'verbunden'
-      setStatus({ ok: true, msg: `Verbunden als ${u}` })
-    } catch (e) {
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
-    }
-  }
-
-  const clearToken = async () => {
-    setSaving(true); setStatus(null)
-    try {
-      await systemService.saveMarketplace({ server_url: serverUrl, token: '' })
-      await load(); setStatus({ ok: true, msg: 'Token entfernt.' })
-    } catch (e) {
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
-    } finally { setSaving(false) }
-  }
-
-  return (
-    <div className="card space-y-3">
-      <div>
-        <p className="section-label">Marktplatz-Verbindung</p>
-        <p className="text-[11px] text-surface-600 mt-0.5">
-          Server für Profil-Marktplatz & Sprachpakete. Melde dich im Browser auf dem Server
-          (Discord-Login) an, erstelle dort ein API-Token (om4d_…) und füge es hier ein.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="text-[10px] text-surface-600 block mb-0.5">Server-URL</label>
-          <input type="text" value={serverUrl} onChange={e => setServerUrl(e.target.value)}
-            placeholder="https://marketplace.alexsz.de" className="w-full text-xs font-mono" />
-        </div>
-        <div>
-          <label className="text-[10px] text-surface-600 block mb-0.5">
-            API-Token {tokenSet && <span className="text-emerald-600">· gesetzt</span>}
-          </label>
-          <input type="password" value={token} onChange={e => setToken(e.target.value)}
-            placeholder={tokenSet ? '•••••••• (unverändert lassen)' : 'om4d_…'} className="w-full text-xs font-mono" />
-        </div>
-      </div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={save} disabled={saving} className="btn btn-secondary btn-sm">Speichern</button>
-        <button onClick={test} className="btn btn-ghost btn-sm">Verbindung testen</button>
-        {tokenSet && <button onClick={clearToken} disabled={saving} className="btn btn-ghost btn-sm text-red-400">Token entfernen</button>}
-      </div>
       {status && (
         <div className={`text-[11px] font-mono px-2 py-1 rounded border ${
           status.ok ? 'text-emerald-400 border-emerald-900/50 bg-emerald-950/20'
@@ -774,7 +650,6 @@ function Configuration() {
         )}
       </div>
 
-      <MarketplaceSettings />
       <LanguagePacks />
     </div>
   )

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { deviceService, controlService, rackManagerService, autofarmService } from '../services/api'
+import { deviceService, rackManagerService, autofarmService } from '../services/api'
 
 export const SETUP_DONE_KEY = 'ottomat3d_setup_done'
 
@@ -33,10 +33,15 @@ export default function Setup({ setCurrentPage }) {
   const [pForm, setPForm]       = useState({ name: 'Bambu X1C', ip_address: '', serial_number: '', access_code: '' })
   const [pSaving, setPSaving]   = useState(false)
   const [pErr, setPErr]         = useState(null)
+  const [pTest, setPTest]       = useState(null)   // Bambu-Testergebnis
+  const [pTesting, setPTesting] = useState(false)
 
-  // Step 2 — klipper / OTTOeject
-  const [klipper, setKlipper]   = useState(null)   // {ok, state}
-  const [klipperBusy, setKBusy] = useState(false)
+  // Step 2 — klipper / OTTOeject (eigenes Gerät, wie der Drucker)
+  const [kForm, setKForm]       = useState({ name: 'OTTOeject', ip_address: '', port: 7125 })
+  const [kSaving, setKSaving]   = useState(false)
+  const [kErr, setKErr]         = useState(null)
+  const [kTest, setKTest]       = useState(null)
+  const [kTesting, setKTesting] = useState(false)
 
   // Step 3 — rack
   const [nr, setNr]   = useState(3)
@@ -49,6 +54,7 @@ export default function Setup({ setCurrentPage }) {
   const [hBusy, setHBusy]     = useState(false)
 
   const bambu = devices.find(d => d.device_type === 'bambu_lab')
+  const klipperDev = devices.find(d => d.device_type === 'klipper')
 
   useEffect(() => {
     deviceService.listDevices().then(r => setDevices(r.data ?? [])).catch(() => {})
@@ -96,15 +102,42 @@ export default function Setup({ setCurrentPage }) {
     } finally { setPSaving(false) }
   }
 
-  const checkKlipper = async () => {
-    setKBusy(true)
+  const testBambu = async () => {
+    if (!bambu) return
+    setPTesting(true); setPTest(null)
     try {
-      const r = await controlService.getKlipperInfo()
-      const state = r.data?.state ?? r.data?.result?.state ?? 'unknown'
-      setKlipper({ ok: String(state).toLowerCase() === 'ready', state })
+      const r = await deviceService.testDevice(bambu.id)
+      setPTest(r.data)
     } catch (e) {
-      setKlipper({ ok: false, state: e.response?.data?.detail ?? 'nicht erreichbar' })
-    } finally { setKBusy(false) }
+      setPTest({ success: false, message: e.response?.data?.detail ?? e.message })
+    } finally { setPTesting(false) }
+  }
+
+  const createKlipper = async () => {
+    setKErr(null); setKSaving(true)
+    try {
+      await deviceService.createDevice({
+        name: kForm.name || 'OTTOeject',
+        device_type: 'klipper',
+        ip_address: kForm.ip_address,
+        port: +kForm.port || 7125,
+      })
+      const r = await deviceService.listDevices()
+      setDevices(r.data ?? [])
+    } catch (e) {
+      setKErr(e.response?.data?.detail ?? e.message)
+    } finally { setKSaving(false) }
+  }
+
+  const testKlipper = async () => {
+    if (!klipperDev) return
+    setKTesting(true); setKTest(null)
+    try {
+      const r = await deviceService.testDevice(klipperDev.id)
+      setKTest(r.data)
+    } catch (e) {
+      setKTest({ success: false, message: e.response?.data?.detail ?? e.message })
+    } finally { setKTesting(false) }
   }
 
   const saveRack = async () => {
@@ -182,6 +215,24 @@ export default function Setup({ setCurrentPage }) {
                 {pErr && <p className="text-xs text-red-400">{pErr}</p>}
               </>
             )}
+            {bambu && (
+              <div className="space-y-2">
+                <button onClick={testBambu} disabled={pTesting} className="btn-secondary text-sm">
+                  {pTesting ? 'Teste…' : '🔌 Verbindung testen'}
+                </button>
+                {pTest && (
+                  <div className={`rounded-lg px-4 py-3 text-sm border ${pTest.success ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-amber-950/40 border-amber-800 text-amber-300'}`}>
+                    {pTest.success ? '✓ Verbindung erfolgreich' : `⚠ ${pTest.message || 'Verbindung fehlgeschlagen'}`}
+                    {pTest.mqtt && (
+                      <div className="text-[11px] mt-1 opacity-80">
+                        MQTT: {pTest.mqtt.connected ? '✓' : '✗'} · FTP: {pTest.ftp?.connected ? '✓' : '✗'}
+                        {pTest.ftp?.message ? ` (${pTest.ftp.message})` : ''}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex justify-between pt-2">
               <button onClick={prev} className="btn-secondary text-sm">← Zurück</button>
               {bambu
@@ -196,23 +247,45 @@ export default function Setup({ setCurrentPage }) {
         {/* ── Step 2: OTTOeject / Klipper ── */}
         {step === 2 && (
           <div className="space-y-3">
-            <p className="text-xs text-surface-500">
-              Das OTTOeject läuft über Klipper/Moonraker. Prüfe hier die Verbindung — die Adresse wird serverseitig
-              (Umgebungsvariable / Steuerung) gesetzt.
-            </p>
-            <button onClick={checkKlipper} disabled={klipperBusy} className="btn-secondary text-sm">
-              {klipperBusy ? 'Prüfe…' : 'Verbindung prüfen'}
-            </button>
-            {klipper && (
-              <div className={`rounded-lg px-4 py-3 text-sm border ${
-                klipper.ok ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-amber-950/40 border-amber-800 text-amber-300'
-              }`}>
-                {klipper.ok ? '✓ Klipper bereit' : `⚠ Status: ${klipper.state} — du kannst später in der Steuerung erneut prüfen.`}
+            {klipperDev ? (
+              <div className="bg-emerald-950/40 border border-emerald-800 rounded-lg px-4 py-3 text-sm text-emerald-300">
+                ✓ OTTOeject konfiguriert: <span className="font-mono">{klipperDev.name}</span> ({klipperDev.ip_address}:{klipperDev.port})
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-surface-500">
+                  Das OTTOeject läuft über Klipper/Moonraker. Gib die Moonraker-Adresse an (Standard-Port 7125).
+                </p>
+                <div className="space-y-2">
+                  <input className="w-full text-sm" placeholder="Name (z. B. OTTOeject)" value={kForm.name}
+                    onChange={e => setKForm(f => ({ ...f, name: e.target.value }))} />
+                  <input className="w-full text-sm" placeholder="IP-Adresse (192.168.1.101)" value={kForm.ip_address}
+                    onChange={e => setKForm(f => ({ ...f, ip_address: e.target.value }))} />
+                  <input className="w-full text-sm" type="number" placeholder="Port (7125)" value={kForm.port}
+                    onChange={e => setKForm(f => ({ ...f, port: e.target.value }))} />
+                </div>
+                {kErr && <p className="text-xs text-red-400">{kErr}</p>}
+              </>
+            )}
+            {klipperDev && (
+              <div className="space-y-2">
+                <button onClick={testKlipper} disabled={kTesting} className="btn-secondary text-sm">
+                  {kTesting ? 'Teste…' : '🔌 Verbindung testen'}
+                </button>
+                {kTest && (
+                  <div className={`rounded-lg px-4 py-3 text-sm border ${kTest.success ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-amber-950/40 border-amber-800 text-amber-300'}`}>
+                    {kTest.success ? '✓ OTTOeject erreichbar' : `⚠ ${kTest.message || 'nicht erreichbar'}`}
+                  </div>
+                )}
               </div>
             )}
             <div className="flex justify-between pt-2">
               <button onClick={prev} className="btn-secondary text-sm">← Zurück</button>
-              <button onClick={next} className="btn-primary text-sm">Weiter →</button>
+              {klipperDev
+                ? <button onClick={next} className="btn-primary text-sm">Weiter →</button>
+                : <button onClick={createKlipper} disabled={kSaving || !kForm.ip_address} className="btn-primary text-sm disabled:opacity-50">
+                    {kSaving ? 'Speichere…' : 'OTTOeject speichern →'}
+                  </button>}
             </div>
           </div>
         )}

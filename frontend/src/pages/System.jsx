@@ -146,6 +146,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
   const [phase, setPhase]             = useState(null)
   const [error, setError]             = useState(null)
   const [channel, setChannel]         = useState(() => localStorage.getItem('ottomat3d_channel') ?? 'latest')
+  const [confirmUpdate, setConfirmUpdate] = useState(false)
 
   const [backupFeedback, setBackupFeedback] = useState(null)
   const importRef = useRef(null)
@@ -239,6 +240,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
     setInfo(null)
     setPhase(null)
     setError(null)
+    setConfirmUpdate(false)
   }
 
   return (
@@ -381,9 +383,9 @@ docker compose up -d`}
           >
             {checking ? 'Prüfe…' : 'Auf Updates prüfen'}
           </button>
-          {!['done', 'running'].includes(phase) && (
+          {!confirmUpdate && !['done', 'running'].includes(phase) && (
             <button
-              onClick={triggerUpdate}
+              onClick={() => setConfirmUpdate(true)}
               disabled={!canUpdate}
               className="btn-primary text-sm"
             >
@@ -395,8 +397,34 @@ docker compose up -d`}
             </button>
           )}
         </div>
+
+        {/* Backup-Disclaimer vor dem Update */}
+        {confirmUpdate && !['done', 'running'].includes(phase) && (
+          <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg px-4 py-4 space-y-3">
+            <p className="text-amber-300 text-sm font-medium">⚠ Vor dem Update ein Backup machen</p>
+            <p className="text-amber-200/80 text-xs">
+              Ein Update kann Einstellungen verändern. Exportiere zur Sicherheit zuerst ein Backup deiner
+              Konfiguration (Geräte, Rack, Sequenzen, Zeitpläne) — dann erst aktualisieren.
+            </p>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={exportBackup} className="btn-secondary text-sm">↓ Backup exportieren</button>
+              <button
+                onClick={() => { setConfirmUpdate(false); triggerUpdate() }}
+                disabled={!canUpdate}
+                className="btn-primary text-sm"
+              >
+                {isBeta ? 'Verstanden — Beta installieren / wechseln' : 'Verstanden — jetzt aktualisieren'}
+              </button>
+              <button onClick={() => setConfirmUpdate(false)} className="btn-ghost text-sm">Abbrechen</button>
+            </div>
+          </div>
+        )}
+
         <p className="text-[11px] text-surface-600">
-          Ein Klick zieht das gewählte Kanal-Image (<span className="font-mono">:latest</span> bzw. <span className="font-mono">:beta</span>) und startet die App neu — auch der Kanalwechsel läuft so. Voraussetzung: Docker-Socket gemountet (siehe Compose).
+          Updates laufen <span className="text-surface-400">nur auf Knopfdruck</span> — kein automatisches Update im
+          Hintergrund. Ein Klick zieht das gewählte Kanal-Image (<span className="font-mono">:latest</span> bzw.
+          <span className="font-mono"> :beta</span>) und startet die App neu (auch der Kanalwechsel). Voraussetzung:
+          Docker-Socket gemountet (siehe Compose).
         </p>
       </div>
 

@@ -160,10 +160,10 @@ nie im Image oder in git.
 
 ## 8. Updates
 
+- **Nur auf Knopfdruck — kein automatisches Hintergrund-Update.**
 - **Im WebUI (System-Seite):** Kanal **Latest/Beta** wählen → **„Update installieren /
-  wechseln"**. Printloom zieht das passende Image und startet sich neu (über den
-  gemounteten Docker-Socket — erledigt auch den Kanalwechsel).
-- **Automatisch:** Watchtower aktualisiert den aktiven Kanal im Hintergrund (alle 5 Min).
+  wechseln"** (mit Backup-Hinweis). Printloom zieht das passende Image und startet sich
+  neu (über den gemounteten Docker-Socket — erledigt auch den Kanalwechsel).
 - **Manuell auf der Konsole** (Fallback):
 
   ```bash
