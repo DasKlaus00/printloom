@@ -28,7 +28,7 @@ one — unattended, with live status, cameras and ETA in a clean web UI.
 
 ## Hardware
 
-- **Bambu Lab X1C** (LAN access code; “LAN Mode Liveview” on for the camera).
+- **Bambu Lab X1C (P1P/P1S/P2S/X2D) but only tested on X1C** (LAN access code; “LAN Mode Liveview” on for the camera).
 - **OTTOeject** running Klipper/Moonraker (the auto-ejector).
 - Any host that runs Docker (a small x86/ARM box, NUC, Pi 4/5, or a Proxmox LXC).
 
