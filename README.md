@@ -1,5 +1,7 @@
 # Printloom
 
+**Disclaimer: The software was written almost entirely using Claude**
+
 **Self-hosted automation for continuous 3D print farms.** Printloom orchestrates a
 Bambu Lab X1C and an OTTOeject auto-ejector into a true *lights-out* workflow:
 queue jobs, print, eject the finished plate, store it in a rack, and start the next
@@ -18,10 +20,10 @@ one — unattended, with live status, cameras and ETA in a clean web UI.
 - **Rack & magazine manager** — track plate slots, capacity and refill; live status.
 - **File library** — folders, per-file print time & filament estimate (parsed from the
   `.3mf`/`.gcode`), bulk queueing with a calculated total.
-- **Cameras** — external webcam (WebRTC / HLS / MJPEG) and the built-in X1C chamber
+- **Cameras** - **WIP** — external webcam (WebRTC / HLS / MJPEG) and the built-in X1C chamber
   camera via a Home Assistant proxy (token stays server-side).
 - **Live status & control** — temperatures, progress, AMS, chamber light, manual moves.
-- **Notifications** — optional Telegram messages on job events.
+- **Notifications** **WIP** — optional Telegram messages on job events.
 - **In-app updates** — switch between **Latest** and **Beta** channels and update with
   one click from the System page (see [Updates](#updates)).
 - **Backup / restore**, multi-language UI, downloadable language packs.
@@ -69,7 +71,7 @@ Printloom has two release channels:
 | Channel    | Image tag | Who it's for                    |
 |------------|-----------|---------------------------------|
 | **Latest** | `:latest` | Stable releases (default)       |
-| **Beta**   | `:beta`   | Newest features, active dev     |
+| **Beta**   | `:beta`   |  active dev     |
 
 In the **System** page you can:
 
@@ -104,12 +106,6 @@ repo/package — a public one needs none).
   camera entity and a long-lived token (Configuration → Cameras).
 
 ---
-
-## Data & privacy
-
-- Printer access codes, the Telegram token and camera tokens live only in the mounted
-  `db/` volume — never in the repository or the Docker image.
-- `.env` and `docker-compose.prod.yml` are git-ignored.
 
 ## License
 
