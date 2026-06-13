@@ -8,6 +8,12 @@ queue jobs, print, eject the finished plate, store it in a rack, and start the n
 one — unattended, with live status, cameras and ETA in a clean web UI.
 
 > Runs entirely on your LAN. No cloud account required for the core workflow.
+<img width="3200" height="1750" alt="image" src="https://github.com/user-attachments/assets/2aaff6b7-44ae-41be-a96a-998cc376ecc9" />
+<img width="3200" height="1750" alt="image" src="https://github.com/user-attachments/assets/f624d827-13db-453b-b8a9-50525e2ebb88" />
+<img width="3200" height="1750" alt="image" src="https://github.com/user-attachments/assets/06ff074d-98bc-4993-bcca-471d0afddc4a" />
+<img width="3200" height="1750" alt="image" src="https://github.com/user-attachments/assets/a8e1bd0c-b009-490b-878e-86e18c0082b1" />
+<img width="3200" height="1750" alt="image" src="https://github.com/user-attachments/assets/8b0d572d-e08a-4837-83f1-76a1d07b2151" />
+<img width="3200" height="1750" alt="image" src="https://github.com/user-attachments/assets/d6fb14c6-b43c-4f15-85c7-ecb14c3c1552" />
 
 ---
 
