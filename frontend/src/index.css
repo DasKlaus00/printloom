@@ -1,0 +1,205 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Themes ──────────────────────────────────────────────────────────────
+   The whole UI uses the `surface` scale (50 = lightest, 950 = darkest in the
+   default dark theme). Each theme just remaps these 11 steps via CSS vars, so
+   no component needs touching. Values are space-separated RGB channels. */
+:root {                          /* Dunkel (Default) */
+  --s-50:  245 245 245;
+  --s-100: 232 232 232;
+  --s-200: 200 200 200;
+  --s-300: 160 160 160;
+  --s-400: 112 112 112;
+  --s-500:  80  80  80;
+  --s-600:  51  51  51;
+  --s-700:  34  34  34;
+  --s-800:  22  22  22;
+  --s-900:  12  12  12;
+  --s-950:   8   8   8;
+}
+
+[data-theme="slate"] {           /* Slate — helleres Dunkel, bessere Lesbarkeit */
+  --s-50:  248 250 252;
+  --s-100: 241 245 249;
+  --s-200: 226 232 240;
+  --s-300: 203 213 225;
+  --s-400: 148 163 184;
+  --s-500: 100 116 139;
+  --s-600:  71  85 105;
+  --s-700:  51  65  85;
+  --s-800:  30  41  59;
+  --s-900:  19  28  45;
+  --s-950:  15  23  42;
+}
+
+[data-theme="midnight"] {        /* Mitternacht — blau getöntes Dunkel */
+  --s-50:  245 248 252;
+  --s-100: 230 236 245;
+  --s-200: 205 215 230;
+  --s-300: 165 180 205;
+  --s-400: 120 136 168;
+  --s-500:  80  96 130;
+  --s-600:  51  66  99;
+  --s-700:  33  44  71;
+  --s-800:  20  28  48;
+  --s-900:  13  18  33;
+  --s-950:  10  14  26;
+}
+
+[data-theme="light"] {           /* Hell */
+  --s-50:    9   9  11;
+  --s-100:  24  24  27;
+  --s-200:  39  39  42;
+  --s-300:  63  63  70;
+  --s-400: 113 113 122;
+  --s-500: 130 130 140;
+  --s-600: 161 161 170;
+  --s-700: 212 212 216;
+  --s-800: 232 232 235;
+  --s-900: 244 244 246;
+  --s-950: 252 252 253;
+}
+
+@layer base {
+  * { @apply box-border; }
+
+  body {
+    @apply bg-surface-950 text-surface-100 font-sans antialiased;
+    font-size: 14px;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-surface-950; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-600 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-surface-500; }
+}
+
+@layer components {
+
+  /* ── Cards ─────────────────────────────── */
+  .card {
+    @apply bg-surface-800/70 border border-surface-700/60 rounded-2xl p-5
+           backdrop-blur-sm shadow-lg shadow-black/20;
+  }
+  .card-sm {
+    @apply bg-surface-800/70 border border-surface-700/60 rounded-xl p-4;
+  }
+
+  /* ── Section label ──────────────────────── */
+  .section-label {
+    @apply text-[11px] font-semibold tracking-widest uppercase text-surface-500 mb-3;
+  }
+
+  /* ── Buttons ────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+           font-medium text-sm transition-all duration-150 select-none
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white
+           shadow-md shadow-blue-900/40 hover:shadow-blue-800/50;
+  }
+  .btn-ghost {
+    @apply bg-transparent hover:bg-surface-700/60 text-surface-300 hover:text-surface-100
+           border border-surface-700 hover:border-surface-600;
+  }
+  .btn-danger {
+    @apply bg-red-700 hover:bg-red-600 active:bg-red-800 text-white shadow-md shadow-red-900/30;
+  }
+  .btn-success {
+    @apply bg-emerald-700 hover:bg-emerald-600 text-white shadow-md shadow-emerald-900/30;
+  }
+  .btn-warning {
+    @apply bg-amber-600 hover:bg-amber-500 text-white shadow-md shadow-amber-900/30;
+  }
+  .btn-cyan {
+    @apply bg-cyan-700 hover:bg-cyan-600 text-white shadow-md shadow-cyan-900/30;
+  }
+  .btn-icon {
+    @apply p-2 rounded-lg bg-surface-700/60 hover:bg-surface-600
+           text-surface-300 hover:text-surface-100 transition-colors;
+  }
+  .btn-lg { @apply px-5 py-3 text-base; }
+  .btn-sm { @apply px-3 py-1.5 text-xs; }
+
+  /* ── Inputs ──────────────────────────────── */
+  input, textarea, select {
+    @apply w-full bg-surface-900/80 text-surface-100 border border-surface-600/70 rounded-xl
+           px-3 py-2 text-sm
+           focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30
+           placeholder:text-surface-600;
+  }
+
+  /* ── Status dot ─────────────────────────── */
+  .dot {
+    @apply inline-block w-2 h-2 rounded-full flex-shrink-0;
+  }
+  .dot-green  { @apply bg-emerald-400; }
+  .dot-red    { @apply bg-red-400; }
+  .dot-amber  { @apply bg-amber-400; }
+  .dot-blue   { @apply bg-blue-400; }
+  .dot-gray   { @apply bg-surface-500; }
+
+  /* ── Badge ───────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium;
+  }
+  .badge-green  { @apply bg-emerald-900/50 text-emerald-300 border border-emerald-800/60; }
+  .badge-red    { @apply bg-red-900/50    text-red-300    border border-red-800/60; }
+  .badge-amber  { @apply bg-amber-900/50  text-amber-300  border border-amber-800/60; }
+  .badge-blue   { @apply bg-blue-900/50   text-blue-300   border border-blue-800/60; }
+  .badge-gray   { @apply bg-surface-700   text-surface-400 border border-surface-600; }
+
+  /* ── Nav item ────────────────────────────── */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium
+           text-surface-500 hover:text-surface-200 hover:bg-surface-700/40 transition-all cursor-pointer;
+  }
+  .nav-item.active {
+    @apply bg-blue-600/15 text-blue-300 border border-blue-500/20
+           hover:bg-blue-600/20 hover:text-blue-200;
+  }
+
+  /* ── Rack slot ───────────────────────────── */
+  .rack-slot {
+    @apply flex items-center justify-between px-4 py-3 rounded-xl border transition-all;
+  }
+  .rack-slot-free     { @apply bg-emerald-950/30 border-emerald-800/50 text-emerald-400; }
+  .rack-slot-occupied { @apply bg-amber-950/30   border-amber-800/50   text-amber-400; }
+  .rack-slot-printing { @apply bg-blue-950/30    border-blue-800/50    text-blue-400;
+                        animation: pulse-border 2s infinite; }
+  .rack-slot-empty    { @apply bg-surface-900    border-surface-700    text-surface-500; }
+
+  /* ── Divider ─────────────────────────────── */
+  .divider { @apply border-t border-surface-700/60 my-4; }
+
+  /* ── Control key ─────────────────────────── */
+  .control-key        { @apply flex flex-col items-center gap-1; }
+  .control-key span   { @apply text-xs text-surface-500; }
+
+  /* ── Stat card ───────────────────────────── */
+  .stat-card {
+    @apply rounded-2xl border p-5 space-y-1.5;
+  }
+  .stat-card-blue   { @apply bg-blue-950/30 border-blue-800/40; }
+  .stat-card-green  { @apply bg-emerald-950/30 border-emerald-800/40; }
+  .stat-card-amber  { @apply bg-amber-950/30 border-amber-800/40; }
+  .stat-card-purple { @apply bg-purple-950/30 border-purple-800/40; }
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: rgb(37 99 235 / 0.5); }
+  50%       { border-color: rgb(59 130 246 / 0.9); }
+}
+
+@keyframes glow-blue {
+  0%, 100% { box-shadow: 0 0 4px rgb(59 130 246 / 0.4); }
+  50%       { box-shadow: 0 0 12px rgb(59 130 246 / 0.7); }
+}
+
+.progress-active {
+  animation: glow-blue 2s ease-in-out infinite;
+}

@@ -1,0 +1,82 @@
+# ── Printloom — Produktions-Deployment (Image aus ghcr + Updates im WebUI) ──────
+#
+# VORLAGE (darf öffentlich sein). Einmal kopieren, Token setzen, starten:
+#
+#     cp docker-compose.prod.yml.example docker-compose.prod.yml
+#     cp .env.example .env            # darin WATCHTOWER_TOKEN auf einen eigenen Wert setzen
+#     docker compose -f docker-compose.prod.yml up -d
+#
+# Kein lokaler Build / kein "git pull" nötig — das fertige Image kommt aus
+# ghcr.io/dasklaus00/printloom.
+#
+# ── Updates ─────────────────────────────────────────────────────────────────
+#  • Im WebUI (System-Seite): Kanal Latest/Beta wählen → „Update installieren /
+#    wechseln". Die App zieht das gewählte Image und startet sich neu
+#    (nutzt den gemounteten Docker-Socket → erledigt auch den KANALWECHSEL).
+#  • Automatisch im Hintergrund: Watchtower prüft alle 5 Min auf einen neuen Build
+#    des AKTIVEN Kanals und aktualisiert.
+#
+# ── Kanal wählen ──────────────────────────────────────────────────────────────
+#  Standard ist "latest" (stabil). Für Beta in der .env  PRINTLOOM_CHANNEL=beta
+#  setzen — oder einfach im WebUI umschalten.
+#
+# ── Sicherheitshinweis ────────────────────────────────────────────────────────
+#  Der App-Container bekommt den Docker-Socket gemountet, damit das Ein-Klick-
+#  Update/der Kanalwechsel im WebUI funktioniert. Das gibt der App Kontrolle über
+#  Docker — auf einem privaten LAN-Gerät vertretbar. Wer das nicht will, entfernt
+#  den docker.sock-Mount beim "printloom"-Service: dann bleibt nur das
+#  Watchtower-Hintergrund-Update des aktiven Kanals (kein Kanalwechsel im WebUI).
+
+services:
+  printloom:
+    image: ghcr.io/dasklaus00/printloom:${PRINTLOOM_CHANNEL:-latest}
+    container_name: printloom-app
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - APP_ENV=production
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_REPO=DasKlaus00/printloom
+      # Für das In-App-Update/den Kanalwechsel (Updater zieht <IMAGE>:<latest|beta>):
+      - PRINTLOOM_IMAGE=ghcr.io/dasklaus00/printloom
+      - PRINTLOOM_CONTAINER=printloom-app
+      - WATCHTOWER_TOKEN=${WATCHTOWER_TOKEN:-change-me-update-token}
+    volumes:
+      # Daten (Geräte, Regal-Config, Sequenzen, Queue, Uploads) bleiben erhalten.
+      - ./backend/uploads:/app/uploads
+      - ./backend/db:/app/db
+      # Docker-Socket → Ein-Klick-Update + Kanalwechsel aus dem WebUI:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    networks:
+      - printloom-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: printloom-watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Nur für ein PRIVATES ghcr-Package: nach `docker login ghcr.io` einkommentieren:
+      # - /root/.docker/config.json:/config.json:ro
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_HTTP_API_UPDATE=true
+      - WATCHTOWER_HTTP_API_PERIODIC_POLLS=true
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_TOKEN:-change-me-update-token}
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_INCLUDE_RESTARTING=true
+    command: printloom-app
+    restart: unless-stopped
+    networks:
+      - printloom-net
+
+networks:
+  printloom-net:
+    driver: bridge

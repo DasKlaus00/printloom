@@ -1,0 +1,1833 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService } from '../services/api'
+import { parseSlotKey, slotsNeeded, autoSlot, checkClearance } from '../services/rackUtils'
+import { amsMissing, colorDist } from '../services/amsUtils'
+import { useQueueEta, fmtDur } from '../services/useQueueEta'
+
+/* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
+   Webcam am Drucker → 404), statt ein kaputtes Bild-Icon zu zeigen. */
+function JobSnapshot({ name }) {
+  const [err, setErr] = useState(false)
+  if (!name || err) return null
+  const src = `/api/printer/snapshots/${name}`
+  return (
+    <a href={src} target="_blank" rel="noreferrer" className="block w-fit">
+      <img src={src} alt="Snapshot" onError={() => setErr(true)}
+        className="h-16 rounded border border-surface-700 object-cover" />
+    </a>
+  )
+}
+async function checkPreflight(bambuId) {
+  const errors = []
+  try {
+    await printerService.getStatus(bambuId)
+    // Printer may already be running — continuous mode handles that
+  } catch {
+    errors.push('Bambu X1C nicht erreichbar — Verbindung prüfen')
+  }
+  try {
+    const r = await controlService.getKlipperInfo()
+    if (!r.data.ready) {
+      const stateMsg = r.data.state_message ? `: ${r.data.state_message}` : ''
+      errors.push(`OTTOeject nicht bereit (${r.data.state}${stateMsg}) — bitte Firmware neu starten`)
+    }
+  } catch {
+    errors.push('OTTOeject nicht erreichbar — Verbindung prüfen')
+  }
+  return errors
+}
+
+const S = {
+  pending:  { label: 'Wartet',        dot: 'dot-gray',  color: 'text-surface-500' },
+  running:  { label: 'Läuft…',        dot: 'dot-blue',  color: 'text-blue-400',   pulse: true },
+  printing: { label: 'Druckt…',       dot: 'dot-green', color: 'text-emerald-400', pulse: true },
+  sending:  { label: 'Datei senden',  dot: 'dot-blue',  color: 'text-blue-400'   },
+  done:     { label: 'Fertig',        dot: 'dot-green', color: 'text-emerald-400' },
+  error:    { label: 'Fehler',        dot: 'dot-red',   color: 'text-red-400'    },
+}
+
+let _id = Date.now()
+
+const TEMPLATES_KEY = 'ottomat3d_queue_templates'
+const loadTemplates = () => {
+  try { return JSON.parse(localStorage.getItem(TEMPLATES_KEY) || '{}') } catch { return {} }
+}
+
+function AmsMapper({ filaments, amsSlots, value, onChange }) {
+  const norm = c => (c||'').replace('#','').toUpperCase().slice(0,6)
+
+  const mapArr = React.useMemo(() => {
+    if (value && value.trim()) {
+      const parts = value.split(',').map(s => parseInt(s.trim(),10))
+      if (parts.length === filaments.length && parts.every(n => !isNaN(n))) return parts
+    }
+    return filaments.map((_,i) => amsSlots[i]?.gid ?? 0)
+  }, [value, filaments, amsSlots])
+
+  if (!filaments.length) return <p className="text-[10px] text-surface-600 py-1">Keine Filament-Info in Datei (älteres Format)</p>
+  if (!amsSlots.length)  return <p className="text-[10px] text-surface-600 py-1">Kein AMS erkannt — Drucker offline?</p>
+
+  const autoMatch = () => {
+    const nm = filaments.map((f, fi) => {
+      const fBase  = (f.type||'').toUpperCase().trim().split(/\s+/)[0]
+      const fColor = norm(f.color)
+      const pool   = amsSlots.filter(s => s.type.toUpperCase().includes(fBase) || fBase.includes(s.type.toUpperCase().split(/\s+/)[0]))
+      const src    = pool.length ? pool : amsSlots
+      return [...src].sort((a,b) => colorDist(fColor, norm(a.color)) - colorDist(fColor, norm(b.color)))[0]?.gid ?? mapArr[fi]
+    })
+    onChange(nm.join(','))
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {filaments.map((f, fi) => {
+        const slot    = amsSlots.find(s => s.gid === mapArr[fi]) ?? amsSlots[0]
+        const fColor  = norm(f.color)
+        const sColor  = norm(slot?.color)
+        const matches = fColor && sColor && fColor === sColor
+        return (
+          <div key={fi} className="flex items-center gap-1.5">
+            <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0"
+                  style={{ backgroundColor: f.color ? (f.color.startsWith('#') ? f.color : `#${f.color}`) : '#555' }} />
+            <span className="text-[10px] text-surface-400 w-16 truncate shrink-0">{f.type||'?'}</span>
+            <span className="text-surface-700 text-[10px]">→</span>
+            <select
+              value={mapArr[fi] ?? ''}
+              onChange={e => { const nm=[...mapArr]; nm[fi]=+e.target.value; onChange(nm.join(',')) }}
+              className="flex-1 text-[10px] font-mono h-6 py-0"
+            >
+              {amsSlots.map(s => (
+                <option key={s.gid} value={s.gid}>[{s.gid}] {s.type}{s.color ? ` #${s.color.slice(0,6)}` : ''}</option>
+              ))}
+            </select>
+            <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0"
+                  style={{ backgroundColor: slot?.color ? `#${slot.color.slice(0,6)}` : '#555' }} />
+            {!matches && <span className="text-amber-500 text-[9px]" title="Farbe unterschiedlich">⚠</span>}
+          </div>
+        )
+      })}
+      <div className="flex items-center gap-2 pt-1 border-t border-surface-800/40">
+        <span className="text-[9px] text-surface-700 font-mono">Map: {mapArr.join(',')}</span>
+        <button onClick={autoMatch} className="ml-auto text-[9px] text-blue-400 hover:text-blue-300 transition-colors">
+          Auto-Match
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const RACK_DOT   = { free: 'dot-gray', ready: 'dot-green', printing: 'dot-blue', done: 'dot-amber', locked: 'dot-red' }
+const RACK_COL   = { free: 'text-surface-600', ready: 'text-emerald-400', printing: 'text-blue-400', done: 'text-amber-400', locked: 'text-red-400' }
+const RACK_LABEL = { free: 'Leer', ready: 'Bereit', printing: 'Druckt', done: 'Fertig', locked: 'Gesperrt' }
+
+/* ── Farm-Visualisierung: Ablauf-Phasen ─── */
+function FarmViz({ farmStatus, jobs, curJobId }) {
+  const curJob     = jobs.find(j => j.id === curJobId)
+  const isPrinting = curJob?.status === 'printing'
+
+  const PHASES = [
+    { id: 'grab_mag',   label: 'Holen aus Magazin' },
+    { id: 'to_printer', label: 'Zum Drucker' },
+    { id: 'load',       label: 'Einlegen' },
+    { id: 'printing',   label: 'Druckt…' },
+    { id: 'eject',      label: 'Auswerfen' },
+    { id: 'to_rack',    label: 'Zum Regal' },
+    { id: 'store',      label: 'Einlagern' },
+    { id: 'return',     label: 'Zurück' },
+  ]
+
+  const seqLabel = farmStatus?.seq_step_label?.toLowerCase() ?? ''
+  let activePhase = null
+  if (isPrinting) activePhase = 'printing'
+  else if (seqLabel.includes('holen') || seqLabel.includes('grab') || seqLabel.includes('magazin')) activePhase = 'grab_mag'
+  else if (seqLabel.includes('einlegen') || seqLabel.includes('load')) activePhase = 'load'
+  else if (seqLabel.includes('auswerfen') || seqLabel.includes('eject')) activePhase = 'eject'
+  else if (seqLabel.includes('einlagern') || seqLabel.includes('store')) activePhase = 'store'
+  else if (seqLabel.includes('regal') || seqLabel.includes('rack')) activePhase = 'to_rack'
+  else if (seqLabel.includes('drucker') || seqLabel.includes('printer')) activePhase = 'to_printer'
+  else if (seqLabel.includes('zurück') || seqLabel.includes('park')) activePhase = 'return'
+
+  const running = farmStatus?.running
+
+  return (
+    <div className="space-y-2">
+      {/* Aktueller Schritt */}
+      {running && farmStatus?.seq_step_label && (
+        <div className="card p-2.5 bg-blue-950/20 border-blue-800/40">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0" />
+            <p className="text-[9px] font-mono text-blue-300 truncate">{farmStatus.seq_step_label}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Ablauf-Phasen */}
+      <div className="card p-2.5 space-y-0.5">
+        {PHASES.map(p => (
+          <div key={p.id} className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[8px] font-mono transition-colors ${
+            activePhase === p.id && running
+              ? 'bg-blue-900/30 text-blue-300'
+              : 'text-surface-700'
+          }`}>
+            {activePhase === p.id && running
+              ? <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse shrink-0" />
+              : <span className="w-1 h-1 rounded-full bg-surface-800 shrink-0" />}
+            {p.label}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* HLS-Video (MediaMTX/go2rtc). Safari/iOS spielen HLS nativ; alle anderen laden
+   hls.js lazy (eigener Chunk, damit der Haupt-Bundle schlank bleibt). */
+function HlsVideo({ src, onError, className }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const video = ref.current
+    if (!video || !src) return
+    let hls, cancelled = false
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = src
+      video.play?.().catch(() => {})
+      return
+    }
+    import('hls.js').then(({ default: Hls }) => {
+      if (cancelled || !ref.current) return
+      if (!Hls.isSupported()) { onError?.('Browser kann HLS nicht abspielen'); return }
+      // Aggressive Low-Latency-Konfig: nah an der Live-Kante bleiben statt zu puffern.
+      hls = new Hls({
+        liveDurationInfinity: true,
+        lowLatencyMode: true,
+        backBufferLength: 0,            // keine Vergangenheit puffern
+        liveSyncDurationCount: 1,       // nur ~1 Segment hinter Live spielen
+        liveMaxLatencyDurationCount: 4, // bei mehr Rückstand → nachholen
+        maxLiveSyncPlaybackRate: 1.5,   // leicht schneller abspielen, um aufzuholen
+      })
+      hls.loadSource(src)
+      hls.attachMedia(ref.current)
+      hls.on(Hls.Events.ERROR, (_e, data) => { if (data?.fatal) onError?.(data?.details || 'HLS-Fehler') })
+      // Driftet die Wiedergabe doch zurück → hart an die Live-Kante springen.
+      const jumpLive = () => {
+        const v = ref.current
+        if (v && hls.liveSyncPosition != null && v.currentTime < hls.liveSyncPosition - 3) {
+          v.currentTime = hls.liveSyncPosition
+        }
+      }
+      hls.on(Hls.Events.FRAG_CHANGED, jumpLive)
+      ref.current.play?.().catch(() => {})
+    }).catch(() => onError?.('HLS-Player konnte nicht geladen werden'))
+    return () => { cancelled = true; try { hls?.destroy() } catch {} }
+  }, [src])
+  return <video ref={ref} muted autoPlay playsInline className={className} />
+}
+
+/* Derive the MediaMTX HLS playlist URL from a path URL like http://host:8888/stream/ */
+function hlsUrlFrom(url) {
+  if (!url) return ''
+  if (url.includes('.m3u8')) return url
+  return url.endsWith('/') ? `${url}index.m3u8` : `${url}/index.m3u8`
+}
+
+/* Derive the MediaMTX WHEP (WebRTC) endpoint from a path URL like http://host:8889/stream */
+function whepUrlFrom(url) {
+  if (!url) return ''
+  const u = url.trim().replace(/\/+$/, '')
+  return u.endsWith('/whep') ? u : `${u}/whep`
+}
+
+/* WebRTC-Video via WHEP (MediaMTX :8889). Sub-Sekunden-Latenz, ohne Extra-Bibliothek —
+   der Browser spricht WebRTC nativ. Reines Empfangen (recvonly), ICE non-trickle. */
+function WhepVideo({ src, onError, className }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const video = ref.current
+    if (!video || !src) return
+    let pc, cancelled = false
+
+    const start = async () => {
+      try {
+        pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
+        pc.addTransceiver('video', { direction: 'recvonly' })
+        pc.addTransceiver('audio', { direction: 'recvonly' })
+        pc.ontrack = (e) => {
+          if (ref.current && e.streams[0]) {
+            ref.current.srcObject = e.streams[0]
+            ref.current.play?.().catch(() => {})
+          }
+        }
+        pc.onconnectionstatechange = () => {
+          if (pc && ['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
+            onError?.(`Verbindung ${pc.connectionState}`)
+          }
+        }
+        await pc.setLocalDescription(await pc.createOffer())
+        // ICE-Kandidaten einsammeln (non-trickle), höchstens 2 s warten.
+        await new Promise((resolve) => {
+          if (pc.iceGatheringState === 'complete') return resolve()
+          const done = () => { pc.removeEventListener('icegatheringstatechange', done); resolve() }
+          pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') done() })
+          setTimeout(resolve, 2000)
+        })
+        if (cancelled) return
+        const res = await fetch(src, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/sdp' },
+          body: pc.localDescription.sdp,
+        })
+        if (!res.ok) { onError?.(`WHEP HTTP ${res.status}`); return }
+        const answer = await res.text()
+        if (cancelled) return
+        await pc.setRemoteDescription({ type: 'answer', sdp: answer })
+      } catch (e) {
+        if (!cancelled) onError?.(String(e?.message || e))
+      }
+    }
+    start()
+    return () => { cancelled = true; try { pc?.close() } catch {} }
+  }, [src])
+  return <video ref={ref} muted autoPlay playsInline className={className} />
+}
+
+/* ── Kamera-Fenster unter der Schritt-Anzeige ─────────────────
+   Zwei umschaltbare Kameras: eingebaute X1C (quer) + eine externe Webcam
+   (MJPEG oder HLS/MediaMTX) hochkant, deren URL & Typ anpassbar sind. */
+const CAM_PORTRAIT_KEY = 'printloom_cam_ext_portrait'
+const CAM_TYPE_KEY     = 'printloom_cam_ext_type'   // 'webrtc' | 'hls' | 'mjpeg'
+
+const CAM_TYPE_ORDER = ['webrtc', 'hls', 'mjpeg']
+const CAM_TYPE_LABEL = { webrtc: 'WebRTC', hls: 'HLS', mjpeg: 'MJPEG' }
+/* Guess the stream type from the URL: :8889/whep → WebRTC, :8888/.m3u8 → HLS, sonst MJPEG. */
+function guessCamType(url) {
+  const u = url || ''
+  if (u.includes('/whep') || u.includes(':8889')) return 'webrtc'
+  if (u.includes('.m3u8') || u.includes(':8888')) return 'hls'
+  return 'mjpeg'
+}
+
+/* Ein Stream (Typ aus URL erkannt: WebRTC/HLS/MJPEG). Blendet sich bei Fehler
+   sauber aus (statt kaputtem Bild) und bietet einen Reconnect-Knopf. */
+function StreamView({ url, portrait, label }) {
+  const [err, setErr] = useState(false)
+  const [k,   setK]   = useState(0)
+  useEffect(() => { setErr(false); setK(x => x + 1) }, [url])
+  const reconnect = () => { setErr(false); setK(x => x + 1) }
+  const type = guessCamType(url)
+  const src  = type === 'hls' ? hlsUrlFrom(url) : type === 'webrtc' ? whepUrlFrom(url) : url
+  const aspect = portrait ? '9/16' : '16/9'
+  return (
+    <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: aspect, maxWidth: '100%' }}>
+      {!url ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1 px-3 text-center">
+          <p className="text-[10px]">{label}</p>
+          <p className="text-[9px] text-surface-700">URL in Konfiguration → Kameras</p>
+        </div>
+      ) : err ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1.5 px-3 text-center">
+          <p className="text-[10px]">{label} nicht erreichbar</p>
+          <p className="text-[9px] font-mono text-surface-700 break-all">{src}</p>
+          <button onClick={reconnect} className="btn btn-ghost btn-sm">Neu verbinden</button>
+        </div>
+      ) : type === 'webrtc' ? (
+        <WhepVideo key={k} src={src} onError={() => setErr(true)} className="w-full h-full object-contain" />
+      ) : type === 'hls' ? (
+        <HlsVideo key={k} src={src} onError={() => setErr(true)} className="w-full h-full object-contain" />
+      ) : (
+        <img key={k} src={src} alt={label} onError={() => setErr(true)} onLoad={() => setErr(false)} className="w-full h-full object-contain" />
+      )}
+      {url && !err && (
+        <>
+          <span className="absolute top-1.5 left-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>
+          <span className="absolute top-1.5 right-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-black/60 text-surface-300">{CAM_TYPE_LABEL[type]}</span>
+          <button onClick={reconnect} title="Neu verbinden"
+            className="absolute bottom-1.5 right-1.5 text-[11px] leading-none px-1.5 py-1 rounded bg-black/50 text-surface-300 hover:text-white">⟳</button>
+        </>
+      )}
+    </div>
+  )
+}
+
+/* Eingebaute X1C-Kamera (proprietäres Port-6000-Protokoll übers Backend).
+   Fallback für die obere Kachel, wenn keine Bambu-URL hinterlegt ist. */
+function X1CView({ bambuId }) {
+  const [live,  setLive]  = useState(false)
+  const [ready, setReady] = useState(false)
+  const [err,   setErr]   = useState('')
+  const [key,   setKey]   = useState(0)
+  const connect = async () => {
+    if (!bambuId) return
+    setErr(''); setReady(false); setKey(k => k + 1); setLive(true)
+    try {
+      const r = await fetch(`${printerService.cameraFrameUrl(bambuId)}?probe=${Date.now()}`)
+      if (!r.ok) {
+        let detail = `HTTP ${r.status}`
+        try { detail = (await r.json()).detail || detail } catch { try { detail = (await r.text()) || detail } catch {} }
+        setErr(detail); return
+      }
+      setReady(true)
+    } catch (e) { setErr(String(e?.message || e)) }
+  }
+  const stop = () => { setLive(false); setReady(false); setErr('') }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] text-surface-500">Oben · X1C (eingebaut)</span>
+        <button onClick={() => live ? stop() : connect()} disabled={!bambuId}
+          className={`btn btn-sm px-2 ${live ? 'btn-primary' : 'btn-ghost'}`}
+          title="LAN-Liveview muss am Drucker aktiv sein">
+          {live ? '⏹ Stopp' : '📷 Live'}
+        </button>
+      </div>
+      <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '16/9', maxWidth: '100%' }}>
+        {live ? (
+          err ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1.5 px-3 text-center">
+              <p className="text-[10px]">X1C nicht erreichbar</p>
+              {err && <p className="text-[9px] font-mono text-red-400/80 break-all">{err}</p>}
+              <button onClick={connect} className="btn btn-ghost btn-sm mt-0.5">Neu verbinden</button>
+            </div>
+          ) : ready ? (
+            <img src={`${printerService.cameraStreamUrl(bambuId)}?t=${key}`} alt="X1C Live"
+              onError={() => setErr(e => e || 'Stream-Verbindung abgebrochen')}
+              className="w-full h-full object-contain" />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-[10px]">Verbinde …</div>
+          )
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1 px-3 text-center">
+            <p className="text-[10px]">{bambuId ? 'X1C bereit' : 'Kein Drucker'}</p>
+            {bambuId && <p className="text-[9px] text-surface-700">„📷 Live" drücken</p>}
+          </div>
+        )}
+        {live && ready && <span className="absolute top-1.5 left-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>}
+      </div>
+    </div>
+  )
+}
+
+/* X1C-Kamera über Home Assistant: HA liefert ein Standbild (kein echter Video-
+   Stream), daher laden wir das Einzelbild im ~1-s-Takt nach (≈1 fps Live-Ansicht).
+   Doppelpuffer: das sichtbare Bild wird erst getauscht, wenn das nächste geladen
+   ist → kein Flackern, keine Blackframes. */
+function HaPollView({ deviceId, label, portrait = false }) {
+  const [src, setSrc] = useState(null)
+  const [err, setErr] = useState(false)
+  useEffect(() => {
+    if (!deviceId) return
+    let alive = true, timer
+    const load = () => {
+      const u = `${printerService.haCameraStreamUrl(deviceId)}/frame?t=${Date.now()}`
+      const img = new Image()
+      img.onload  = () => { if (!alive) return; setSrc(u); setErr(false); timer = setTimeout(load, 250) }
+      img.onerror = () => { if (!alive) return; setErr(true);            timer = setTimeout(load, 2500) }
+      img.src = u
+    }
+    load()
+    return () => { alive = false; clearTimeout(timer) }
+  }, [deviceId])
+  const aspect = portrait ? '9/16' : '16/9'
+  return (
+    <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: aspect, maxWidth: '100%' }}>
+      {src ? (
+        <img src={src} alt={label} className="w-full h-full object-contain" />
+      ) : !err ? (
+        <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-[10px]">Verbinde mit Home Assistant …</div>
+      ) : null}
+      {err && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1 px-3 text-center">
+          <p className="text-[10px]">{label} nicht erreichbar</p>
+          <p className="text-[9px] text-surface-700">Home Assistant / Token prüfen</p>
+        </div>
+      )}
+      {src && !err && (
+        <>
+          <span className="absolute top-1.5 left-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>
+          <span className="absolute top-1.5 right-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-black/60 text-surface-300">HA</span>
+        </>
+      )}
+    </div>
+  )
+}
+
+/* Beide Kameras fest übereinander: oben Bambu (quer) bzw. X1C, unten hochkant.
+   URLs kommen aus der Konfiguration (Konfiguration → Kameras). */
+function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady }) {
+  return (
+    <div className="card p-2.5 space-y-2.5">
+      <div className="flex items-center justify-between">
+        <p className="section-label mb-0">Kameras</p>
+        <span className="text-[9px] text-surface-600">Einstellungen: Konfiguration → Kameras</span>
+      </div>
+      {/* Oben: X1C via Home Assistant > externe Bambu-URL > eingebaute X1C (Port 6000) */}
+      {haCamReady
+        ? <HaPollView deviceId={bambuId} label="X1C (Home Assistant)" />
+        : webcamUrlTop
+          ? <StreamView url={webcamUrlTop} portrait={false} label="Bambu (oben)" />
+          : <X1CView bambuId={bambuId} />}
+      {/* Unten: Hochkant */}
+      <StreamView url={webcamUrl} portrait={true} label="Hochkant (unten)" />
+    </div>
+  )
+}
+
+function AutoFarm() {
+  const [gcodeFiles,      setGcodeFiles]      = useState([])
+  const [rackData,        setRackData]        = useState(null)
+  const [bambuId,         setBambuId]         = useState(null)
+  const [webcamUrl,       setWebcamUrl]       = useState('')        // untere (hochkant) Kamera
+  const [webcamUrlTop,    setWebcamUrlTop]    = useState('')        // obere (Bambu / quer) Kamera
+  const [haCamReady,      setHaCamReady]      = useState(false)     // X1C-Cam via Home Assistant
+  const [jobs,            setJobs]            = useState([])
+  const [farmStatus,      setFarmStatus]      = useState(null)
+  const [feedback,        setFeedback]        = useState(null)
+  const [showSettings,    setShowSettings]    = useState(false)
+  const [pollInterval,    setPollInterval]    = useState(20)
+  const [minPrintMinutes, setMinPrintMinutes] = useState(0)
+  const [useAms,          setUseAms]          = useState(true)
+  const [settingsLoaded,  setSettingsLoaded]  = useState(false)
+  const [queueLoaded,     setQueueLoaded]     = useState(false)
+  const [homingFile,      setHomingFile]      = useState(null)   // {configured, file_id, filename}
+  const [homingSetupBusy, setHomingSetupBusy] = useState(false)
+  const [addFileId,       setAddFileId]       = useState(null)
+  const [addCount,        setAddCount]        = useState(1)
+  const [templates,       setTemplates]       = useState(loadTemplates)
+  const [tplOpen,         setTplOpen]         = useState(false)
+  const [tplName,         setTplName]         = useState('')
+  const [filePlates,      setFilePlates]      = useState([])     // plate numbers in selected file (multi-plate .3mf)
+  const [selPlates,       setSelPlates]       = useState([])     // which plates to enqueue
+  const [amsSlots,        setAmsSlots]        = useState([])
+  const [amsLoading,      setAmsLoading]      = useState(false)
+  const [amsOpenIds,      setAmsOpenIds]      = useState(() => new Set())
+  const [showRackCfg,    setShowRackCfg]     = useState(false)
+  const [rackCfgNr,      setRackCfgNr]       = useState(3)
+  const [rackCfgSpr,     setRackCfgSpr]      = useState(6)
+  const [rackCfgH,       setRackCfgH]        = useState(50)
+  const [stackRack,      setStackRack]       = useState(1)
+  const [stackSlot,      setStackSlot]       = useState(7)
+  const [maxPlates,       setMaxPlates]       = useState(4)
+  const [heightMarginPct, setHeightMarginPct] = useState(15)
+  const prevRunningRef = useRef(false)
+  const pollTimerRef = useRef(null)
+  const settingsSaveRef = useRef(null)
+  const queueSaveRef    = useRef(null)
+  const runningRef  = useRef(false)
+  const rackDataRef = useRef(null)
+
+  const running  = farmStatus?.running  ?? false
+  const paused   = farmStatus?.paused   ?? false
+  const farmLog  = farmStatus?.log      ?? []
+  // Use current_job_id from backend; fall back to finding any active job
+  const curJobId = farmStatus?.current_job_id
+    ?? farmStatus?.jobs?.find(j => ['running', 'printing', 'sending'].includes(j.status))?.id
+    ?? null
+  const seqProgress = (farmStatus?.seq_step_total > 0) ? {
+    idx:   farmStatus.seq_step_idx,
+    total: farmStatus.seq_step_total,
+    label: farmStatus.seq_step_label,
+  } : null
+
+  runningRef.current  = running
+  rackDataRef.current = rackData
+
+  const showFeedback = (msg, ok = true) => {
+    setFeedback({ msg, ok })
+    setTimeout(() => setFeedback(null), 5000)
+  }
+
+  const fetchAmsSlots = useCallback(async () => {
+    if (!bambuId) { setAmsSlots([]); return }
+    setAmsLoading(true)
+    try {
+      const r   = await printerService.getStatus(bambuId)
+      const raw = r.data?.ams?.ams ?? []
+      const slots = []
+      for (const unit of raw) {
+        const uid = +unit.id
+        for (const tray of (unit.tray ?? [])) {
+          if (+(tray.remain ?? 100) <= 0) continue
+          slots.push({
+            gid:   uid * 4 + +tray.id,
+            type:  tray.tray_type || tray.tray_sub_brands || '?',
+            color: (tray.tray_color || '').replace('#','').slice(0,6),
+          })
+        }
+      }
+      setAmsSlots(slots)
+    } catch { setAmsSlots([]) }
+    setAmsLoading(false)
+  }, [bambuId])
+
+  /* ── Sync job statuses from backend (only while running) ─── */
+  useEffect(() => {
+    if (!farmStatus?.jobs?.length || !farmStatus?.running) return
+    // Keep _id ahead of all known job IDs to prevent 409 collisions on re-enqueue
+    const maxId = Math.max(...farmStatus.jobs.map(j => j.id))
+    if (maxId >= _id) _id = maxId + 1
+    setJobs(prev => {
+      if (!prev.length) {
+        return farmStatus.jobs.map(j => ({
+          ...j, objectHeight: null, heightLoading: false, note: '',
+        }))
+      }
+      const updated = prev.map(j => {
+        const bj = farmStatus.jobs.find(x => x.id === j.id)
+        if (!bj) return j
+        return {
+          ...j,
+          status:           bj.status,
+          progress:         bj.progress,
+          remaining:        bj.remaining,
+          estimatedMinutes: bj.estimatedMinutes ?? j.estimatedMinutes,
+          // Reflect the slot the backend assigned at runtime (e.g. dynamic
+          // '1-0' → real free slot), so the row shows the actual target fach.
+          slot:             bj.slot ?? j.slot,
+          needs_ams:        bj.needs_ams ?? j.needs_ams,
+          ams_missing:      bj.ams_missing ?? j.ams_missing,
+          snapshot:         bj.snapshot ?? j.snapshot,
+        }
+      })
+      // Append jobs that exist in the backend but not locally — e.g. added to
+      // the running farm from another device (iPhone vs. desktop).
+      const known = new Set(updated.map(j => j.id))
+      const added = farmStatus.jobs
+        .filter(bj => !known.has(bj.id))
+        .map(bj => ({ ...bj, objectHeight: null, heightLoading: false, note: '' }))
+      return added.length ? [...updated, ...added] : updated
+    })
+  }, [farmStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── Browser tab title ───────────────────────────────────── */
+  useEffect(() => {
+    if (!running) { document.title = 'Printloom'; return }
+    const active = jobs.find(j => j.id === curJobId)
+    if (active?.status === 'printing' && active.progress > 0) {
+      document.title = `[${active.progress}%] ${active.fileName} — Printloom`
+    } else {
+      document.title = '[Auto Farm] Printloom'
+    }
+  }, [running, curJobId, jobs])
+  useEffect(() => () => { document.title = 'Printloom' }, [])
+
+  /* ── Farm status polling ─────────────────────────────────── */
+  const fetchStatus = useCallback(async () => {
+    try {
+      const r = await autofarmService.getStatus()
+      setFarmStatus(r.data)
+    } catch {}
+  }, [])
+
+  useEffect(() => { fetchStatus() }, [fetchStatus])
+
+  // Auto-stop notification — only fires when farm stopped on its own (not manual)
+  useEffect(() => {
+    const nowRunning = farmStatus?.running ?? false
+    if (prevRunningRef.current && !nowRunning && farmStatus?.stop_reason === 'completed') {
+      showFeedback('✓ Alle Jobs abgearbeitet — Auto Farm beendet')
+    }
+    prevRunningRef.current = nowRunning
+  }, [farmStatus?.running, farmStatus?.stop_reason]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (running) {
+      // Während die Farm läuft auch das Regal mitziehen, damit fertige Fächer
+      // sofort orange/„fertig" werden — ohne F5.
+      const poll = () => {
+        fetchStatus()
+        rackManagerService.getAll().then(r => setRackData(r.data)).catch(() => {})
+      }
+      pollTimerRef.current = setInterval(poll, 5000)
+    } else {
+      if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null }
+    }
+    return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current) }
+  }, [running, fetchStatus])
+
+  useEffect(() => {
+    autofarmService.getSettings()
+      .then(r => {
+        setPollInterval(Math.max(1, r.data.poll_interval ?? 20))
+        setMinPrintMinutes(r.data.min_print_minutes ?? 0)
+        setUseAms(r.data.use_ams ?? true)
+      })
+      .catch(() => {})
+      .finally(() => setSettingsLoaded(true))
+    autofarmService.getHomingFileInfo()
+      .then(r => setHomingFile(r.data))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    autofarmService.getQueue()
+      .then(r => {
+        const loaded = (r.data ?? []).map(j => ({ ...j, heightLoading: false, progress: j.progress ?? 0, remaining: j.remaining ?? 0 }))
+        if (loaded.length) {
+          _id = Math.max(...loaded.map(j => j.id)) + 1
+          setJobs(loaded)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setQueueLoaded(true))
+  }, [])
+
+  // Jobs are added from the Datei-Bibliothek now — reload the queue when it
+  // signals a change (or when the tab regains focus), unless the farm is running.
+  useEffect(() => {
+    const reload = () => {
+      if (runningRef.current) return
+      autofarmService.getQueue()
+        .then(r => {
+          const loaded = (r.data ?? []).map(j => ({ ...j, heightLoading: false, progress: j.progress ?? 0, remaining: j.remaining ?? 0 }))
+          _id = loaded.length ? Math.max(...loaded.map(j => j.id)) + 1 : _id
+          setJobs(loaded)
+          loaded.forEach(j => { if (!j.computedHeight && j.fileId) analyzeFile(j.id, j.fileId) })
+        })
+        .catch(() => {})
+    }
+    window.addEventListener('printloom:queueChanged', reload)
+    return () => window.removeEventListener('printloom:queueChanged', reload)
+  }, [])
+
+  useEffect(() => {
+    if (!settingsLoaded) return
+    clearTimeout(settingsSaveRef.current)
+    settingsSaveRef.current = setTimeout(() => {
+      autofarmService.saveSettings({ poll_interval: pollInterval, min_print_minutes: minPrintMinutes, use_ams: useAms })
+        .catch(() => {})
+    }, 600)
+    return () => clearTimeout(settingsSaveRef.current)
+  }, [pollInterval, minPrintMinutes, useAms, settingsLoaded])
+
+  useEffect(() => {
+    if (!queueLoaded || running) return
+    clearTimeout(queueSaveRef.current)
+    queueSaveRef.current = setTimeout(() => {
+      const toSave = jobs.map(({ heightLoading, ...rest }) => rest)
+      autofarmService.saveQueue(toSave).catch(() => {})
+    }, 800)
+    return () => clearTimeout(queueSaveRef.current)
+  }, [jobs, running, queueLoaded])
+
+  /* ── Load ────────────────────────────────────────────────── */
+  const load = useCallback(async () => {
+    const [r, f, d] = await Promise.allSettled([
+      rackManagerService.getAll(),
+      fileService.listFiles(),
+      deviceService.listDevices(),
+    ])
+    if (r.status === 'fulfilled') {
+      const rd = r.value.data
+      setRackData(rd)
+      setRackCfgNr(rd.num_racks      ?? 3)
+      setRackCfgSpr(rd.slots_per_rack ?? 6)
+      setRackCfgH(rd.slot_height_mm  ?? 50)
+      setStackRack(rd.stack_rack     ?? 1)
+      setStackSlot(rd.stack_slot     ?? 7)
+      setMaxPlates(rd.max_plates ?? 4)
+      setHeightMarginPct(rd.height_margin_pct ?? 15)
+    }
+    if (f.status === 'fulfilled') {
+      const files = (f.value.data.files ?? []).filter(x => x.file_type === '.gcode' || x.file_type === '.3mf')
+      setGcodeFiles(files)
+      setAddFileId(prev => prev ?? files[0]?.id ?? null)
+    }
+    if (d.status === 'fulfilled') {
+      const b = d.value.data.find(x => x.device_type === 'bambu_lab')
+      if (b) {
+        setBambuId(b.id)
+        deviceSettingsService.getSettings(b.id)
+          .then(s => {
+            setWebcamUrl(s.data?.webcam_url || ''); setWebcamUrlTop(s.data?.webcam_url_top || '')
+            setHaCamReady(!!(s.data?.ha_url && s.data?.ha_camera && s.data?.ha_token_set))
+          })
+          .catch(() => {})
+      }
+    }
+    if ([r, f, d].some(x => x.status === 'rejected')) {
+      showFeedback('Einige Daten konnten nicht geladen werden', false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  /* ── Live refresh: keep file dropdown + rack viz current ─────
+     load() runs once on mount and App.jsx keeps this page mounted, so
+     without this the file list and rack state stay stale until a full
+     page reload. Only refreshes the volatile live data (not the rack
+     config modal fields), so it won't clobber in-progress edits. */
+  const refreshLiveData = useCallback(async () => {
+    const [r, f] = await Promise.allSettled([
+      rackManagerService.getAll(),
+      fileService.listFiles(),
+    ])
+    if (r.status === 'fulfilled') setRackData(r.value.data)
+    if (f.status === 'fulfilled') {
+      const files = (f.value.data.files ?? []).filter(x => x.file_type === '.gcode' || x.file_type === '.3mf')
+      setGcodeFiles(files)
+      setAddFileId(prev => prev ?? files[0]?.id ?? null)
+    }
+  }, [])
+
+  // Load live AMS slots up front so the queue can flag filament mismatches
+  // ("manuelle AMS-Festlegung notwendig") before the farm is even started.
+  useEffect(() => { if (bambuId) fetchAmsSlots() }, [bambuId, fetchAmsSlots])
+
+  // Detect multi-plate .3mf for the file selected in the "add job" picker.
+  useEffect(() => {
+    const fid = addFileId ?? gcodeFiles[0]?.id
+    const f   = gcodeFiles.find(x => x.id === fid)
+    if (!fid || f?.file_type !== '.3mf') { setFilePlates([]); setSelPlates([]); return }
+    let cancelled = false
+    printerService.getPlates(fid)
+      .then(r => {
+        if (cancelled) return
+        const plates = r.data?.plates ?? []
+        setFilePlates(plates.length > 1 ? plates : [])
+        setSelPlates(plates.length > 1 ? plates : [])  // default: all plates selected
+      })
+      .catch(() => { if (!cancelled) { setFilePlates([]); setSelPlates([]) } })
+    return () => { cancelled = true }
+  }, [addFileId, gcodeFiles])
+
+  // Sync rack config changes from Configuration page without F5
+  useEffect(() => {
+    const handler = () => refreshLiveData()
+    window.addEventListener('printloom:rackConfigSaved', handler)
+    return () => window.removeEventListener('printloom:rackConfigSaved', handler)
+  }, [refreshLiveData])
+
+  // Kamera-URLs aus der Konfiguration ohne F5 übernehmen
+  useEffect(() => {
+    const handler = () => {
+      if (!bambuId) return
+      deviceSettingsService.getSettings(bambuId)
+        .then(s => {
+          setWebcamUrl(s.data?.webcam_url || ''); setWebcamUrlTop(s.data?.webcam_url_top || '')
+          setHaCamReady(!!(s.data?.ha_url && s.data?.ha_camera && s.data?.ha_token_set))
+        })
+        .catch(() => {})
+    }
+    window.addEventListener('printloom:cameraSettingsSaved', handler)
+    return () => window.removeEventListener('printloom:cameraSettingsSaved', handler)
+  }, [bambuId])
+
+  // Filaments of a job that have no confident match in the live AMS.
+  const jobAmsMissing = (job) =>
+    (useAms && amsSlots.length > 0 && !(job.amsMap || '').trim() && job.filaments?.length > 0)
+      ? amsMissing(job.filaments, amsSlots) : []
+  const jobNeedsAms = (job) => job.needs_ams === true || jobAmsMissing(job).length > 0
+
+  /* ── Job helpers ─────────────────────────────────────────── */
+  const setJobField = (id, updates) =>
+    setJobs(prev => prev.map(j => j.id === id ? { ...j, ...updates } : j))
+
+  const analyzeFile = (jobId, fileId) => {
+    rackManagerService.analyzeFile(fileId)
+      .then(r => {
+        const computed = r.data.computed_height_mm ?? null
+        setJobs(prev => {
+          // First apply this job's analysis result
+          const updated = prev.map(j => j.id === jobId ? {
+            ...j,
+            objectHeight:   r.data.max_z_mm,
+            layerCount:     r.data.layer_count    ?? 0,
+            layerHeightMm:  r.data.layer_height_mm ?? 0,
+            heightSource:   r.data.source         ?? '',
+            computedHeight: computed,
+            heightLoading:  false,
+          } : j)
+          // Recompute slots for ALL pending jobs in order to fix race conditions
+          // when multiple jobs are analyzed in parallel (each sees others' stale state)
+          if (!rackDataRef.current || runningRef.current) return updated
+          const slotH = rackDataRef.current?.slot_height_mm ?? 50
+          const result = []
+          for (const j of updated) {
+            if (j.status !== 'pending' || !j.computedHeight) { result.push(j); continue }
+            const priorPending = result.filter(p => p.status === 'pending')
+            result.push({ ...j, slot: autoSlot(priorPending, rackDataRef.current, j.computedHeight, slotH) })
+          }
+          return result
+        })
+      })
+      .catch(() => setJobField(jobId, { heightLoading: false }))
+
+    autofarmService.getFileFilaments(fileId)
+      .then(r => setJobField(jobId, { filaments: r.data.filaments ?? [] }))
+      .catch(() => setJobField(jobId, { filaments: [] }))
+  }
+
+  const _doAddJobs = (file, amsMap, count, plate = null) => {
+    const newJobs = Array.from({ length: count }, () => {
+      const jobId = _id++
+      return {
+        id: jobId, fileId: file.id, fileName: file.original_filename,
+        slot: null, amsMap: amsMap ?? '', objectHeight: null, heightLoading: true,
+        progress: 0, remaining: 0, status: 'pending', note: '', estimatedMinutes: null,
+        filaments: [], plate: plate ?? null,
+      }
+    })
+    setJobs(prev => [...prev, ...newJobs])
+    newJobs.forEach(j => analyzeFile(j.id, file.id))
+    if (running) {
+      newJobs.forEach(j =>
+        autofarmService.enqueue({
+          id: j.id, fileId: file.id, fileName: file.original_filename,
+          slot: '1-0', amsMap: j.amsMap ?? '', plate: j.plate ?? null,
+        }).catch(e => showFeedback(e.response?.data?.detail ?? e.message, false))
+      )
+    }
+    if (count > 1) setAddCount(1)
+  }
+
+  const addJob = () => {
+    if (!gcodeFiles.length) return
+    const file  = gcodeFiles.find(f => f.id === addFileId) ?? gcodeFiles[0]
+    const count = Math.max(1, addCount)
+    // Auto-match stored filament preset (from FileLibrary) to current AMS slots
+    let amsMap = ''
+    try {
+      const presets = JSON.parse(localStorage.getItem('ottomat3d_file_presets') || '{}')
+      const preset  = presets[file.id]
+      if (preset?.filaments?.length && amsSlots.length > 0) {
+        const norm = c => (c || '').replace('#', '').toUpperCase().slice(0, 6)
+        const mapped = preset.filaments.map(f => {
+          const fBase  = (f.type || '').toUpperCase().trim().split(/\s+/)[0]
+          const fColor = norm(f.color)
+          const pool   = amsSlots.filter(s => s.type.toUpperCase().includes(fBase) || fBase.includes(s.type.toUpperCase().split(/\s+/)[0]))
+          const src    = pool.length ? pool : amsSlots
+          return [...src].sort((a, b) => colorDist(fColor, norm(a.color)) - colorDist(fColor, norm(b.color)))[0]?.gid ?? 0
+        })
+        amsMap = mapped.join(',')
+      }
+    } catch {}
+    // Multi-plate: one job per selected plate (× repeat count); else a single job.
+    if (filePlates.length > 1 && selPlates.length > 0) {
+      selPlates.forEach(p => _doAddJobs(file, amsMap, count, p))
+    } else {
+      _doAddJobs(file, amsMap, count)
+    }
+  }
+
+  const toggleSelPlate = (p) =>
+    setSelPlates(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p].sort((a, b) => a - b))
+
+  /* ── Queue-Vorlagen (Templates) ─── */
+  const saveTemplate = () => {
+    const name = tplName.trim()
+    if (!name || !jobs.length) return
+    // collapse identical jobs (same file + AMS-Map) into {fileId, fileName, amsMap, count}
+    const groups = []
+    jobs.forEach(j => {
+      const g = groups.find(x => x.fileId === j.fileId && x.amsMap === (j.amsMap || ''))
+      if (g) g.count++
+      else groups.push({ fileId: j.fileId, fileName: j.fileName, amsMap: j.amsMap || '', count: 1 })
+    })
+    const all = { ...loadTemplates(), [name]: groups }
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(all))
+    setTemplates(all)
+    setTplName('')
+    showFeedback(`Vorlage „${name}" gespeichert (${jobs.length} Jobs)`)
+  }
+
+  const applyTemplate = (name) => {
+    const entries = templates[name]
+    if (!entries?.length) return
+    let added = 0, missing = 0
+    entries.forEach(e => {
+      const file = gcodeFiles.find(f => f.id === e.fileId)
+      if (!file) { missing++; return }
+      _doAddJobs(file, e.amsMap || '', e.count || 1)
+      added += e.count || 1
+    })
+    setTplOpen(false)
+    showFeedback(
+      missing
+        ? `${added} Jobs geladen — ${missing} Datei(en) nicht mehr vorhanden`
+        : `Vorlage „${name}" geladen (${added} Jobs)`,
+      added > 0
+    )
+  }
+
+  const deleteTemplate = (name) => {
+    const all = loadTemplates()
+    delete all[name]
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(all))
+    setTemplates(all)
+  }
+
+  const changeFile = (jobId, fileId) => {
+    const f = gcodeFiles.find(x => x.id === +fileId)
+    if (!f) return
+    setJobField(jobId, { fileId: +fileId, fileName: f.original_filename, objectHeight: null, heightLoading: true })
+    analyzeFile(jobId, +fileId)
+  }
+
+  const removeJob = async (id) => {
+    if (running) {
+      const job = jobs.find(j => j.id === id)
+      if (job?.status === 'done') {
+        setJobs(prev => prev.filter(j => j.id !== id))
+        return
+      }
+      try {
+        await autofarmService.removeJob(id)
+      } catch (e) {
+        if (e.response?.status === 404) {
+          // Job already gone from backend — remove locally
+          setJobs(prev => prev.filter(j => j.id !== id))
+          return
+        }
+        showFeedback(e.response?.data?.detail ?? e.message, false)
+        return
+      }
+    }
+    setJobs(prev => prev.filter(j => j.id !== id))
+  }
+
+  const syncReorder = (updatedJobs) => {
+    if (running) {
+      const pendingIds = updatedJobs.filter(j => j.status === 'pending').map(j => j.id)
+      autofarmService.reorderJobs(pendingIds).catch(() => {})
+    }
+  }
+
+  const moveJobUp = (id) => setJobs(prev => {
+    const i = prev.findIndex(j => j.id === id)
+    if (i <= 0) return prev
+    const next = [...prev]
+    ;[next[i - 1], next[i]] = [next[i], next[i - 1]]
+    syncReorder(next)
+    return next
+  })
+
+  const moveJobDown = (id) => setJobs(prev => {
+    const i = prev.findIndex(j => j.id === id)
+    if (i >= prev.length - 1) return prev
+    const next = [...prev]
+    ;[next[i], next[i + 1]] = [next[i + 1], next[i]]
+    syncReorder(next)
+    return next
+  })
+
+  const resetJob = (id) => {
+    setJobs(prev => {
+      const updated = prev.map(j => j.id === id ? { ...j, status: 'pending', progress: 0, remaining: 0 } : j)
+      const toSave = updated.map(({ heightLoading, ...rest }) => rest)
+      autofarmService.saveQueue(toSave).catch(() => {})
+      return updated
+    })
+  }
+
+  // Persist the external webcam URL (shared with the Steuerung page via device settings)
+  const saveWebcamUrl = useCallback(async (url) => {
+    setWebcamUrl(url)
+    if (bambuId) {
+      try { await deviceSettingsService.updateSettings(bambuId, { webcam_url: url }) } catch {}
+    }
+  }, [bambuId])
+
+  const resetFarm = () => {
+    setJobs(prev => {
+      const reset = prev.map(j => ({ ...j, status: 'pending', progress: 0, remaining: 0 }))
+      const toSave = reset.map(({ heightLoading, ...rest }) => rest)
+      autofarmService.saveQueue(toSave).catch(() => {})
+      return reset
+    })
+    setFarmStatus(null)
+  }
+
+  /* ── Rack management ─────────────────────────────────────── */
+  const clearRackSlot = async (slotId) => {
+    try {
+      await rackManagerService.updateSlot(slotId, { status: 'free', file_id: null, file_name: null })
+      const r = await rackManagerService.getAll()
+      setRackData(r.data)
+    } catch {
+      showFeedback('Fach konnte nicht geleert werden', false)
+    }
+  }
+
+  const assignJobToSlot = async (slotKey) => {
+    try {
+      await rackManagerService.updateSlot(slotKey, { status: 'free', file_id: null, file_name: null })
+      const r = await rackManagerService.getAll()
+      setRackData(r.data)
+      const pendingJob = jobs.find(j => j.status === 'pending')
+      if (pendingJob) {
+        setJobs(prev => {
+          const updated = prev.map(j => j.id === pendingJob.id ? { ...j, slot: slotKey } : j)
+          autofarmService.saveQueue(updated.map(({ heightLoading, ...rest }) => rest)).catch(() => {})
+          return updated
+        })
+        showFeedback(`Fach ${slotKey} → "${pendingJob.fileName}" zugewiesen`)
+      } else {
+        showFeedback(`Fach ${slotKey} geleert — kein ausstehender Job`)
+      }
+    } catch {
+      showFeedback('Zuweisung fehlgeschlagen', false)
+    }
+  }
+
+  const clearAllDoneSlots = async () => {
+    try {
+      const done = Object.entries(rackData?.slots ?? {}).filter(([, s]) => s.status === 'done')
+      if (!done.length) return
+      const res = await rackManagerService.clearSlots({ slot_ids: done.map(([n]) => n) })
+      const r = await rackManagerService.getAll()
+      setRackData(r.data)
+      const n = res.data?.cleared ?? done.length
+      showFeedback(`${n} ${n === 1 ? 'Fach' : 'Fächer'} geleert`)
+    } catch {
+      showFeedback('Regal konnte nicht geleert werden', false)
+    }
+  }
+
+  const refillMagazine = async () => {
+    try {
+      await rackManagerService.refillMagazine()
+      const r = await rackManagerService.getAll()
+      setRackData(r.data)
+      window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
+      showFeedback(`Magazin aufgefüllt (${r.data.magazine_count} Platten)`)
+    } catch {
+      showFeedback('Magazin konnte nicht aufgefüllt werden', false)
+    }
+  }
+
+  /* ── Log export ──────────────────────────────────────────── */
+  const exportLog = () => {
+    const text = [...farmLog].reverse().join('\n')
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `printloom_log_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  /* ── Farm control ────────────────────────────────────────── */
+  const startFarm = async () => {
+    if (!bambuId) return showFeedback('Kein Bambu Lab Gerät konfiguriert', false)
+
+    const preflightErrors = await checkPreflight(bambuId)
+    if (preflightErrors.length) return showFeedback(preflightErrors[0], false)
+
+    const pending = jobs.filter(j => j.status === 'pending')
+    if (!pending.length) return showFeedback('Keine Jobs in der Warteschlange', false)
+
+    // Queue preflight (hard block): every job's filaments must match the live AMS.
+    const amsBlocked = pending.filter(j => jobNeedsAms(j))
+    if (amsBlocked.length) {
+      return showFeedback(
+        `Manuelle AMS-Festlegung notwendig für ${amsBlocked.length} Job(s) — Filament zuweisen, dann starten`,
+        false,
+      )
+    }
+
+    // Queue preflight (soft warning): simulate the slot plan; the farm pauses
+    // safely if it runs out mid-run, so this only warns.
+    if (rackData) {
+      const slotH = rackData.slot_height_mm ?? 50
+      const assigned = []
+      let noSlot = 0
+      for (const j of pending) {
+        const h = j.computedHeight ?? j.objectHeight ?? 0
+        const s = autoSlot(assigned, rackData, h, slotH)
+        if (s === '1-0') noSlot++
+        else assigned.push({ slot: s, computedHeight: h, status: 'pending' })
+      }
+      if (noSlot > 0) {
+        showFeedback(`⚠ Nur Platz für ${pending.length - noSlot}/${pending.length} Jobs — Farm pausiert bei vollem Regal`, false)
+      }
+    }
+
+    try {
+      await autofarmService.start({
+        bambu_id:          bambuId,
+        use_ams:           useAms,
+        poll_interval:     pollInterval,
+        min_print_minutes: minPrintMinutes,
+        jobs: pending.map(j => ({
+          id: j.id, fileId: j.fileId, fileName: j.fileName, slot: j.slot ?? '1-0',
+          status: 'pending', amsMap: j.amsMap ?? '',
+          layerHeightMm: j.layerHeightMm ?? 0,
+          object_height_mm: j.computedHeight ?? j.objectHeight ?? null,
+          plate: j.plate ?? null,
+        })),
+      })
+      await fetchStatus()
+      showFeedback('Auto Farm gestartet')
+    } catch (e) {
+      showFeedback(e.response?.data?.detail ?? e.message, false)
+    }
+  }
+
+  const stopFarm = async () => {
+    try { await autofarmService.stop(); await fetchStatus() }
+    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+  }
+
+  const saveRackConfig = async () => {
+    try {
+      await rackManagerService.updateConfig({
+        num_racks: +rackCfgNr, slots_per_rack: +rackCfgSpr, slot_height_mm: +rackCfgH,
+        stack_rack: +stackRack, stack_slot: +stackSlot,
+        max_plates: +maxPlates,
+        height_margin_pct: +heightMarginPct,
+      })
+      const r = await rackManagerService.getAll()
+      setRackData(r.data)
+      setRackCfgNr(r.data.num_racks); setRackCfgSpr(r.data.slots_per_rack); setRackCfgH(r.data.slot_height_mm)
+      setStackRack(r.data.stack_rack ?? 1); setStackSlot(r.data.stack_slot ?? 7)
+      setMaxPlates(r.data.max_plates ?? 4)
+      showFeedback('Regal gespeichert')
+    } catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+  }
+
+  const forceReset = async () => {
+    try { await autofarmService.forceReset(); await fetchStatus(); showFeedback('Farm-State zurückgesetzt') }
+    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+  }
+
+  const togglePause = async () => {
+    try { await autofarmService.pause(); await fetchStatus() }
+    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+  }
+
+  /* ── Derived helpers ─────────────────────────────────────── */
+  const slotH      = rackData?.slot_height_mm  ?? 50
+  const numRacks   = rackData?.num_racks        ?? 3
+  const slotsPerRack = rackData?.slots_per_rack ?? 6
+  const slots      = rackData
+    ? Object.entries(rackData.slots ?? {}).sort(([a], [b]) => {
+        const [ar, as] = parseSlotKey(a)
+        const [br, bs] = parseSlotKey(b)
+        return ar !== br ? ar - br : as - bs
+      })
+    : []
+  const doneSlots = slots.filter(([, s]) => s.status === 'done')
+
+  const pendingJobs   = jobs.filter(j => j.status === 'pending')
+  const errorJobs     = jobs.filter(j => j.status === 'error')
+  const activeJobs    = jobs.filter(j => ['pending', 'printing'].includes(j.status))
+  const eta = useQueueEta()   // echte Rest-Druckzeit der Warteschlange (Dashboard nutzt denselben Hook)
+
+  // Build slot → assigned job map (for rack preview)
+  const slotJobMap = {}
+  jobs.forEach(j => {
+    if (['pending', 'running', 'printing', 'sending'].includes(j.status)) {
+      if (!slotJobMap[j.slot]) slotJobMap[j.slot] = []
+      slotJobMap[j.slot].push(j)
+    }
+  })
+
+  /* ─────────────────────────────────────────────────────────── */
+  return (
+    <div className="space-y-4">
+
+      {/* Feedback */}
+      {feedback && (
+        <div className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm border ${
+          feedback.ok
+            ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300'
+            : 'bg-red-950/40 border-red-800 text-red-300'
+        }`}>
+          <span className={`dot ${feedback.ok ? 'dot-green' : 'dot-red'}`} />
+          {feedback.msg}
+        </div>
+      )}
+
+      {!bambuId && (
+        <div className="px-4 py-3 rounded-lg bg-amber-950/40 border border-amber-800 text-amber-300 text-sm flex items-center gap-2">
+          <span className="dot dot-amber" /> Kein Bambu Lab Gerät konfiguriert — bitte erst unter Configuration einrichten
+        </div>
+      )}
+
+      {running && !curJobId && !pendingJobs.length && (
+        <div className="px-4 py-3 rounded-lg bg-surface-800/60 border border-surface-700 text-surface-400 text-sm flex items-center gap-2">
+          <span className="dot dot-gray animate-pulse" /> Wartet auf neue Jobs — "+ Datei" klicken um fortzufahren
+        </div>
+      )}
+      {running && !jobs.find(j => j.id === curJobId) && !!curJobId && (
+        <div className="px-4 py-3 rounded-lg bg-blue-950/40 border border-blue-800 text-blue-300 text-sm flex items-center gap-2">
+          <span className="dot dot-blue animate-pulse" /> Auto Farm läuft im Server — Status wird live aktualisiert
+        </div>
+      )}
+
+      {/* ── Top bar ────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Title */}
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div>
+            <h2 className="text-base font-semibold text-surface-100 leading-tight">Auto Farm</h2>
+            {running && (
+              <p className="text-[11px] text-surface-600 font-mono mt-0.5">
+                {paused
+                  ? 'Pausiert'
+                  : curJobId
+                    ? `Läuft · ${jobs.find(j => j.id === curJobId)?.fileName?.replace(/\.[^.]+$/, '')?.slice(0, 28) ?? '…'}`
+                    : pendingJobs.length
+                      ? `${pendingJobs.length} Job${pendingJobs.length > 1 ? 's' : ''} wartet`
+                      : 'Wartet auf Jobs…'}
+              </p>
+            )}
+          </div>
+          {running && (
+            <div className="flex items-center gap-1.5">
+              <span className="dot dot-blue animate-pulse" />
+              <span className="text-xs text-blue-400 font-medium">{paused ? 'Pausiert' : 'Läuft'}</span>
+            </div>
+          )}
+          {errorJobs.length > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-red-950/40 border border-red-800 text-red-400">
+              {errorJobs.length} Fehler
+            </span>
+          )}
+        </div>
+
+        {/* Sequence progress */}
+        {seqProgress && (
+          <div className="flex items-center gap-2 min-w-0 max-w-xs shrink-0">
+            <div className="w-20 bg-surface-800 rounded-full h-1 overflow-hidden shrink-0">
+              <div
+                className="h-1 rounded-full bg-blue-500 transition-all duration-300"
+                style={{ width: `${Math.round(((seqProgress.idx + 1) / seqProgress.total) * 100)}%` }}
+              />
+            </div>
+            <span className="text-[10px] font-mono text-blue-300 truncate">{seqProgress.label}</span>
+          </div>
+        )}
+
+        {/* Controls */}
+        <div className="flex items-center gap-2 shrink-0">
+          {!running ? (
+            <>
+              {jobs.some(j => j.status !== 'pending') && (
+                <button onClick={resetFarm} className="btn btn-ghost btn-sm text-surface-500 hover:text-surface-300" title="Alle auf Ausstehend zurücksetzen">
+                  ↺ Reset
+                </button>
+              )}
+              <button
+                onClick={startFarm}
+                disabled={!bambuId}
+                className="btn btn-primary btn-sm"
+              >
+                ▶ Aktivieren
+                {pendingJobs.length > 0 && (
+                  <span className="ml-1.5 opacity-60 text-[10px] font-mono">{pendingJobs.length}</span>
+                )}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={togglePause}
+                className={`btn btn-sm ${paused ? 'btn-primary' : 'btn-ghost text-amber-400 hover:text-amber-300'}`}
+              >
+                {paused ? '▶ Fortsetzen' : '⏸ Pause'}
+              </button>
+              <button onClick={stopFarm} className="btn btn-danger btn-sm">■ Stopp</button>
+              <button
+                onClick={forceReset}
+                title="Erzwingt das Zurücksetzen des Farm-States — benutze dies wenn Stopp nicht reagiert"
+                className="btn btn-ghost btn-sm text-surface-600 hover:text-red-400 text-[10px]"
+              >↺</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Paused banner */}
+      {paused && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm border bg-amber-950/40 border-amber-800 text-amber-300">
+          <span className="dot dot-amber animate-pulse" /> Pausiert — warte auf Fortsetzen…
+        </div>
+      )}
+
+      {/* ── Main layout: Viz | Queue | Sidebar ─────────────────── */}
+      <div className="grid grid-cols-[220px_1fr_280px] gap-4 items-start">
+
+        {/* ── Farm-Visualisierung + Kamera ─────────────────────── */}
+        <div className="space-y-4">
+          <FarmViz
+            farmStatus={farmStatus}
+            jobs={jobs}
+            curJobId={curJobId}
+          />
+          <CameraPanel bambuId={bambuId} webcamUrl={webcamUrl} webcamUrlTop={webcamUrlTop} haCamReady={haCamReady} />
+        </div>
+
+        {/* ── Print queue ─────────────────────────────────────── */}
+        <div className="card">
+          <div className="flex items-start justify-between mb-4 gap-2 flex-wrap">
+            <div>
+              <p className="section-label">Warteschlange</p>
+              {eta.ready && eta.jobs > 0 && (
+                <p className="text-[11px] text-surface-500 font-mono mt-0.5">
+                  {fmtDur(eta.totalSec)
+                    ? <>~{fmtDur(eta.totalSec)} gesamt{eta.finishAt && <span className="text-surface-600"> · fertig ~{eta.finishAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</span>}</>
+                    : 'Gesamtzeit unbekannt'}
+                  {eta.known < eta.jobs && <span className="text-surface-600"> ({eta.known}/{eta.jobs} mit Zeit)</span>}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Queue-Vorlagen */}
+              <div className="relative">
+                <button
+                  onClick={() => setTplOpen(o => !o)}
+                  className="btn btn-ghost btn-sm shrink-0"
+                  title="Warteschlangen-Vorlagen speichern/laden"
+                >☰ Vorlagen{tplOpen ? ' ▲' : ' ▼'}</button>
+                {tplOpen && (
+                  <div className="absolute right-0 top-full mt-1 z-20 w-64 card p-2 space-y-2 shadow-xl border border-surface-700">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={tplName}
+                        onChange={e => setTplName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveTemplate() }}
+                        placeholder="Name der aktuellen Queue…"
+                        className="flex-1 text-[11px] h-7 py-0 px-1.5"
+                      />
+                      <button
+                        onClick={saveTemplate}
+                        disabled={!tplName.trim() || !jobs.length}
+                        className="btn btn-ghost btn-sm shrink-0 disabled:opacity-40"
+                        title={!jobs.length ? 'Warteschlange ist leer' : 'Aktuelle Warteschlange speichern'}
+                      >＋</button>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto space-y-0.5">
+                      {Object.keys(templates).length === 0 ? (
+                        <p className="text-[10px] text-surface-600 text-center py-2">Noch keine Vorlagen</p>
+                      ) : (
+                        Object.entries(templates).map(([name, entries]) => {
+                          const total = entries.reduce((s, e) => s + (e.count || 1), 0)
+                          return (
+                            <div key={name} className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-surface-700/50">
+                              <button
+                                onClick={() => applyTemplate(name)}
+                                className="flex-1 min-w-0 text-left"
+                                title={`${total} Jobs laden`}
+                              >
+                                <span className="text-[11px] text-surface-200 truncate block">{name}</span>
+                                <span className="text-[9px] text-surface-600 font-mono">{entries.length} Datei(en) · {total} Jobs</span>
+                              </button>
+                              <button
+                                onClick={() => deleteTemplate(name)}
+                                className="text-[10px] text-surface-700 hover:text-red-400 transition-colors shrink-0"
+                                title="Vorlage löschen"
+                              >×</button>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <span className="text-[11px] text-surface-500 italic px-1">
+                Jobs in der <span className="text-surface-300">Datei-Bibliothek</span> hinzufügen →
+              </span>
+            </div>
+          </div>
+
+          {/* Multi-plate selector — pick which plates of the .3mf to enqueue */}
+          {filePlates.length > 1 && (
+            <div className="flex items-center gap-1.5 flex-wrap mb-4 -mt-2">
+              <span className="text-[10px] text-surface-500 font-mono">Platten:</span>
+              {filePlates.map(p => {
+                const on = selPlates.includes(p)
+                return (
+                  <button
+                    key={p}
+                    onClick={() => toggleSelPlate(p)}
+                    className={`text-[10px] font-mono px-1.5 h-6 rounded border transition-colors ${
+                      on ? 'border-blue-700 bg-blue-950/40 text-blue-300'
+                         : 'border-surface-700 text-surface-500 hover:text-surface-300'
+                    }`}
+                    title={`Platte ${p}${on ? ' — ausgewählt' : ''}`}
+                  >P{p}</button>
+                )
+              })}
+              <span className="text-[9px] text-surface-600">
+                {selPlates.length} ausgewählt → je {addCount > 1 ? `${addCount}×` : '1'} Job
+              </span>
+            </div>
+          )}
+
+
+          {!jobs.length ? (
+            <div className="flex flex-col items-center justify-center py-12 text-surface-600 text-center">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" className="mb-3 opacity-40">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+              </svg>
+              <p className="text-sm mb-1">Keine Jobs</p>
+              <p className="text-xs text-surface-700">
+                + Datei klicken um zu beginnen<br/>
+                Regal-Fächer werden automatisch vergeben
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {jobs.map((job, idx) => {
+                const sm      = S[job.status] ?? S.pending
+                const busy    = running && job.id === curJobId
+                const displayH = job.computedHeight ?? job.objectHeight
+                const fits     = displayH != null && displayH > 0 ? displayH <= slotH : null
+                const pending = job.status === 'pending'
+
+                // '1-0' has two meanings: a real "rack full" result from the
+                // preflight autoSlot() preview (only while NOT running), OR the
+                // "assign at execution" placeholder the backend echoes back once
+                // the farm is running. Only the former is a genuine overflow —
+                // otherwise the badge falsely cries "Regal voll" mid-run.
+                const isOverflow = !running && job.slot === '1-0'
+                const hasRealSlot = job.slot && job.slot !== '1-0'
+                return (
+                  <div
+                    key={job.id}
+                    className={`rounded-xl border p-2.5 space-y-1.5 transition-colors ${
+                      busy                ? 'border-blue-700 bg-blue-950/20' :
+                      job.status==='done'  ? 'border-surface-800 bg-surface-900/20 opacity-40' :
+                      job.status==='error' ? 'border-red-900/70 bg-red-950/15' :
+                      isOverflow          ? 'border-amber-900/60 bg-amber-950/10' :
+                      'border-surface-700 bg-surface-900'
+                    }`}
+                  >
+                    {/* ── Row 1: status + controls ── */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-surface-700 w-5 shrink-0 text-right">#{idx+1}</span>
+                      <span className={`dot ${sm.dot} ${busy && sm.pulse ? 'animate-pulse' : ''} shrink-0`} />
+                      <span className={`text-xs font-medium ${sm.color} shrink-0`}>{sm.label}</span>
+                      {job.status === 'printing' && job.progress > 0 && (
+                        <span className="text-xs text-surface-500 font-mono shrink-0">
+                          {job.progress}%{job.remaining > 0 ? ` · ~${job.remaining} min` : ''}
+                        </span>
+                      )}
+                      {pending && job.estimatedMinutes && (
+                        <span className="text-[10px] text-surface-700 font-mono shrink-0">~{job.estimatedMinutes} min</span>
+                      )}
+                      <div className="flex-1" />
+                      {pending && (
+                        <>
+                          <button onClick={() => moveJobUp(job.id)} disabled={idx === 0}
+                            className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▲</button>
+                          <button onClick={() => moveJobDown(job.id)} disabled={idx === jobs.length - 1}
+                            className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▼</button>
+                        </>
+                      )}
+                      {!busy && !['running', 'printing', 'sending'].includes(job.status) && (
+                        <button onClick={() => removeJob(job.id)} className="btn-icon opacity-25 hover:opacity-100 ml-0.5">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* ── Progress bar ── */}
+                    {job.status === 'printing' && job.progress > 0 && (
+                      <div className="w-full bg-surface-800 rounded-full h-1 overflow-hidden">
+                        <div className="h-1 rounded-full bg-emerald-500 transition-all" style={{ width: `${job.progress}%` }} />
+                      </div>
+                    )}
+
+                    {/* ── File selector ── */}
+                    <select
+                      value={job.fileId}
+                      disabled={running}
+                      onChange={e => changeFile(job.id, e.target.value)}
+                      className="w-full"
+                    >
+                      {gcodeFiles.map(f => <option key={f.id} value={f.id}>{f.original_filename}</option>)}
+                    </select>
+
+                    {/* ── Info row: height + slot ── */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {job.plate != null && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300"
+                          title={`Platte ${job.plate} aus Multi-Plate-.3mf`}>
+                          Platte {job.plate}
+                        </span>
+                      )}
+                      {job.heightLoading ? (
+                        <span className="text-[10px] text-surface-700 font-mono animate-pulse">Höhe…</span>
+                      ) : displayH != null && displayH > 0 ? (
+                        <span
+                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                            fits === false
+                              ? 'text-red-400 border-red-900/60 bg-red-950/20'
+                              : 'text-emerald-400 border-emerald-900/60 bg-emerald-950/20'
+                          }`}
+                          title={job.layerCount > 0 && job.layerHeightMm > 0
+                            ? `Roh: ${job.objectHeight} mm · ${job.layerCount} Schichten × ${job.layerHeightMm} mm · +${heightMarginPct}% = ${job.computedHeight} mm`
+                            : `${job.objectHeight} mm (${job.heightSource ?? ''})`}
+                        >
+                          {displayH} mm
+                          {job.computedHeight > 0 && (
+                            <span className="opacity-50 ml-1 text-[9px]">+{heightMarginPct}%</span>
+                          )}
+                          {!job.computedHeight && job.layerCount > 0 && job.layerHeightMm > 0 && (
+                            <span className="opacity-50 ml-1">({job.layerHeightMm}×{job.layerCount})</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-surface-700 font-mono">Höhe unbekannt</span>
+                      )}
+                      <div className="flex-1" />
+                      <div className="flex items-center gap-1 text-[10px] text-surface-600">
+                        <span>Fach</span>
+                        {isOverflow ? (
+                          <span className="font-mono text-[10px] text-amber-500 px-1 rounded border border-amber-800/60" title="Regal voll — kein freies Fach in der Vorschau">Regal voll</span>
+                        ) : hasRealSlot ? (
+                          <span className="font-mono text-[10px] text-surface-400">{job.slot}</span>
+                        ) : (
+                          <span className="font-mono text-[10px] text-surface-600 px-1 rounded border border-surface-800/50" title="Fach wird bei Ausführung automatisch zugewiesen">Auto</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── Filaments + AMS compact ── */}
+                    {(job.filaments?.length > 0 || job.amsMap) && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(job.filaments ?? []).map((f, fi) => (
+                          <span key={fi} className="flex items-center gap-0.5" title={`${f.type ?? '?'}${f.color ? ` #${f.color}` : ''}`}>
+                            <span className="w-2.5 h-2.5 rounded-full border border-white/10 shrink-0"
+                              style={{ backgroundColor: f.color ? (f.color.startsWith('#') ? f.color : `#${f.color}`) : '#555' }} />
+                            <span className="text-[9px] text-surface-600 font-mono">{f.type?.slice(0, 4) ?? '?'}</span>
+                          </span>
+                        ))}
+                        {jobNeedsAms(job) && (
+                          <span
+                            className="text-[9px] font-mono px-1 rounded border border-red-800/60 bg-red-950/30 text-red-400"
+                            title={jobAmsMissing(job).map(m => `${m.type ?? '?'} ${m.color ?? ''} (${m.reason})`).join(', ')}
+                          >⚠ Manuelle AMS-Festlegung</span>
+                        )}
+                        <button
+                          onClick={() => {
+                            setAmsOpenIds(prev => {
+                              const next = new Set(prev)
+                              if (next.has(job.id)) { next.delete(job.id) }
+                              else { next.add(job.id); fetchAmsSlots() }
+                              return next
+                            })
+                          }}
+                          className={`ml-auto text-[9px] font-mono px-1 rounded border transition-colors ${
+                            amsOpenIds.has(job.id)
+                              ? 'text-blue-400 border-blue-800/60 bg-blue-900/20'
+                              : 'text-surface-700 border-surface-700/30 hover:text-surface-400'
+                          }`}
+                        >AMS {amsOpenIds.has(job.id) ? '▲' : '▼'}</button>
+                        {(amsOpenIds.has(job.id) || jobNeedsAms(job)) && (
+                          <div className="w-full">
+                            {amsLoading ? (
+                              <p className="text-[10px] text-surface-700 animate-pulse">AMS laden…</p>
+                            ) : (
+                              <AmsMapper
+                                filaments={job.filaments ?? []}
+                                amsSlots={amsSlots}
+                                value={job.amsMap}
+                                onChange={map => {
+                                  setJobField(job.id, { amsMap: map })
+                                  if (running) autofarmService.setJobAms(job.id, map).catch(() => {})
+                                }}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Snapshot (best-effort; blendet sich aus, wenn kein Bild da ist) ── */}
+                    <JobSnapshot name={job.snapshot} />
+
+                    {/* ── Error state ── */}
+                    {job.status === 'error' && (
+                      <div className="flex items-center gap-3 pt-0.5">
+                        <span className="text-xs text-red-400 flex-1">Fehlgeschlagen</span>
+                        {!running && (
+                          <button onClick={() => resetJob(job.id)} className="text-[10px] text-blue-400 hover:text-blue-300 font-mono transition-colors">
+                            ↺ Wiederholen
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ── Sidebar ─────────────────────────────────────────── */}
+        <div className="space-y-3">
+
+          {/* Rack */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <p className="section-label">Regal</p>
+                {rackData && (
+                  <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                    rackData.magazine_count === 0 ? 'border-red-800/60 bg-red-950/30 text-red-400' :
+                    rackData.magazine_count <= 1  ? 'border-amber-800/50 bg-amber-950/20 text-amber-400' :
+                    'border-surface-700/50 bg-surface-800/30 text-surface-500'
+                  }`}>
+                    📦 {rackData.magazine_count}/{numRacks * slotsPerRack}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={load} className="text-xs text-surface-700 hover:text-surface-400 transition-colors">↺</button>
+                {doneSlots.length > 0 && (
+                  <button
+                    onClick={clearAllDoneSlots}
+                    className="text-xs text-amber-500 hover:text-amber-400 font-medium transition-colors"
+                    title="Fertige Platten entnehmen — Magazin füllt sich automatisch wieder auf"
+                  >
+                    Alle entnehmen
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {numRacks === 0 ? (
+              <p className="text-xs text-surface-700 py-3 text-center">Kein Regal konfiguriert</p>
+            ) : (
+              <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${numRacks}, 1fr)` }}>
+                {Array.from({length: numRacks}, (_, ri) => (
+                  <div key={ri+1}>
+                    <p className="text-[9px] text-center font-mono text-surface-600 mb-1.5 tracking-wide">
+                      R{ri+1}
+                    </p>
+                    <div className="space-y-1">
+                      {Array.from({length: slotsPerRack}, (_, si) => {
+                        const si2          = slotsPerRack - 1 - si  // visual: 6→1 top to bottom
+                        const key          = `${ri+1}-${si2+1}`
+                        const slot         = rackData?.slots?.[key] ?? { status: 'free' }
+                        const assignedJobs = slotJobMap[key] ?? []
+                        const topJob       = assignedJobs[0] ?? null
+                        const isDone       = slot.status === 'done'
+                        const isStuck      = !running && slot.status === 'printing'
+                        const isActive     = running && (slot.status === 'printing' || topJob?.id === curJobId)
+                        const isLocked     = slot.status === 'locked'
+                        const dispH        = topJob?.computedHeight ?? topJob?.objectHeight
+                        const heightPct    = dispH ? Math.min(100, (dispH / slotH) * 100) : 0
+                        const overHeight   = dispH && dispH > slotH
+
+                        return (
+                          <div
+                            key={key}
+                            className={`flex items-center gap-1 px-1.5 py-1.5 rounded-lg border text-xs transition-colors ${
+                              isDone   ? 'border-amber-800/40 bg-amber-950/10' :
+                              isActive ? 'border-blue-800/40 bg-blue-950/10' :
+                              isLocked ? 'border-red-900/40 bg-red-950/10' :
+                              topJob   ? 'border-surface-700/50 bg-surface-900' :
+                              'border-surface-800/20 bg-transparent'
+                            }`}
+                          >
+                            <span className="font-mono text-surface-600 text-[9px] w-3 text-right shrink-0">{si2+1}</span>
+                            <span className={`dot shrink-0 ${
+                              isDone   ? 'dot-amber' :
+                              isActive ? 'dot-blue animate-pulse' :
+                              isLocked ? 'dot-red' :
+                              topJob   ? (S[topJob.status]?.dot ?? 'dot-gray') :
+                              'dot-gray opacity-30'
+                            }`} />
+                            <div className="flex-1 min-w-0">
+                              {isDone ? (
+                                <p className="text-[9px] text-amber-400 truncate leading-tight">{slot.file_name?.replace(/\.[^.]+$/, '').slice(0, 12) || 'Fertig'}</p>
+                              ) : topJob ? (
+                                <p className="text-[9px] text-surface-400 truncate leading-tight">{topJob.fileName.replace(/\.[^.]+$/, '').slice(0, 12)}</p>
+                              ) : (
+                                <p className="text-[9px] text-surface-800">{isLocked ? 'Sperr' : ''}</p>
+                              )}
+                            </div>
+                            {heightPct > 0 && (
+                              <div className="w-1 h-5 bg-surface-800 rounded-full overflow-hidden shrink-0">
+                                <div
+                                  className={`w-full rounded-full ${overHeight ? 'bg-amber-500/70' : isActive ? 'bg-blue-400/70' : 'bg-surface-500/60'}`}
+                                  style={{ height: `${heightPct}%`, marginTop: `${100 - heightPct}%` }}
+                                />
+                              </div>
+                            )}
+                            {(isDone || isStuck) && (
+                              <div className="flex items-center gap-0.5 shrink-0 ml-0.5">
+                                <button onClick={() => clearRackSlot(key)} title="Fach leeren" className={`text-[9px] hover:text-amber-300 ${isStuck ? 'text-red-500' : 'text-amber-500'}`}>✓</button>
+                                {isDone && (
+                                  <button onClick={() => assignJobToSlot(key)} title="Leeren + nächsten Job zuweisen" className="text-[9px] text-blue-500 hover:text-blue-300">↻</button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Rack legend */}
+            {slots.length > 0 && (
+              <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-surface-800/40">
+                <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                  <span className="dot dot-amber w-1.5 h-1.5" /> Fertig
+                </span>
+                <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                  <span className="dot dot-blue w-1.5 h-1.5" /> Druckt
+                </span>
+                <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                  <span className="dot dot-gray w-1.5 h-1.5 opacity-30" /> Leer
+                </span>
+                <span className="flex-1 text-right text-[9px] text-surface-700 font-mono">
+                  {slotH} mm/Fach
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Activity log */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <p className="section-label shrink-0">Aktivität</p>
+                {seqProgress && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-900/40 border border-blue-700/60 text-blue-300 animate-pulse truncate">
+                    {seqProgress.label}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button onClick={() => autofarmService.downloadLogFile()} className="text-xs text-surface-700 hover:text-blue-400 transition-colors" title="Persistentes Log-File herunterladen (alle Läufe)">↓ Log</button>
+                <button onClick={exportLog} className="text-xs text-surface-700 hover:text-surface-400 transition-colors" title="Aktuellen Log als .txt">↓</button>
+                <button onClick={() => { autofarmService.clearLog().catch(() => {}); setFarmStatus(s => s ? { ...s, log: [] } : s) }} className="text-xs text-surface-700 hover:text-surface-400 transition-colors">✕</button>
+              </div>
+            </div>
+            {!farmLog.length ? (
+              <p className="text-[10px] text-surface-700 py-2">Noch keine Aktivität</p>
+            ) : (
+              <div className="space-y-0.5 font-mono text-[10px] max-h-52 overflow-y-auto">
+                {farmLog.map((line, i) => (
+                  <p key={i} className={
+                    line.includes('FEHLER') ? 'text-red-400' :
+                    line.includes('═══')    ? 'text-surface-500 font-semibold' :
+                    line.includes('✓')      ? 'text-emerald-400' :
+                    line.includes('▶') || line.includes('▸') ? 'text-surface-600' :
+                    'text-surface-400'
+                  }>{line}</p>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default AutoFarm

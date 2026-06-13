@@ -1,0 +1,1999 @@
+"""
+AutoFarm backend executor
+=========================
+Continuous-mode farm: runs as a persistent background loop.
+New jobs can be enqueued at any time via POST /enqueue.
+The loop idles when the queue is empty and picks up new jobs automatically.
+"""
+import asyncio
+import io
+import json
+import logging
+import math
+import os
+import zipfile
+from datetime import datetime, timedelta
+from typing import Optional, List
+
+import httpx
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from app.db.database import SessionLocal
+from app.models.models import Device, PrinterType, UploadedFile
+from app.services.bambu_mqtt import BambuLabMQTT
+from app.services.bambu_ftp import BambuFTP
+from app.services import storage
+from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _get_plate_gcode_param, _ams_match_confident, capture_snapshot
+from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _load as _rack_load
+from app.services import hms
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+SLOTS_PATH    = "/app/db/rack_slots.json"
+SEQ_PATH      = "/app/db/farm_sequences.json"
+SETTINGS_PATH = "/app/db/farm_settings.json"
+QUEUE_PATH    = "/app/db/farm_queue.json"
+LOG_PATH      = "/app/db/farm_log.txt"
+STATS_PATH    = "/app/db/farm_stats.json"
+TIMELINE_PATH = "/app/db/farm_timeline.json"
+TIMELINE_MAX  = 1000  # keep the most recent N events
+
+SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
+
+HOMING_3MF_PATH = "/app/db/printloom_homing.3mf"
+
+_DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": True,
+                     "hms_ignore": ["0C00-0100-0001-0004"]}
+
+# ── Homing .3mf generator ────────────────────────────────────
+_HOMING_GCODE = """; Printloom Homing Sequence
+G28 ; Home all axes
+G1 Z200 F600 ; Move bed to loading position
+M400 ; Wait for moves to complete
+"""
+_HOMING_CONTENT_TYPES = '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="gcode" ContentType="text/x.gcode"/><Default Extension="config" ContentType="text/xml"/></Types>'
+_HOMING_RELS = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'
+_HOMING_MODEL = '<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">Printloom</metadata><resources/><build/></model>'
+_HOMING_SETTINGS = '<?xml version="1.0" encoding="utf-8"?><config><plate><metadata key="plater_id" value="1"/><metadata key="gcode_file" value="Metadata/plate_1.gcode"/><metadata key="thumbnail_file" value=""/></plate></config>'
+_HOMING_SLICE = '<?xml version="1.0" encoding="utf-8"?><config><header><value key="gcode_version" val="1.0.0.0"/><value key="source_file" val="printloom_homing.3mf"/><value key="nozzle_diameter" val="0.4"/></header><plates><plate><metadata key="index" val="1"/><metadata key="skipped" val="0"/><metadata key="gcode_file" val="Metadata/plate_1.gcode"/></plate></plates><filaments/></config>'
+
+def _build_3mf(gcode: str) -> bytes:
+    """Wrap arbitrary G-code into a minimal printable .3mf (single plate)."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml",          _HOMING_CONTENT_TYPES)
+        zf.writestr("_rels/.rels",                  _HOMING_RELS)
+        zf.writestr("3D/3dmodel.model",             _HOMING_MODEL)
+        zf.writestr("Metadata/plate_1.gcode",       gcode)
+        zf.writestr("Metadata/model_settings.config", _HOMING_SETTINGS)
+        zf.writestr("Metadata/slice_info.config",   _HOMING_SLICE)
+    return buf.getvalue()
+
+def _build_homing_3mf() -> bytes:
+    return _build_3mf(_HOMING_GCODE)
+
+def _move_3mf_path(z: int, feed: int) -> str:
+    """Cached one-shot move .3mf for `G1 Z{z} F{feed}` + M400 (position-confirmed)."""
+    path = f"/app/db/move_z{int(z)}_f{int(feed)}.3mf"
+    if not os.path.exists(path):
+        gcode = (
+            "; Printloom Position Move\n"
+            f"G1 Z{int(z)} F{int(feed)} ; move bed to position\n"
+            "M400 ; wait for moves to complete\n"
+        )
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(_build_3mf(gcode))
+        except Exception as e:
+            logger.warning(f"move .3mf build failed: {e}")
+    return path
+
+def _read_config(path: str, default):
+    return storage.read_json(path, default)
+
+def _write_config(path: str, data):
+    storage.write_json(path, data)
+
+# ── Module-level state ───────────────────────────────────────
+_farm: dict = {
+    "running":          False,
+    "stopping":         False,
+    "paused":           False,
+    "current_job_id":   None,
+    "current_job_idx":  -1,
+    "seq_step_idx":     0,
+    "seq_step_total":   0,
+    "seq_step_label":   "",
+    "log":              [],
+    "jobs":             [],
+    "error":            None,
+    "started_at":       None,
+    "stop_reason":      None,  # "completed" | "manual" | None
+    "_last_gcode_time": None,  # loop.time() when last Bambu gcode step was sent
+}
+_task: Optional[asyncio.Task] = None
+
+
+# ── Utilities ────────────────────────────────────────────────
+def _read_stats() -> dict:
+    return storage.read_json(STATS_PATH, {
+        "total_jobs": 0, "successful_jobs": 0, "failed_jobs": 0,
+        "total_print_min": 0, "errors": {}, "since": None})
+
+
+def _write_stats(data: dict):
+    try:
+        storage.write_json(STATS_PATH, data)
+    except Exception as e:
+        logger.warning(f"stats write failed: {e}")
+
+
+def _record_success(print_min: int = 0):
+    s = _read_stats()
+    s["total_jobs"]      = s.get("total_jobs", 0) + 1
+    s["successful_jobs"] = s.get("successful_jobs", 0) + 1
+    s["total_print_min"] = s.get("total_print_min", 0) + max(0, print_min)
+    if not s.get("since"):
+        s["since"] = datetime.now().isoformat()
+    _write_stats(s)
+
+
+def _record_failure(error_msg: str = ""):
+    s = _read_stats()
+    s["total_jobs"]  = s.get("total_jobs", 0) + 1
+    s["failed_jobs"] = s.get("failed_jobs", 0) + 1
+    if error_msg:
+        errs = s.get("errors", {})
+        key  = error_msg[:70]
+        errs[key] = errs.get(key, 0) + 1
+        s["errors"] = errs
+    if not s.get("since"):
+        s["since"] = datetime.now().isoformat()
+    _write_stats(s)
+
+
+def _record_event(etype: str, job: str = "", detail: str = ""):
+    """Append a printer-utilization event ({ts,type,job,detail}) for the timeline.
+    Types: farm_start, farm_stop, print_start, print_done, error, eject."""
+    try:
+        events = storage.read_json(TIMELINE_PATH, [])
+        events.append({
+            "ts":     datetime.now().isoformat(),
+            "type":   etype,
+            "job":    job or "",
+            "detail": detail or "",
+        })
+        if len(events) > TIMELINE_MAX:
+            events = events[-TIMELINE_MAX:]
+        storage.write_json(TIMELINE_PATH, events)
+    except Exception as e:
+        logger.warning(f"timeline write failed: {e}")
+
+
+def _log(msg: str):
+    ts  = datetime.now().strftime("%H:%M:%S")
+    day = datetime.now().strftime("%Y-%m-%d")
+    entry = f"{ts} — {msg}"
+    _farm["log"].insert(0, entry)
+    if len(_farm["log"]) > 200:
+        _farm["log"] = _farm["log"][:200]
+    logger.info(f"[AutoFarm] {msg}")
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"{day} {entry}\n")
+    except Exception:
+        pass
+
+
+def _set_job(job_id: int, updates: dict):
+    for j in _farm["jobs"]:
+        if j["id"] == job_id:
+            j.update(updates)
+            return
+
+
+def _rack_update(slot: str, status: str, file_name: str = None, object_height_mm: float = None):
+    try:
+        if not os.path.exists(SLOTS_PATH):
+            return
+        with open(SLOTS_PATH) as f:
+            data = json.load(f)
+        s = data["slots"].get(str(slot))
+        if s is None:
+            return
+        s["status"] = status
+        if file_name is not None:
+            s["file_name"] = file_name
+        if object_height_mm is not None:
+            s["object_height_mm"] = object_height_mm
+        if status == "free":
+            s["object_height_mm"] = None
+        storage.write_json(SLOTS_PATH, data)
+    except Exception as e:
+        logger.warning(f"rack slot update failed: {e}")
+
+
+def _magazine_count() -> int:
+    """Summe aller per-Rack Magazin-Zähler."""
+    try:
+        if os.path.exists(SLOTS_PATH):
+            with open(SLOTS_PATH) as f:
+                d = json.load(f)
+            counts = d.get("magazine_counts")
+            if counts:
+                return max(0, sum(int(c) for c in counts))
+            # Legacy: max_plates minus belegte Slots
+            max_p    = int(d.get("max_plates", 4))
+            occupied = sum(1 for s in d.get("slots", {}).values()
+                           if s.get("status") in ("done", "printing"))
+            return max(0, max_p - occupied)
+    except Exception:
+        pass
+    return 4
+
+
+def _is_blocked_from_below(rack: int, slot_num: int, slots: dict, slot_h: float) -> bool:
+    # Exact fit (height % slot_h == 0) gets +1 buffer slot above.
+    # Non-exact fit already has headroom from ceil rounding — no extra buffer needed.
+    for s in range(slot_num - 1, 0, -1):
+        k = f"{rack}-{s}"
+        obj_h = (slots.get(k) or {}).get("object_height_mm") or 0
+        if obj_h <= 0:
+            continue
+        slots_used = math.ceil(obj_h / slot_h)
+        if obj_h % slot_h == 0:
+            slots_used += 1
+        if slots_used > (slot_num - s):
+            return True
+    return False
+
+
+def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optional[str]:
+    try:
+        if not os.path.exists(SLOTS_PATH):
+            return None
+        with open(SLOTS_PATH) as f:
+            data = json.load(f)
+        slots  = data.get("slots", {})
+        nr     = int(data.get("num_racks", 3))
+        spr    = int(data.get("slots_per_rack", 6))
+        slot_h = float(data.get("slot_height_mm", 50))
+        needed = max(1, math.ceil(height_mm / slot_h))
+
+        # Exclude the current job so its placeholder slot isn't locked against itself
+        taken = {j["slot"] for j in _farm.get("jobs", [])
+                 if j.get("status") not in ("done", "error")
+                 and j.get("slot")
+                 and j.get("id") != exclude_job_id}
+
+        for r in range(1, nr + 1):
+            for s in range(1, spr - needed + 2):
+                if s + needed - 1 > spr:
+                    break
+                if all(
+                    slots.get(f"{r}-{s+i}", {}).get("status", "free") in ("free", "ready")
+                    and f"{r}-{s+i}" not in taken
+                    and not _is_blocked_from_below(r, s + i, slots, slot_h)
+                    for i in range(needed)
+                ):
+                    return f"{r}-{s}"
+        return None
+    except Exception as e:
+        logger.warning(f"_find_slot_for_height error: {e}")
+        return None
+
+
+async def _assign_slot_for_height(job: dict, height_mm: float):
+    while not _farm["stopping"]:
+        try:
+            with open(SLOTS_PATH) as f:
+                data = json.load(f)
+        except Exception:
+            return
+        slot_h  = float(data.get("slot_height_mm", 50))
+        spr     = int(data.get("slots_per_rack", 6))
+        nr      = int(data.get("num_racks", 3))
+        max_h   = spr * slot_h * nr  # absolute max across all racks
+
+        if height_mm > spr * slot_h:
+            _log(f"⚠ Objekt {height_mm:.0f}mm zu hoch (max {spr * slot_h:.0f}mm/Rack) — Farm pausiert")
+            _farm["paused"] = True
+            _farm["error"]  = (f"Objekt {height_mm:.0f}mm zu hoch — im Drucker lassen, "
+                                "manuell entnehmen, dann fortsetzen")
+            while _farm["paused"] and not _farm["stopping"]:
+                await asyncio.sleep(0.5)
+            if _farm["stopping"]:
+                raise RuntimeError("Gestoppt")
+            _farm["error"] = None
+            continue
+
+        new_slot = _find_slot_for_height(height_mm, exclude_job_id=job.get("id"))
+        if new_slot is None:
+            _log(f"⚠ Kein freies Fach für {height_mm:.0f}mm — Farm pausiert")
+            _farm["paused"] = True
+            _farm["error"]  = f"Kein freies Fach für {height_mm:.0f}mm — Regal leeren, dann fortsetzen"
+            while _farm["paused"] and not _farm["stopping"]:
+                await asyncio.sleep(0.5)
+            if _farm["stopping"]:
+                raise RuntimeError("Gestoppt")
+            _farm["error"] = None
+            continue
+
+        # Reset old placeholder slot if GRAB_FROM_RACK wrongly set it to 'printing'
+        old_slot = job.get("slot")
+        if old_slot and old_slot != new_slot:
+            try:
+                if data.get("slots", {}).get(str(old_slot), {}).get("status") == "printing":
+                    _rack_update(old_slot, "free")
+                    _log(f"♻ Platzhalter-Fach {old_slot} freigegeben")
+            except Exception:
+                pass
+
+        # Reserve actual slot as 'printing' + store height for clearance blocking
+        _rack_update(new_slot, "printing", job.get("fileName", ""), object_height_mm=height_mm)
+        _set_job(job["id"], {"slot": new_slot, "object_height_mm": height_mm})
+        slot_h = float(data.get("slot_height_mm", 50))
+        boeden = math.ceil(height_mm / slot_h)
+        _log(f"📏 Objekt {height_mm:.0f}mm → Fach {new_slot} reserviert ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
+        return
+    raise RuntimeError("Gestoppt")
+
+
+async def _notify(msg: str):
+    try:
+        from app.routers.system import _read_notif, _send_telegram
+        cfg = _read_notif()
+        if cfg.get("enabled") and cfg.get("telegram_bot_token") and cfg.get("telegram_chat_id"):
+            await _send_telegram(cfg["telegram_bot_token"], cfg["telegram_chat_id"], msg)
+    except Exception:
+        pass
+    # Web-Push (PWA) — best-effort, never blocks the farm.
+    try:
+        from app.services import push
+        loop = asyncio.get_event_loop()
+        # strip simple Markdown for a clean push body; first line = title
+        clean = msg.replace("*", "").replace("`", "").strip()
+        lines = [ln for ln in clean.split("\n") if ln.strip()]
+        title = lines[0] if lines else "Printloom"
+        body  = "\n".join(lines[1:]) if len(lines) > 1 else ""
+        await loop.run_in_executor(None, lambda: push.send_to_all(title, body, "/"))
+    except Exception:
+        pass
+
+
+# ── Step implementations ─────────────────────────────────────
+async def _do_macro(name: str):
+    db = SessionLocal()
+    try:
+        klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
+        if not klipper:
+            raise RuntimeError("Klipper nicht konfiguriert")
+        url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            r = await client.post(url, json={"script": name})
+        if r.status_code != 200:
+            raise RuntimeError(f"{name} fehlgeschlagen: {r.text[:120]}")
+    finally:
+        db.close()
+
+
+async def _do_bambu_gcode(gcode: str, device: Device):
+    loop = asyncio.get_event_loop()
+    mqtt = BambuLabMQTT(device)
+    ok = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+    if not ok:
+        raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
+    try:
+        sent = await loop.run_in_executor(None, lambda: mqtt.send_gcode(gcode))
+        await asyncio.sleep(1)
+    finally:
+        mqtt.disconnect()
+    if not sent:
+        raise RuntimeError(f"GCode fehlgeschlagen: {gcode[:40]}")
+
+
+async def _do_send_file(job: dict, device: Device, use_ams: bool):
+    loop = asyncio.get_event_loop()
+    db = SessionLocal()
+    try:
+        file = db.query(UploadedFile).filter(UploadedFile.id == job["fileId"]).first()
+        if not file:
+            raise RuntimeError(f"Datei {job['fileId']} nicht gefunden")
+
+        print_name = _make_print_name(file.original_filename)
+        mqtt = BambuLabMQTT(device)
+        connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+        if not connected:
+            raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
+
+        try:
+            ams_map_str = (job.get("amsMap") or "").strip()
+
+            if not use_ams:
+                ams_mapping = []
+                _log("AMS deaktiviert")
+
+            elif ams_map_str:
+                try:
+                    ams_mapping = [int(x.strip()) for x in ams_map_str.split(',') if x.strip().lstrip('-').isdigit()]
+                    if not ams_mapping:
+                        raise ValueError("empty")
+                    _log(f"AMS-Mapping: {ams_mapping} (manuell)")
+                except Exception:
+                    _log(f"⚠ AMS-Mapping '{ams_map_str}' ungültig — Auto-Matching")
+                    ams_map_str = ''
+
+            if use_ams and not ams_map_str:
+                _log("AMS-Status abfragen…")
+                await loop.run_in_executor(None, mqtt.request_status)
+                await asyncio.sleep(3.0)
+                raw = mqtt.get_last_message()
+                ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
+
+                if not ams_raw or not ams_raw.get("ams"):
+                    _log("AMS-Daten leer — nochmal…")
+                    await loop.run_in_executor(None, mqtt.request_status)
+                    await asyncio.sleep(3.0)
+                    raw = mqtt.get_last_message()
+                    ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
+
+                fil_types, fil_colors = await loop.run_in_executor(
+                    None, _read_filament_info, file.file_path, file.file_type
+                )
+                _log(f"Filamente in Datei: {list(zip(fil_types, fil_colors))}")
+
+                if ams_raw and ams_raw.get("ams"):
+                    ams_mapping = await loop.run_in_executor(
+                        None, _match_ams_live, fil_types, fil_colors, ams_raw
+                    )
+                    _log(f"AMS-Match (Live): {ams_mapping}")
+                else:
+                    _log("⚠ Kein Live-AMS — Fallback aus Datei")
+                    ams_mapping = await loop.run_in_executor(
+                        None, _get_ams_mapping, file.file_path, file.file_type, None
+                    )
+                    _log(f"AMS-Mapping (Datei): {ams_mapping}")
+
+            ftp = BambuFTP(device.ip_address, device.access_code)
+            up = await loop.run_in_executor(None, ftp.upload_file, file.file_path, print_name)
+            if not up:
+                raise RuntimeError("FTP-Upload fehlgeschlagen")
+
+            plate_param = _get_plate_gcode_param(file.file_path, job.get("plate")) if file.file_type == '.3mf' else ""
+            _log(f"Plate-GCode: {plate_param or 'n/a'}")
+
+            await asyncio.sleep(5)
+            ok = await loop.run_in_executor(
+                None, lambda: mqtt.start_print(print_name, use_ams=use_ams, ams_mapping=ams_mapping, plate_param=plate_param)
+            )
+            await asyncio.sleep(2)
+        finally:
+            mqtt.disconnect()
+
+        if not ok:
+            raise RuntimeError("Druckstart fehlgeschlagen")
+
+        _log(f"'{file.original_filename}' gestartet (AMS: {ams_mapping})")
+    finally:
+        db.close()
+
+
+def _slot_vars(slot: str) -> tuple[str, str]:
+    """Parse 'rack-slot' composite ID into (rack_num, slot_num) strings."""
+    parts = str(slot).split("-")
+    return (parts[0], parts[1]) if len(parts) == 2 else ("1", str(slot))
+
+
+def _stack_vars() -> tuple[str, str]:
+    """Return (stack_rack, stack_slot) — aktiver Magazin-Rack ist der erste mit Zähler > 0."""
+    try:
+        if os.path.exists(SLOTS_PATH):
+            with open(SLOTS_PATH) as f:
+                d = json.load(f)
+            mag_slot = str(d.get("magazine_slot", 7))
+            counts   = d.get("magazine_counts")
+            if counts:
+                for i, cnt in enumerate(counts):
+                    if int(cnt) > 0:
+                        return str(i + 1), mag_slot
+                return str(len(counts)), mag_slot
+            return str(d.get("stack_rack", "1")), str(d.get("stack_slot", mag_slot))
+    except Exception:
+        pass
+    return "1", "7"
+
+
+def _decrement_magazine():
+    """Zähler für den aktiven Magazin-Rack (erster mit Zähler > 0) um 1 reduzieren."""
+    try:
+        if os.path.exists(SLOTS_PATH):
+            with open(SLOTS_PATH) as f:
+                d = json.load(f)
+            counts = d.get("magazine_counts")
+            if counts:
+                for i, cnt in enumerate(counts):
+                    if int(cnt) > 0:
+                        d["magazine_counts"][i] = max(0, int(cnt) - 1)
+                        storage.write_json(SLOTS_PATH, d)
+                        _log(f"📦 Magazin R{i+1}: {d['magazine_counts'][i]} Platten verbleibend")
+                        return
+    except Exception as e:
+        logger.warning(f"_decrement_magazine failed: {e}")
+
+
+async def _read_live_ams(device: Device) -> dict:
+    """Read live AMS status from the printer (with one retry). Returns {} if unavailable."""
+    loop = asyncio.get_event_loop()
+    mqtt = BambuLabMQTT(device)
+    connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+    if not connected:
+        return {}
+    try:
+        for _ in range(2):
+            await loop.run_in_executor(None, mqtt.request_status)
+            await asyncio.sleep(3.0)
+            raw = mqtt.get_last_message()
+            ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
+            if ams_raw and ams_raw.get("ams"):
+                return ams_raw
+        return ams_raw or {}
+    finally:
+        mqtt.disconnect()
+
+
+async def _read_live_print(device: Device, max_age: float = 8.0) -> dict:
+    """Live printer `print` status dict, cached briefly so conditional steps don't
+    each open a fresh MQTT connection. Returns {} if unavailable."""
+    loop = asyncio.get_event_loop()
+    cache = _farm.get("_status_cache")
+    if cache and (loop.time() - cache["t"]) < max_age:
+        return cache["data"]
+    mqtt = BambuLabMQTT(device)
+    connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+    if not connected:
+        return (cache or {}).get("data", {})
+    try:
+        for _ in range(2):
+            await loop.run_in_executor(None, mqtt.request_status)
+            await asyncio.sleep(2.0)
+            raw = mqtt.get_last_message()
+            p = (raw or {}).get("print", {})
+            if p:
+                _farm["_status_cache"] = {"t": loop.time(), "data": p}
+                return p
+        return (cache or {}).get("data", {})
+    finally:
+        mqtt.disconnect()
+
+
+# Sequence-condition fields → live MQTT status keys.
+_COND_FIELDS = {
+    "nozzle_temp":  "nozzle_temper",
+    "bed_temp":     "bed_temper",
+    "chamber_temp": "chamber_temper",
+    "gcode_state":  "gcode_state",
+}
+
+
+async def _eval_condition(cond: dict, device: Device) -> tuple:
+    """Evaluate a step's condition against live printer status → (passed, text).
+    Fail-open: if status can't be read, returns True so a farm step is never blocked
+    purely by a momentary status-read failure."""
+    check = (cond.get("check") or "").strip()
+    op    = (cond.get("op") or "==").strip()
+    raw_v = cond.get("value")
+    field = _COND_FIELDS.get(check)
+    if not field:
+        return True, f"unbekannte Bedingung '{check}'"
+    p = await _read_live_print(device)
+    if not p or field not in p:
+        return True, f"{check} nicht lesbar (fail-open)"
+    cur = p.get(field)
+    if check == "gcode_state":
+        cur_s, val_s = str(cur).upper(), str(raw_v).upper()
+        passed = (cur_s != val_s) if op == "!=" else (cur_s == val_s)
+        return passed, f"{check}={cur_s} {op} {val_s}"
+    try:
+        cur_n, val_n = float(cur), float(raw_v)
+    except (TypeError, ValueError):
+        return True, f"{check} nicht numerisch (fail-open)"
+    passed = {
+        "<":  cur_n <  val_n, "<=": cur_n <= val_n,
+        ">":  cur_n >  val_n, ">=": cur_n >= val_n,
+        "==": cur_n == val_n, "!=": cur_n != val_n,
+    }.get(op, False)
+    return passed, f"{check}={cur_n:g} {op} {val_n:g}"
+
+
+async def _wait_bambu_finish(device: Device, label: str = "Bewegung", timeout: float = 180.0):
+    """Wait until the printer reports the one-shot move/homing print as done
+    (gcode_state FINISH/IDLE) → confirms the bed is truly in position.
+
+    Uses ONE persistent MQTT connection for the whole wait (the X1C limits
+    concurrent connections, so reconnecting every poll was flaky and could stall
+    silently until timeout). Logs progress every few seconds so it never *looks*
+    frozen. Fail-safe: returns after `timeout` instead of hanging; raises only on
+    farm stop."""
+    loop = asyncio.get_event_loop()
+    start = loop.time()
+    seen_running = False
+    last_log = -999.0
+    mqtt = BambuLabMQTT(device)
+
+    async def _ensure_connected() -> bool:
+        if mqtt.connected:
+            return True
+        try:
+            await loop.run_in_executor(None, mqtt.disconnect)
+        except Exception:
+            pass
+        ok = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=8.0))
+        if ok:
+            await loop.run_in_executor(None, mqtt.request_status)  # ask for a full push
+        return ok
+
+    try:
+        await _ensure_connected()
+        while not _farm["stopping"]:
+            while _farm["paused"] and not _farm["stopping"]:
+                await asyncio.sleep(0.5)
+            if _farm["stopping"]:
+                raise RuntimeError("Gestoppt")
+
+            elapsed = loop.time() - start
+            if elapsed > timeout:
+                _log(f"⚠ {label}: FINISH-Timeout ({timeout:.0f}s) — fahre fort")
+                return
+
+            if not await _ensure_connected():
+                if elapsed - last_log >= 5:
+                    _log(f"… {label}: warte auf Drucker-Verbindung ({elapsed:.0f}s)")
+                    last_log = elapsed
+                await asyncio.sleep(3)
+                continue
+
+            # Nudge a fresh full-status push, then read the latest pushed report.
+            try:
+                await loop.run_in_executor(None, mqtt.request_status)
+            except Exception:
+                pass
+            await asyncio.sleep(2)
+            raw = mqtt.get_last_message() or {}
+            state = raw.get("print", {}).get("gcode_state", "")
+
+            if state in ("RUNNING", "PREPARE", "SLICING", "PAUSE"):
+                seen_running = True
+
+            if elapsed - last_log >= 5:
+                _log(f"… {label}: warte auf FINISH (Status: {state or '—'}, {elapsed:.0f}s)")
+                last_log = elapsed
+
+            # A homing/move-only .3mf has no real print body, so the X1C marks it
+            # FAILED at the end even though the motion (incl. M400) completed. Once
+            # we've seen it RUN, treat FAILED as "movement done" — the bed IS in
+            # position. We deliberately do NOT send a stop/clear here: that could
+            # move the bed back off Z200, and a new print starts fine from FAILED.
+            if state == "FAILED" and seen_running:
+                _log(f"✓ {label} — Bewegung abgeschlossen (Bambu wertet den reinen "
+                     f"Homing/Move-Druck als FAILED — harmlos, Position erreicht)")
+                return
+
+            # Done once we see FINISH/IDLE — either after having seen it run, or
+            # after a short settle for very fast moves that skipped RUNNING.
+            if state in ("FINISH", "IDLE") and (seen_running or elapsed > 12):
+                _log(f"✓ {label} — Position erreicht (FINISH)")
+                return
+
+            await asyncio.sleep(1)
+        raise RuntimeError("Gestoppt")
+    finally:
+        try:
+            await loop.run_in_executor(None, mqtt.disconnect)
+        except Exception:
+            pass
+
+
+async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
+    """Block (pause the farm) until the job's filaments confidently match the live
+    AMS, or the user has set a manual mapping. Guarantees a file whose filaments
+    don't match what's loaded is never printed unattended ('manuelle Festlegung')."""
+    if not use_ams:
+        return
+    if (job.get("amsMap") or "").strip():
+        return  # manual mapping set → trust the user
+
+    loop = asyncio.get_event_loop()
+    db = SessionLocal()
+    try:
+        file = db.query(UploadedFile).filter(UploadedFile.id == job["fileId"]).first()
+        fpath, ftype = (file.file_path, file.file_type) if file else (None, None)
+    finally:
+        db.close()
+    if not fpath:
+        return
+    types, colors = await loop.run_in_executor(None, _read_filament_info, fpath, ftype)
+    if not types or all(not t for t in types):
+        return  # no filament info in file (older format) → cannot validate
+
+    notified = False
+    while not _farm["stopping"]:
+        ams_raw = await _read_live_ams(device)
+        _, missing = _ams_match_confident(types, colors, ams_raw)
+        if not missing:
+            _set_job(job["id"], {"needs_ams": False, "ams_missing": []})
+            _farm["error"] = None
+            return
+        desc = ", ".join(
+            (f"{m['type'] or '?'} {m['color'] or ''}".strip() + f" ({m['reason']})")
+            for m in missing
+        )
+        _log(f"⚠ AMS-Abgleich für {job['fileName']}: {desc} — manuelle Festlegung notwendig")
+        _set_job(job["id"], {"needs_ams": True, "ams_missing": missing})
+        _farm["paused"] = True
+        _farm["error"] = f"Manuelle AMS-Festlegung notwendig für {job['fileName']} — {desc}"
+        if not notified:
+            await _notify(f"⚠ *Printloom — AMS-Festlegung nötig*\n`{job['fileName']}`\n{desc}")
+            notified = True
+        while _farm["paused"] and not _farm["stopping"]:
+            await asyncio.sleep(0.5)
+        if _farm["stopping"]:
+            raise RuntimeError("Gestoppt")
+        if (job.get("amsMap") or "").strip():
+            _set_job(job["id"], {"needs_ams": False})
+            _farm["error"] = None
+            return
+        # otherwise re-validate (user may have swapped filament physically)
+        _farm["error"] = None
+    raise RuntimeError("Gestoppt")
+
+
+async def _handle_hms(hms_list: list):
+    """On new fatal/serious printer HMS codes (deduped per print): pause + notify,
+    UNLESS the code is on the soft-list — then only log + notify, never stop the
+    farm (harmless AMS-side notices like 0C00-0100-0001-0004)."""
+    severe = hms.severe_entries(hms_list)
+    if not severe:
+        return
+    soft = _farm.get("hms_ignore") or hms.HMS_SOFT_DEFAULT
+    seen = _farm.setdefault("_hms_seen", set())
+    for cs, sev, text in severe:
+        if cs in seen:
+            continue
+        seen.add(cs)
+        if hms.normalize_code(cs) in soft:
+            _log(f"ℹ HMS {sev} (ignoriert, Druck läuft weiter): {cs} — {text}")
+            await _notify(f"ℹ *Printloom — Drucker-Hinweis (unkritisch)*\nHMS {cs} ({sev})\n{text}")
+            continue
+        _log(f"🛑 HMS {sev}: {cs} — {text}")
+        _record_failure(f"HMS {cs}")
+        _record_event("error", "", f"HMS {cs} ({sev})")
+        _farm["paused"] = True
+        _farm["error"] = f"Drucker-Fehler (HMS {cs}): {text} — beheben, dann fortsetzen"
+        await _notify(f"🛑 *Printloom — Drucker-Fehler*\nHMS {cs} ({sev})\n{text}")
+
+
+async def _run_prep(steps: list, slot: str, device: Device):
+    rack_num, slot_num = _slot_vars(slot)
+    stack_rack, stack_slot = _stack_vars()
+    for step in steps:
+        if _farm["stopping"]:
+            return
+        val = (step.get("value") or "").replace("{rack}", rack_num).replace("{slot}", slot_num).replace("{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot)
+        try:
+            t = step.get("type", "")
+            if t == "macro":
+                _log(f"▶ {val}")
+                await _do_macro(val)
+            elif t in ("klipper_gcode",):
+                _log(f"▶ {step.get('label', val[:30])}")
+                await _do_macro(val)   # Klipper HTTP blocks until movement complete
+            elif t == "gcode":
+                await _do_bambu_gcode(val, device)
+            elif t == "delay":
+                await asyncio.sleep(float(step.get("seconds", 0)))
+        except Exception as e:
+            _log(f"Warnung Vorstart: {e}")
+    _log("⚡ Vorstart fertig.")
+
+
+async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
+                       prep_steps: list, fail_steps: list = []) -> bool:
+    _set_job(job["id"], {"status": "printing"})
+    _record_event("print_start", job.get("fileName", ""), f"Fach {job.get('slot', '')}")
+    _log(f"Warte auf Druckende (Poll alle {poll_sec}s)…")
+    _farm["_hms_seen"] = set()  # reset HMS dedupe per print
+
+    loop = asyncio.get_event_loop()
+    prep_started = False
+    prep_task: Optional[asyncio.Task] = None
+    was_running = False
+    max_pct = 0
+    first_run = True
+    fail_count = 0
+    reconn_fails = 0
+    retries = 0
+    idle_grace = 0  # consecutive IDLE polls before giving up (grace for slow print start)
+
+    while not _farm["stopping"]:
+        while _farm["paused"] and not _farm["stopping"]:
+            await asyncio.sleep(0.5)
+        if _farm["stopping"]:
+            break
+
+        await asyncio.sleep(poll_sec)
+        if _farm["stopping"]:
+            break
+
+        try:
+            mqtt = BambuLabMQTT(device)
+            connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+            if not connected:
+                raise ConnectionError("MQTT nicht erreichbar")
+            try:
+                await loop.run_in_executor(None, mqtt.request_status)
+                await asyncio.sleep(1.5)
+                raw = mqtt.get_last_message()
+            finally:
+                mqtt.disconnect()
+
+            if not raw:
+                raise ConnectionError("Keine MQTT-Antwort")
+
+            p = raw.get("print", {})
+            state = p.get("gcode_state", "IDLE")
+            pct   = p.get("mc_percent", 0)
+            rem   = p.get("mc_remaining_time", 0)
+
+            _set_job(job["id"], {"progress": pct, "remaining": rem})
+            _log(f"Drucker: {state}  {pct}%{f'  ~{rem} min' if rem > 0 else ''}")
+            reconn_fails = 0
+            await _handle_hms(p.get("hms", []) or [])
+
+            if state == "RUNNING":
+                was_running = True
+                fail_count = 0
+                idle_grace = 0
+                if pct > max_pct:
+                    max_pct = pct
+                if first_run and rem > 0:
+                    total_layers = p.get("total_layer_num", 0)
+                    layer_h      = job.get("layerHeightMm", 0.0)
+                    unassigned   = job.get("slot", "1-1") == "1-0"
+                    if total_layers > 0 and layer_h > 0:
+                        first_run = False
+                        actual_h  = round(total_layers * layer_h, 1)
+                        _set_job(job["id"], {"estimatedMinutes": rem, "object_height_mm": actual_h})
+                        if min_min > 0 and rem < min_min:
+                            raise RuntimeError(
+                                f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
+                            )
+                        if unassigned:
+                            # Rack was full at planning time — find a real slot now
+                            await _assign_slot_for_height(job, actual_h)
+                        else:
+                            # Use pre-planned slot — just update height
+                            _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=actual_h)
+                            try:
+                                with open(SLOTS_PATH) as _f:
+                                    _sh = float(json.load(_f).get("slot_height_mm", 50))
+                            except Exception:
+                                _sh = 50.0
+                            boeden = max(1, math.ceil(actual_h / _sh))
+                            _log(f"📏 Fach {job['slot']}: {actual_h:.0f}mm ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
+                    elif total_layers == 0 and rem > 0:
+                        # total_layer_num not yet available — wait for next poll
+                        pass
+                    else:
+                        # No layer height data — use pre-planned height from queue analysis
+                        first_run = False
+                        _set_job(job["id"], {"estimatedMinutes": rem})
+                        if min_min > 0 and rem < min_min:
+                            raise RuntimeError(
+                                f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
+                            )
+                        pre_h = job.get("object_height_mm") or 1.0
+                        if unassigned:
+                            await _assign_slot_for_height(job, pre_h)
+                        elif job.get("object_height_mm"):
+                            _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=pre_h)
+                            _log(f"📏 Fach {job['slot']}: {pre_h:.0f}mm (aus Planung)")
+            else:
+                if state != "FAILED":
+                    fail_count = 0
+
+            if not prep_started and state == "RUNNING" and rem > 0 and rem <= 1:
+                prep_started = True
+                _log("⚡ ~1 min — Vorstart-Sequenz…")
+                prep_task = asyncio.create_task(_run_prep(prep_steps, job["slot"], device))
+
+            idle_done = state == "IDLE" and was_running and (max_pct >= 90 or pct >= 99)
+            if state == "FINISH" or idle_done:
+                if state != "FINISH":
+                    _log(f"Druck fertig erkannt ({state} {pct}%, max {max_pct}%)")
+                snap = await capture_snapshot(device.id)
+                if snap:
+                    _set_job(job["id"], {"snapshot": snap})
+                    _log("📷 Snapshot gespeichert")
+                if prep_task and not prep_task.done():
+                    _log("Warte auf Vorstart-Sequenz…")
+                    try:
+                        await prep_task
+                    except Exception as e:
+                        _log(f"Warnung Vorstart: {e}")
+                return prep_started
+
+            if state == "FAILED":
+                fail_count += 1
+                if fail_count < 2:
+                    _log(f"⚠ FAILED ({fail_count}/2) — warte…")
+                    continue
+                if retries < 1:
+                    retries += 1
+                    _log("⚠ Retry 1/1…")
+                    _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
+                    await _do_send_file(job, device, True)
+                    _set_job(job["id"], {"status": "printing"})
+                    fail_count = 0
+                    continue
+                if fail_steps:
+                    _log("🔴 Druck fehlgeschlagen — Fehler-Sequenz läuft…")
+                    try:
+                        await _exec_sequence(fail_steps, job, device, False, poll_sec, min_min, [], [])
+                    except Exception as fe:
+                        _log(f"⚠ Fehler-Sequenz: {fe}")
+                raise RuntimeError("Druck fehlgeschlagen (FAILED)")
+
+            if state == "IDLE" and pct == 0 and not was_running:
+                idle_grace += 1
+                if idle_grace >= 3:
+                    raise RuntimeError("Drucker dauerhaft IDLE — abgebrochen")
+                _log(f"⚠ Drucker noch IDLE — warte auf Druckstart ({idle_grace}/3)…")
+
+        except RuntimeError:
+            raise
+        except Exception as e:
+            reconn_fails += 1
+            if reconn_fails >= 5:
+                raise RuntimeError(f"Verbindung dauerhaft unterbrochen ({reconn_fails}×)")
+            _log(f"⚠ Verbindung unterbrochen ({reconn_fails}/5) — retry…")
+
+    raise RuntimeError("Gestoppt")
+
+
+async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
+                      poll_sec: int, min_min: int, prep_steps: list, fail_steps: list = []):
+    if _farm["stopping"]:
+        raise RuntimeError("Gestoppt")
+
+    # Conditional step (5.3): skip when its printer-status condition is not met.
+    cond = step.get("condition")
+    if cond and cond.get("check"):
+        passed, text = await _eval_condition(cond, device)
+        if not passed:
+            _log(f"⏭ Bedingung nicht erfüllt ({text}) — '{step.get('label', step.get('type', '?'))}' übersprungen")
+            return
+        _log(f"✓ Bedingung erfüllt ({text})")
+
+    rack_num, slot_num = _slot_vars(job["slot"])
+    stack_rack, stack_slot = _stack_vars()
+    val = (step.get("value") or "").replace("{rack}", rack_num).replace("{slot}", slot_num).replace("{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot)
+    t = step.get("type", "")
+
+    if t == "gcode":
+        _log(f"[GCode] {step.get('label', val[:40])}")
+        await _do_bambu_gcode(val, device)
+        # Record when this gcode was sent so wait_bambu_idle can compute elapsed time
+        _farm["_last_gcode_time"] = asyncio.get_event_loop().time()
+
+    elif t == "klipper_gcode":
+        label = step.get("label") or val.replace("\n", " · ")[:40]
+        _log(f"[Klipper] {label}")
+        await _do_macro(val)   # Klipper HTTP blocks until movement is complete
+        _log(f"✓ {label} — Position erreicht")
+
+    elif t == "wait_bambu_idle":
+        # gcode_state ändert sich bei manuellen Befehlen (G28) nicht zuverlässig.
+        # Stattdessen: Mindestdauer seit dem letzten Bambu-gcode-Schritt abwarten.
+        # Die Zeit der vorherigen Schritte (OTTOeject home/open/grab) wird abgezogen
+        # → so wird nur die wirklich noch fehlende Zeit gewartet.
+        label = step.get("label") or "Warte Z200"
+        min_duration = max(5, int(step.get("seconds") or 50))
+        loop = asyncio.get_event_loop()
+
+        gcode_time = _farm.get("_last_gcode_time")
+        if gcode_time is not None:
+            elapsed = loop.time() - gcode_time
+            remaining = max(0.0, min_duration - elapsed)
+            _log(f"[⏳] {label} — G28 vor {elapsed:.0f}s gesendet, noch {remaining:.0f}s…")
+        else:
+            remaining = float(min_duration)
+            _log(f"[⏳] {label} — {remaining:.0f}s warten…")
+
+        interval = 0.5
+        waited = 0.0
+        while waited < remaining and not _farm["stopping"]:
+            await asyncio.sleep(interval)
+            waited += interval
+
+        _log(f"✓ {label} — Z200 erreicht")
+
+    elif t == "macro":
+        if "GRAB_FROM_RACK" in val or val.startswith("GRAB_FROM_SLOT_"):
+            # Pause if magazine is empty — wait for user to refill
+            if _magazine_count() <= 0:
+                _log("📦 Magazin leer — Farm pausiert. Platten auffüllen und Zähler anpassen.")
+                _farm["paused"] = True
+                _farm["error"]  = "Magazin leer — Platten auffüllen, Zähler anpassen, dann fortsetzen"
+            while _farm["paused"] and not _farm["stopping"]:
+                await asyncio.sleep(0.5)
+            if _farm["stopping"]:
+                raise RuntimeError("Gestoppt")
+            if _magazine_count() <= 0:
+                raise RuntimeError("Magazin leer — abgebrochen")
+            _farm["error"] = None
+        _log(f"▶ {val}")
+        await _do_macro(val)
+        if "GRAB_FROM_RACK" in val or val.startswith("GRAB_FROM_SLOT_"):
+            _decrement_magazine()
+            if job.get("slot") and job["slot"] != "1-0":
+                _rack_update(job["slot"], "printing", job["fileName"])
+        elif "STORE_TO_RACK" in val or val.startswith("STORE_TO_SLOT_"):
+            _rack_update(job["slot"], "done",
+                         object_height_mm=job.get("object_height_mm"))
+
+    elif t == "delay":
+        secs = int(step.get("seconds", 0))
+        _log(f"⏱ {step.get('label', '')} — {secs}s…")
+        for _ in range(secs):
+            if _farm["stopping"]:
+                raise RuntimeError("Gestoppt")
+            await asyncio.sleep(1)
+
+    elif t == "send_homing_file":
+        # Sends the homing .3mf directly via FTP+MQTT — no DB lookup needed.
+        if not os.path.exists(HOMING_3MF_PATH):
+            raise RuntimeError(
+                "Homing-Datei nicht vorhanden — Auto Farm → Einstellungen → 'Erstellen'"
+            )
+        homing_name = "printloom_homing.3mf"
+        loop = asyncio.get_event_loop()
+        _log("[↑] Homing senden (G28+Z200)…")
+        ftp = BambuFTP(device.ip_address, device.access_code)
+        up = await loop.run_in_executor(None, ftp.upload_file, HOMING_3MF_PATH, homing_name)
+        if not up:
+            raise RuntimeError("Homing FTP-Upload fehlgeschlagen")
+        mqtt = BambuLabMQTT(device)
+        connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+        if not connected:
+            raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
+        await asyncio.sleep(5)
+        ok = await loop.run_in_executor(
+            None, lambda: mqtt.start_print(homing_name, use_ams=False, ams_mapping=[], plate_param="")
+        )
+        await asyncio.sleep(2)
+        mqtt.disconnect()
+        if not ok:
+            raise RuntimeError("Homing-Druck Start fehlgeschlagen")
+        _log("✓ Homing gesendet — warte auf FINISH…")
+        # Position-confirmed: wait until the printer reports the homing print done.
+        await _wait_bambu_finish(device, label="Homing (G28+Z200)", timeout=float(step.get("seconds") or 180))
+
+    elif t == "bambu_move":
+        # Raw-G-code Z move: send G1 Z{z} directly to the (idle) printer instead of
+        # a one-shot .3mf "print". A .3mf triggers the Bambu's full print-prep
+        # (home/level, ~2 min) BEFORE the move runs — far too slow, and it tripped
+        # the FINISH timeout so the eject ran before the bed was in position. Raw
+        # gcode_line executes immediately; since it gives no gcode_state feedback we
+        # can't poll FINISH, so we wait a short computed settle instead.
+        z    = int(step.get("z", 200) or 200)
+        feed = int(step.get("feed", 3000) or 3000)
+        loop = asyncio.get_event_loop()
+        _log(f"[↑] Bambu Position Z{z} (F{feed}) per G-Code…")
+        mqtt = BambuLabMQTT(device)
+        connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=8.0))
+        if not connected:
+            raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
+        ok = await loop.run_in_executor(None, lambda: mqtt.send_gcode(f"G90\nG1 Z{z} F{feed}"))
+        if not ok:
+            await loop.run_in_executor(None, mqtt.disconnect)
+            raise RuntimeError("Z-Bewegung (G-Code) fehlgeschlagen")
+        # Settle = worst-case Z travel / feed + buffer (capped). z.B. F3000 → ~8s.
+        wait_s = min(30.0, max(5.0, 256.0 / max(1.0, feed / 60.0) + 3.0))
+        _log(f"… Z{z}: G-Code gesendet, warte {wait_s:.0f}s bis Position erreicht…")
+        waited = 0.0
+        while waited < wait_s and not _farm["stopping"]:
+            await asyncio.sleep(0.5)
+            waited += 0.5
+        await loop.run_in_executor(None, mqtt.disconnect)
+        if _farm["stopping"]:
+            raise RuntimeError("Gestoppt")
+        _log(f"✓ Z{z} — Position erreicht (G-Code + {wait_s:.0f}s)")
+
+    elif t == "send_file":
+        _set_job(job["id"], {"status": "sending"})
+        # Block printing until filaments confidently match the live AMS (or manual map set).
+        await _ensure_ams_ready(job, device, use_ams)
+        _log(f"[↑] Datei senden: {job['fileName']}")
+        await _do_send_file(job, device, use_ams)
+
+    elif t == "send_file_fixed":
+        # Sends a specific file from the library (e.g. homing .3mf) instead of the job file.
+        # Use value field = file ID (integer).
+        fixed_id = int((step.get("value") or "0").strip() or "0")
+        if not fixed_id:
+            raise RuntimeError("send_file_fixed: keine Datei-ID angegeben (value = Datei-ID)")
+        db = SessionLocal()
+        try:
+            fixed_file = db.query(UploadedFile).filter(UploadedFile.id == fixed_id).first()
+            if not fixed_file:
+                raise RuntimeError(f"Datei ID {fixed_id} nicht gefunden")
+            fixed_job = {
+                "id":       job["id"],
+                "fileId":   fixed_id,
+                "fileName": fixed_file.original_filename,
+                "slot":     job["slot"],
+                "amsMap":   "",
+            }
+            _log(f"[↑] Feste Datei senden: {fixed_file.original_filename} (ID {fixed_id})")
+            await _do_send_file(fixed_job, device, False)  # AMS off for utility files
+        finally:
+            db.close()
+
+    elif t == "wait_print":
+        _log("[⏳] Warte auf Druckende…")
+        prep_started = await _wait_print(job, device, poll_sec, min_min, prep_steps, fail_steps)
+        if not prep_started and prep_steps:
+            _log("Vorstart-Fallback…")
+            await _run_prep(prep_steps, job["slot"], device)
+        _log(f"✓ Druck fertig: {job['fileName']}")
+
+    elif t == "wait_print_failed":
+        label = step.get("label") or "Warte auf Druckfehler"
+        _log(f"[✗] {label} — warte auf FAILED…")
+        loop = asyncio.get_event_loop()
+        while not _farm["stopping"]:
+            while _farm["paused"] and not _farm["stopping"]:
+                await asyncio.sleep(0.5)
+            if _farm["stopping"]:
+                raise RuntimeError("Gestoppt")
+            await asyncio.sleep(poll_sec)
+            if _farm["stopping"]:
+                raise RuntimeError("Gestoppt")
+            try:
+                mqtt = BambuLabMQTT(device)
+                connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+                if not connected:
+                    raise ConnectionError("MQTT nicht erreichbar")
+                try:
+                    await loop.run_in_executor(None, mqtt.request_status)
+                    await asyncio.sleep(1.5)
+                    raw = mqtt.get_last_message()
+                finally:
+                    mqtt.disconnect()
+                if not raw:
+                    raise ConnectionError("Keine MQTT-Antwort")
+                p = raw.get("print", {})
+                state = p.get("gcode_state", "IDLE")
+                pct   = p.get("mc_percent", 0)
+                _log(f"Drucker: {state}  {pct}%")
+                if state == "FAILED":
+                    _log(f"✓ {label} — Drucker FAILED {pct}% erkannt — weiter")
+                    break
+            except RuntimeError:
+                raise
+            except Exception as e:
+                _log(f"⚠ Verbindungsfehler: {e}")
+
+    elif t == "wait_pause":
+        label = step.get("label") or "Warte auf PAUSE"
+        timeout_sec = max(30, int(step.get("seconds") or 120))
+        _log(f"[⏸] {label} — warte auf PAUSE (Timeout {timeout_sec}s)…")
+        loop = asyncio.get_event_loop()
+        elapsed = 0.0
+        conn_fails = 0
+        while not _farm["stopping"]:
+            while _farm["paused"] and not _farm["stopping"]:
+                await asyncio.sleep(0.5)
+            if _farm["stopping"]:
+                raise RuntimeError("Gestoppt")
+            await asyncio.sleep(poll_sec)
+            elapsed += poll_sec
+            if elapsed > timeout_sec:
+                raise RuntimeError(
+                    f"{label} — Timeout nach {timeout_sec}s — Drucker nie auf PAUSE — "
+                    f"Crash-Schutz: Platte NICHT eingelegt"
+                )
+            try:
+                mqtt = BambuLabMQTT(device)
+                connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+                if not connected:
+                    conn_fails += 1
+                    if conn_fails >= 5:
+                        raise RuntimeError(f"{label} — MQTT dauerhaft nicht erreichbar")
+                    _log(f"⚠ MQTT nicht erreichbar ({conn_fails}/5)…")
+                    continue
+                await loop.run_in_executor(None, mqtt.request_status)
+                await asyncio.sleep(1.5)
+                raw = mqtt.get_last_message()
+                mqtt.disconnect()
+                conn_fails = 0
+                if not raw:
+                    continue
+                p     = raw.get("print", {})
+                state = p.get("gcode_state", "IDLE")
+                pct   = p.get("mc_percent", 0)
+                _log(f"Drucker: {state}  {pct}%")
+                if state == "PAUSE":
+                    _log(f"✓ {label} — Drucker auf PAUSE (Z200) — Platte einlegen")
+                    break
+                if state == "FAILED":
+                    raise RuntimeError(
+                        f"{label} — FAILED — Crash-Schutz: Platte NICHT einlegen — abgebrochen"
+                    )
+                if state == "FINISH":
+                    raise RuntimeError(
+                        f"{label} — Unerwartet FINISH (M400 U1 ignoriert?) — Crash-Schutz aktiv"
+                    )
+                if state == "IDLE" and elapsed >= max(poll_sec * 3, 15):
+                    raise RuntimeError(
+                        f"{label} — Drucker dauerhaft IDLE (Homing nicht gestartet?) — abgebrochen"
+                    )
+            except RuntimeError:
+                raise
+            except Exception as e:
+                conn_fails += 1
+                _log(f"⚠ Verbindungsfehler: {e}")
+
+    elif t == "clear_error":
+        label = step.get("label") or "Fehler quittieren"
+        _log(f"[⚠] {label}…")
+        loop = asyncio.get_event_loop()
+        mqtt = BambuLabMQTT(device)
+        connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+        if not connected:
+            raise RuntimeError("MQTT nicht erreichbar für clear_error")
+        ok = await loop.run_in_executor(None, mqtt.clear_error)
+        await asyncio.sleep(2)
+        mqtt.disconnect()
+        _log(f"{'✓' if ok else '⚠'} {label}{'​' if ok else ' — Befehl nicht bestätigt'}")
+
+    else:
+        _log(f"⚠ Unbekannter Schritt '{t}' — übersprungen")
+
+
+def _filter_disabled(steps: list) -> list:
+    """
+    Remove disabled steps and fix parallel flags.
+    If a group-anchor (parallel=False step) was disabled, the steps that were
+    parallel to it must NOT become parallel with the previous group — they start
+    a new sequential group instead.
+    """
+    result = []
+    current_group_has_enabled = False  # does the CURRENT parallel group have any active step?
+
+    for step in steps:
+        disabled    = step.get("disabled", False)
+        is_parallel = step.get("parallel",  False)
+
+        if not is_parallel:
+            # This step starts a NEW parallel group
+            current_group_has_enabled = not disabled
+            if not disabled:
+                result.append(step)
+        else:
+            # This step continues the current parallel group
+            if not disabled:
+                if current_group_has_enabled:
+                    # Group has an enabled anchor → keep parallel
+                    result.append(step)
+                else:
+                    # Group's anchor was all disabled → demote to sequential
+                    result.append({**step, "parallel": False})
+                    current_group_has_enabled = True
+
+    return result
+
+
+# These step types must ALWAYS stay in the normal flow — pre-positioning them is
+# nonsensical and breaks the cycle. Pulling `wait_print` into prep removes the wait
+# entirely → the cycle ejects mid-print; `send_file` likewise must run in order.
+_PREP_FORBIDDEN = ("wait_print", "send_file")
+
+
+def _split_prep(steps: list) -> tuple:
+    """Split a cycle into (normal, prep). `prep` = steps flagged `prep:true` (and not
+    disabled) → executed ~1 min before print end via _wait_print's pre-positioning;
+    they are removed from the normal flow so they don't run twice. `wait_print`/
+    `send_file` are force-kept in the normal flow regardless of the flag."""
+    normal, prep = [], []
+    for s in steps:
+        if s.get("prep") and not s.get("disabled") and s.get("type") not in _PREP_FORBIDDEN:
+            prep.append(s)
+        else:
+            normal.append(s)
+    return normal, prep
+
+
+async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
+                          poll_sec: int, min_min: int, prep_steps: list, fail_steps: list = []):
+    steps = _filter_disabled(steps)
+    groups: list = []
+    for step in steps:
+        if step.get("parallel") and groups:
+            groups[-1].append(step)
+        else:
+            groups.append([step])
+
+    total = len(groups)
+    for gi, group in enumerate(groups):
+        if _farm["stopping"]:
+            raise RuntimeError("Gestoppt")
+        while _farm["paused"] and not _farm["stopping"]:
+            await asyncio.sleep(0.5)
+
+        label = " + ".join(s.get("label", s.get("type", "?")) for s in group)
+        _farm["seq_step_idx"] = gi
+        _farm["seq_step_total"] = total
+        _farm["seq_step_label"] = label
+        _log(f"▸ {label}")
+
+        if len(group) == 1:
+            st = group[0]
+            try:
+                await _exec_step(st, job, device, use_ams, poll_sec, min_min, prep_steps, fail_steps)
+            except RuntimeError as e:
+                if str(e) == "Gestoppt":
+                    raise
+                if st.get("optional"):
+                    _log(f"⚠ '{st.get('label', st.get('type', '?'))}' fehlgeschlagen (optional) — als fertig gewertet")
+                else:
+                    raise
+        else:
+            results = await asyncio.gather(*[
+                _exec_step(s, job, device, use_ams, poll_sec, min_min, prep_steps, fail_steps)
+                for s in group
+            ], return_exceptions=True)
+            for s, result in zip(group, results):
+                if isinstance(result, Exception):
+                    if isinstance(result, RuntimeError) and str(result) == "Gestoppt":
+                        raise result
+                    if s.get("optional"):
+                        _log(f"⚠ '{s.get('label', '')}' fehlgeschlagen (optional) — als fertig gewertet")
+                    else:
+                        raise result
+
+    _farm["seq_step_idx"] = 0
+    _farm["seq_step_total"] = 0
+    _farm["seq_step_label"] = ""
+
+
+# ── Slot availability check ──────────────────────────────────
+async def _wait_for_slot(slot: str, poll_sec: int):
+    """Block until rack slot is free or ready. Raises RuntimeError on stop."""
+    while not _farm["stopping"]:
+        try:
+            if os.path.exists(SLOTS_PATH):
+                with open(SLOTS_PATH) as f:
+                    data = json.load(f)
+                status = data.get("slots", {}).get(str(slot), {}).get("status", "free")
+                if status in ("free", "ready"):
+                    return
+                _log(f"⏳ Fach {slot} ist '{status}' — warte auf Freigabe…")
+        except Exception as e:
+            _log(f"⚠ Fach-Status-Prüfung: {e}")
+        while _farm["paused"] and not _farm["stopping"]:
+            await asyncio.sleep(0.5)
+        if _farm["stopping"]:
+            raise RuntimeError("Gestoppt")
+        await asyncio.sleep(poll_sec)
+    raise RuntimeError("Gestoppt")
+
+
+# ── Main farm coroutine (continuous loop) ────────────────────
+async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
+                     seq_new: list, seq_next: list):
+    db = SessionLocal()
+    try:
+        device = db.query(Device).filter(
+            Device.id == bambu_id,
+            Device.device_type == PrinterType.BAMBU_LAB,
+        ).first()
+        if not device:
+            raise RuntimeError("Bambu Lab Gerät nicht gefunden")
+    finally:
+        db.close()
+
+    completed = 0
+    cur_slot: Optional[str] = None
+    first_start_done = False
+
+    try:
+        _log("═══ Auto Farm aktiv — wartet auf Jobs ═══")
+
+        while not _farm["stopping"]:
+            # Respect pause
+            while _farm["paused"] and not _farm["stopping"]:
+                await asyncio.sleep(0.5)
+            if _farm["stopping"]:
+                break
+
+            # Find next pending job
+            pending = [j for j in _farm["jobs"] if j["status"] == "pending"]
+            if not pending:
+                # Auto-stop when all jobs are done/error
+                if _farm["jobs"] and all(j["status"] in ("done", "error") for j in _farm["jobs"]):
+                    _log("✓ Alle Jobs abgearbeitet — Auto Farm beendet")
+                    _farm["stop_reason"] = "completed"
+                    break
+                _farm["current_job_id"] = None
+                _farm["current_job_idx"] = -1
+                await asyncio.sleep(5)
+                continue
+
+            job = pending[0]
+            # Find the index in the full jobs list for UI compat
+            for idx, j in enumerate(_farm["jobs"]):
+                if j["id"] == job["id"]:
+                    _farm["current_job_idx"] = idx
+                    break
+
+            _farm["current_job_id"] = job["id"]
+            cur_slot = job["slot"]
+            _log(f"── Job: {job['fileName']} ──")
+
+            _set_job(job["id"], {"status": "running"})
+
+            try:
+                # First Start runs exactly ONCE before the first job's cycle
+                # (one-time homing + Z200). `seq_new` = First Start, `seq_next` = cycle.
+                if not first_start_done:
+                    if _filter_disabled(seq_new):
+                        _log("▶ First Start (einmaliges Homing)…")
+                        await _exec_sequence(seq_new, job, device, use_ams, poll_sec, min_min, [], [])
+                    first_start_done = True
+
+                # The recurring cycle runs for EVERY job. Steps flagged `prep` are
+                # pulled out and handed to _wait_print so they fire ~1 min before
+                # the print ends (pre-positioning) instead of in their normal slot.
+                cycle_normal, cycle_prep = _split_prep(seq_next)
+                await _exec_sequence(cycle_normal, job, device, use_ams, poll_sec, min_min, cycle_prep, [])
+                completed += 1
+                _set_job(job["id"], {"status": "done"})
+                _rack_update(job["slot"], "done")
+                _record_success(job.get("estimatedMinutes") or 0)
+                _record_event("print_done", job.get("fileName", ""), f"Fach {job['slot']}")
+                cur_slot = None
+                _farm["current_job_id"] = None
+                _log(f"✓ Fertig: {job['fileName']}")
+                await _notify(
+                    f"✅ *Printloom — Druck fertig*\n`{job['fileName']}`\nFach {job['slot']}"
+                )
+
+            except RuntimeError as e:
+                msg = str(e)
+                if msg == "Gestoppt":
+                    _farm["stopping"] = True
+                    break
+                _log(f"FEHLER: {msg}")
+                _record_failure(msg)
+                _record_event("error", job.get("fileName", ""), msg[:70])
+                _set_job(job["id"], {"status": "error"})
+                if cur_slot:
+                    _rack_update(job["slot"], "free")
+                cur_slot = None
+                _farm["current_job_id"] = None
+                _farm["error"] = msg
+                await _notify(f"❌ *Printloom — Job fehlgeschlagen*\n`{job['fileName']}`\n{msg}")
+                # Continue loop — pick up next pending job
+
+    except Exception as e:
+        _farm["error"] = str(e)
+        _log(f"FEHLER (unhandled): {e}")
+        for j in _farm["jobs"]:
+            if j["status"] in ("running", "sending", "printing"):
+                j["status"] = "error"
+        if cur_slot:
+            _rack_update(cur_slot, "free")
+
+    finally:
+        if completed > 0:
+            _log("Abschluss: OTTOeject parken…")
+            try:
+                await _do_macro("PARK_OTTOEJECT")
+            except Exception as e:
+                _log(f"Warnung PARK_OTTOEJECT: {e}")
+
+        # Reset any slots still stuck on 'printing' — plate was grabbed, farm stopped before store
+        try:
+            if os.path.exists(SLOTS_PATH):
+                with open(SLOTS_PATH) as f:
+                    data = json.load(f)
+                changed = False
+                for slot_data in data.get("slots", {}).values():
+                    if slot_data.get("status") == "printing":
+                        slot_data["status"] = "free"
+                        changed = True
+                if changed:
+                    storage.write_json(SLOTS_PATH, data)
+        except Exception:
+            pass
+
+        remaining = [j for j in _farm["jobs"] if j["status"] in ("pending", "error")]
+        try:
+            _write_config(QUEUE_PATH, {"jobs": remaining})
+        except Exception:
+            pass
+        _farm["jobs"] = []   # clear so status endpoint doesn't leak stale job data
+
+        _farm["running"] = False
+        _farm["stopping"] = False
+        _farm["paused"] = False
+        _farm["current_job_id"] = None
+        _farm["current_job_idx"] = -1
+        _farm["seq_step_idx"] = 0
+        _farm["seq_step_total"] = 0
+        _farm["seq_step_label"] = ""
+        _farm["_last_gcode_time"] = None
+        # stop_reason intentionally kept — frontend reads it once after running→False
+        _record_event("farm_stop", "", _farm.get("stop_reason") or "")
+        _log("═══ Auto Farm beendet ═══")
+
+
+# ── Pydantic schemas ─────────────────────────────────────────
+class JobIn(BaseModel):
+    id: int
+    fileId: int
+    fileName: str
+    slot: str
+    status: str = "pending"
+    progress: int = 0
+    remaining: int = 0
+    estimatedMinutes: Optional[int] = None
+    amsMap: Optional[str] = None
+    layerHeightMm: float = 0.0
+    object_height_mm: Optional[float] = None
+    plate: Optional[int] = None
+
+
+class EnqueueRequest(BaseModel):
+    id: int
+    fileId: int
+    fileName: str
+    slot: str
+    amsMap: Optional[str] = None
+    layerHeightMm: float = 0.0
+    object_height_mm: Optional[float] = None
+    plate: Optional[int] = None
+
+
+class StartRequest(BaseModel):
+    bambu_id: int
+    use_ams: bool = True
+    poll_interval: int = 20
+    min_print_minutes: int = 0
+    jobs: List[JobIn]
+
+
+class ReorderPayload(BaseModel):
+    job_ids: List[int] = []
+
+
+class SequencesPayload(BaseModel):
+    seq_new:  List[dict] = []
+    seq_next: List[dict] = []
+
+class SettingsPayload(BaseModel):
+    poll_interval:     int  = 20
+    min_print_minutes: int  = 0
+    use_ams:           bool = True
+    hms_ignore:        List[str] = ["0C00-0100-0001-0004"]
+
+class QueuePayload(BaseModel):
+    jobs: List[dict] = []
+
+
+# ── Endpoints ────────────────────────────────────────────────
+@router.post("/start")
+async def start_farm(req: StartRequest):
+    global _task
+    if _farm["running"]:
+        raise HTTPException(409, "Auto Farm läuft bereits")
+
+    # Validate sequences BEFORE touching farm state
+    seq_data = _read_config(SEQ_PATH, {"seq_new": [], "seq_next": []})
+    saved_ver = seq_data.get("schema_version", "—")
+    if saved_ver != SEQ_SCHEMA_VERSION:
+        raise HTTPException(
+            400,
+            f"Sequenzen veraltet (Schema {saved_ver} ≠ {SEQ_SCHEMA_VERSION}) — "
+            f"bitte Sequenz-Editor öffnen und ↺ Standard klicken, dann erneut starten."
+        )
+
+    _settings = _read_config(SETTINGS_PATH, _DEFAULT_SETTINGS)
+    _hms_ignore = {hms.normalize_code(c) for c in (_settings.get("hms_ignore") or [])}
+
+    _farm.update({
+        "running":         True,
+        "stopping":        False,
+        "paused":          False,
+        "error":           None,
+        "stop_reason":     None,
+        "current_job_id":  None,
+        "current_job_idx": -1,
+        "seq_step_idx":    0,
+        "seq_step_total":  0,
+        "seq_step_label":  "",
+        "started_at":      datetime.now().isoformat(),
+        "jobs":            [j.model_dump() for j in req.jobs],
+        "log":             [],
+        "hms_ignore":      _hms_ignore,
+    })
+
+    _record_event("farm_start", "", f"{len([j for j in req.jobs if j.status == 'pending'])} Jobs")
+
+    _task = asyncio.create_task(_run_farm(
+        bambu_id=req.bambu_id,
+        use_ams=req.use_ams,
+        poll_sec=req.poll_interval,
+        min_min=req.min_print_minutes,
+        seq_new=seq_data.get("seq_new", []),
+        seq_next=seq_data.get("seq_next", []),
+    ))
+
+    job_count = len([j for j in req.jobs if j.status == "pending"])
+    return {"success": True, "message": "Auto Farm gestartet", "job_count": job_count}
+
+
+@router.post("/enqueue")
+async def enqueue_job(job: EnqueueRequest):
+    """Add a job to the running farm's queue."""
+    if not _farm["running"]:
+        raise HTTPException(400, "Farm nicht aktiv — erst starten")
+    if any(j["id"] == job.id for j in _farm["jobs"]):
+        raise HTTPException(409, "Job bereits in der Warteschlange")
+
+    # Analyze height server-side so runtime slot assignment has clearance data.
+    # The slot is forced to "1-0" so the print picks a real free slot at start time
+    # based on the LIVE rack state (handles slots freed while the farm is running).
+    layer_h = job.layerHeightMm or 0.0
+    obj_h   = job.object_height_mm
+    try:
+        db = SessionLocal()
+        try:
+            f = db.query(UploadedFile).filter(UploadedFile.id == job.fileId).first()
+        finally:
+            db.close()
+        if f and os.path.exists(f.file_path) and f.file_type in (".3mf", ".gcode"):
+            result = analyze_3mf_height(f.file_path) if f.file_type == ".3mf" else analyze_gcode_height(f.file_path)
+            lc = result.get("layer_count", 0)
+            lh = result.get("layer_height_mm", 0.0)
+            mz = result.get("max_z_mm", 0.0)
+            margin = 1.0 + float(_rack_load().get("height_margin_pct", 15.0)) / 100.0
+            if lc > 0 and lh > 0:
+                obj_h, layer_h = round(lc * lh * margin, 1), lh
+            elif mz > 0:
+                obj_h = round(mz * margin, 1)
+    except Exception as e:
+        logger.warning(f"enqueue height analysis failed for file {job.fileId}: {e}")
+
+    _farm["jobs"].append({
+        "id":               job.id,
+        "fileId":           job.fileId,
+        "fileName":         job.fileName,
+        "slot":             "1-0",  # sentinel → real slot chosen at print start
+        "status":           "pending",
+        "progress":         0,
+        "remaining":        0,
+        "estimatedMinutes": None,
+        "amsMap":           job.amsMap or "",
+        "layerHeightMm":    layer_h,
+        "object_height_mm": obj_h,
+        "plate":            job.plate,
+    })
+    _log(f"[+] {job.fileName}{f' (Platte {job.plate})' if job.plate else ''} → Fach wird bei Ausführung zugewiesen")
+    return {"success": True}
+
+
+@router.put("/jobs/reorder")
+async def reorder_jobs(payload: ReorderPayload):
+    """Reorder pending jobs while the farm is running."""
+    if not _farm["running"]:
+        raise HTTPException(400, "Farm nicht aktiv")
+    id_to_job = {j["id"]: j for j in _farm["jobs"]}
+    non_pending  = [j for j in _farm["jobs"] if j["status"] != "pending"]
+    new_pending  = [id_to_job[i] for i in payload.job_ids if i in id_to_job and id_to_job[i]["status"] == "pending"]
+    _farm["jobs"] = non_pending + new_pending
+    return {"success": True}
+
+
+class JobAmsPayload(BaseModel):
+    amsMap: str = ""
+
+
+@router.put("/job/{job_id}/ams")
+async def set_job_ams(job_id: int, payload: JobAmsPayload):
+    """Set a manual AMS mapping on a job in the running farm. Clears the
+    'needs manual AMS' block so a paused job can resume after the user maps it."""
+    if not _farm["running"]:
+        raise HTTPException(400, "Farm nicht aktiv")
+    found = False
+    for j in _farm["jobs"]:
+        if j["id"] == job_id:
+            j["amsMap"] = (payload.amsMap or "").strip()
+            j["needs_ams"] = False
+            found = True
+            break
+    if not found:
+        raise HTTPException(404, "Job nicht in der Warteschlange")
+    return {"success": True}
+
+
+@router.delete("/jobs/{job_id}")
+async def remove_job_from_farm(job_id: int):
+    """Remove a pending or errored job from the farm queue."""
+    job = next((j for j in _farm["jobs"] if j["id"] == job_id), None)
+    if not job:
+        raise HTTPException(404, "Job nicht gefunden")
+    if job["status"] not in ("pending", "error"):
+        raise HTTPException(400, "Laufende Jobs können nicht entfernt werden")
+    _farm["jobs"] = [j for j in _farm["jobs"] if j["id"] != job_id]
+    _log(f"[-] {job['fileName']} entfernt")
+    return {"success": True}
+
+
+@router.get("/status")
+async def get_status():
+    return dict(_farm)
+
+
+@router.post("/stop")
+async def stop_farm():
+    if not _farm["running"]:
+        raise HTTPException(400, "Auto Farm läuft nicht")
+    _farm["stopping"] = True
+    _farm["paused"] = False
+    _farm["stop_reason"] = "manual"
+    return {"success": True}
+
+
+@router.post("/force-reset")
+async def force_reset():
+    """Force-reset all farm state. Use when farm is stuck and Stop has no effect."""
+    global _task
+    if _task and not _task.done():
+        _task.cancel()
+    _farm.update({
+        "running":          False,
+        "stopping":         False,
+        "paused":           False,
+        "error":            None,
+        "stop_reason":      None,
+        "current_job_id":   None,
+        "current_job_idx":  -1,
+        "seq_step_idx":     0,
+        "seq_step_total":   0,
+        "seq_step_label":   "",
+        "started_at":       None,
+        "_last_gcode_time": None,
+    })
+    _task = None
+    _log("⚠ Farm-State force-reset")
+    return {"success": True}
+
+
+_test_task: Optional[asyncio.Task] = None
+_test_running = False
+_test_state   = {"step_label": "", "step_idx": 0, "step_total": 0}
+
+async def _run_test_cycle():
+    global _test_running, _test_state
+    _test_running = True
+    _log("🧪 Test-Phase gestartet…")
+    try:
+        seq_data = _read_config(SEQ_PATH, {"seq_new": []})
+        all_steps = seq_data.get("seq_new", [])
+        # Only run executable steps (skip wait_print, send_file, etc.)
+        steps = [s for s in all_steps if s.get("type") in ("macro", "klipper_gcode", "delay")]
+        stack_rack, stack_slot = _stack_vars()
+        _test_state["step_total"] = len(steps)
+        for idx, step in enumerate(steps):
+            if not _test_running:
+                break
+            label = step.get("label") or step.get("value", "")
+            _test_state["step_idx"]   = idx
+            _test_state["step_label"] = label
+            t   = step.get("type", "")
+            val = (step.get("value") or "").replace(
+                "{rack}", "1").replace("{slot}", "1").replace(
+                "{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot)
+            if t in ("macro", "klipper_gcode"):
+                _log(f"🧪 ▶ {label}")
+                try:
+                    await _do_macro(val)
+                except Exception as e:
+                    _log(f"🧪 ⚠ {val}: {e}")
+            elif t == "delay":
+                secs = int(step.get("seconds", 0))
+                _log(f"🧪 ⏱ {secs}s…")
+                for _ in range(secs):
+                    if not _test_running:
+                        break
+                    await asyncio.sleep(1)
+        _log("🧪 Test-Phase abgeschlossen")
+    except Exception as e:
+        _log(f"🧪 Fehler: {e}")
+    finally:
+        _test_running = False
+        _test_state["step_label"] = ""
+
+
+@router.post("/test-cycle")
+async def start_test_cycle():
+    global _test_task, _test_running
+    if _farm["running"]:
+        raise HTTPException(400, "Auto Farm läuft — Test-Phase nicht möglich")
+    if _test_running:
+        raise HTTPException(409, "Test-Phase läuft bereits")
+    _test_task = asyncio.create_task(_run_test_cycle())
+    return {"success": True}
+
+
+@router.post("/test-cycle/stop")
+async def stop_test_cycle():
+    global _test_running, _test_task
+    _test_running = False
+    if _test_task and not _test_task.done():
+        _test_task.cancel()
+    return {"success": True}
+
+
+@router.get("/test-cycle/status")
+async def get_test_cycle_status():
+    return {**_test_state, "running": _test_running}
+
+
+@router.post("/pause")
+async def pause_farm():
+    if not _farm["running"]:
+        raise HTTPException(400, "Auto Farm läuft nicht")
+    _farm["paused"] = not _farm["paused"]
+    return {"success": True, "paused": _farm["paused"]}
+
+
+@router.get("/sequences")
+async def get_sequences():
+    data = _read_config(SEQ_PATH, {})
+    # Schema version mismatch → return empty so frontend resets to new defaults
+    if data.get("schema_version") != SEQ_SCHEMA_VERSION:
+        return {"seq_new": [], "seq_next": []}
+    return data
+
+@router.put("/sequences")
+async def save_sequences(payload: SequencesPayload):
+    data = payload.model_dump()
+    data["schema_version"] = SEQ_SCHEMA_VERSION
+    _write_config(SEQ_PATH, data)
+    return {"success": True}
+
+@router.get("/settings")
+async def get_settings():
+    return _read_config(SETTINGS_PATH, _DEFAULT_SETTINGS)
+
+@router.put("/settings")
+async def save_settings(payload: SettingsPayload):
+    _write_config(SETTINGS_PATH, payload.model_dump())
+    return {"success": True}
+
+@router.get("/queue")
+async def get_queue():
+    # Return live in-memory state when running so _id in frontend stays ahead of all known IDs
+    if _farm["running"] and _farm.get("jobs"):
+        return _farm["jobs"]
+    data = _read_config(QUEUE_PATH, {"jobs": []})
+    return data.get("jobs", [])
+
+@router.put("/queue")
+async def save_queue(payload: QueuePayload):
+    _write_config(QUEUE_PATH, payload.model_dump())
+    return {"success": True}
+
+
+@router.post("/homing_file/setup")
+async def setup_homing_file():
+    """Generate the homing .3mf and store it in /app/db/ (not visible in file library)."""
+    data = _build_homing_3mf()
+    with open(HOMING_3MF_PATH, "wb") as f:
+        f.write(data)
+    logger.info(f"[AutoFarm] Homing-Datei erstellt: {HOMING_3MF_PATH}")
+    return {"success": True, "filename": "Printloom Homing.3mf"}
+
+
+@router.get("/homing_file/info")
+async def get_homing_file_info():
+    configured = os.path.exists(HOMING_3MF_PATH)
+    return {"configured": configured, "filename": "Printloom Homing.3mf" if configured else None}
+
+
+@router.post("/clear_log")
+async def clear_log():
+    _farm["log"] = []
+    return {"success": True}
+
+
+@router.get("/log/download")
+async def download_log():
+    """Download persisted log file as text."""
+    from fastapi.responses import FileResponse, PlainTextResponse
+    if not os.path.exists(LOG_PATH):
+        return PlainTextResponse("Kein Log vorhanden.\n", media_type="text/plain")
+    return FileResponse(LOG_PATH, filename="printloom_log.txt", media_type="text/plain")
+
+
+@router.delete("/log/file")
+async def clear_log_file():
+    """Delete the persisted log file."""
+    try:
+        if os.path.exists(LOG_PATH):
+            os.remove(LOG_PATH)
+    except Exception:
+        pass
+    return {"success": True}
+
+
+@router.get("/file_filaments/{file_id}")
+async def get_file_filaments(file_id: int):
+    """Return filament types and colors extracted from a .3mf or .gcode file."""
+    db = SessionLocal()
+    try:
+        f = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+        if not f:
+            raise HTTPException(404, "Datei nicht gefunden")
+        if not os.path.exists(f.file_path):
+            raise HTTPException(404, "Datei nicht auf Disk")
+        types, colors = _read_filament_info(f.file_path, f.file_type)
+        return {"filaments": [{"type": t, "color": c} for t, c in zip(types, colors)]}
+    finally:
+        db.close()
+
+
+@router.get("/stats")
+async def get_stats():
+    return _read_stats()
+
+
+@router.delete("/stats")
+async def reset_stats():
+    try:
+        if os.path.exists(STATS_PATH):
+            os.remove(STATS_PATH)
+    except Exception:
+        pass
+    return {"success": True}
+
+
+@router.get("/timeline")
+async def get_timeline(hours: int = 24):
+    """Recent printer-utilization events for the usage timeline (default last 24h)."""
+    events = storage.read_json(TIMELINE_PATH, [])
+    cutoff = datetime.now() - timedelta(hours=max(1, hours))
+    recent = []
+    for e in events:
+        try:
+            if datetime.fromisoformat(e["ts"]) >= cutoff:
+                recent.append(e)
+        except (KeyError, ValueError):
+            continue
+    return {"events": recent, "now": datetime.now().isoformat(), "hours": hours}
+
+
+@router.delete("/timeline")
+async def reset_timeline():
+    try:
+        if os.path.exists(TIMELINE_PATH):
+            os.remove(TIMELINE_PATH)
+    except Exception:
+        pass
+    return {"success": True}

@@ -1,0 +1,32 @@
+services:
+  printloom:
+    build: .
+    container_name: printloom-app
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - APP_ENV=production
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_REPO=DasKlaus00/printloom
+      - PRINTLOOM_IMAGE=ghcr.io/dasklaus00/printloom
+      - PRINTLOOM_CONTAINER=printloom-app
+      - WATCHTOWER_TOKEN=printloom-update-token
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/db:/app/db
+      # Docker-Socket → In-App-Update / Kanalwechsel (System-Seite):
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    networks:
+      - printloom-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+networks:
+  printloom-network:
+    driver: bridge

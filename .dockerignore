@@ -1,0 +1,27 @@
+# Dependencies / build output — the image builds these fresh inside the container.
+# Critically, this prevents host (Windows) node_modules from overwriting the
+# Alpine node_modules installed in the frontend-build stage.
+**/node_modules
+frontend/dist
+
+# Python caches
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# Runtime data (mounted as volumes at run time; not needed in the image).
+# backend/db holds personal data (printer access codes, Telegram + marketplace
+# tokens, the SQLite DB) and MUST NOT be copied into the public image.
+backend/uploads
+backend/db
+
+# VCS / editor / OS cruft
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Local env overrides
+.env

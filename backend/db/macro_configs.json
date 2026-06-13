@@ -1,0 +1,96 @@
+{
+  "open_door_x1c": {
+    "label": "T\u00fcr \u00f6ffnen \u2014 Bambu X1C",
+    "internal_macro": "_OPEN_DOOR",
+    "fields": {
+      "door_x_start": {
+        "label": "X Start",
+        "value": 104.0,
+        "step": 0.5
+      },
+      "door_y_start": {
+        "label": "Y Start",
+        "value": 324.0,
+        "step": 0.5
+      },
+      "door_z_engage": {
+        "label": "Z Engage",
+        "value": 105.0,
+        "step": 0.5
+      },
+      "door_d_to_pin_dist": {
+        "label": "Dist to Pin",
+        "value": 370.0,
+        "step": 1.0
+      }
+    }
+  },
+  "close_door_x1c": {
+    "label": "T\u00fcr schlie\u00dfen \u2014 Bambu X1C",
+    "internal_macro": "_CLOSE_DOOR",
+    "fields": {
+      "door_x_start": {
+        "label": "X Start",
+        "value": 103,
+        "step": 0.5
+      },
+      "door_y_start": {
+        "label": "Y Start",
+        "value": 322,
+        "step": 0.5
+      },
+      "door_z_engage": {
+        "label": "Z Engage",
+        "value": 105,
+        "step": 0.5
+      },
+      "door_d_to_pin_dist": {
+        "label": "Dist to Pin",
+        "value": 375,
+        "step": 1.0
+      }
+    }
+  },
+  "eject_x1c": {
+    "label": "Platte auswerfen \u2014 Bambu X1C",
+    "internal_macro": "_EJECT_FROM_PRINTER",
+    "fields": {
+      "otto_x_unclamp": {
+        "label": "X Unclamp",
+        "value": 442,
+        "step": 0.5
+      },
+      "otto_y_engage": {
+        "label": "Y Engage",
+        "value": 319,
+        "step": 0.5
+      },
+      "otto_z_flat": {
+        "label": "Z Flat",
+        "value": 21,
+        "step": 0.5
+      }
+    }
+  },
+  "load_x1c": {
+    "label": "Platte einlegen \u2014 Bambu X1C",
+    "internal_macro": "_LOAD_ONTO_PRINTER",
+    "fields": {
+      "otto_x_unclamp": {
+        "label": "X Unclamp",
+        "value": 425,
+        "step": 0.5
+      },
+      "otto_y_engage": {
+        "label": "Y Engage",
+        "value": 340,
+        "step": 0.5
+      },
+      "otto_z_flat": {
+        "label": "Z Flat",
+        "value": 17.5,
+        "step": 0.5
+      }
+    }
+  }
+}

@@ -1,0 +1,771 @@
+import React, { useState, useEffect } from 'react'
+import { DEFAULT_SEQ_NEW, DEFAULT_SEQ_NEXT } from '../services/sequenceData'
+import { autofarmService, controlService } from '../services/api'
+
+const TYPE_META = {
+  macro:          { label: 'OTTOeject Makro',  icon: '▶',    color: 'text-violet-400',  bg: 'bg-violet-950/20',  border: 'border-violet-900/40' },
+  klipper_gcode:  { label: 'OTTOeject GCode',  icon: '⌘',    color: 'text-teal-400',    bg: 'bg-teal-950/20',    border: 'border-teal-900/40'   },
+  gcode:          { label: 'Bambu GCode',      icon: '</>',  color: 'text-blue-400',    bg: 'bg-blue-950/20',    border: 'border-blue-900/40'   },
+  bambu_move:     { label: 'Bambu Position Z', icon: '↕',    color: 'text-cyan-400',    bg: 'bg-cyan-950/20',    border: 'border-cyan-900/40'   },
+  send_homing_file:{ label: 'Bambu Homing',    icon: '⌂',    color: 'text-indigo-400',  bg: 'bg-indigo-950/20',  border: 'border-indigo-900/40'  },
+  send_file:      { label: 'Druckdatei senden',icon: '↑',    color: 'text-emerald-400', bg: 'bg-emerald-950/20', border: 'border-emerald-900/50' },
+  wait_print:     { label: 'Auf Druckende warten', icon: '⏳', color: 'text-sky-400',   bg: 'bg-sky-950/20',    border: 'border-sky-900/50'   },
+  delay:          { label: 'Wartezeit',        icon: '⏱',   color: 'text-amber-400',   bg: 'bg-amber-950/20',   border: 'border-amber-900/40'  },
+  // ── Legacy types (still rendered for old sequences, but not offered in the add menu) ──
+  wait_bambu_idle:{ label: 'Bambu IDLE (alt)', icon: '◎',    color: 'text-cyan-400',    bg: 'bg-cyan-950/20',    border: 'border-cyan-900/40'   },
+  send_file_fixed:{ label: 'Feste Datei',      icon: '⇪',    color: 'text-indigo-400',  bg: 'bg-indigo-950/20',  border: 'border-indigo-900/40'  },
+  wait_pause:        { label: 'Warten (PAUSE)',  icon: '⏸',   color: 'text-yellow-400', bg: 'bg-yellow-950/20', border: 'border-yellow-900/40' },
+  wait_print_failed: { label: 'Warten (FAILED)', icon: '✗',   color: 'text-red-400',    bg: 'bg-red-950/20',    border: 'border-red-900/40'   },
+  clear_error:       { label: 'Fehler quit.',    icon: '⚠',   color: 'text-orange-400', bg: 'bg-orange-950/20', border: 'border-orange-900/40'},
+}
+
+// Curated building blocks offered in the "+ add step" menu (legacy types omitted).
+const ADD_TYPES = ['macro', 'klipper_gcode', 'gcode', 'bambu_move', 'send_homing_file', 'send_file', 'wait_print', 'delay']
+
+/* ─── Individual step block ──────────────────────────────────── */
+function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, onToggleDisabled,
+                     onDragStart, onDragEnd, onDragOver, onDrop, isDragOver, onRun }) {
+  const [open, setOpen] = useState(false)
+  const [running, setRunning] = useState(false)
+  const isDisabled = !!step.disabled
+  const canRun = (step.type === 'macro' || step.type === 'klipper_gcode') && step.value
+  const meta  = TYPE_META[step.type] ?? TYPE_META.macro
+  const fixed = false
+
+  return (
+    <div
+      onDragOver={e => { e.preventDefault(); onDragOver?.(step.id) }}
+      onDrop={e    => { e.preventDefault(); onDrop?.(step.id) }}
+    >
+      {/* Drop indicator line */}
+      {isDragOver && <div className="h-0.5 bg-blue-500 rounded-full mx-1 mb-1" />}
+      <div className={`rounded-lg border transition-colors ${
+        isDisabled
+          ? 'border-surface-700/50 bg-surface-900/40'
+          : `${meta.bg} ${meta.border}`
+      }`}>
+        {/* Header row */}
+        <div className="flex items-center gap-1.5 px-2.5 py-2">
+          {/* Type icon */}
+          <span className={`text-[11px] font-mono w-4 text-center shrink-0 select-none ${isDisabled ? 'text-surface-700' : meta.color}`}>
+            {meta.icon}
+          </span>
+
+          {/* Label */}
+          <span className={`text-xs font-mono flex-1 min-w-0 truncate ${isDisabled ? 'text-surface-700 line-through' : meta.color}`}>
+            {step.label}
+          </span>
+
+          {/* Disabled badge */}
+          {isDisabled && (
+            <span className="text-[8px] font-mono text-surface-600 border border-surface-700/60 px-1 rounded shrink-0 select-none">OFF</span>
+          )}
+
+          {/* Inline preview */}
+          {step.type === 'delay' && (
+            <span className="text-[10px] text-surface-500 font-mono shrink-0">{step.seconds}s</span>
+          )}
+          {step.type === 'wait_bambu_idle' && (
+            <span className="text-[10px] text-surface-500 font-mono shrink-0">max {step.seconds || 120}s</span>
+          )}
+          {!open && (step.type === 'macro' || step.type === 'gcode') && step.value && (
+            <span className="text-[9px] text-surface-700 font-mono truncate max-w-[110px] shrink-0">
+              {step.value.replace(/\n/g, ' · ')}
+            </span>
+          )}
+          {step.type === 'send_file_fixed' && step.value && (
+            <span className="text-[10px] text-surface-500 font-mono shrink-0">ID {step.value}</span>
+          )}
+
+          {/* Optional badge */}
+          {step.optional && (
+            <span className="text-[9px] font-mono text-amber-600 border border-amber-800/60 px-1 rounded shrink-0 select-none" title="Fehler werden ignoriert">opt</span>
+          )}
+
+          {/* Parallel badge */}
+          {step.parallel && (
+            <span className="text-[9px] font-mono text-blue-400 border border-blue-800/60 px-1 rounded shrink-0 select-none">∥</span>
+          )}
+
+          {/* Condition badge */}
+          {step.condition?.check && (
+            <span className="text-[9px] font-mono text-violet-400 border border-violet-800/60 px-1 rounded shrink-0 select-none"
+              title={`Nur wenn ${step.condition.check} ${step.condition.op} ${step.condition.value}`}>if</span>
+          )}
+
+          {/* Pre-position badge (never for wait_print/send_file) */}
+          {step.prep && !['wait_print', 'send_file'].includes(step.type) && (
+            <span className="text-[9px] font-mono text-blue-400 border border-blue-800/60 px-1 rounded shrink-0 select-none"
+              title="Wird ~1 Min vor Druckende vorgezogen">⏱</span>
+          )}
+
+          {!fixed && (
+            <div className="flex items-center gap-0 shrink-0 ml-1">
+              {/* Single-step run button */}
+              {canRun && (
+                <button
+                  onClick={async e => {
+                    e.stopPropagation()
+                    if (running) return
+                    setRunning(true)
+                    try { await onRun?.(step) } finally { setRunning(false) }
+                  }}
+                  title={`Einzeln ausführen: ${step.value}`}
+                  disabled={running}
+                  className={`w-6 h-5 flex items-center justify-center text-[11px] rounded transition-colors select-none border ${
+                    running
+                      ? 'text-blue-400 border-blue-700/60 bg-blue-900/20 animate-pulse'
+                      : 'text-emerald-500 border-emerald-800/60 hover:bg-emerald-900/20'
+                  }`}
+                >▶</button>
+              )}
+              {/* Disable/enable toggle */}
+              <button
+                onClick={e => { e.stopPropagation(); onToggleDisabled?.(step.id) }}
+                title={isDisabled ? 'Schritt aktivieren' : 'Schritt deaktivieren'}
+                className={`w-6 h-5 flex items-center justify-center text-[10px] font-mono rounded transition-colors select-none border ${
+                  isDisabled
+                    ? 'text-surface-600 border-surface-700/40 hover:text-emerald-400 hover:border-emerald-800/60'
+                    : 'text-surface-400 border-surface-700/30 hover:text-red-400 hover:border-red-800/60'
+                }`}
+              >{isDisabled ? 'off' : 'on'}</button>
+              <button
+                onClick={() => onTogglePar(step.id)}
+                title="Parallel mit vorherigem Schritt ausführen"
+                className={`w-5 h-5 flex items-center justify-center text-[10px] rounded transition-colors select-none ${
+                  step.parallel ? 'text-blue-400 bg-blue-900/40' : 'text-surface-700 hover:text-surface-400'
+                }`}
+              >∥</button>
+              <button
+                onClick={() => setOpen(v => !v)}
+                className="w-5 h-5 flex items-center justify-center text-[10px] text-surface-700 hover:text-surface-400 select-none"
+                title="Bearbeiten"
+              >{open ? '△' : '▽'}</button>
+              <button
+                onClick={() => onMove(step.id, -1)} disabled={idx === 0}
+                className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 select-none"
+                title="Nach oben"
+              >▲</button>
+              <button
+                onClick={() => onMove(step.id, 1)} disabled={idx === total - 1}
+                className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 select-none"
+                title="Nach unten"
+              >▼</button>
+              <button
+                onClick={() => onDelete(step.id)}
+                className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-red-400 select-none"
+                title="Löschen"
+              >×</button>
+            </div>
+          )}
+
+          {/* Drag handle — right edge */}
+          {!fixed && (
+            <div
+              draggable={true}
+              onDragStart={e => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text', String(step.id)); onDragStart?.(step.id) }}
+              onDragEnd={e => { e.stopPropagation(); onDragEnd?.() }}
+              title="Schritt verschieben"
+              className="flex items-center justify-center w-5 h-7 cursor-grab active:cursor-grabbing select-none border-l border-surface-700/30 ml-1 pl-1 text-surface-700 hover:text-surface-400 shrink-0"
+            >
+              <svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor">
+                <circle cx="2" cy="2"  r="1.2"/><circle cx="6" cy="2"  r="1.2"/>
+                <circle cx="2" cy="7"  r="1.2"/><circle cx="6" cy="7"  r="1.2"/>
+                <circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/>
+              </svg>
+            </div>
+          )}
+        </div>
+
+        {/* Expanded edit area */}
+        {open && (
+          <div className="px-2.5 pb-2.5 pt-2 space-y-2 border-t border-surface-800/40">
+            <div>
+              <label className="text-[10px] text-surface-600 block mb-0.5">Bezeichnung</label>
+              <input
+                type="text"
+                value={step.label}
+                onChange={e => onChange(step.id, { label: e.target.value })}
+                className="w-full text-xs font-mono"
+              />
+            </div>
+
+            {step.type === 'send_homing_file' && (
+              <p className="text-[10px] text-indigo-600 font-mono py-1">
+                Verwendet die Homing-Datei aus Auto Farm → Einstellungen.
+                Bambu meldet FINISH wenn G28+Z200 abgeschlossen → danach wait_print.
+              </p>
+            )}
+
+            {step.type === 'send_file_fixed' && (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-[10px] text-surface-600 block mb-0.5">
+                    Datei-ID
+                    <span className="text-surface-700 ml-1">· Dateiliste → ID der hochgeladenen Homing-.3mf</span>
+                  </label>
+                  <input
+                    type="number" min="1" value={step.value || ''}
+                    onChange={e => onChange(step.id, { value: e.target.value })}
+                    placeholder="z.B. 3"
+                    className="w-32 text-xs font-mono"
+                  />
+                </div>
+                <p className="text-[10px] text-indigo-700 font-mono">
+                  Sendet diese Datei als echten Druckjob → Bambu meldet FINISH wenn fertig.
+                  Danach wait_print für zuverlässige Z200-Erkennung.
+                </p>
+              </div>
+            )}
+
+            {(step.type === 'macro' || step.type === 'gcode' || step.type === 'klipper_gcode') && (
+              <div>
+                <label className="text-[10px] text-surface-600 block mb-0.5">
+                  {step.type === 'macro' ? 'Makro-Name' : step.type === 'klipper_gcode' ? 'GCode (an OTTOeject)' : 'G-Code (an Bambu)'}
+                  {step.type === 'macro' && (
+                    <span className="text-surface-700 ml-1">· {'{rack}'}/{'{slot}'} = Ziel · {'{stack_rack}'}/{'{stack_slot}'} = Vorrat</span>
+                  )}
+                  {step.type === 'klipper_gcode' && (
+                    <span className="text-teal-700 ml-1">· blockiert bis Position erreicht — kein Delay nötig</span>
+                  )}
+                </label>
+                <textarea
+                  value={step.value}
+                  onChange={e => onChange(step.id, { value: e.target.value })}
+                  rows={step.value.includes('\n') ? 3 : 1}
+                  placeholder={
+                    step.type === 'macro'         ? 'z.B. GRAB_FROM_RACK RACK={rack} SLOT={slot}' :
+                    step.type === 'klipper_gcode' ? 'G28\nG1 Z200 F3000' :
+                    'G1 Z200 F3000'
+                  }
+                  className="w-full text-xs font-mono resize-none"
+                />
+              </div>
+            )}
+
+            {step.type === 'delay' && (
+              <div>
+                <label className="text-[10px] text-surface-600 block mb-0.5">Wartezeit</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number" min="0" max="600" value={step.seconds}
+                    onChange={e => onChange(step.id, { seconds: Math.max(0, Number(e.target.value)) })}
+                    className="w-24 text-xs font-mono"
+                  />
+                  <span className="text-xs text-surface-600">Sekunden</span>
+                </div>
+              </div>
+            )}
+
+            {step.type === 'bambu_move' && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <label className="text-[10px] text-surface-600 block mb-0.5">Z-Höhe (mm)</label>
+                    <input
+                      type="number" min="0" max="256" value={step.z ?? 200}
+                      onChange={e => onChange(step.id, { z: Math.max(0, Number(e.target.value)) })}
+                      className="w-24 text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-surface-600 block mb-0.5">Feed (mm/min)</label>
+                    <input
+                      type="number" min="60" max="6000" value={step.feed ?? 3000}
+                      onChange={e => onChange(step.id, { feed: Math.max(60, Number(e.target.value)) })}
+                      className="w-24 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-cyan-700 font-mono">
+                  Sendet G1 Z{step.z ?? 200} F{step.feed ?? 3000} + M400 als Mini-Druck und wartet,
+                  bis der Drucker FINISH meldet — also wirklich in Position ist (kein blinder Timer).
+                </p>
+              </div>
+            )}
+
+            {step.type === 'wait_bambu_idle' && (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-[10px] text-surface-600 block mb-0.5">Mindestdauer G28+Z200</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" min="5" max="120" value={step.seconds || 50}
+                      onChange={e => onChange(step.id, { seconds: Math.max(5, Number(e.target.value)) })}
+                      className="w-24 text-xs font-mono"
+                    />
+                    <span className="text-xs text-surface-600">Sekunden</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-cyan-700 font-mono">
+                  Wartet die verbleibende Zeit bis G28+Z200 fertig ist.
+                  Zeit der Zwischenschritte (Homen, Tür, Platte holen) wird automatisch abgezogen.
+                </p>
+              </div>
+            )}
+
+            {step.type === 'wait_pause' && (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-[10px] text-surface-600 block mb-0.5">Timeout</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" min="30" max="600" value={step.seconds || 120}
+                      onChange={e => onChange(step.id, { seconds: Math.max(30, Number(e.target.value)) })}
+                      className="w-24 text-xs font-mono"
+                    />
+                    <span className="text-xs text-surface-600">Sekunden</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-yellow-700 font-mono">
+                  Pollt MQTT bis gcode_state == PAUSE (= M400 U1 fertig, Drucker auf Z200 geparkt).
+                  Crash-Schutz: bei FAILED oder Timeout → Platte NICHT einlegen, Sequenz abgebrochen.
+                </p>
+              </div>
+            )}
+
+            {/* Optional toggle — available for all step types */}
+            <label className="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-surface-800/30">
+              <input
+                type="checkbox"
+                checked={!!step.optional}
+                onChange={e => onChange(step.id, { optional: e.target.checked })}
+                className="accent-amber-500"
+              />
+              <span className="text-[10px] text-surface-500">
+                Optional — Fehler ignorieren, Schritt gilt immer als fertig
+              </span>
+            </label>
+
+            {/* Pre-position toggle — run ~1 min before print end (only meaningful in the cycle).
+                NEVER offered for wait_print/send_file: pre-positioning the "wait for print
+                end" step would pull the wait out of the flow and eject mid-print. */}
+            {!['wait_print', 'send_file'].includes(step.type) && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!!step.prep}
+                  onChange={e => onChange(step.id, { prep: e.target.checked })}
+                  className="accent-blue-500"
+                />
+                <span className="text-[10px] text-surface-500">
+                  ⏱ Vor Druckende vorziehen — startet ~1 Min vor Druckende (OTTOeject schon mal in Position)
+                </span>
+              </label>
+            )}
+
+            {/* Conditional step (5.3) — run only if the printer status matches */}
+            <div className="pt-1 border-t border-surface-800/30 space-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-surface-500 w-14 shrink-0">Bedingung</span>
+                <select
+                  value={step.condition?.check ?? ''}
+                  onChange={e => {
+                    const check = e.target.value
+                    onChange(step.id, {
+                      condition: check
+                        ? { check, op: check === 'gcode_state' ? '==' : '<', value: check === 'gcode_state' ? 'IDLE' : 50 }
+                        : null,
+                    })
+                  }}
+                  className="text-[10px] h-6 py-0 flex-1"
+                >
+                  <option value="">— immer ausführen —</option>
+                  <option value="nozzle_temp">Düsentemperatur</option>
+                  <option value="bed_temp">Betttemperatur</option>
+                  <option value="chamber_temp">Kammertemperatur</option>
+                  <option value="gcode_state">Druckerstatus</option>
+                </select>
+              </div>
+              {step.condition?.check && (
+                <>
+                  <div className="flex items-center gap-1.5 pl-[60px]">
+                    <select
+                      value={step.condition.op}
+                      onChange={e => onChange(step.id, { condition: { ...step.condition, op: e.target.value } })}
+                      className="text-[10px] h-6 py-0 w-16"
+                    >
+                      {step.condition.check === 'gcode_state' ? (
+                        <>
+                          <option value="==">=</option>
+                          <option value="!=">≠</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="<">&lt;</option>
+                          <option value="<=">≤</option>
+                          <option value=">">&gt;</option>
+                          <option value=">=">≥</option>
+                          <option value="==">=</option>
+                        </>
+                      )}
+                    </select>
+                    <input
+                      type={step.condition.check === 'gcode_state' ? 'text' : 'number'}
+                      value={step.condition.value}
+                      onChange={e => onChange(step.id, { condition: { ...step.condition, value: e.target.value } })}
+                      placeholder={step.condition.check === 'gcode_state' ? 'IDLE / RUNNING / PAUSE / FINISH' : '°C'}
+                      className="text-[10px] h-6 py-0 flex-1"
+                    />
+                  </div>
+                  <p className="text-[9px] text-surface-600 pl-[60px]">
+                    Sonst wird der Schritt übersprungen (bei Lesefehler läuft er sicherheitshalber).
+                  </p>
+                </>
+              )}
+            </div>
+
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ─── Default values when adding a new step ──────────────────── */
+const TYPE_DEFAULTS = {
+  gcode:          { label: 'Bambu G-Code',         value: '',                 seconds: 0   },
+  klipper_gcode:  { label: 'Klipper GCode',        value: 'G1 Z200 F3000',   seconds: 0   },
+  macro:          { label: 'Makro',                value: '',                 seconds: 0   },
+  wait_bambu_idle:{ label: 'Warte Z200',            value: '',                 seconds: 50  },
+  delay:          { label: 'Wartezeit',            value: '',                 seconds: 5   },
+  send_homing_file:{ label: 'Homing senden',       value: '',                 seconds: 180 },
+  bambu_move:     { label: 'Bambu Position Z',     value: '',  z: 200, feed: 3000, seconds: 120 },
+  send_file:      { label: 'Datei senden',         value: '',                 seconds: 0   },
+  send_file_fixed:{ label: 'Feste Datei (ID)',     value: '',                 seconds: 0   },
+  wait_print:        { label: 'Auf Druckende warten',   value: '', seconds: 0   },
+  wait_pause:        { label: 'Warte auf PAUSE (Z200)', value: '', seconds: 120 },
+  wait_print_failed: { label: 'Auf Druckfehler warten', value: '', seconds: 0   },
+  clear_error:       { label: 'Fehler quittieren',      value: '', seconds: 0   },
+}
+
+/* ─── Sequence card ───────────────────────────────────────────── */
+function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true }) {
+  const [draggingId, setDraggingId] = useState(null)
+  const [dragOverId, setDragOverId] = useState(null)
+
+  const move = (id, dir) => setSteps(prev => {
+    const i = prev.findIndex(s => s.id === id)
+    if (i < 0 || (dir < 0 && i === 0) || (dir > 0 && i === prev.length - 1)) return prev
+    const next = [...prev]
+    ;[next[i], next[i + dir]] = [next[i + dir], next[i]]
+    return next
+  })
+
+  const change         = (id, upd) => setSteps(prev => prev.map(s => s.id === id ? { ...s, ...upd } : s))
+  const remove         = (id)      => setSteps(prev => prev.filter(s => s.id !== id))
+  const togglePar      = (id)      => setSteps(prev => prev.map(s => s.id === id ? { ...s, parallel: !s.parallel } : s))
+  const toggleDisabled = (id)      => setSteps(prev => prev.map(s => s.id === id ? { ...s, disabled: !s.disabled } : s))
+
+  const dragStart = (id) => setDraggingId(id)
+  const dragEnd   = ()   => { setDraggingId(null); setDragOverId(null) }
+  const dragOver  = (id) => { if (id !== draggingId) setDragOverId(id) }
+  const drop      = (targetId) => {
+    if (!draggingId || draggingId === targetId) { dragEnd(); return }
+    setSteps(prev => {
+      const fi = prev.findIndex(s => s.id === draggingId)
+      const ti = prev.findIndex(s => s.id === targetId)
+      if (fi < 0 || ti < 0) return prev
+      const next = [...prev]
+      const [item] = next.splice(fi, 1)
+      next.splice(ti, 0, item)
+      return next
+    })
+    dragEnd()
+  }
+
+  const add = (type) => {
+    const maxId = steps.reduce((m, s) => Math.max(m, s.id), 0)
+    setSteps(prev => [...prev, { id: maxId + 1, type, parallel: false, optional: false, ...TYPE_DEFAULTS[type] }])
+  }
+
+  const [runFeedback, setRunFeedback] = useState(null)
+  const runStep = async (step) => {
+    try {
+      if (step.type === 'macro') {
+        await controlService.executeMacro({ macro: step.value })
+      } else if (step.type === 'klipper_gcode') {
+        await controlService.sendKlipperGcode(step.value)
+      }
+      setRunFeedback({ ok: true, msg: `✓ ${step.value}` })
+    } catch (e) {
+      setRunFeedback({ ok: false, msg: e.response?.data?.detail ?? e.message })
+    }
+    setTimeout(() => setRunFeedback(null), 3000)
+  }
+
+  // Build parallel execution groups (same logic as backend _exec_sequence)
+  const groups = []
+  steps.forEach((step, idx) => {
+    if (step.parallel && groups.length > 0) {
+      groups[groups.length - 1].push({ step, idx })
+    } else {
+      groups.push([{ step, idx }])
+    }
+  })
+
+  return (
+    <div className="card flex flex-col gap-3">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="section-label">{title}</p>
+          {desc && <p className="text-[11px] text-surface-600 mt-0.5">{desc}</p>}
+        </div>
+        <button
+          onClick={() => setSteps(defaults)}
+          className="text-xs text-surface-700 hover:text-surface-400 shrink-0 ml-2 mt-0.5"
+        >↺ Standard</button>
+      </div>
+      {runFeedback && (
+        <div className={`text-[11px] font-mono px-2 py-1 rounded border ${runFeedback.ok ? 'text-emerald-400 border-emerald-900/50 bg-emerald-950/20' : 'text-red-400 border-red-900/50 bg-red-950/20'}`}>
+          {runFeedback.msg}
+        </div>
+      )}
+
+      <div>
+        {steps.length === 0 && (
+          <p className="text-xs text-surface-700 py-4 text-center">Keine Schritte — über + Hinzufügen ergänzen</p>
+        )}
+        {groups.map((group, gi) => (
+          <div key={gi}>
+            {/* Flow arrow between sequential steps */}
+            {gi > 0 && (
+              <div className="flex justify-center my-1.5">
+                <div className="flex flex-col items-center">
+                  <div className="w-px h-2.5 bg-surface-700/40" />
+                  <svg width="7" height="4" viewBox="0 0 7 4" fill="currentColor" className="text-surface-700/40">
+                    <path d="M3.5 4L0 0h7z"/>
+                  </svg>
+                </div>
+              </div>
+            )}
+            {group.length > 1 ? (
+              /* Parallel group — wrapped in blue box */
+              <div className="rounded-lg border border-blue-900/30 bg-blue-950/5 overflow-hidden">
+                <div className="px-2.5 py-1 bg-blue-950/20 flex items-center gap-1.5">
+                  <span className="text-[9px] font-mono text-blue-500 font-semibold select-none">∥ gleichzeitig</span>
+                  <span className="text-[9px] text-blue-700">{group.length} Schritte</span>
+                </div>
+                <div className="p-1 space-y-1">
+                  {group.map(({ step, idx }) => (
+                    <StepBlock key={step.id} step={step} idx={idx} total={steps.length}
+                      onChange={change} onMove={move} onDelete={remove}
+                      onTogglePar={togglePar} onToggleDisabled={toggleDisabled}
+                      onDragStart={dragStart} onDragEnd={dragEnd} onDragOver={dragOver} onDrop={drop}
+                      isDragOver={dragOverId === step.id} onRun={runStep} />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* Single sequential step */
+              <StepBlock key={group[0].step.id} step={group[0].step} idx={group[0].idx} total={steps.length}
+                onChange={change} onMove={move} onDelete={remove}
+                onTogglePar={togglePar} onToggleDisabled={toggleDisabled}
+                onDragStart={dragStart} onDragEnd={dragEnd} onDragOver={dragOver} onDrop={drop}
+                isDragOver={dragOverId === group[0].step.id} onRun={runStep} />
+            )}
+
+          </div>
+        ))}
+      </div>
+
+      {/* Add step buttons */}
+      <div className="flex items-center gap-1.5 flex-wrap border-t border-surface-800/50 pt-2.5">
+        <span className="text-[10px] text-surface-700 mr-0.5">+ Hinzufügen:</span>
+        {ADD_TYPES.map(type => {
+          const meta = TYPE_META[type]
+          return (
+            <button
+              key={type}
+              onClick={() => add(type)}
+              className={`flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded border transition-opacity hover:opacity-70 select-none ${meta.color} ${meta.border} bg-transparent`}
+            >
+              <span>{meta.icon}</span>
+              <span>{meta.label}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {showSlot && (
+        <p className="text-[10px] text-surface-700 font-mono -mt-1">
+          {'{rack}'}/{'{slot}'} → Ziel-Fach des Jobs &nbsp;·&nbsp; {'{stack_rack}'}/{'{stack_slot}'} → Vorrat-Stapel (aus Regal-Einstellungen)
+        </p>
+      )}
+    </div>
+  )
+}
+
+/* ─── Page ────────────────────────────────────────────────────── */
+function SequenceEditor() {
+  const [newSteps,  setNewSteps]  = useState(DEFAULT_SEQ_NEW)
+  const [nextSteps, setNextSteps] = useState(DEFAULT_SEQ_NEXT)
+  const [importErr, setImportErr] = useState(null)
+  const [loaded,    setLoaded]    = useState(false)
+  const importRef = React.useRef()
+  const saveRef   = React.useRef(null)
+
+  useEffect(() => {
+    // Migration: strip the prep flag from steps where it's nonsensical (wait_print/
+    // send_file). Cleans up sequences saved before the guard so the ⏱ badge clears
+    // and the data is consistent.
+    const sanitize = (steps) => {
+      let changed = false
+      const out = steps.map(s => {
+        if (s.prep && ['wait_print', 'send_file'].includes(s.type)) {
+          changed = true
+          return { ...s, prep: false }
+        }
+        return s
+      })
+      return { out, changed }
+    }
+    autofarmService.getSequences()
+      .then(r => {
+        const d = r.data
+        const rawNew  = Array.isArray(d.seq_new)  ? (d.seq_new.length  ? d.seq_new  : DEFAULT_SEQ_NEW)  : DEFAULT_SEQ_NEW
+        const rawNext = Array.isArray(d.seq_next) ? (d.seq_next.length ? d.seq_next : DEFAULT_SEQ_NEXT) : DEFAULT_SEQ_NEXT
+        const a = sanitize(rawNew), b = sanitize(rawNext)
+        const sNew = a.out, sNext = b.out
+        setNewSteps(sNew)
+        setNextSteps(sNext)
+        if (!d.seq_new?.length || a.changed || b.changed) {
+          autofarmService.saveSequences({ seq_new: sNew, seq_next: sNext })
+            .catch(() => {})
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true))
+  }, [])
+
+  useEffect(() => {
+    if (!loaded) return
+    clearTimeout(saveRef.current)
+    saveRef.current = setTimeout(() => {
+      autofarmService.saveSequences({ seq_new: newSteps, seq_next: nextSteps })
+        .catch(() => {})
+    }, 600)
+    return () => clearTimeout(saveRef.current)
+  }, [newSteps, nextSteps, loaded])
+
+  const exportConfig = () => {
+    const data = {
+      version: '1',
+      exported: new Date().toISOString(),
+      seq_new:  newSteps,
+      seq_next: nextSteps,
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `printloom_sequences_${new Date().toISOString().slice(0,10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const importConfig = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImportErr(null)
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result)
+        if (!data.seq_new || !data.seq_next)
+          throw new Error('Ungültiges Format — seq_new / seq_next fehlen')
+        setNewSteps(data.seq_new)
+        setNextSteps(data.seq_next)
+      } catch (err) {
+        setImportErr(err.message)
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-surface-100 mb-1">Sequenz-Editor</h2>
+          <p className="text-sm text-surface-500">
+            Ablauf des Auto Farms anpassen — Reihenfolge, Zeiten und Parallelausführung.
+            Änderungen werden sofort gespeichert und beim nächsten Lauf verwendet.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <input ref={importRef} type="file" accept=".json" className="hidden" onChange={importConfig} />
+          <button
+            onClick={() => importRef.current?.click()}
+            className="btn btn-ghost btn-sm"
+            title="Sequenzen aus JSON-Datei laden"
+          >↑ Import</button>
+          <button
+            onClick={exportConfig}
+            className="btn btn-ghost btn-sm"
+            title="Alle Sequenzen als JSON-Datei speichern"
+          >↓ Export</button>
+        </div>
+      </div>
+
+      {importErr && (
+        <div className="px-4 py-2.5 rounded-lg bg-red-950/40 border border-red-800 text-red-300 text-sm">
+          Import fehlgeschlagen: {importErr}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <SequenceCard
+          title="First Start (einmal)"
+          desc="Läuft genau einmal beim Farm-Start: Drucker homen + auf Z200 fahren (positionsgenau)."
+          steps={newSteps}
+          setSteps={setNewSteps}
+          defaults={DEFAULT_SEQ_NEW}
+        />
+        <SequenceCard
+          title="Zyklus (jeder Job)"
+          desc="Wiederkehrender Ablauf für JEDEN Job. ⏱-markierte Schritte starten ~1 Min vor Druckende."
+          steps={nextSteps}
+          setSteps={setNextSteps}
+          defaults={DEFAULT_SEQ_NEXT}
+        />
+      </div>
+
+      {/* Legend */}
+      <div className="card">
+        <p className="section-label mb-3">Legende</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {[
+            ['</>',  'Bambu GCode',   'blue-400',    'G-Code an Bambu Lab via MQTT — fire-and-forget, kein Completion-Feedback'],
+            ['⌘',    'Klipper GCode', 'teal-400',    'Raw GCode an OTTOeject (Klipper) — blockiert bis Position erreicht, kein Delay nötig'],
+            ['▶',    'Makro',         'violet-400',  'OTTOeject-Makro — {rack} = Rack-Nr, {slot} = Fach-Nr (z.B. GRAB_FROM_RACK RACK={rack} SLOT={slot})'],
+            ['◎',    'Warte Z200',    'cyan-400',    'Wartet verbleibende G28-Zeit — Zwischenschritte (Homen, Tür, Platte) werden automatisch abgezogen'],
+            ['⏱',   'Delay',         'amber-400',   'Feste Wartezeit — nur nötig wenn kein synchrones Feedback möglich'],
+            ['⇫',    'Homing',        'indigo-400',  'Konfigurierte Homing-.3mf senden (G28+Z200) — Bambu meldet FINISH → wait_print erkennt Z200 zuverlässig'],
+            ['↑',    'Senden',        'emerald-400', 'Aktuelle Job-Druckdatei an den Bambu Lab senden'],
+            ['⇪',    'Feste Datei',   'indigo-400',  'Beliebige Datei per ID aus der Dateiliste senden'],
+            ['⏳',   'Warten',        'sky-400',     'Per MQTT-Polling auf Druckende warten (FINISH) — hier läuft der 1-min Vorstart'],
+            ['⏸',   'Warten (PAUSE)', 'yellow-400',  'Pollt MQTT bis gcode_state=PAUSE (M400 U1 fertig) — Crash-Schutz bei FAILED oder Timeout'],
+            ['✗',   'Warten (FAILED)', 'red-400',    'Per MQTT-Polling auf Druckfehler warten (FAILED) — Sequenz läuft normal weiter'],
+            ['⚠',   'Fehler quit.',    'orange-400', 'Sendet stop-Befehl an Bambu — setzt FAILED zurück auf IDLE, Drucker bereit für nächsten Job'],
+            ['○',    'Optional',      'amber-600',   'Fehler werden ignoriert — Schritt gilt immer als erfolgreich abgeschlossen, Sequenz läuft weiter'],
+            ['∥',    'Parallel',      'blue-400',    'Schritt gleichzeitig mit dem vorigen Schritt ausführen (asyncio.gather)'],
+            ['on/off','Aktiv/Inaktiv', 'surface-400', 'on = Schritt aktiv · off = deaktiviert (wird beim Ausführen übersprungen, bleibt in der Liste)'],
+            ['⠿',    'Drag-Handle',   'surface-400', 'Rechts am Schritt — Klicken und Ziehen zum freien Verschieben in der Liste'],
+          ].map(([icon, label, color, desc]) => (
+            <div key={label} className="flex items-start gap-2 text-xs">
+              <span className={`font-mono w-5 text-center shrink-0 mt-0.5 text-${color}`}>{icon}</span>
+              <div className="min-w-0">
+                <span className={`font-medium text-${color}`}>{label}</span>
+                <span className="text-surface-600 ml-1.5">{desc}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default SequenceEditor
