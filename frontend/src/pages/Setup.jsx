@@ -96,6 +96,7 @@ export default function Setup({ setCurrentPage }) {
       })
       const r = await deviceService.listDevices()
       setDevices(r.data ?? [])
+      window.dispatchEvent(new CustomEvent('printloom:devicesChanged'))
       next()
     } catch (e) {
       setPErr(e.response?.data?.detail ?? e.message)
@@ -124,6 +125,7 @@ export default function Setup({ setCurrentPage }) {
       })
       const r = await deviceService.listDevices()
       setDevices(r.data ?? [])
+      window.dispatchEvent(new CustomEvent('printloom:devicesChanged'))
     } catch (e) {
       setKErr(e.response?.data?.detail ?? e.message)
     } finally { setKSaving(false) }

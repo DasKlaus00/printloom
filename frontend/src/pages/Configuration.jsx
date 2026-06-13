@@ -362,6 +362,9 @@ function Configuration() {
   const [savingWebcam, setSavingWebcam] = useState(null)
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState(null)
+  const [tab, setTab]             = useState('devices')
+
+  const bambu = devices.find(d => d.device_type === 'bambu_lab')
 
   const load = async () => {
     const d = await deviceService.listDevices()
@@ -382,6 +385,17 @@ function Configuration() {
   }
 
   useEffect(() => { load() }, [])
+
+  // Setup-Assistent (oder andere Stellen) ändern Geräte/Einstellungen → ohne F5 neu laden.
+  useEffect(() => {
+    const reload = () => load()
+    window.addEventListener('printloom:devicesChanged', reload)
+    window.addEventListener('printloom:cameraSettingsSaved', reload)
+    return () => {
+      window.removeEventListener('printloom:devicesChanged', reload)
+      window.removeEventListener('printloom:cameraSettingsSaved', reload)
+    }
+  }, [])
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -434,13 +448,23 @@ function Configuration() {
   return (
     <div className="space-y-6">
 
-      {/* ── Farm-Einstellungen ───────────────────────────────────── */}
-      <FarmSettings />
+      {/* ── Tabs ─────────────────────────────────────────────────── */}
+      <div className="flex gap-1 border-b border-surface-800">
+        {[['devices', 'Geräte'], ['cameras', 'Kameras'], ['general', 'Allgemein']].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${
+              tab === id ? 'border-blue-500 text-surface-100' : 'border-transparent text-surface-500 hover:text-surface-300'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {/* ── Regal-Konfiguration ──────────────────────────────────── */}
-      <RegalKonfiguration />
+      {/* ── Allgemein: Farm + Regal ──────────────────────────────── */}
+      {tab === 'general' && <FarmSettings />}
+      {tab === 'general' && <RegalKonfiguration />}
 
       {/* ── Devices ──────────────────────────────────────────────── */}
+      {tab === 'devices' && (
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <p className="section-label mb-0">Devices</p>
@@ -542,115 +566,107 @@ function Configuration() {
                   </div>
                 </div>
                 {testResults[device.id] && <TestResultBar result={testResults[device.id]} />}
-                {/* Kameras (zwei Streams: oben quer = Bambu, unten hochkant) */}
-                <div className="mt-2 px-4 pb-3 space-y-2">
-                  <p className="text-xs text-surface-500 font-medium">Kameras (AutoFarm)</p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-surface-600 w-32 shrink-0">Oben (Bambu / quer)</span>
-                    <input
-                      type="text"
-                      placeholder="http://192.168.1.50:8889/bambu  (WebRTC/HLS/MJPEG)"
-                      value={webcamTopUrls[device.id] ?? ''}
-                      onChange={e => setWebcamTopUrls(prev => ({ ...prev, [device.id]: e.target.value }))}
-                      className="flex-1 text-xs font-mono py-1"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-surface-600 w-32 shrink-0">Unten (hochkant)</span>
-                    <input
-                      type="text"
-                      placeholder="http://192.168.1.50:8889/stream  (WebRTC/HLS/MJPEG)"
-                      value={webcamUrls[device.id] ?? ''}
-                      onChange={e => setWebcamUrls(prev => ({ ...prev, [device.id]: e.target.value }))}
-                      className="flex-1 text-xs font-mono py-1"
-                    />
-                  </div>
-
-                  {/* Home-Assistant-Kamera (für die eingebaute X1C-Cam auf Firmware ≥01.11).
-                      HA ist der eine Kamera-Client; die App zapft den Stream von HA ab. */}
-                  <div className="mt-1 pt-2 border-t border-surface-800 space-y-2">
-                    <p className="text-[11px] text-surface-500 font-medium">
-                      🏠 X1C-Kamera über Home Assistant
-                      <span className="text-surface-600 font-normal"> — für die eingebaute Cam (oben). Trägt sich beim Speichern automatisch als „Oben"-Kamera ein.</span>
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-surface-600 w-32 shrink-0">HA-URL</span>
-                      <input type="text" placeholder="http://192.168.1.60:8123"
-                        value={haCams[device.id]?.url ?? ''}
-                        onChange={e => setHaCams(prev => ({ ...prev, [device.id]: { ...prev[device.id], url: e.target.value } }))}
-                        className="flex-1 text-xs font-mono py-1" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-surface-600 w-32 shrink-0">Entity-ID</span>
-                      <input type="text" placeholder="camera.x1c_..._kamera"
-                        value={haCams[device.id]?.entity ?? ''}
-                        onChange={e => setHaCams(prev => ({ ...prev, [device.id]: { ...prev[device.id], entity: e.target.value } }))}
-                        className="flex-1 text-xs font-mono py-1" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-surface-600 w-32 shrink-0">Token</span>
-                      <input type="password" autoComplete="off"
-                        placeholder={haCams[device.id]?.tokenSet ? '•••••• (gesetzt — leer lassen zum Behalten)' : 'Long-Lived Access Token aus HA'}
-                        value={haCams[device.id]?.token ?? ''}
-                        onChange={e => setHaCams(prev => ({ ...prev, [device.id]: { ...prev[device.id], token: e.target.value } }))}
-                        className="flex-1 text-xs font-mono py-1" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={async () => {
-                          setHaTest(prev => ({ ...prev, [device.id]: 'loading' }))
-                          try {
-                            const r = await printerService.haCameraTest(device.id)
-                            setHaTest(prev => ({ ...prev, [device.id]: r.data }))
-                          } catch (e) {
-                            setHaTest(prev => ({ ...prev, [device.id]: { ok: false, detail: e.response?.data?.detail || String(e) } }))
-                          }
-                        }}
-                        className="btn btn-ghost btn-sm text-xs">Testen</button>
-                      {haTest[device.id] === 'loading'
-                        ? <span className="text-[10px] text-surface-500">prüfe …</span>
-                        : haTest[device.id]
-                          ? <span className={`text-[10px] ${haTest[device.id].ok ? 'text-green-400' : 'text-red-400'}`}>{haTest[device.id].detail}</span>
-                          : <span className="text-[10px] text-surface-600">erst speichern, dann testen</span>}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] text-surface-600">Typ wird automatisch erkannt — Port 8889 = WebRTC (&lt;1 s), 8888/.m3u8 = HLS, sonst MJPEG. Oben leer = eingebaute X1C-Kamera.</p>
-                    <button
-                      onClick={async () => {
-                        setSavingWebcam(device.id)
-                        try {
-                          const ha = haCams[device.id] || {}
-                          const payload = {
-                            webcam_url:     webcamUrls[device.id] ?? '',
-                            webcam_url_top: webcamTopUrls[device.id] ?? '',
-                            ha_url:    (ha.url || '').trim(),
-                            ha_camera: (ha.entity || '').trim(),
-                          }
-                          // Token nur senden, wenn der User etwas eingetippt hat (leer = behalten).
-                          if ((ha.token || '').trim()) payload.ha_token = ha.token.trim()
-                          await deviceSettingsService.updateSettings(device.id, payload)
-                          if ((ha.token || '').trim())
-                            setHaCams(prev => ({ ...prev, [device.id]: { ...prev[device.id], token: '', tokenSet: true } }))
-                          window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved'))
-                        } catch(e) { console.error(e) }
-                        finally { setSavingWebcam(null) }
-                      }}
-                      disabled={savingWebcam === device.id}
-                      className="btn btn-ghost btn-sm flex-shrink-0 text-xs"
-                    >
-                      {savingWebcam === device.id ? '...' : 'Speichern'}
-                    </button>
-                  </div>
-                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+      )}
 
-      <LanguagePacks />
+      {/* ── Kameras (eigener Tab; gilt für den Bambu-Drucker) ─────── */}
+      {tab === 'cameras' && (
+        <div className="card space-y-3">
+          <p className="section-label">Kameras (AutoFarm)</p>
+          {!bambu ? (
+            <p className="text-sm text-surface-500">Erst unter „Geräte" einen Bambu-Drucker anlegen — dann hier die Kameras konfigurieren.</p>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-surface-600 w-32 shrink-0">Oben (Bambu / quer)</span>
+                <input type="text" placeholder="http://192.168.1.50:8889/bambu  (WebRTC/HLS/MJPEG)"
+                  value={webcamTopUrls[bambu.id] ?? ''}
+                  onChange={e => setWebcamTopUrls(prev => ({ ...prev, [bambu.id]: e.target.value }))}
+                  className="flex-1 text-xs font-mono py-1" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-surface-600 w-32 shrink-0">Unten (hochkant)</span>
+                <input type="text" placeholder="http://192.168.1.50:8889/stream  (WebRTC/HLS/MJPEG)"
+                  value={webcamUrls[bambu.id] ?? ''}
+                  onChange={e => setWebcamUrls(prev => ({ ...prev, [bambu.id]: e.target.value }))}
+                  className="flex-1 text-xs font-mono py-1" />
+              </div>
+
+              {/* Home-Assistant-Kamera (eingebaute X1C-Cam, Firmware ≥01.11). */}
+              <div className="mt-1 pt-2 border-t border-surface-800 space-y-2">
+                <p className="text-[11px] text-surface-500 font-medium">
+                  🏠 X1C-Kamera über Home Assistant
+                  <span className="text-surface-600 font-normal"> — für die eingebaute Cam (oben). Wird in AutoFarm automatisch als „Oben"-Kamera genutzt.</span>
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-surface-600 w-32 shrink-0">HA-URL</span>
+                  <input type="text" placeholder="http://192.168.1.60:8123"
+                    value={haCams[bambu.id]?.url ?? ''}
+                    onChange={e => setHaCams(prev => ({ ...prev, [bambu.id]: { ...prev[bambu.id], url: e.target.value } }))}
+                    className="flex-1 text-xs font-mono py-1" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-surface-600 w-32 shrink-0">Entity-ID</span>
+                  <input type="text" placeholder="camera.x1c_..._kamera"
+                    value={haCams[bambu.id]?.entity ?? ''}
+                    onChange={e => setHaCams(prev => ({ ...prev, [bambu.id]: { ...prev[bambu.id], entity: e.target.value } }))}
+                    className="flex-1 text-xs font-mono py-1" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-surface-600 w-32 shrink-0">Token</span>
+                  <input type="password" autoComplete="off"
+                    placeholder={haCams[bambu.id]?.tokenSet ? '•••••• (gesetzt — leer lassen zum Behalten)' : 'Long-Lived Access Token aus HA'}
+                    value={haCams[bambu.id]?.token ?? ''}
+                    onChange={e => setHaCams(prev => ({ ...prev, [bambu.id]: { ...prev[bambu.id], token: e.target.value } }))}
+                    className="flex-1 text-xs font-mono py-1" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={async () => {
+                    setHaTest(prev => ({ ...prev, [bambu.id]: 'loading' }))
+                    try { const r = await printerService.haCameraTest(bambu.id); setHaTest(prev => ({ ...prev, [bambu.id]: r.data })) }
+                    catch (e) { setHaTest(prev => ({ ...prev, [bambu.id]: { ok: false, detail: e.response?.data?.detail || String(e) } })) }
+                  }} className="btn btn-ghost btn-sm text-xs">Testen</button>
+                  {haTest[bambu.id] === 'loading'
+                    ? <span className="text-[10px] text-surface-500">prüfe …</span>
+                    : haTest[bambu.id]
+                      ? <span className={`text-[10px] ${haTest[bambu.id].ok ? 'text-green-400' : 'text-red-400'}`}>{haTest[bambu.id].detail}</span>
+                      : <span className="text-[10px] text-surface-600">erst speichern, dann testen</span>}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] text-surface-600">Typ wird automatisch erkannt — Port 8889 = WebRTC (&lt;1 s), 8888/.m3u8 = HLS, sonst MJPEG.</p>
+                <button onClick={async () => {
+                  setSavingWebcam(bambu.id)
+                  try {
+                    const ha = haCams[bambu.id] || {}
+                    const payload = {
+                      webcam_url:     webcamUrls[bambu.id] ?? '',
+                      webcam_url_top: webcamTopUrls[bambu.id] ?? '',
+                      ha_url:    (ha.url || '').trim(),
+                      ha_camera: (ha.entity || '').trim(),
+                    }
+                    if ((ha.token || '').trim()) payload.ha_token = ha.token.trim()
+                    await deviceSettingsService.updateSettings(bambu.id, payload)
+                    if ((ha.token || '').trim())
+                      setHaCams(prev => ({ ...prev, [bambu.id]: { ...prev[bambu.id], token: '', tokenSet: true } }))
+                    window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved'))
+                  } catch(e) { console.error(e) }
+                  finally { setSavingWebcam(null) }
+                }} disabled={savingWebcam === bambu.id} className="btn btn-ghost btn-sm flex-shrink-0 text-xs">
+                  {savingWebcam === bambu.id ? '...' : 'Speichern'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {tab === 'general' && <LanguagePacks />}
     </div>
   )
 }
