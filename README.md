@@ -57,7 +57,7 @@ Open **http://<host-ip>:8000** and follow the in-app setup.
 ```bash
 git clone https://github.com/DasKlaus00/printloom.git
 cd printloom
-docker compose up -d --build
+docker-compose up -d
 ```
 
 ---
