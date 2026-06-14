@@ -99,9 +99,16 @@ async def update_device_settings(device_id: int, body: dict, db: Session = Depen
     settings = _get_device_settings(db, device_id)
     body = dict(body)
     body.pop("ha_token_set", None)  # rein informativ, nie speichern
-    # Leeres Token-Feld = "behalten" (Frontend zeigt das Token nie an).
-    if "ha_token" in body and not body["ha_token"] and settings.get("ha_token"):
-        body.pop("ha_token")
+    # Token-Sonderfälle (Frontend bekommt das Token nie zu sehen):
+    #   ha_token == null  → explizit LÖSCHEN
+    #   ha_token == ""    → BEHALTEN (normales Speichern soll es nicht wegwerfen)
+    #   ha_token == "..." → setzen
+    if "ha_token" in body:
+        if body["ha_token"] is None:
+            settings.pop("ha_token", None)
+            body.pop("ha_token")
+        elif not body["ha_token"] and settings.get("ha_token"):
+            body.pop("ha_token")
     settings.update(body)
     _set_device_settings(db, device_id, settings)
     # Antwort ebenfalls maskieren.

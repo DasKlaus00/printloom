@@ -635,6 +635,17 @@ function Configuration() {
                     : haTest[bambu.id]
                       ? <span className={`text-[10px] ${haTest[bambu.id].ok ? 'text-green-400' : 'text-red-400'}`}>{haTest[bambu.id].detail}</span>
                       : <span className="text-[10px] text-surface-600">erst speichern, dann testen</span>}
+                  <button onClick={async () => {
+                    // HA komplett entfernen (inkl. gespeichertem Token → ha_token: null löscht serverseitig).
+                    try {
+                      await deviceSettingsService.updateSettings(bambu.id, { ha_url: '', ha_camera: '', ha_token: null })
+                      setHaCams(prev => ({ ...prev, [bambu.id]: { url: '', entity: '', token: '', tokenSet: false } }))
+                      setHaTest(prev => ({ ...prev, [bambu.id]: null }))
+                      window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved'))
+                    } catch (e) { console.error(e) }
+                  }} className="btn btn-ghost btn-sm text-xs ml-auto text-red-400/80 hover:text-red-300">
+                    HA-Kamera entfernen
+                  </button>
                 </div>
               </div>
 
