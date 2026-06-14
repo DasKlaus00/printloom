@@ -452,21 +452,40 @@ function HaPollView({ deviceId, label, portrait = false }) {
 
 /* Beide Kameras fest übereinander: oben Bambu (quer) bzw. X1C, unten hochkant.
    URLs kommen aus der Konfiguration (Konfiguration → Kameras). */
-function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady }) {
+function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, onToggle }) {
   return (
     <div className="card p-2.5 space-y-2.5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="section-label mb-0">Kameras</p>
-        <span className="text-[9px] text-surface-600">Einstellungen: Konfiguration → Kameras</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] text-surface-600 hidden sm:inline">Konfiguration → Kameras</span>
+          <button
+            onClick={onToggle}
+            disabled={!bambuId}
+            title={cameraOn ? 'Kamera ausschalten (Anzeige + Snapshots)' : 'Kamera einschalten'}
+            className={`btn btn-sm px-2 ${cameraOn ? 'btn-primary' : 'btn-ghost'}`}
+          >
+            {cameraOn ? '📷 An' : '⨯ Aus'}
+          </button>
+        </div>
       </div>
-      {/* Oben: X1C via Home Assistant > externe Bambu-URL > eingebaute X1C (Port 6000) */}
-      {haCamReady
-        ? <HaPollView deviceId={bambuId} label="X1C (Home Assistant)" />
-        : webcamUrlTop
-          ? <StreamView url={webcamUrlTop} portrait={false} label="Bambu (oben)" />
-          : <X1CView bambuId={bambuId} />}
-      {/* Unten: Hochkant */}
-      <StreamView url={webcamUrl} portrait={true} label="Hochkant (unten)" />
+      {cameraOn ? (
+        <>
+          {/* Oben: X1C via Home Assistant > externe Bambu-URL > eingebaute X1C (Port 6000) */}
+          {haCamReady
+            ? <HaPollView deviceId={bambuId} label="X1C (Home Assistant)" />
+            : webcamUrlTop
+              ? <StreamView url={webcamUrlTop} portrait={false} label="Bambu (oben)" />
+              : <X1CView bambuId={bambuId} />}
+          {/* Unten: Hochkant */}
+          <StreamView url={webcamUrl} portrait={true} label="Hochkant (unten)" />
+        </>
+      ) : (
+        <div className="flex flex-col items-center justify-center text-surface-600 gap-1 py-8 text-center">
+          <p className="text-[11px]">Kamera aus</p>
+          <p className="text-[9px] text-surface-700">Kein Livebild, keine automatischen Snapshots</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -478,6 +497,7 @@ function AutoFarm() {
   const [webcamUrl,       setWebcamUrl]       = useState('')        // untere (hochkant) Kamera
   const [webcamUrlTop,    setWebcamUrlTop]    = useState('')        // obere (Bambu / quer) Kamera
   const [haCamReady,      setHaCamReady]      = useState(false)     // X1C-Cam via Home Assistant
+  const [cameraOn,        setCameraOn]        = useState(true)      // Kamera-Toggle (Anzeige + Snapshots)
   const [jobs,            setJobs]            = useState([])
   const [farmStatus,      setFarmStatus]      = useState(null)
   const [feedback,        setFeedback]        = useState(null)
@@ -534,6 +554,21 @@ function AutoFarm() {
     setFeedback({ msg, ok })
     setTimeout(() => setFeedback(null), 5000)
   }
+
+  // Kamera an/aus: blendet Livebild aus und stoppt (auto.) Snapshots. Persistiert
+  // pro Drucker; andere Ansichten ziehen über das cameraSettingsSaved-Event nach.
+  const toggleCamera = useCallback(async () => {
+    if (!bambuId) return
+    const next = !cameraOn
+    setCameraOn(next)
+    try {
+      await deviceSettingsService.updateSettings(bambuId, { camera_enabled: next })
+      window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved'))
+    } catch {
+      setCameraOn(!next)  // bei Fehler zurückrollen
+      showFeedback('Kamera-Status konnte nicht gespeichert werden', false)
+    }
+  }, [bambuId, cameraOn])
 
   const fetchAmsSlots = useCallback(async () => {
     if (!bambuId) { setAmsSlots([]); return }
@@ -741,6 +776,7 @@ function AutoFarm() {
           .then(s => {
             setWebcamUrl(s.data?.webcam_url || ''); setWebcamUrlTop(s.data?.webcam_url_top || '')
             setHaCamReady(!!(s.data?.ha_url && s.data?.ha_camera && s.data?.ha_token_set))
+            setCameraOn(s.data?.camera_enabled !== false)
           })
           .catch(() => {})
       }
@@ -806,6 +842,7 @@ function AutoFarm() {
         .then(s => {
           setWebcamUrl(s.data?.webcam_url || ''); setWebcamUrlTop(s.data?.webcam_url_top || '')
           setHaCamReady(!!(s.data?.ha_url && s.data?.ha_camera && s.data?.ha_token_set))
+          setCameraOn(s.data?.camera_enabled !== false)
         })
         .catch(() => {})
     }
@@ -1357,7 +1394,7 @@ function AutoFarm() {
             jobs={jobs}
             curJobId={curJobId}
           />
-          <CameraPanel bambuId={bambuId} webcamUrl={webcamUrl} webcamUrlTop={webcamUrlTop} haCamReady={haCamReady} />
+          <CameraPanel bambuId={bambuId} webcamUrl={webcamUrl} webcamUrlTop={webcamUrlTop} haCamReady={haCamReady} cameraOn={cameraOn} onToggle={toggleCamera} />
         </div>
 
         {/* ── Print queue ─────────────────────────────────────── */}

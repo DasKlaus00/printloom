@@ -542,16 +542,25 @@ def get_history():
 
 SNAP_DIR = Path("/app/uploads/snapshots")
 
-def _get_webcam_url(db: Session, device_id: int) -> str:
+def _device_settings(db: Session, device_id: int) -> dict:
     from app.models.models import SystemConfig
     row = db.query(SystemConfig).filter(SystemConfig.key == f"device_settings_{device_id}").first()
     if row:
         try:
             import json as _j
-            return _j.loads(row.value).get("webcam_url", "")
+            return _j.loads(row.value) or {}
         except Exception:
             pass
-    return ""
+    return {}
+
+
+def _get_webcam_url(db: Session, device_id: int) -> str:
+    return _device_settings(db, device_id).get("webcam_url", "")
+
+
+def _camera_enabled(db: Session, device_id: int) -> bool:
+    """Camera on/off toggle. Absent = enabled, so a freshly added printer shows it."""
+    return _device_settings(db, device_id).get("camera_enabled", True) is not False
 
 
 async def capture_snapshot(device_id: int) -> Optional[str]:
@@ -560,6 +569,8 @@ async def capture_snapshot(device_id: int) -> Optional[str]:
     filename or None if unavailable. Never raises."""
     db = SessionLocal()
     try:
+        if not _camera_enabled(db, device_id):
+            return None  # Kamera per Toggle aus → keine (auto.) Snapshots
         webcam_url = _get_webcam_url(db, device_id)
         device = db.query(Device).filter(Device.id == device_id).first()
         ip, code = (device.ip_address, device.access_code) if device else (None, None)
