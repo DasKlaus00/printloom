@@ -16,7 +16,7 @@ from app.db.database import get_db, SessionLocal
 from app.models.models import Device, PrinterType, UploadedFile
 from app.services.bambu_mqtt import BambuLabMQTT
 from app.services.bambu_ftp import BambuFTP
-from app.services import storage, bambu_camera
+from app.services import storage, bambu_camera, rtsp_camera
 
 
 def _make_print_name(original: str) -> str:
@@ -593,7 +593,7 @@ async def capture_snapshot(device_id: int) -> Optional[str]:
             loop = asyncio.get_event_loop()
             if device:
                 _ensure_chamber_light_async(device)
-            img_bytes = await loop.run_in_executor(None, bambu_camera.single_frame, ip, code)
+            img_bytes = await loop.run_in_executor(None, rtsp_camera.single_frame, ip, code)
         else:
             return None
         if not img_bytes:
@@ -625,8 +625,9 @@ def _ensure_chamber_light_async(device, on: bool = True) -> None:
 
 @router.get("/camera/{device_id}")
 def camera_stream(device_id: int, db: Session = Depends(get_db)):
-    """Live MJPEG stream from the printer's built-in X1C camera (port 6000).
-    Served as multipart/x-mixed-replace so a plain <img> tag shows live video."""
+    """Live MJPEG stream from the printer's built-in X1C camera via its RTSPS stream
+    (ffmpeg-transcoded). Served as multipart/x-mixed-replace so a plain <img> tag
+    shows live video — no Home Assistant, just the printer IP + access code."""
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(404, "Gerät nicht gefunden")
@@ -640,7 +641,7 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
     # surface as a real HTTP 502 (→ the <img> onError fires and the UI shows the
     # actual reason). Otherwise StreamingResponse would already be committed and a
     # failed camera would just stream nothing → a silent black box with no error.
-    frame_iter = bambu_camera.frames(ip, code)
+    frame_iter = rtsp_camera.frames(ip, code)
     try:
         first = next(frame_iter)
     except StopIteration:
@@ -678,7 +679,7 @@ def camera_frame(device_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Gerät nicht gefunden")
     _ensure_chamber_light_async(device)
     try:
-        img = bambu_camera.single_frame(device.ip_address, device.access_code)
+        img = rtsp_camera.single_frame(device.ip_address, device.access_code)
     except Exception as e:
         raise HTTPException(502, f"Kamera nicht erreichbar: {e}")
     if not img:

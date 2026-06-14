@@ -369,10 +369,13 @@ function X1CView({ bambuId }) {
     } catch (e) { setErr(String(e?.message || e)) }
   }
   const stop = () => { setLive(false); setReady(false); setErr('') }
+  // Direkt anzeigen: sobald ein Drucker da ist, automatisch verbinden (der
+  // Kamera-Toggle im Panel steuert das Ein/Aus; hier kein manueller Klick nötig).
+  useEffect(() => { if (bambuId) connect() /* eslint-disable-next-line */ }, [bambuId])
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-surface-500">Oben · X1C (eingebaut)</span>
+        <span className="text-[10px] text-surface-500">Oben · X1C (RTSPS · direkt)</span>
         <button onClick={() => live ? stop() : connect()} disabled={!bambuId}
           className={`btn btn-sm px-2 ${live ? 'btn-primary' : 'btn-ghost'}`}
           title="LAN-Liveview muss am Drucker aktiv sein">
