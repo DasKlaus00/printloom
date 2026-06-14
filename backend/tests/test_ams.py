@@ -39,6 +39,38 @@ def test_picks_exact_color_across_slots():
     assert mapping == [1]  # slot with the matching red, not slot 0
 
 
+def test_unknown_remain_still_matches():
+    """A loaded tray with unknown remaining amount (remain=-1, e.g. third-party spool)
+    must still match — slot 1 empty, the same filament sits in slot 2."""
+    ams = {"ams": [{"id": 0, "tray": [
+        {"id": 0, "tray_type": "", "tray_color": "", "remain": 0},
+        {"id": 1, "tray_type": "PLA", "tray_color": "D3B7A7", "remain": -1},
+    ]}]}
+    mapping, missing = _ams_match_confident(["PLA"], ["#D3B7A7"], ams)
+    assert missing == [] and mapping == [1]
+
+
+def test_picks_emptiest_same_filament():
+    """Same filament in three trays → the emptiest (remain 10) is used up first."""
+    ams = {"ams": [{"id": 0, "tray": [
+        {"id": 0, "tray_type": "PLA", "tray_color": "D3B7A7", "remain": 95},
+        {"id": 1, "tray_type": "PLA", "tray_color": "D3B7A7", "remain": 10},
+        {"id": 2, "tray_type": "PLA", "tray_color": "D3B7A7", "remain": 40},
+    ]}]}
+    mapping, missing = _ams_match_confident(["PLA"], ["#D3B7A7"], ams)
+    assert missing == [] and mapping == [1]
+
+
+def test_color_beats_emptier_spool():
+    """A near-empty wrong-colour spool must NOT be chosen over a full matching-colour one."""
+    ams = {"ams": [{"id": 0, "tray": [
+        {"id": 0, "tray_type": "PLA", "tray_color": "FF0000", "remain": 90},
+        {"id": 1, "tray_type": "PLA", "tray_color": "00FF00", "remain": 5},
+    ]}]}
+    mapping, _ = _ams_match_confident(["PLA"], ["#FF0000"], ams)
+    assert mapping == [0]
+
+
 def test_missing_material_flagged():
     _, missing = _ams_match_confident(["TPU"], ["#FFFFFF"], _ams("PETG", "FFFFFFFF"))
     assert len(missing) == 1 and missing[0]["reason"] == "kein passendes Material im AMS"

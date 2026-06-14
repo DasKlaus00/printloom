@@ -192,6 +192,36 @@ def _color_dist(hex1: str, hex2: str) -> float:
     return ((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2) ** 0.5
 
 
+AMS_COLOR_THRESHOLD = 80  # keep in sync with frontend amsUtils.js
+
+
+def _tray_remain(tray: dict) -> int:
+    """Filament left as a 0–100 percentage; -1 when unknown (third-party spools)."""
+    try:
+        return int(tray.get('remain', -1))
+    except (TypeError, ValueError):
+        return -1
+
+
+def _pick_slot(candidates: list, fcolor_clean: str) -> dict:
+    """Pick the best tray among same-material candidates.
+
+    Priority: 1) colour match (trays within AMS_COLOR_THRESHOLD count as equally good),
+    2) least filament left, so near-empty spools get used up first. `remain` is a
+    percentage; -1 (unknown) is treated as 'full' so known-low spools are consumed first.
+    Colour always wins over 'emptier' — a full matching-colour spool beats an empty
+    wrong-colour one.
+    """
+    def _rem(s):
+        r = s.get('remain', -1)
+        return r if isinstance(r, int) and r >= 0 else 101  # unknown → last
+    def _key(s):
+        d = _color_dist(fcolor_clean, s['color']) if (fcolor_clean and s['color']) else 0.0
+        tier = 0 if d <= AMS_COLOR_THRESHOLD else 1
+        return (tier, d if tier else 0.0, _rem(s), s['gid'])
+    return min(candidates, key=_key)
+
+
 def _match_ams_live(types: list, colors: list, ams_raw: dict) -> list:
     """
     For each filament (type + color), find the best AMS slot from live printer status.
@@ -202,14 +232,17 @@ def _match_ams_live(types: list, colors: list, ams_raw: dict) -> list:
     for unit in (ams_raw.get('ams') or []):
         uid = int(unit.get('id', 0))
         for tray in (unit.get('tray') or []):
-            if int(tray.get('remain', -1)) <= 0:
+            stype  = (tray.get('tray_type','') or tray.get('tray_sub_brands','') or '').upper().strip()
+            # A tray is loaded when it carries a material type. `remain` is the percentage
+            # left and is -1 when unknown (third-party spools w/o RFID) — NOT a sign of empty.
+            if not stype:
                 continue
             tid    = int(tray.get('id', 0))
             gid    = uid * 4 + tid
-            stype  = (tray.get('tray_type','') or tray.get('tray_sub_brands','') or '').upper().strip()
             scolor = (tray.get('tray_color','') or '').upper().lstrip('#')
-            slots.append({'gid': gid, 'type': stype, 'type_base': stype.split()[0] if stype else '', 'color': scolor})
-            logger.info(f"  AMS slot {gid}: {stype} #{scolor[:6]}")
+            slots.append({'gid': gid, 'type': stype, 'type_base': stype.split()[0] if stype else '',
+                          'color': scolor, 'remain': _tray_remain(tray)})
+            logger.info(f"  AMS slot {gid}: {stype} #{scolor[:6]} remain={_tray_remain(tray)}")
 
     if not slots:
         logger.warning("No AMS slots — sequential fallback")
@@ -226,13 +259,8 @@ def _match_ams_live(types: list, colors: list, ams_raw: dict) -> list:
             (s['type_base'] and s['type_base'] in ftype.upper())
         )] or slots
 
-        # Best color match
-        if fcolor_clean and any(s['color'] for s in candidates):
-            best = min(candidates, key=lambda s: _color_dist(fcolor_clean, s['color']))
-        else:
-            best = candidates[0]
-
-        logger.info(f"  Filament {i}: {ftype} #{fcolor_clean[:6]} → slot {best['gid']} ({best['type']} #{best['color'][:6]})")
+        best = _pick_slot(candidates, fcolor_clean)
+        logger.info(f"  Filament {i}: {ftype} #{fcolor_clean[:6]} → slot {best['gid']} ({best['type']} #{best['color'][:6]} remain={best.get('remain')})")
         mapping.append(best['gid'])
 
     return mapping
@@ -244,13 +272,15 @@ def _ams_slots_from_raw(ams_raw: dict) -> list:
     for unit in (ams_raw.get('ams') or []):
         uid = int(unit.get('id', 0))
         for tray in (unit.get('tray') or []):
-            if int(tray.get('remain', -1)) <= 0:
+            stype  = (tray.get('tray_type', '') or tray.get('tray_sub_brands', '') or '').upper().strip()
+            # Loaded = has a material type. `remain` (-1 = unknown) does NOT mean empty.
+            if not stype:
                 continue
             tid    = int(tray.get('id', 0))
-            stype  = (tray.get('tray_type', '') or tray.get('tray_sub_brands', '') or '').upper().strip()
             scolor = (tray.get('tray_color', '') or '').upper().lstrip('#')
             slots.append({'gid': uid * 4 + tid, 'type': stype,
-                          'type_base': stype.split()[0] if stype else '', 'color': scolor})
+                          'type_base': stype.split()[0] if stype else '', 'color': scolor,
+                          'remain': _tray_remain(tray)})
     return slots
 
 
@@ -286,10 +316,7 @@ def _ams_match_confident(types: list, colors: list, ams_raw: dict) -> tuple:
             mapping.append(slots[0]['gid'])
             continue
 
-        if fcolor_clean and any(s['color'] for s in candidates):
-            best = min(candidates, key=lambda s: _color_dist(fcolor_clean, s['color']))
-        else:
-            best = candidates[0]
+        best = _pick_slot(candidates, fcolor_clean)
         mapping.append(best['gid'])
     return mapping, missing
 

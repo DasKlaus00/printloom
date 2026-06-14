@@ -139,6 +139,10 @@ let dynamicPacks = (() => {
   try { return JSON.parse(localStorage.getItem(PACKS_KEY) || '{}') } catch { return {} }
 })()
 
+// English overrides keyed by the exact German source string (see tr() below).
+// Filled in incrementally per page; missing entries fall back to German.
+const EN_STRINGS = {}
+
 function deepMerge(base, over) {
   if (over === null || typeof over !== 'object' || Array.isArray(over)) return over
   const out = (base && typeof base === 'object' && !Array.isArray(base)) ? { ...base } : {}
@@ -185,7 +189,19 @@ export function useLanguage() {
     for (const p of parts) { r = r?.[p]; f = f?.[p] }
     return r ?? f ?? key
   }
-  return { lang, t }
+  // tr(germanText): the app is authored in German; pass the exact German source
+  // string and get the English translation when the UI language is "en".
+  // Missing entries fall back to the German source verbatim — so a forgotten
+  // string is never broken, just untranslated. Dynamic language packs may add a
+  // "strings" map ({ "<de source>": "<translation>" }) for other languages.
+  const stringMap = lang === 'en' ? EN_STRINGS : (dynamicPacks[lang]?.strings || null)
+  const tr = (de, ...args) => {
+    let out = (stringMap && stringMap[de] != null) ? stringMap[de] : de
+    // tr('… {0} …', a, b) → positional interpolation
+    args.forEach((a, i) => { out = out.replaceAll(`{${i}}`, String(a)) })
+    return out
+  }
+  return { lang, t, tr }
 }
 
 export function setLanguage(lang) {

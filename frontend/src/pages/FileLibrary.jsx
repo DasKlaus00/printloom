@@ -534,10 +534,12 @@ function FileLibrary() {
         for (const unit of raw) {
           const uid = +unit.id
           for (const tray of (unit.tray ?? [])) {
-            if (+(tray.remain ?? 100) <= 0) continue
+            // Loaded = has a material type; remain (-1 = unknown) does NOT mean empty.
+            const type = tray.tray_type || tray.tray_sub_brands || ''
+            if (!type) continue
             slots.push({
               gid:   uid * 4 + +tray.id,
-              type:  tray.tray_type || tray.tray_sub_brands || '',
+              type,
               color: (tray.tray_color || '').replace('#', '').slice(0, 6),
             })
           }
