@@ -169,6 +169,34 @@ function App() {
     return () => clearInterval(t)
   }, [])
 
+  /* ── Auto-Reload nach Update ───────────────────────────────────
+     Pollt die laufende Container-Version. Weicht sie vom geladenen Bundle ab,
+     wurde aktualisiert (per Knopf ODER per CLI) → Seite neu laden, damit der
+     offene Tab das neue Frontend bekommt. */
+  useEffect(() => {
+    let reloaded = false
+    const check = () =>
+      systemService.getRunningVersion()
+        .then(r => {
+          const v = r.data?.version
+          if (!reloaded && v && v !== 'unknown' && v !== VERSION) {
+            reloaded = true
+            window.location.reload()
+          }
+        })
+        .catch(() => {})
+    check()
+    const t = setInterval(check, 30000)
+    const onVisible = () => { if (document.visibilityState === 'visible') check() }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [])
+
   /* ── Online / health check (local backend) ────────────────── */
   useEffect(() => {
     const check = () =>

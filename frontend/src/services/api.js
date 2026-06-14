@@ -102,6 +102,7 @@ export const calibrationService = {
 
 export const systemService = {
   getVersion:       (channel) => api.get('/system/version', { params: channel ? { channel } : {} }),
+  getRunningVersion:() => api.get('/system/running-version'),
   triggerUpdate:    (channel) => api.post('/system/update', channel ? { channel } : {}),
   getNotifications: () => api.get('/system/notifications'),
   saveNotifications:(data) => api.post('/system/notifications', data),

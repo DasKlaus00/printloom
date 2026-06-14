@@ -506,7 +506,7 @@ function Configuration() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-surface-500 block mb-1">Serial Number</label>
-                  <input name="serial_number" value={form.serial_number} onChange={handleChange} placeholder="00M09D..." required />
+                  <input name="serial_number" value={form.serial_number} onChange={handleChange} placeholder="z. B. 00M…" required />
                 </div>
                 <div>
                   <label className="text-xs text-surface-500 block mb-1">Access Code</label>

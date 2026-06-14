@@ -209,7 +209,7 @@ export default function Setup({ setCurrentPage }) {
                     onChange={e => setPForm(f => ({ ...f, name: e.target.value }))} />
                   <input className="w-full text-sm" placeholder="IP-Adresse (192.168.1.100)" value={pForm.ip_address}
                     onChange={e => setPForm(f => ({ ...f, ip_address: e.target.value }))} />
-                  <input className="w-full text-sm" placeholder="Seriennummer (00M09D...)" value={pForm.serial_number}
+                  <input className="w-full text-sm" placeholder="Seriennummer (z. B. 00M…)" value={pForm.serial_number}
                     onChange={e => setPForm(f => ({ ...f, serial_number: e.target.value }))} />
                   <input className="w-full text-sm" type="password" placeholder="Access-Code" value={pForm.access_code}
                     onChange={e => setPForm(f => ({ ...f, access_code: e.target.value }))} />

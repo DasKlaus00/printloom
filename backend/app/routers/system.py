@@ -162,6 +162,14 @@ async def _check_beta(current: str) -> dict:
     return result
 
 
+@router.get("/running-version")
+async def running_version():
+    """Die Version des laufenden Containers — billig, ohne Netzwerk-Calls.
+    Das Frontend pollt das und lädt die Seite neu, sobald es vom geladenen
+    Bundle abweicht (greift nach In-App- UND nach manuellem CLI-Update)."""
+    return {"version": _get_current_version()}
+
+
 def _docker_available() -> bool:
     try:
         from app.services import updater
