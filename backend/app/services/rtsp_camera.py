@@ -15,6 +15,7 @@ Requires ffmpeg in the image and "LAN Mode Liveview" enabled on the printer.
 The cert is self-signed; ffmpeg's rtsps client does not verify it by default.
 """
 import subprocess
+import threading
 import logging
 from typing import Iterator, Optional
 
@@ -22,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 RTSP_PORT = 322
 _MAX_FRAME = 8_000_000      # sanity cap (8 MB) for a single JPEG
-_RW_TIMEOUT_US = 10_000_000  # ffmpeg I/O timeout (µs) → fail fast if unreachable
 
 
 def _url(ip: str, access_code: str) -> str:
@@ -30,9 +30,11 @@ def _url(ip: str, access_code: str) -> str:
 
 
 def _cmd(ip: str, access_code: str, single: bool, fps: int = 10) -> list:
+    # NOTE: no -rw_timeout / -stimeout here — those vary by ffmpeg build and the
+    # RTSP demuxer rejects unknown ones ("Error opening input files: Option not
+    # found"). A connect/first-frame timeout is enforced with a watchdog instead.
     cmd = [
         "ffmpeg", "-loglevel", "error", "-nostdin",
-        "-rw_timeout", str(_RW_TIMEOUT_US),   # abort if no I/O within the window
         "-rtsp_transport", "tcp",
         "-i", _url(ip, access_code),
         "-an",                                 # X1C stream has no audio
@@ -54,6 +56,16 @@ def frames(ip: str, access_code: str, read_timeout: float = 15.0,
         _cmd(ip, access_code, single),
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
     )
+    # Watchdog: if ffmpeg produces no first frame within read_timeout (printer off /
+    # unreachable / LAN-Liveview aus), kill it so the read() returns and we raise.
+    got_first = threading.Event()
+    def _watchdog():
+        if not got_first.wait(read_timeout):
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    threading.Thread(target=_watchdog, daemon=True).start()
     buf = bytearray()
     count = 0
     try:
@@ -77,6 +89,7 @@ def frames(ip: str, access_code: str, read_timeout: float = 15.0,
                     break
                 jpeg = bytes(buf[:end + 2])
                 del buf[:end + 2]
+                got_first.set()  # stop the connect watchdog
                 yield jpeg
                 count += 1
                 if max_frames and count >= max_frames:
@@ -92,6 +105,7 @@ def frames(ip: str, access_code: str, read_timeout: float = 15.0,
             raise ConnectionError(
                 msg or "ffmpeg lieferte kein Bild — LAN-Modus Liveview am Drucker aktiv? Access-Code korrekt?")
     finally:
+        got_first.set()  # release the watchdog thread
         for closer in (lambda: proc.kill(),
                        lambda: proc.stdout and proc.stdout.close(),
                        lambda: proc.stderr and proc.stderr.close()):
