@@ -1,0 +1,50 @@
+# ── Printloom — einfachstes Produktions-Setup (Image aus ghcr, 1-Klick-Update) ──
+#
+# Kein Token, kein Watchtower, keine .env noetig. Das In-App-Update laeuft ueber
+# den gemounteten Docker-Socket (die App zieht das neue Image und startet sich
+# selbst neu — erledigt auch den Kanalwechsel Latest/Beta).
+#
+# Installation (frischer Host):
+#
+#     git clone https://github.com/DasKlaus00/printloom.git
+#     cd printloom
+#     cp docker-compose.simple.yml.example docker-compose.yml
+#     docker compose up -d
+#
+# Updaten danach: WebUI -> System -> "Update installieren"  (oder:
+#     docker compose pull && docker compose up -d )
+#
+# Kanal waehlen: im WebUI umschalten, oder hier PRINTLOOM_CHANNEL setzen:
+#     PRINTLOOM_CHANNEL=beta docker compose up -d
+#
+# Sicherheitshinweis: der App-Container bekommt den Docker-Socket gemountet,
+# damit das 1-Klick-Update funktioniert. Das gibt der App Kontrolle ueber Docker
+# — auf einem privaten LAN-Geraet vertretbar. Wer das nicht will, entfernt den
+# docker.sock-Mount; dann updatest du nur noch manuell per `docker compose pull`.
+
+services:
+  printloom:
+    image: ghcr.io/dasklaus00/printloom:${PRINTLOOM_CHANNEL:-latest}
+    container_name: printloom-app
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - APP_ENV=production
+      - GITHUB_REPO=DasKlaus00/printloom
+      # Damit das 1-Klick-Update das richtige Image/den Container findet:
+      - PRINTLOOM_IMAGE=ghcr.io/dasklaus00/printloom
+      - PRINTLOOM_CONTAINER=printloom-app
+    volumes:
+      # Daten (Geraete, Regal-Config, Sequenzen, Queue, Uploads) bleiben erhalten.
+      - ./backend/uploads:/app/uploads
+      - ./backend/db:/app/db
+      # Docker-Socket -> 1-Klick-Update + Kanalwechsel aus dem WebUI:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
