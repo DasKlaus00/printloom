@@ -398,6 +398,7 @@ def _backup_files() -> list:
         (filaments.CUSTOM_PATH,      "filaments"),
         (str(db_dir / "schedules.json"), "schedules"),
         (_langpacks_file(),          "langpacks"),
+        (_dashboard_file(),          "dashboard_layout"),
     ]
 
 
@@ -647,3 +648,39 @@ async def lang_delete(code: str):
     packs.pop(code.strip().lower(), None)
     storage.write_json(_langpacks_file(), packs)
     return {"success": True, "installed": list(packs.keys())}
+
+
+# ─── Auto-Farm dashboard layout (frei konfigurierbar, global) ────────────────
+# Stored as db/dashboard_layout.json: { "layout": [ {i,x,y,w,h,...} ], "hidden": [ids] }.
+# Global (gilt für alle Geräte) und Teil des Backups. Position + Größe stecken im
+# react-grid-layout-Array, "hidden" merkt sich ausgeblendete Panels.
+
+def _dashboard_file() -> str:
+    return str(_db_dir() / "dashboard_layout.json")
+
+
+@router.get("/dashboard-layout")
+async def get_dashboard_layout():
+    """Gespeichertes Auto-Farm-Dashboard-Layout (leeres Objekt = Standard verwenden)."""
+    data = storage.read_json(_dashboard_file(), {})
+    return data if isinstance(data, dict) else {}
+
+
+@router.put("/dashboard-layout")
+async def save_dashboard_layout(body: dict):
+    """Layout (Positionen/Größen) + ausgeblendete Panels speichern."""
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Ungültiges Layout")
+    payload = {
+        "layout": body.get("layout") or [],
+        "hidden": body.get("hidden") or [],
+    }
+    storage.write_json(_dashboard_file(), payload)
+    return {"success": True}
+
+
+@router.delete("/dashboard-layout")
+async def reset_dashboard_layout():
+    """Layout auf Standard zurücksetzen (Datei leeren)."""
+    storage.write_json(_dashboard_file(), {})
+    return {"success": True}

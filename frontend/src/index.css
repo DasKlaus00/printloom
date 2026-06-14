@@ -203,3 +203,45 @@
 .progress-active {
   animation: glow-blue 2s ease-in-out infinite;
 }
+
+/* ── Auto-Farm-Dashboard (react-grid-layout) ───────────────── */
+/* Jedes Panel füllt seine Rasterzelle; langer Inhalt scrollt intern. */
+.dashboard-grid .react-grid-item > .panel-fill {
+  height: 100%;
+  overflow: auto;
+}
+/* Platzhalter (Zielposition beim Ziehen) */
+.dashboard-grid .react-grid-placeholder {
+  background: rgb(59 130 246 / 0.25);
+  border: 1px dashed rgb(59 130 246 / 0.7);
+  border-radius: 1rem;
+}
+/* Im Bearbeiten-Modus: Panels umranden + Greif-Cursor, Resize-Griff sichtbar. */
+.dashboard-grid.is-editing .react-grid-item {
+  outline: 1px dashed rgb(59 130 246 / 0.5);
+  outline-offset: -1px;
+  border-radius: 1rem;
+  cursor: move;
+}
+.dashboard-grid.is-editing .react-resizable-handle {
+  opacity: 1;
+}
+/* Im Bearbeiten-Modus Panel-Inhalt nicht anklickbar (Klicks gehen ans Ziehen),
+   nur der Resize-Griff bleibt aktiv. */
+.dashboard-grid.is-editing .react-grid-item > *:not(.react-resizable-handle) {
+  pointer-events: none;
+}
+.dashboard-grid .react-resizable-handle {
+  opacity: 0;
+}
+.dashboard-grid.is-editing .react-resizable-handle::after {
+  border-right-color: rgb(96 165 250 / 0.9);
+  border-bottom-color: rgb(96 165 250 / 0.9);
+  width: 8px;
+  height: 8px;
+}
+/* Beim aktiven Ziehen leicht hervorheben. */
+.dashboard-grid .react-grid-item.react-draggable-dragging {
+  z-index: 30;
+  outline-color: rgb(59 130 246 / 0.9);
+}

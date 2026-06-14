@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService } from '../services/api'
+import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService, systemService } from '../services/api'
+import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout } from '../components/DashboardGrid'
 import { parseSlotKey, slotsNeeded, autoSlot, checkClearance } from '../services/rackUtils'
 import { amsMissing, colorDist } from '../services/amsUtils'
 import { useQueueEta, fmtDur } from '../services/useQueueEta'
@@ -120,11 +121,22 @@ const RACK_DOT   = { free: 'dot-gray', ready: 'dot-green', printing: 'dot-blue',
 const RACK_COL   = { free: 'text-surface-600', ready: 'text-emerald-400', printing: 'text-blue-400', done: 'text-amber-400', locked: 'text-red-400' }
 const RACK_LABEL = { free: 'Leer', ready: 'Bereit', printing: 'Druckt', done: 'Fertig', locked: 'Gesperrt' }
 
-/* ── Aktueller Schritt (oben in der Sidebar, über „Regal") ─── */
-function CurrentStep({ farmStatus }) {
-  if (!farmStatus?.running || !farmStatus?.seq_step_label) return null
+/* ── Aktueller Schritt (Dashboard-Panel) ──────────────────────
+   idle=true → zeigt auch im Leerlauf einen Platzhalter (sonst leeres Panel). */
+function CurrentStep({ farmStatus, idle }) {
+  const active = farmStatus?.running && farmStatus?.seq_step_label
+  if (!active) {
+    if (!idle) return null
+    return (
+      <div className="card p-2.5">
+        <p className="section-label mb-1">Aktueller Schritt</p>
+        <p className="text-[10px] text-surface-600">Kein aktiver Schritt</p>
+      </div>
+    )
+  }
   return (
     <div className="card p-2.5 bg-blue-950/20 border-blue-800/40">
+      <p className="section-label mb-1">Aktueller Schritt</p>
       <div className="flex items-center gap-1.5">
         <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0" />
         <p className="text-[9px] font-mono text-blue-300 truncate">{farmStatus.seq_step_label}</p>
@@ -533,6 +545,12 @@ function AutoFarm() {
   const [stackSlot,      setStackSlot]       = useState(7)
   const [maxPlates,       setMaxPlates]       = useState(4)
   const [heightMarginPct, setHeightMarginPct] = useState(15)
+  // Frei konfigurierbares Dashboard (Position/Größe/Ein-Aus der Panels, serverseitig)
+  const [editingDash, setEditingDash] = useState(false)
+  const [dashLayout,  setDashLayout]  = useState(DEFAULT_LAYOUT)
+  const [dashHidden,  setDashHidden]  = useState([])
+  const dashSaveRef   = useRef(null)
+  const dashLoadedRef = useRef(false)
   const prevRunningRef = useRef(false)
   const pollTimerRef = useRef(null)
   const settingsSaveRef = useRef(null)
@@ -575,6 +593,54 @@ function AutoFarm() {
       showFeedback('Kamera-Status konnte nicht gespeichert werden', false)
     }
   }, [bambuId, cameraOn])
+
+  /* ── Dashboard-Layout laden/speichern (serverseitig, global) ─── */
+  useEffect(() => {
+    systemService.getDashboardLayout()
+      .then(r => {
+        const d = r.data || {}
+        if (Array.isArray(d.layout) && d.layout.length) setDashLayout(mergeLayout(d.layout))
+        if (Array.isArray(d.hidden)) setDashHidden(d.hidden)
+      })
+      .catch(() => {})
+      .finally(() => { dashLoadedRef.current = true })
+  }, [])
+
+  const persistDash = useCallback((layout, hidden) => {
+    if (!dashLoadedRef.current) return          // nicht während des Erst-Ladens speichern
+    clearTimeout(dashSaveRef.current)
+    dashSaveRef.current = setTimeout(() => {
+      systemService.saveDashboardLayout({ layout, hidden }).catch(() => {})
+    }, 600)
+  }, [])
+
+  // RGL meldet nur die sichtbaren Items — in den Gesamt-Layout-Stand einmischen,
+  // damit ausgeblendete Panels ihre Position/Größe behalten.
+  const onDashLayoutChange = useCallback((lay) => {
+    setDashLayout(prev => {
+      const map = new Map(prev.map(l => [l.i, l]))
+      lay.forEach(l => map.set(l.i, { ...map.get(l.i), ...l }))
+      const next = Array.from(map.values())
+      persistDash(next, dashHidden)
+      return next
+    })
+  }, [dashHidden, persistDash])
+
+  const toggleDashPanel = useCallback((id) => {
+    setDashHidden(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+      persistDash(dashLayout, next)
+      return next
+    })
+  }, [dashLayout, persistDash])
+
+  const resetDash = useCallback(() => {
+    setDashLayout(DEFAULT_LAYOUT)
+    setDashHidden([])
+    dashLoadedRef.current = true
+    systemService.saveDashboardLayout({ layout: DEFAULT_LAYOUT, hidden: [] }).catch(() => {})
+    showFeedback('Dashboard auf Standard zurückgesetzt')
+  }, [])
 
   const fetchAmsSlots = useCallback(async () => {
     if (!bambuId) { setAmsSlots([]); return }
@@ -1346,6 +1412,13 @@ function AutoFarm() {
 
         {/* Controls */}
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setEditingDash(e => !e)}
+            className={`btn btn-sm ${editingDash ? 'btn-primary' : 'btn-ghost'}`}
+            title="Dashboard anpassen: Panels verschieben, Größe ändern, ein-/ausblenden"
+          >
+            {editingDash ? '✓ Fertig' : '✎ Layout'}
+          </button>
           {!running ? (
             <>
               {jobs.some(j => j.status !== 'pending') && (
@@ -1390,19 +1463,45 @@ function AutoFarm() {
         </div>
       )}
 
-      {/* ── Main layout: Viz | Queue | Sidebar ─────────────────── */}
-      <div className="grid grid-cols-[330px_1fr_280px] gap-4 items-start">
-
-        {/* ── Farm-Visualisierung + Kamera ─────────────────────── */}
-        <div className="space-y-4">
-          <FarmViz
-            farmStatus={farmStatus}
-            jobs={jobs}
-            curJobId={curJobId}
-          />
-          <CameraPanel bambuId={bambuId} webcamUrl={webcamUrl} webcamUrlTop={webcamUrlTop} haCamReady={haCamReady} cameraOn={cameraOn} onToggle={toggleCamera} />
+      {/* ── Bearbeiten-Leiste: Panels ein-/ausblenden ── */}
+      {editingDash && (
+        <div className="card p-2.5 flex items-center gap-2 flex-wrap">
+          <span className="section-label mb-0 mr-1">Panels</span>
+          {PANELS.map(p => {
+            const on = !dashHidden.includes(p.id)
+            return (
+              <button key={p.id} onClick={() => toggleDashPanel(p.id)}
+                className={`text-[11px] font-medium px-2 h-7 rounded-lg border transition-colors ${
+                  on ? 'border-blue-700 bg-blue-950/40 text-blue-300'
+                     : 'border-surface-700 text-surface-600 hover:text-surface-400'}`}
+                title={on ? 'Ausblenden' : 'Einblenden'}>
+                {on ? '☑' : '☐'} {p.label}
+              </button>
+            )
+          })}
+          <button onClick={resetDash}
+            className="ml-auto text-[11px] text-surface-500 hover:text-surface-300 transition-colors"
+            title="Positionen, Größen und Sichtbarkeit auf Standard zurücksetzen">
+            ↺ Standard
+          </button>
         </div>
+      )}
 
+      {/* ── Frei konfigurierbares Dashboard-Raster ── */}
+      <DashboardGrid layout={dashLayout} editing={editingDash} onLayoutChange={onDashLayoutChange}>
+        {[
+          !dashHidden.includes('camera') && (
+            <div key="camera" className="panel-fill">
+              <CameraPanel bambuId={bambuId} webcamUrl={webcamUrl} webcamUrlTop={webcamUrlTop} haCamReady={haCamReady} cameraOn={cameraOn} onToggle={toggleCamera} />
+            </div>
+          ),
+          !dashHidden.includes('phases') && (
+            <div key="phases" className="panel-fill">
+              <FarmViz farmStatus={farmStatus} jobs={jobs} curJobId={curJobId} />
+            </div>
+          ),
+          !dashHidden.includes('queue') && (
+            <div key="queue" className="panel-fill">
         {/* ── Print queue ─────────────────────────────────────── */}
         <div className="card">
           <div className="flex items-start justify-between mb-4 gap-2 flex-wrap">
@@ -1706,13 +1805,15 @@ function AutoFarm() {
             </div>
           )}
         </div>
-
-        {/* ── Sidebar ─────────────────────────────────────────── */}
-        <div className="space-y-3">
-
-          {/* Aktueller Schritt — ganz oben, über dem Regal */}
-          <CurrentStep farmStatus={farmStatus} />
-
+            </div>
+          ),
+          !dashHidden.includes('step') && (
+            <div key="step" className="panel-fill">
+              <CurrentStep farmStatus={farmStatus} idle />
+            </div>
+          ),
+          !dashHidden.includes('rack') && (
+            <div key="rack" className="panel-fill">
           {/* Rack */}
           <div className="card">
             <div className="flex items-center justify-between mb-3">
@@ -1837,7 +1938,10 @@ function AutoFarm() {
               </div>
             )}
           </div>
-
+            </div>
+          ),
+          !dashHidden.includes('activity') && (
+            <div key="activity" className="panel-fill">
           {/* Activity log */}
           <div className="card">
             <div className="flex items-center justify-between mb-2">
@@ -1871,9 +1975,10 @@ function AutoFarm() {
               </div>
             )}
           </div>
-
-        </div>
-      </div>
+            </div>
+          ),
+        ].filter(Boolean)}
+      </DashboardGrid>
     </div>
   )
 }

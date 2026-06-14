@@ -113,6 +113,9 @@ export const systemService = {
   getLangInstalled: () => api.get('/system/lang/installed'),
   importLang:       (pack) => api.post('/system/lang/import', pack),
   deleteLang:       (code) => api.delete(`/system/lang/${code}`),
+  getDashboardLayout:  () => api.get('/system/dashboard-layout'),
+  saveDashboardLayout: (data) => api.put('/system/dashboard-layout', data),
+  resetDashboardLayout:() => api.delete('/system/dashboard-layout'),
 }
 
 export const autofarmService = {
