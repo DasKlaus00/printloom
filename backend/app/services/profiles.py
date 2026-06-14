@@ -27,9 +27,20 @@ SCHEMA = "om4d-profile/1"
 _RACK_CONFIG_KEYS = ["num_racks", "slots_per_rack", "slot_height_mm",
                      "stack_rack", "stack_slot", "max_plates", "height_margin_pct"]
 
-# Sequence step types the executor understands (see sequenceData.js / loop).
-_ALLOWED_STEP_TYPES = {"macro", "delay", "send_file", "wait_print", "klipper_gcode"}
-_STEP_FIELDS = ("id", "type", "label", "value", "seconds", "parallel", "optional")
+# Sequence step types the executor understands (see SequenceEditor.jsx TYPE_META).
+# Must stay in sync — anything missing here gets silently dropped on import.
+_ALLOWED_STEP_TYPES = {
+    # curated / current
+    "macro", "klipper_gcode", "gcode", "bambu_move",
+    "send_homing_file", "send_file", "wait_print", "delay",
+    # legacy (still executed for older sequences)
+    "wait_bambu_idle", "send_file_fixed", "wait_pause",
+    "wait_print_failed", "clear_error",
+}
+# All fields a step may carry. Numeric fields (z/feed/seconds) are preserved as-is;
+# `value` is coerced to a string (macro name / raw g-code).
+_STEP_FIELDS = ("id", "type", "label", "value", "seconds", "z", "feed",
+                "parallel", "optional", "disabled", "prep", "condition")
 
 
 # ── Read current state ──────────────────────────────────────────────────────

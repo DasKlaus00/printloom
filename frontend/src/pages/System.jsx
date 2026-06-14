@@ -179,12 +179,19 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
       onUpdatePhase?.('done')
       setTimeout(() => window.location.reload(), 2500)
     } catch (e) {
-      const msg = e.response?.data?.detail || String(e)
-      if (msg.includes('Watchtower') || msg.includes('Name or service not known')) {
-        setPhase('no-watchtower')
+      if (e.response) {
+        // Backend answered with an error → the update did NOT start. Show the real
+        // reason (e.g. private ghcr package, no Docker socket) instead of waiting.
+        const detail = e.response.data?.detail || `Fehler ${e.response.status}`
+        if (/watchtower|service not known/i.test(detail)) {
+          setPhase('no-watchtower')
+        } else {
+          setPhase(null)
+          setError(detail)
+        }
         onUpdatePhase?.(null)
       } else {
-        // Network error = container restarted mid-request
+        // No response = connection dropped because the container restarted mid-request.
         await waitForRestart()
         setPhase('done')
         onUpdatePhase?.('done')
@@ -374,6 +381,18 @@ docker compose up -d`}
           </div>
         )}
 
+        {/* No Docker socket → one-click update can't work; tell the user up front. */}
+        {info && info.docker_available === false && !['done', 'running'].includes(phase) && (
+          <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
+            <span className="text-amber-400 text-sm mt-0.5">⚠</span>
+            <p className="text-amber-300 text-xs">
+              Kein Docker-Socket erkannt — Ein-Klick-Update ist nicht möglich. In der Compose-Datei
+              {' '}<span className="font-mono bg-amber-950/40 px-1 rounded">/var/run/docker.sock</span>{' '}
+              in den App-Container mounten (siehe <span className="font-mono">docker-compose.prod.yml.example</span>).
+            </p>
+          </div>
+        )}
+
         {/* Action buttons (both channels) */}
         <div className="flex gap-3 flex-wrap">
           <button
@@ -432,7 +451,12 @@ docker compose up -d`}
       <div className="card p-6 space-y-4">
         <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">Backup &amp; Restore</h2>
         <p className="text-xs text-surface-500">
-          Alle Einstellungen (Rack-Konfiguration, Zeitpläne, Kalibrierung) als JSON exportieren oder wiederherstellen.
+          Sichert die <span className="text-surface-300">komplette Konfiguration</span> als JSON: Geräte
+          (Drucker &amp; OTTOeject inkl. Zugangsdaten), Kamera-/HA-Einstellungen, Kalibrierung, Sequenzen,
+          Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne &amp; Sprachpakete — exportieren oder wiederherstellen.
+        </p>
+        <p className="text-[11px] text-amber-500/90">
+          ⚠ Die Datei enthält Zugangsdaten (Drucker-Access-Code, HA-/Telegram-Token). Sicher aufbewahren und nicht teilen.
         </p>
 
         {backupFeedback && (

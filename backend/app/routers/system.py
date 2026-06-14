@@ -162,13 +162,25 @@ async def _check_beta(current: str) -> dict:
     return result
 
 
+def _docker_available() -> bool:
+    try:
+        from app.services import updater
+        return updater.docker_available()
+    except Exception:
+        return False
+
+
 @router.get("/version")
 async def get_version(channel: str = "latest"):
     """Update check for the selected channel: stable (git tags) or beta (:beta image)."""
     current = _get_current_version()
     if (channel or "").lower() == "beta":
-        return await _check_beta(current)
-    return await _check_stable(current)
+        result = await _check_beta(current)
+    else:
+        result = await _check_stable(current)
+    # Whether one-click update is even possible (Docker socket mounted).
+    result["docker_available"] = _docker_available()
+    return result
 
 
 async def _check_stable(current: str) -> dict:
@@ -265,8 +277,16 @@ async def trigger_update(body: UpdateIn = UpdateIn()):
     try:
         from app.services import updater
         if updater.docker_available():
+            # Pull FIRST, in this container, so a failure (private package, wrong
+            # tag, no network) returns a real error now instead of a detached
+            # helper dying silently → "Update läuft ewig, passiert nichts".
+            ok, detail = updater.pull_image(target_image)
+            if not ok:
+                raise HTTPException(502, detail)
             updater.spawn_helper(target_image, CONTAINER_NAME)
             return {"success": True, "method": "docker", "switching": True, "image": target_image}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning(f"Docker-Socket-Update nicht möglich, versuche Watchtower: {e}")
 
@@ -349,9 +369,32 @@ async def send_notification(data: NotifyIn):
 
 
 # ─── Backup endpoints ────────────────────────────────────────────────────────
+# A backup is the user's *complete* configuration so a fresh install can be fully
+# restored: devices (incl. credentials), per-device settings (camera/HA token),
+# calibration, sequences, farm settings, rack layout + slots, racks, schedules,
+# custom filaments, notifications and installed language packs. Because it contains
+# secrets (printer access code, HA/Telegram token), the UI warns it's sensitive.
 
-def _safe_load_json(path: str) -> dict:
-    return storage.read_json(path, {}) or {}
+BACKUP_SCHEMA = "printloom-backup/2"
+
+# (path, backup-key) for the flat JSON config files in the db dir.
+def _backup_files() -> list:
+    from app.routers import calibration, autofarm, rack_manager, filaments
+    db_dir = _db_dir()
+    return [
+        (calibration.CONFIG_PATH,    "calibration"),
+        (autofarm.SEQ_PATH,          "sequences"),
+        (autofarm.SETTINGS_PATH,     "settings"),
+        (rack_manager.SLOTS_PATH,    "rack_slots"),
+        (rack_manager.RACKS_PATH,    "racks"),
+        (filaments.CUSTOM_PATH,      "filaments"),
+        (str(db_dir / "schedules.json"), "schedules"),
+        (_langpacks_file(),          "langpacks"),
+    ]
+
+
+def _safe_load_json(path: str):
+    return storage.read_json(path, None)
 
 
 def _safe_write_json(path: str, data):
@@ -361,37 +404,122 @@ def _safe_write_json(path: str, data):
         raise HTTPException(500, f"Schreiben fehlgeschlagen: {e}")
 
 
+def _export_devices(db) -> tuple:
+    """All devices (with credentials) + their settings, keyed by device NAME so
+    a restore survives the device IDs changing on a fresh database."""
+    devices, settings = [], {}
+    for d in db.query(Device).all():
+        devices.append({
+            "name":          d.name,
+            "device_type":   d.device_type.value if d.device_type else None,
+            "ip_address":    d.ip_address,
+            "port":          d.port,
+            "serial_number": d.serial_number,
+            "access_code":   d.access_code,
+            "mqtt_port":     d.mqtt_port,
+            "use_tls":       d.use_tls,
+            "is_active":     d.is_active,
+        })
+        row = db.query(SystemConfig).filter(
+            SystemConfig.key == f"device_settings_{d.id}").first()
+        if row and row.value:
+            try:
+                settings[d.name] = json.loads(row.value)
+            except Exception:
+                pass
+    return devices, settings
+
+
 @router.get("/backup")
 async def export_backup():
-    """Exportiert alle Einstellungen als JSON."""
-    notifications = _read_notif()
-    # Verstecke den Token im Export (wird maskiert zurückgegeben)
-    notifications_export = {k: v for k, v in notifications.items() if k != "telegram_bot_token"}
-    notifications_export["telegram_bot_token"] = ""  # Sicherheit: Token nicht exportieren
+    """Vollständiges Konfigurations-Backup als JSON (enthält Zugangsdaten)."""
+    db = SessionLocal()
+    try:
+        devices, device_settings = _export_devices(db)
+    finally:
+        db.close()
 
-    rack_slots = _safe_load_json("/app/db/rack_slots.json")
-    schedules  = _safe_load_json("/app/db/schedules.json") or []
-    racks      = _safe_load_json("/app/db/racks.json") or []
-
-    return {
+    out = {
+        "schema":          BACKUP_SCHEMA,
         "current_version": _get_current_version(),
         "exported_at":     datetime.now().isoformat(),
-        "notifications":   notifications_export,
-        "rack_slots":      rack_slots,
-        "racks":           racks,
-        "schedules":       schedules,
+        "devices":         devices,
+        "device_settings": device_settings,
+        "notifications":   _read_notif(),
     }
+    for path, key in _backup_files():
+        data = _safe_load_json(path)
+        if data is not None:
+            out[key] = data
+    return out
+
+
+def _restore_devices(db, devices: list, settings: dict) -> int:
+    """Upsert devices by name, then write each device's settings under its (new) id."""
+    from app.models.models import PrinterType
+    n = 0
+    name_to_id = {}
+    for d in devices or []:
+        name = (d.get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            dtype = PrinterType(d.get("device_type")) if d.get("device_type") else None
+        except Exception:
+            dtype = None
+        row = db.query(Device).filter(Device.name == name).first()
+        if not row:
+            row = Device(name=name)
+            db.add(row)
+        row.device_type   = dtype
+        row.ip_address     = d.get("ip_address")
+        row.port           = d.get("port")
+        row.serial_number  = d.get("serial_number")
+        row.access_code    = d.get("access_code")
+        row.mqtt_port      = d.get("mqtt_port", 8883)
+        row.use_tls        = d.get("use_tls", True)
+        row.is_active      = d.get("is_active", True)
+        db.flush()  # assign id
+        name_to_id[name] = row.id
+        n += 1
+    db.commit()
+
+    for name, s in (settings or {}).items():
+        did = name_to_id.get(name)
+        if not did or not isinstance(s, dict):
+            continue
+        key = f"device_settings_{did}"
+        cfg = db.query(SystemConfig).filter(SystemConfig.key == key).first()
+        if not cfg:
+            cfg = SystemConfig(key=key, value=json.dumps(s))
+            db.add(cfg)
+        else:
+            cfg.value = json.dumps(s)
+    db.commit()
+    return n
 
 
 @router.post("/backup/restore")
 async def import_backup(backup: dict):
-    """Stellt Einstellungen aus einem Backup wieder her."""
+    """Stellt die komplette Konfiguration aus einem Backup wieder her."""
+    if not isinstance(backup, dict):
+        raise HTTPException(400, "Ungültiges Backup")
     restored = []
 
-    if "notifications" in backup:
+    # Devices + per-device settings (the actual config the user cares about).
+    if backup.get("devices"):
+        db = SessionLocal()
+        try:
+            count = _restore_devices(db, backup.get("devices"),
+                                     backup.get("device_settings") or {})
+            restored.append(f"devices ({count})")
+        finally:
+            db.close()
+
+    # Notifications (merge non-empty, keep existing token if backup omits it).
+    if "notifications" in backup and isinstance(backup["notifications"], dict):
         cfg = _read_notif()
         n = backup["notifications"]
-        # Überschreibe nur nicht-leere Felder
         if n.get("telegram_chat_id"):
             cfg["telegram_chat_id"] = n["telegram_chat_id"]
         if n.get("telegram_bot_token"):
@@ -401,17 +529,11 @@ async def import_backup(backup: dict):
         _write_notif(cfg)
         restored.append("notifications")
 
-    if "rack_slots" in backup and backup["rack_slots"]:
-        _safe_write_json("/app/db/rack_slots.json", backup["rack_slots"])
-        restored.append("rack_slots")
-
-    if "racks" in backup and backup["racks"]:
-        _safe_write_json("/app/db/racks.json", backup["racks"])
-        restored.append("racks")
-
-    if "schedules" in backup and backup["schedules"]:
-        _safe_write_json("/app/db/schedules.json", backup["schedules"])
-        restored.append("schedules")
+    # Flat config files — restore each present, non-empty section verbatim.
+    for path, key in _backup_files():
+        if key in backup and backup[key] not in (None, {}, []):
+            _safe_write_json(path, backup[key])
+            restored.append(key)
 
     return {"success": True, "restored": restored}
 

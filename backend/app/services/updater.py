@@ -36,6 +36,30 @@ def docker_available() -> bool:
         return False
 
 
+def pull_image(image: str) -> tuple[bool, str]:
+    """Pull `image` via the daemon (shared image store). Returns (ok, message).
+
+    Done from the APP container *before* spawning the helper so a failed pull
+    (private package, wrong tag, no network) surfaces immediately as a real error
+    instead of a detached helper dying silently — the classic "updates forever,
+    does nothing" symptom."""
+    try:
+        _client().images.pull(image)
+        return True, "ok"
+    except Exception as e:
+        msg = str(e)
+        low = msg.lower()
+        if "unauthorized" in low or "denied" in low or "forbidden" in low:
+            hint = ("Image konnte nicht gezogen werden (kein Zugriff). Ist das "
+                    "ghcr-Package öffentlich? Sonst GITHUB_TOKEN mit 'read:packages' setzen.")
+        elif "not found" in low or "manifest unknown" in low:
+            hint = f"Image/Tag nicht gefunden: {image}"
+        else:
+            hint = f"Pull fehlgeschlagen: {msg[:200]}"
+        logger.error(f"pull_image({image}) → {msg}")
+        return False, hint
+
+
 def current_image(name: str) -> str | None:
     """Image reference the named container currently runs."""
     try:
