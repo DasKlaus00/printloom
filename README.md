@@ -5,7 +5,7 @@
 **Self-hosted automation for continuous 3D print farms.** Printloom orchestrates a
 Bambu Lab X1C and an OTTOeject auto-ejector into a true *lights-out* workflow:
 queue jobs, print, eject the finished plate, store it in a rack, and start the next
-one — unattended, with live status, cameras and ETA in a clean web UI.
+one unattended, with live status, cameras and ETA in a clean web UI.
 
 > Runs entirely on your LAN. No cloud account required for the core workflow.
 <img width="3200" height="1750" alt="image" src="https://github.com/user-attachments/assets/2aaff6b7-44ae-41be-a96a-998cc376ecc9" />
@@ -26,7 +26,7 @@ one — unattended, with live status, cameras and ETA in a clean web UI.
 - **Rack & magazine manager** — track plate slots, capacity and refill; live status.
 - **File library** — folders, per-file print time & filament estimate (parsed from the
   `.3mf`/`.gcode`), bulk queueing with a calculated total.
-- **Cameras** - **WIP** — external webcam (WebRTC / HLS / MJPEG) and the built-in X1C chamber
+- **Cameras** — **WIP** — external webcam (WebRTC / HLS / MJPEG) and the built-in X1C chamber
   camera via a Home Assistant proxy (token stays server-side).
 - **Live status & control** — temperatures, progress, AMS, chamber light, manual moves.
 - **Notifications** **WIP** — optional Telegram messages on job events.
@@ -36,23 +36,22 @@ one — unattended, with live status, cameras and ETA in a clean web UI.
 
 ## Hardware
 
-- **Bambu Lab X1C (P1P/P1S/P2S/X2D) but only tested on X1C** (LAN access code; “LAN Mode Liveview” on for the camera).
+- **Bambu Lab X1C (P1P/P1S/P2S/X2D) but only tested on X1C** (LAN access code; "LAN Mode Liveview" on for the camera).
 - **OTTOeject** running Klipper/Moonraker (the auto-ejector).
 - Any host that runs Docker (a small x86/ARM box, NUC, Pi 4/5, or a Proxmox LXC).
 
 ---
 
-## Quick start (Docker, recommended)
+## Quick start (Docker)
 
-Uses the prebuilt image from GitHub Container Registry + Watchtower for updates —
-no local build, no `git pull` needed for app updates.
+Uses the prebuilt image from GitHub Container Registry. One-click updates from the
+web UI — no local build, no `git pull`, no token and no extra config needed.
 
 ```bash
 git clone https://github.com/DasKlaus00/printloom.git
 cd printloom
-cp .env.example .env                          # set a WATCHTOWER_TOKEN secret
-cp docker-compose.prod.yml.example docker-compose.prod.yml
-docker compose -f docker-compose.prod.yml up -d
+cp docker-compose.simple.yml.example docker-compose.yml
+docker compose up -d
 ```
 
 Open **http://<host-ip>:8000** and follow the in-app setup.
@@ -60,24 +59,16 @@ Open **http://<host-ip>:8000** and follow the in-app setup.
 > Setting up a **fresh Debian server** from scratch (Docker + all dependencies)?
 > See **[docs/DEBIAN_SETUP.md](docs/DEBIAN_SETUP.md)**.
 
-### Build it yourself instead
-
-```bash
-git clone https://github.com/DasKlaus00/printloom.git
-cd printloom
-docker-compose up -d
-```
-
 ---
 
 ## Updates
 
 Printloom has two release channels:
 
-| Channel    | Image tag | Who it's for                    |
-|------------|-----------|---------------------------------|
-| **Latest** | `:latest` | Stable releases (default)       |
-| **Beta**   | `:beta`   |  active dev     |
+| Channel    | Image tag  | Who it's for              |
+|------------|------------|---------------------------|
+| **Latest** | `:latest`  | Stable releases (default) |
+| **Beta**   | `:beta`    | active dev                |
 
 Updates happen **only when you press the button** — there is **no automatic
 background update**. In the **System** page you can:
@@ -87,8 +78,10 @@ background update**. In the **System** page you can:
   reminder, Printloom pulls the chosen image and recreates itself (this uses the
   mounted Docker socket; it also performs the channel switch).
 
+To pick the beta channel from the CLI instead: `PRINTLOOM_CHANNEL=beta docker compose up -d`.
+
 If you prefer not to give the app Docker access, remove the `docker.sock` mount from
-the `printloom` service — updating then needs a manual `docker compose pull && up -d`.
+the `printloom` service — updating then needs a manual `docker compose pull && docker compose up -d`.
 
 ---
 
@@ -98,9 +91,9 @@ Everything operational is configured **in the web UI** (printer IP + access code
 OTTOeject, rack, cameras, notifications) and stored in the runtime `db/` volume — so
 **no secrets ever enter the image or git**.
 
-Deployment-level settings live in `.env` (see [.env.example](.env.example)): port,
-update channel, Watchtower token, optional `GITHUB_TOKEN` (only needed for a *private*
-repo/package — a public one needs none).
+Optional deployment settings are plain environment variables (no `.env` required):
+`PRINTLOOM_CHANNEL` (`latest`/`beta`) and `PORT` (default `8000`). The update channel
+can also be switched live in the web UI.
 
 ### Cameras
 
