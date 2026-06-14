@@ -120,6 +120,19 @@ const RACK_DOT   = { free: 'dot-gray', ready: 'dot-green', printing: 'dot-blue',
 const RACK_COL   = { free: 'text-surface-600', ready: 'text-emerald-400', printing: 'text-blue-400', done: 'text-amber-400', locked: 'text-red-400' }
 const RACK_LABEL = { free: 'Leer', ready: 'Bereit', printing: 'Druckt', done: 'Fertig', locked: 'Gesperrt' }
 
+/* ── Aktueller Schritt (oben in der Sidebar, über „Regal") ─── */
+function CurrentStep({ farmStatus }) {
+  if (!farmStatus?.running || !farmStatus?.seq_step_label) return null
+  return (
+    <div className="card p-2.5 bg-blue-950/20 border-blue-800/40">
+      <div className="flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0" />
+        <p className="text-[9px] font-mono text-blue-300 truncate">{farmStatus.seq_step_label}</p>
+      </div>
+    </div>
+  )
+}
+
 /* ── Farm-Visualisierung: Ablauf-Phasen ─── */
 function FarmViz({ farmStatus, jobs, curJobId }) {
   const curJob     = jobs.find(j => j.id === curJobId)
@@ -151,17 +164,7 @@ function FarmViz({ farmStatus, jobs, curJobId }) {
 
   return (
     <div className="space-y-2">
-      {/* Aktueller Schritt */}
-      {running && farmStatus?.seq_step_label && (
-        <div className="card p-2.5 bg-blue-950/20 border-blue-800/40">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0" />
-            <p className="text-[9px] font-mono text-blue-300 truncate">{farmStatus.seq_step_label}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Ablauf-Phasen */}
+      {/* Ablauf-Phasen — der „Aktuelle Schritt" sitzt jetzt oben in der Sidebar (CurrentStep) */}
       <div className="card p-2.5 space-y-0.5">
         {PHASES.map(p => (
           <div key={p.id} className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[8px] font-mono transition-colors ${
@@ -1388,7 +1391,7 @@ function AutoFarm() {
       )}
 
       {/* ── Main layout: Viz | Queue | Sidebar ─────────────────── */}
-      <div className="grid grid-cols-[220px_1fr_280px] gap-4 items-start">
+      <div className="grid grid-cols-[330px_1fr_280px] gap-4 items-start">
 
         {/* ── Farm-Visualisierung + Kamera ─────────────────────── */}
         <div className="space-y-4">
@@ -1706,6 +1709,9 @@ function AutoFarm() {
 
         {/* ── Sidebar ─────────────────────────────────────────── */}
         <div className="space-y-3">
+
+          {/* Aktueller Schritt — ganz oben, über dem Regal */}
+          <CurrentStep farmStatus={farmStatus} />
 
           {/* Rack */}
           <div className="card">
