@@ -214,8 +214,9 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
       a.click()
       URL.revokeObjectURL(url)
       setBackupFeedback({ ok: true, msg: 'Backup exportiert' })
-    } catch {
-      setBackupFeedback({ ok: false, msg: 'Export fehlgeschlagen' })
+    } catch (e) {
+      const detail = e.response?.data?.detail || e.message || 'unbekannter Fehler'
+      setBackupFeedback({ ok: false, msg: `Export fehlgeschlagen: ${detail}` })
     } finally {
       setTimeout(() => setBackupFeedback(null), 4000)
     }

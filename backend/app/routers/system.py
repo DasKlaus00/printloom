@@ -11,7 +11,7 @@ from typing import Optional
 
 from app.services import storage
 from app.db.database import SessionLocal
-from app.models.models import Device, PrinterType
+from app.models.models import Device, PrinterType, SystemConfig
 from app.services.bambu_mqtt import BambuLabMQTT
 
 router = APIRouter(tags=["System"])
@@ -433,25 +433,29 @@ def _export_devices(db) -> tuple:
 @router.get("/backup")
 async def export_backup():
     """Vollständiges Konfigurations-Backup als JSON (enthält Zugangsdaten)."""
-    db = SessionLocal()
     try:
-        devices, device_settings = _export_devices(db)
-    finally:
-        db.close()
+        db = SessionLocal()
+        try:
+            devices, device_settings = _export_devices(db)
+        finally:
+            db.close()
 
-    out = {
-        "schema":          BACKUP_SCHEMA,
-        "current_version": _get_current_version(),
-        "exported_at":     datetime.now().isoformat(),
-        "devices":         devices,
-        "device_settings": device_settings,
-        "notifications":   _read_notif(),
-    }
-    for path, key in _backup_files():
-        data = _safe_load_json(path)
-        if data is not None:
-            out[key] = data
-    return out
+        out = {
+            "schema":          BACKUP_SCHEMA,
+            "current_version": _get_current_version(),
+            "exported_at":     datetime.now().isoformat(),
+            "devices":         devices,
+            "device_settings": device_settings,
+            "notifications":   _read_notif(),
+        }
+        for path, key in _backup_files():
+            data = _safe_load_json(path)
+            if data is not None:
+                out[key] = data
+        return out
+    except Exception as e:
+        logger.exception("Backup-Export fehlgeschlagen")
+        raise HTTPException(500, f"Backup-Export fehlgeschlagen: {e}")
 
 
 def _restore_devices(db, devices: list, settings: dict) -> int:
