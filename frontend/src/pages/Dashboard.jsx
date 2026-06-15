@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { deviceService, printerService, rackManagerService, autofarmService } from '../services/api'
 import { useQueueEta, fmtDur } from '../services/useQueueEta'
+import { useLanguage } from '../services/i18n'
 
 function fmtMin(min) {
   if (!min || min <= 0) return '—'
@@ -19,6 +20,7 @@ function parseKey(k) {
    print_start with the next print_done/error/farm_stop; renders them on a time bar
    with error markers. Gaps inside farm-running windows read as idle. */
 function UsageTimeline({ data }) {
+  const { tr } = useLanguage()
   if (!data) return null
   const nowMs    = new Date(data.now).getTime()
   const windowMs = (data.hours || 24) * 3600 * 1000
@@ -66,8 +68,8 @@ function UsageTimeline({ data }) {
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-3">
-        <p className="section-label">Auslastung (24h)</p>
-        <span className="text-[10px] font-mono text-surface-500">{utilPct}% aktiv</span>
+        <p className="section-label">{tr('Auslastung (24h)')}</p>
+        <span className="text-[10px] font-mono text-surface-500">{tr('{0}% aktiv', utilPct)}</span>
       </div>
       <div className="relative h-6 rounded bg-surface-800 overflow-hidden">
         {spans.map((s, i) => (
@@ -78,24 +80,25 @@ function UsageTimeline({ data }) {
           />
         ))}
         {errors.map((e, i) => (
-          <div key={`e${i}`} className="absolute top-0 h-full w-[2px] bg-red-400" style={{ left: `${e.left}%` }} title={e.detail || 'Fehler'} />
+          <div key={`e${i}`} className="absolute top-0 h-full w-[2px] bg-red-400" style={{ left: `${e.left}%` }} title={e.detail || tr('Fehler')} />
         ))}
       </div>
       <div className="flex justify-between mt-1">
         {ticks.map(h => (
-          <span key={h} className="text-[8px] font-mono text-surface-700">{h === 0 ? 'jetzt' : `-${h}h`}</span>
+          <span key={h} className="text-[8px] font-mono text-surface-700">{h === 0 ? tr('jetzt') : `-${h}h`}</span>
         )).reverse()}
       </div>
       <div className="flex items-center gap-3 mt-2">
-        <span className="flex items-center gap-1 text-[9px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-emerald-500/80" /> aktiv</span>
-        <span className="flex items-center gap-1 text-[9px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-surface-800 border border-surface-700" /> idle</span>
-        <span className="flex items-center gap-1 text-[9px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-red-400" /> Fehler</span>
+        <span className="flex items-center gap-1 text-[9px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-emerald-500/80" /> {tr('aktiv')}</span>
+        <span className="flex items-center gap-1 text-[9px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-surface-800 border border-surface-700" /> {tr('idle')}</span>
+        <span className="flex items-center gap-1 text-[9px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-red-400" /> {tr('Fehler')}</span>
       </div>
     </div>
   )
 }
 
 export default function Dashboard() {
+  const { tr } = useLanguage()
   const [farmStatus, setFarmStatus] = useState(null)
   const [rackData,   setRackData]   = useState(null)
   const [bambuId,    setBambuId]    = useState(null)
@@ -185,9 +188,9 @@ export default function Dashboard() {
   const printingSlots = Object.values(allSlots).filter(s => s.status === 'printing').length
 
   /* ── Status helpers ───────────────────────────────────── */
-  const farmLabel = farmPaused  ? 'Pausiert'  :
-                    farmRunning ? (seqLabel ?? 'Farm läuft') :
-                    'Gestoppt'
+  const farmLabel = farmPaused  ? tr('Pausiert')  :
+                    farmRunning ? (seqLabel ?? tr('Farm läuft')) :
+                    tr('Gestoppt')
   const farmColor = farmPaused  ? 'text-amber-400' :
                     farmRunning ? 'text-emerald-400' :
                     'text-surface-600'
@@ -232,11 +235,11 @@ export default function Dashboard() {
             </div>
             <div className="flex justify-between text-[11px] font-mono text-surface-500">
               <span className="text-surface-300">
-                {remaining > 0 ? `~${fmtMin(remaining)} verbleibend` : 'Fast fertig…'}
+                {remaining > 0 ? tr('~{0} verbleibend', fmtMin(remaining)) : tr('Fast fertig…')}
               </span>
               {totalWithOverhead > 0 && (
                 <span className="text-surface-600">
-                  {pendingJobs.length} wartend · ~{fmtMin(remaining + totalWithOverhead)} gesamt
+                  {tr('{0} wartend · ~{1} gesamt', pendingJobs.length, fmtMin(remaining + totalWithOverhead))}
                 </span>
               )}
             </div>
@@ -253,7 +256,7 @@ export default function Dashboard() {
 
         {/* Idle state */}
         {!showProgress && !farmRunning && !farmError && (
-          <p className="text-xs text-surface-600 mt-2 ml-4">Kein aktiver Druck</p>
+          <p className="text-xs text-surface-600 mt-2 ml-4">{tr('Kein aktiver Druck')}</p>
         )}
       </div>
 
@@ -262,7 +265,7 @@ export default function Dashboard() {
 
         {/* Printer */}
         <div className={`card py-3 text-center ${printerActive ? 'border-blue-800/40 bg-blue-950/5' : ''}`}>
-          <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">Drucker</p>
+          <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Drucker')}</p>
           <span className={`w-2 h-2 rounded-full mx-auto block mb-1 ${
             gcodeState === 'RUNNING' ? 'bg-blue-400 animate-pulse' :
             gcodeState === 'PAUSE'   ? 'bg-amber-400' :
@@ -273,11 +276,11 @@ export default function Dashboard() {
             gcodeState === 'PAUSE'   ? 'text-amber-400' :
             'text-surface-500'
           }`}>
-            {gcodeState === 'RUNNING' ? 'Druckt' :
-             gcodeState === 'PAUSE'   ? 'Pause' :
-             gcodeState === 'IDLE'    ? 'Bereit' :
+            {gcodeState === 'RUNNING' ? tr('Druckt') :
+             gcodeState === 'PAUSE'   ? tr('Pause') :
+             gcodeState === 'IDLE'    ? tr('Bereit') :
              bambuId                  ? gcodeState :
-             'Nicht konfiguriert'}
+             tr('Nicht konfiguriert')}
           </p>
         </div>
 
@@ -286,22 +289,22 @@ export default function Dashboard() {
           magCount === 0 ? 'border-red-800/50 bg-red-950/10' :
           magCount <= 1  ? 'border-amber-800/40 bg-amber-950/5' : ''
         }`}>
-          <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">Magazin</p>
+          <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Magazin')}</p>
           <p className={`text-2xl font-mono font-bold leading-none ${
             magCount === 0 ? 'text-red-400' :
             magCount <= 1  ? 'text-amber-400' :
             'text-surface-100'
           }`}>{magCount}</p>
-          <p className="text-[9px] text-surface-600 mt-1">von {nr * spr} Platten</p>
+          <p className="text-[9px] text-surface-600 mt-1">{tr('von {0} Platten', nr * spr)}</p>
         </div>
 
         {/* Rack done */}
         <div className={`card py-3 text-center ${doneSlots > 0 ? 'border-amber-800/40 bg-amber-950/5' : ''}`}>
-          <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">Regal</p>
+          <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Regal')}</p>
           <p className={`text-2xl font-mono font-bold leading-none ${doneSlots > 0 ? 'text-amber-400' : 'text-surface-600'}`}>
             {doneSlots}
           </p>
-          <p className="text-[9px] text-surface-600 mt-1">fertig / {nr * spr} Fächer</p>
+          <p className="text-[9px] text-surface-600 mt-1">{tr('fertig / {0} Fächer', nr * spr)}</p>
         </div>
       </div>
 
@@ -309,8 +312,8 @@ export default function Dashboard() {
       {nr > 0 && spr > 0 && rackData && (
         <div className="card">
           <div className="flex items-center justify-between mb-3">
-            <p className="section-label">Regal</p>
-            <span className="text-[9px] font-mono text-surface-700">{slotH} mm/Fach</span>
+            <p className="section-label">{tr('Regal')}</p>
+            <span className="text-[9px] font-mono text-surface-700">{tr('{0} mm/Fach', slotH)}</span>
           </div>
           <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${nr}, 1fr)` }}>
             {Array.from({ length: nr }, (_, ri) => (
@@ -345,7 +348,7 @@ export default function Dashboard() {
                       }`}>
                         {slot.file_name
                           ? slot.file_name.replace(/\.[^.]+$/, '').slice(0, 14)
-                          : done ? 'Fertig' : print ? 'Druckt' : ''}
+                          : done ? tr('Fertig') : print ? tr('Druckt') : ''}
                       </p>
                       {objH > 0 && (
                         <span className="text-[8px] font-mono text-surface-700 shrink-0">{Math.round(objH)}mm</span>
@@ -360,13 +363,13 @@ export default function Dashboard() {
           {/* Legend */}
           <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-surface-800/40">
             <span className="text-[9px] text-surface-700 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" /> Fertig
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" /> {tr('Fertig')}
             </span>
             <span className="text-[9px] text-surface-700 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" /> Druckt
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" /> {tr('Druckt')}
             </span>
             <span className="text-[9px] text-surface-700 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-surface-800 inline-block" /> Leer
+              <span className="w-1.5 h-1.5 rounded-full bg-surface-800 inline-block" /> {tr('Leer')}
             </span>
           </div>
         </div>
@@ -376,17 +379,17 @@ export default function Dashboard() {
       {pendingJobs.length > 0 && (
         <div className="card">
           <div className="flex items-baseline justify-between mb-2.5 gap-2">
-            <p className="section-label">Warteschlange</p>
+            <p className="section-label">{tr('Warteschlange')}</p>
             {eta.ready && eta.totalSec > 0 && (
               <div className="text-right shrink-0">
                 <span className="text-[11px] font-mono text-blue-300">~{fmtDur(eta.totalSec)}</span>
                 {eta.finishAt && (
                   <span className="block text-[10px] text-surface-500 font-mono">
-                    fertig ~{eta.finishAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr
+                    {tr('fertig ~{0} Uhr', eta.finishAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }))}
                   </span>
                 )}
                 {eta.known < eta.jobs && (
-                  <span className="block text-[9px] text-surface-600 font-mono">{eta.known}/{eta.jobs} mit Zeit</span>
+                  <span className="block text-[9px] text-surface-600 font-mono">{tr('{0}/{1} mit Zeit', eta.known, eta.jobs)}</span>
                 )}
               </div>
             )}
@@ -417,41 +420,41 @@ export default function Dashboard() {
         return (
           <div className="card">
             <div className="flex items-center justify-between mb-3">
-              <p className="section-label">Druckstatistiken</p>
+              <p className="section-label">{tr('Druckstatistiken')}</p>
               <div className="flex items-center gap-2">
-                {since && <span className="text-[9px] text-surface-700 font-mono">seit {since}</span>}
+                {since && <span className="text-[9px] text-surface-700 font-mono">{tr('seit {0}', since)}</span>}
                 <button
                   onClick={() => autofarmService.resetStats().then(() => setStats(null)).catch(() => {})}
                   className="text-[9px] text-surface-700 hover:text-red-400 transition-colors"
-                  title="Statistiken zurücksetzen"
+                  title={tr('Statistiken zurücksetzen')}
                 >↺ Reset</button>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div className="text-center">
                 <p className="text-3xl font-bold font-mono text-surface-100">{stats.total_jobs}</p>
-                <p className="text-[9px] text-surface-600 mt-0.5">Jobs gesamt</p>
+                <p className="text-[9px] text-surface-600 mt-0.5">{tr('Jobs gesamt')}</p>
               </div>
               <div className="text-center">
                 <p className={`text-3xl font-bold font-mono ${rate >= 90 ? 'text-emerald-400' : rate >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
                   {rate}%
                 </p>
-                <p className="text-[9px] text-surface-600 mt-0.5">Erfolgsrate</p>
+                <p className="text-[9px] text-surface-600 mt-0.5">{tr('Erfolgsrate')}</p>
               </div>
               <div className="text-center">
                 <p className="text-xl font-bold font-mono text-blue-400">{fmtMin(stats.total_print_min)}</p>
-                <p className="text-[9px] text-surface-600 mt-0.5">Druckzeit gesamt</p>
+                <p className="text-[9px] text-surface-600 mt-0.5">{tr('Druckzeit gesamt')}</p>
               </div>
               <div className="text-center">
                 <p className={`text-xl font-bold font-mono ${stats.failed_jobs > 0 ? 'text-red-400' : 'text-surface-600'}`}>
                   {stats.failed_jobs}
                 </p>
-                <p className="text-[9px] text-surface-600 mt-0.5">Fehlschläge</p>
+                <p className="text-[9px] text-surface-600 mt-0.5">{tr('Fehlschläge')}</p>
               </div>
             </div>
             {topErrors.length > 0 && (
               <div className="border-t border-surface-800/40 pt-2.5">
-                <p className="text-[9px] text-surface-600 mb-1.5">Häufigste Fehler</p>
+                <p className="text-[9px] text-surface-600 mb-1.5">{tr('Häufigste Fehler')}</p>
                 <div className="space-y-1">
                   {topErrors.map(([msg, count]) => (
                     <div key={msg} className="flex items-start gap-2">
@@ -472,7 +475,7 @@ export default function Dashboard() {
       {/* ══ Last refresh ══════════════════════════════════════ */}
       {lastRefresh && (
         <p className="text-center text-[9px] text-surface-800 font-mono">
-          Aktualisiert {lastRefresh.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} · alle 15s
+          {tr('Aktualisiert {0} · alle 15s', lastRefresh.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}
         </p>
       )}
     </div>

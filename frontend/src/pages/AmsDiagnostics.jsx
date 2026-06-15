@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { printerService } from '../services/api'
+import { useLanguage } from '../services/i18n'
 
 function StatusBadge({ result }) {
+  const { tr } = useLanguage()
   if (result === 'ok')      return <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/50 text-emerald-400 border border-emerald-800/50">OK</span>
-  if (result === 'error')   return <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-950/50 text-red-400 border border-red-800/50">FEHLER</span>
-  if (result === 'running') return <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-950/50 text-amber-400 border border-amber-800/50 animate-pulse">läuft…</span>
+  if (result === 'error')   return <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-950/50 text-red-400 border border-red-800/50">{tr('FEHLER')}</span>
+  if (result === 'running') return <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-950/50 text-amber-400 border border-amber-800/50 animate-pulse">{tr('läuft…')}</span>
   return null
 }
 
@@ -47,6 +49,7 @@ function StepBlock({ step }) {
 }
 
 function SessionCard({ session, idx }) {
+  const { tr } = useLanguage()
   const [open, setOpen] = useState(idx === 0)
   return (
     <div className="card">
@@ -75,7 +78,7 @@ function SessionCard({ session, idx }) {
             <StepBlock key={i} step={step} />
           ))}
           {session.steps?.length === 0 && (
-            <p className="text-xs text-surface-700 py-2">Keine Schritte aufgezeichnet.</p>
+            <p className="text-xs text-surface-700 py-2">{tr('Keine Schritte aufgezeichnet.')}</p>
           )}
         </div>
       )}
@@ -84,6 +87,7 @@ function SessionCard({ session, idx }) {
 }
 
 function AmsDiagnostics() {
+  const { tr } = useLanguage()
   const [sessions, setSessions] = useState([])
   const [loading,  setLoading]  = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -114,10 +118,9 @@ function AmsDiagnostics() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-base font-semibold text-surface-100 mb-1">AMS-Diagnose</h2>
+          <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('AMS-Diagnose')}</h2>
           <p className="text-sm text-surface-500">
-            Zeigt für jeden Sende-Vorgang genau, woher das AMS-Mapping stammt und welcher Slot gewählt wurde.
-            Seite aktualisiert sich alle 5 Sekunden automatisch.
+            {tr('Zeigt für jeden Sende-Vorgang genau, woher das AMS-Mapping stammt und welcher Slot gewählt wurde. Seite aktualisiert sich alle 5 Sekunden automatisch.')}
           </p>
         </div>
         <button
@@ -130,7 +133,7 @@ function AmsDiagnostics() {
       </div>
 
       {loading && sessions.length === 0 && (
-        <p className="text-sm text-surface-600 animate-pulse">Lade…</p>
+        <p className="text-sm text-surface-600 animate-pulse">{tr('Lade…')}</p>
       )}
 
       {sessions.length === 0 && !loading && (
@@ -140,8 +143,8 @@ function AmsDiagnostics() {
             <polyline points="14 2 14 8 20 8"/>
             <line x1="9" y1="13" x2="15" y2="13"/>
           </svg>
-          <p className="text-sm mb-1">Noch keine Sende-Vorgänge aufgezeichnet</p>
-          <p className="text-xs">Sende eine Datei an den Drucker — der Vorgang wird hier vollständig protokolliert.</p>
+          <p className="text-sm mb-1">{tr('Noch keine Sende-Vorgänge aufgezeichnet')}</p>
+          <p className="text-xs">{tr('Sende eine Datei an den Drucker — der Vorgang wird hier vollständig protokolliert.')}</p>
         </div>
       )}
 

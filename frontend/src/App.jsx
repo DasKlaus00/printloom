@@ -40,7 +40,7 @@ import MobileView from './pages/MobileView'
 import Projekt from './pages/Projekt'
 import Setup, { SETUP_DONE_KEY } from './pages/Setup'
 import { healthService, systemService, deviceService } from './services/api'
-import { loadLangPacks } from './services/i18n'
+import { loadLangPacks, useLanguage } from './services/i18n'
 import { VERSION } from './version'
 
 /* ── URL ↔ page-id mapping ──────────────────────────────────── */
@@ -111,6 +111,7 @@ function StatusPill({ label, target }) {
 }
 
 function App() {
+  const { tr } = useLanguage()
   const [currentPage, setCurrentPageState] = useState(() => pageFromPath())
   // Track which pages have been visited so we can keep them mounted once loaded
   const [visitedPages, setVisitedPages]     = useState(() => new Set([pageFromPath()]))
@@ -267,12 +268,12 @@ function App() {
           </div>
           <span className="text-sm font-bold tracking-tight text-surface-100">Printloom</span>
           <span className="text-surface-700">/</span>
-          <span className="text-sm text-surface-400">{pageTitle[currentPage]}</span>
+          <span className="text-sm text-surface-400">{tr(pageTitle[currentPage] ?? '')}</span>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           <span className="hidden md:inline text-xs font-mono text-surface-700 select-none">v{VERSION}</span>
-          <StatusPill label="Drucker" target={online === false ? { status: 'offline', detail: 'Backend offline' } : targets?.printer} />
-          <StatusPill label="Klipper" target={online === false ? { status: 'offline', detail: 'Backend offline' } : targets?.klipper} />
+          <StatusPill label={tr('Drucker')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.printer} />
+          <StatusPill label={tr('Klipper')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.klipper} />
         </div>
       </header>
 
@@ -309,9 +310,9 @@ function App() {
             <>
               <div className="w-14 h-14 rounded-full border-4 border-blue-900/50 border-t-blue-500 animate-spin" />
               <div className="text-center space-y-2">
-                <p className="text-lg font-semibold text-surface-100">Update läuft…</p>
-                <p className="text-sm text-surface-400">Container wird neugestartet — bitte warten</p>
-                <p className="text-xs text-surface-600 mt-3">Keine Eingaben möglich während des Updates</p>
+                <p className="text-lg font-semibold text-surface-100">{tr('Update läuft…')}</p>
+                <p className="text-sm text-surface-400">{tr('Container wird neugestartet — bitte warten')}</p>
+                <p className="text-xs text-surface-600 mt-3">{tr('Keine Eingaben möglich während des Updates')}</p>
               </div>
             </>
           ) : (
@@ -322,8 +323,8 @@ function App() {
                 </svg>
               </div>
               <div className="text-center space-y-2">
-                <p className="text-lg font-semibold text-emerald-400">Update abgeschlossen</p>
-                <p className="text-sm text-surface-400">Seite wird neu geladen…</p>
+                <p className="text-lg font-semibold text-emerald-400">{tr('Update abgeschlossen')}</p>
+                <p className="text-sm text-surface-400">{tr('Seite wird neu geladen…')}</p>
               </div>
             </>
           )}

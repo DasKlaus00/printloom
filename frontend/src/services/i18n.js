@@ -141,7 +141,93 @@ let dynamicPacks = (() => {
 
 // English overrides keyed by the exact German source string (see tr() below).
 // Filled in incrementally per page; missing entries fall back to German.
-const EN_STRINGS = {}
+const EN_STRINGS = {
+  // ── Shared / status ──
+  'Leer': 'Empty',
+  'Bereit': 'Ready',
+  'Druckt': 'Printing',
+  'Fertig': 'Done',
+  'Gesperrt': 'Locked',
+  'Pausiert': 'Paused',
+  'Läuft': 'Running',
+  'Gestoppt': 'Stopped',
+  'Lade…': 'Loading…',
+  'FEHLER': 'ERROR',
+  'läuft…': 'running…',
+  'Fach {0}': 'Slot {0}',
+  'Drucker': 'Printer',
+  'Klipper': 'Klipper',
+  'Backend offline': 'Backend offline',
+
+  // ── App shell / page titles ──
+  'Datei-Bibliothek': 'File Library',
+  'Datei-Analyse': 'File Analysis',
+  'Steuerung': 'Control',
+  'Projekt': 'Project',
+  'Konfiguration': 'Configuration',
+  'Sequenz-Editor': 'Sequence Editor',
+  'Profile': 'Profiles',
+  'Setup-Assistent': 'Setup Wizard',
+  'Update läuft…': 'Update in progress…',
+  'Container wird neugestartet — bitte warten': 'Container is restarting — please wait',
+  'Keine Eingaben möglich während des Updates': 'No input possible during the update',
+  'Update abgeschlossen': 'Update complete',
+  'Seite wird neu geladen…': 'Reloading page…',
+
+  // ── MobileView ──
+  '{0} mm Höhe': '{0} mm height',
+  'Entnommen': 'Removed',
+  'Rack-Übersicht · Mobile': 'Rack overview · Mobile',
+  '{0} fertig': '{0} done',
+  '{0} Fächer gesamt': '{0} slots total',
+  'Job {0} läuft': 'Job {0} running',
+  'Keine Fächer konfiguriert': 'No slots configured',
+  'Konfiguriere das Rack im Rack Manager': 'Configure the rack in the Rack Manager',
+  'Auto-Refresh alle 5s': 'Auto-refresh every 5s',
+  'Jetzt aktualisieren': 'Refresh now',
+
+  // ── AMS-Diagnose ──
+  'Keine Schritte aufgezeichnet.': 'No steps recorded.',
+  'AMS-Diagnose': 'AMS Diagnostics',
+  'Zeigt für jeden Sende-Vorgang genau, woher das AMS-Mapping stammt und welcher Slot gewählt wurde. Seite aktualisiert sich alle 5 Sekunden automatisch.':
+    'Shows for each send operation exactly where the AMS mapping came from and which slot was chosen. The page refreshes automatically every 5 seconds.',
+  'Noch keine Sende-Vorgänge aufgezeichnet': 'No send operations recorded yet',
+  'Sende eine Datei an den Drucker — der Vorgang wird hier vollständig protokolliert.':
+    'Send a file to the printer — the operation will be logged here in full.',
+
+  // ── Dashboard ──
+  'Auslastung (24h)': 'Utilization (24h)',
+  '{0}% aktiv': '{0}% active',
+  'Fehler': 'Error',
+  'jetzt': 'now',
+  'aktiv': 'active',
+  'idle': 'idle',
+  'Farm läuft': 'Farm running',
+  '~{0} verbleibend': '~{0} remaining',
+  'Fast fertig…': 'Almost done…',
+  '{0} wartend · ~{1} gesamt': '{0} waiting · ~{1} total',
+  'Kein aktiver Druck': 'No active print',
+  'Pause': 'Paused',
+  'Bereit': 'Ready',
+  'Nicht konfiguriert': 'Not configured',
+  'Magazin': 'Magazine',
+  'von {0} Platten': 'of {0} plates',
+  'Regal': 'Rack',
+  'fertig / {0} Fächer': 'done / {0} slots',
+  '{0} mm/Fach': '{0} mm/slot',
+  'Warteschlange': 'Queue',
+  'fertig ~{0} Uhr': 'done ~{0}',
+  '{0}/{1} mit Zeit': '{0}/{1} with time',
+  'Druckstatistiken': 'Print statistics',
+  'seit {0}': 'since {0}',
+  'Statistiken zurücksetzen': 'Reset statistics',
+  'Jobs gesamt': 'Total jobs',
+  'Erfolgsrate': 'Success rate',
+  'Druckzeit gesamt': 'Total print time',
+  'Fehlschläge': 'Failures',
+  'Häufigste Fehler': 'Most frequent errors',
+  'Aktualisiert {0} · alle 15s': 'Updated {0} · every 15s',
+}
 
 function deepMerge(base, over) {
   if (over === null || typeof over !== 'object' || Array.isArray(over)) return over
