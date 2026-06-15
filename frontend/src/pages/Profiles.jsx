@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { profileService } from '../services/api'
+import { useLanguage } from '../services/i18n'
 
 const PRINTER_MODELS = [
   ['BBL_X1C',     'Bambu Lab X1 Carbon'],
@@ -35,6 +36,7 @@ function Banner({ kind, children, onClose }) {
 }
 
 function SectionDetail({ section, data }) {
+  const { tr } = useLanguage()
   if (!data) return null
 
   if (section === 'macro_config') {
@@ -73,7 +75,7 @@ function SectionDetail({ section, data }) {
                 </div>
               )}
               {fields.length === 0 && (
-                <p className="text-[9px] text-surface-600">Keine Felder</p>
+                <p className="text-[9px] text-surface-600">{tr('Keine Felder')}</p>
               )}
             </div>
           )
@@ -91,7 +93,7 @@ function SectionDetail({ section, data }) {
           return (
             <div key={key}>
               <p className="text-[9px] text-surface-600 uppercase tracking-wide mb-1.5">
-                {key === 'seq_new' ? 'Neuer Druck' : 'Nächster Druck'}
+                {key === 'seq_new' ? tr('Neuer Druck') : tr('Nächster Druck')}
               </p>
               <div className="space-y-0.5">
                 {steps.map((step, i) => (
@@ -131,8 +133,8 @@ function SectionDetail({ section, data }) {
 
   if (section === 'settings') {
     const LABELS = {
-      poll_interval: 'Poll-Intervall (s)', min_print_minutes: 'Mindestdruckzeit (min)',
-      use_ams: 'AMS verwenden', magazine_slot: 'Magazin-Fach',
+      poll_interval: tr('Poll-Intervall (s)'), min_print_minutes: tr('Mindestdruckzeit (min)'),
+      use_ams: tr('AMS verwenden'), magazine_slot: tr('Magazin-Fach'),
     }
     const entries = Object.entries(data)
     return (
@@ -155,6 +157,7 @@ function SectionDetail({ section, data }) {
 }
 
 function SectionTabs({ profile }) {
+  const { tr } = useLanguage()
   const [expanded, setExpanded] = useState(null)
 
   const present = []
@@ -178,10 +181,10 @@ function SectionTabs({ profile }) {
                 : 'border-surface-700/60 text-surface-400 hover:border-surface-500/70 hover:text-surface-200'
             }`}
           >
-            {SECTION_LABELS[k] || k} <span className="opacity-50">{expanded === k ? '▲' : '▼'}</span>
+            {tr(SECTION_LABELS[k] || k)} <span className="opacity-50">{expanded === k ? '▲' : '▼'}</span>
           </button>
         ))}
-        {!present.length && <span className="text-[10px] text-surface-600">keine anwendbaren Daten</span>}
+        {!present.length && <span className="text-[10px] text-surface-600">{tr('keine anwendbaren Daten')}</span>}
       </div>
       {expanded && <SectionDetail section={expanded} data={profile?.[expanded]} />}
     </div>
@@ -189,14 +192,15 @@ function SectionTabs({ profile }) {
 }
 
 function Components({ components }) {
+  const { tr } = useLanguage()
   if (!components?.length) return null
   return (
     <div className="space-y-2">
-      <p className="text-[10px] text-surface-600 uppercase tracking-wide">Bauteile & Anleitungen</p>
+      <p className="text-[10px] text-surface-600 uppercase tracking-wide">{tr('Bauteile & Anleitungen')}</p>
       {components.map((c, i) => (
         <div key={i} className="rounded-lg border border-surface-800/60 bg-surface-900/40 p-2.5">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-surface-200">{c.name || `Bauteil ${i + 1}`}</span>
+            <span className="text-xs font-medium text-surface-200">{c.name || tr('Bauteil {0}', i + 1)}</span>
             {c.url && <a href={c.url} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline shrink-0">Link ↗</a>}
           </div>
           {c.instructions && (
@@ -209,6 +213,7 @@ function Components({ components }) {
 }
 
 function Profiles() {
+  const { tr } = useLanguage()
   const [meta, setMeta]         = useState({ name: 'Mein Profil', printer_model: 'BBL_X1C', description: '' })
   const [components, setComponents] = useState([])
   const [built, setBuilt]       = useState(null)
@@ -232,7 +237,7 @@ function Profiles() {
     try {
       const r = await profileService.export({ ...meta, components })
       setBuilt(r.data)
-      setMsg('Profil aus aktueller Konfiguration erzeugt.')
+      setMsg(tr('Profil aus aktueller Konfiguration erzeugt.'))
       return r.data
     } catch (e) {
       setErr(e.response?.data?.detail ?? e.message)
@@ -258,7 +263,7 @@ function Profiles() {
     try {
       const r = await profileService.saveLocal(p)
       setLibrary(r.data.profiles || [])
-      setMsg(`„${p.name}" in der Bibliothek gespeichert.`)
+      setMsg(tr('„{0}" in der Bibliothek gespeichert.', p.name))
     } catch (e) {
       setErr(e.response?.data?.detail ?? e.message)
     }
@@ -273,9 +278,9 @@ function Profiles() {
     reader.onload = (ev) => {
       try {
         const data = JSON.parse(ev.target.result)
-        if (!data.schema) throw new Error('Keine gültige Profildatei (schema fehlt)')
+        if (!data.schema) throw new Error(tr('Keine gültige Profildatei (schema fehlt)'))
         setPreview(data)
-      } catch (e2) { setErr(`Datei konnte nicht gelesen werden: ${e2.message}`) }
+      } catch (e2) { setErr(tr('Datei konnte nicht gelesen werden: {0}', e2.message)) }
     }
     reader.readAsText(file)
   }
@@ -284,8 +289,8 @@ function Profiles() {
     setErr(null); setMsg(null)
     try {
       const r = await profileService.import(profile)
-      const applied = Object.entries(r.data.applied).filter(([, v]) => v).map(([k]) => SECTION_LABELS[k] || k)
-      setMsg(`„${profile.name}" angewendet: ${applied.join(', ') || '—'}. Sequenzen werden erst beim nächsten Auto-Farm-Start ausgeführt.`)
+      const applied = Object.entries(r.data.applied).filter(([, v]) => v).map(([k]) => tr(SECTION_LABELS[k] || k))
+      setMsg(tr('„{0}" angewendet: {1}. Sequenzen werden erst beim nächsten Auto-Farm-Start ausgeführt.', profile.name, applied.join(', ') || '—'))
       setPreview(null)
     } catch (e) {
       setErr(e.response?.data?.detail ?? e.message)
@@ -302,12 +307,9 @@ function Profiles() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-base font-semibold text-surface-100 mb-1">Profile</h2>
+        <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('Profile')}</h2>
         <p className="text-sm text-surface-500">
-          Bündele Kalibrierung, Sequenzen, Regal-Konfiguration, Einstellungen und Bauteil-Anleitungen
-          zu einer Datei — exportieren, importieren oder lokal speichern.
-          Das Importieren führt <span className="text-surface-300">keinen</span> G-Code aus;
-          Sequenzen laufen erst beim nächsten Auto-Farm-Start.
+          {tr('Bündele Kalibrierung, Sequenzen, Regal-Konfiguration, Einstellungen und Bauteil-Anleitungen zu einer Datei — exportieren, importieren oder lokal speichern. Das Importieren führt keinen G-Code aus; Sequenzen laufen erst beim nächsten Auto-Farm-Start.')}
         </p>
       </div>
 
@@ -317,27 +319,27 @@ function Profiles() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* ── Profil erstellen ─────────────────────────────── */}
         <div className="card flex flex-col gap-3">
-          <p className="section-label">Profil erstellen & exportieren</p>
+          <p className="section-label">{tr('Profil erstellen & exportieren')}</p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] text-surface-600 block mb-0.5">Name</label>
+              <label className="text-[10px] text-surface-600 block mb-0.5">{tr('Name')}</label>
               <input type="text" value={meta.name}
                 onChange={e => setMeta(m => ({ ...m, name: e.target.value }))}
                 className="w-full text-xs" />
             </div>
             <div>
-              <label className="text-[10px] text-surface-600 block mb-0.5">Drucker-Modell</label>
+              <label className="text-[10px] text-surface-600 block mb-0.5">{tr('Drucker-Modell')}</label>
               <select value={meta.printer_model}
                 onChange={e => setMeta(m => ({ ...m, printer_model: e.target.value }))}
                 className="w-full text-xs">
-                {PRINTER_MODELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                {PRINTER_MODELS.map(([v, l]) => <option key={v} value={v}>{tr(l)}</option>)}
               </select>
             </div>
           </div>
 
           <div>
-            <label className="text-[10px] text-surface-600 block mb-0.5">Beschreibung</label>
+            <label className="text-[10px] text-surface-600 block mb-0.5">{tr('Beschreibung')}</label>
             <textarea value={meta.description}
               onChange={e => setMeta(m => ({ ...m, description: e.target.value }))}
               rows={2} className="w-full text-xs resize-none" />
@@ -345,21 +347,21 @@ function Profiles() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-[10px] text-surface-600">Bauteile & Anleitungen</label>
-              <button onClick={addComponent} className="text-[10px] text-blue-400 hover:underline">+ Bauteil</button>
+              <label className="text-[10px] text-surface-600">{tr('Bauteile & Anleitungen')}</label>
+              <button onClick={addComponent} className="text-[10px] text-blue-400 hover:underline">{tr('+ Bauteil')}</button>
             </div>
             {components.map((c, i) => (
               <div key={i} className="rounded-lg border border-surface-800/60 p-2 space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <input type="text" placeholder="Name (z.B. Greifer v2)" value={c.name}
+                  <input type="text" placeholder={tr('Name (z.B. Greifer v2)')} value={c.name}
                     onChange={e => updateComponent(i, 'name', e.target.value)}
                     className="flex-1 text-xs" />
                   <button onClick={() => removeComponent(i)} className="text-surface-700 hover:text-red-400 text-sm shrink-0">×</button>
                 </div>
-                <input type="text" placeholder="Link (optional)" value={c.url}
+                <input type="text" placeholder={tr('Link (optional)')} value={c.url}
                   onChange={e => updateComponent(i, 'url', e.target.value)}
                   className="w-full text-xs" />
-                <textarea placeholder="Anleitung / Hinweise…" value={c.instructions}
+                <textarea placeholder={tr('Anleitung / Hinweise…')} value={c.instructions}
                   onChange={e => updateComponent(i, 'instructions', e.target.value)}
                   rows={2} className="w-full text-xs resize-none" />
               </div>
@@ -367,14 +369,14 @@ function Profiles() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap border-t border-surface-800/50 pt-3">
-            <button onClick={buildProfile}   className="btn btn-secondary btn-sm">Aus aktueller Konfig erzeugen</button>
-            <button onClick={downloadProfile} className="btn btn-ghost btn-sm">↓ Download (.om4d.json)</button>
-            <button onClick={saveToLibrary}   className="btn btn-ghost btn-sm">In Bibliothek speichern</button>
+            <button onClick={buildProfile}   className="btn btn-secondary btn-sm">{tr('Aus aktueller Konfig erzeugen')}</button>
+            <button onClick={downloadProfile} className="btn btn-ghost btn-sm">{tr('↓ Download (.om4d.json)')}</button>
+            <button onClick={saveToLibrary}   className="btn btn-ghost btn-sm">{tr('In Bibliothek speichern')}</button>
           </div>
 
           {built && (
             <div className="rounded-lg border border-surface-800/60 bg-surface-900/40 p-2.5 space-y-1.5">
-              <p className="text-[11px] text-surface-400">Enthält:</p>
+              <p className="text-[11px] text-surface-400">{tr('Enthält:')}</p>
               <SectionTabs profile={built} />
             </div>
           )}
@@ -383,14 +385,14 @@ function Profiles() {
         {/* ── Profil importieren ───────────────────────────── */}
         <div className="card flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <p className="section-label">Profil importieren</p>
+            <p className="section-label">{tr('Profil importieren')}</p>
             <input ref={importRef} type="file" accept=".json" className="hidden" onChange={openFile} />
-            <button onClick={() => importRef.current?.click()} className="btn btn-ghost btn-sm">↑ Datei wählen</button>
+            <button onClick={() => importRef.current?.click()} className="btn btn-ghost btn-sm">{tr('↑ Datei wählen')}</button>
           </div>
 
           {!preview && (
             <p className="text-xs text-surface-600 py-4 text-center">
-              Profildatei (.om4d.json) wählen oder ein Profil aus der Bibliothek laden.
+              {tr('Profildatei (.om4d.json) wählen oder ein Profil aus der Bibliothek laden.')}
             </p>
           )}
 
@@ -405,11 +407,11 @@ function Profiles() {
               <SectionTabs profile={preview} />
               <Components components={preview.components} />
               <div className="flex items-center gap-2 border-t border-surface-800/50 pt-3">
-                <button onClick={() => applyProfile(preview)} className="btn btn-primary btn-sm">Anwenden</button>
-                <button onClick={() => setPreview(null)} className="btn btn-ghost btn-sm">Abbrechen</button>
+                <button onClick={() => applyProfile(preview)} className="btn btn-primary btn-sm">{tr('Anwenden')}</button>
+                <button onClick={() => setPreview(null)} className="btn btn-ghost btn-sm">{tr('Abbrechen')}</button>
               </div>
               <p className="text-[10px] text-amber-600">
-                ⚠ Überschreibt die aktuelle Kalibrierung/Sequenzen/Regal-Konfig. Vorher ggf. eigenes Profil sichern.
+                {tr('⚠ Überschreibt die aktuelle Kalibrierung/Sequenzen/Regal-Konfig. Vorher ggf. eigenes Profil sichern.')}
               </p>
             </div>
           )}
@@ -418,9 +420,9 @@ function Profiles() {
 
       {/* ── Lokale Bibliothek ─────────────────────────────────── */}
       <div className="card">
-        <p className="section-label mb-3">Lokale Bibliothek</p>
+        <p className="section-label mb-3">{tr('Lokale Bibliothek')}</p>
         {!library.length && (
-          <p className="text-xs text-surface-700 py-3 text-center">Noch keine Profile gespeichert.</p>
+          <p className="text-xs text-surface-700 py-3 text-center">{tr('Noch keine Profile gespeichert.')}</p>
         )}
         <div className="space-y-2">
           {library.map((p, i) => (
@@ -432,7 +434,7 @@ function Profiles() {
                 </p>
                 <SectionTabs profile={p} />
               </div>
-              <button onClick={() => setPreview(p)} className="btn btn-ghost btn-sm shrink-0">Laden</button>
+              <button onClick={() => setPreview(p)} className="btn btn-ghost btn-sm shrink-0">{tr('Laden')}</button>
               <button
                 onClick={async () => {
                   const blob = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' })

@@ -314,6 +314,53 @@ const EN_STRINGS = {
   'Alle Einträge sind Entwürfe — Status auf "druckbar" setzen': 'All entries are drafts — set status to “printable”',
   'Druckbar — wird in Warteschlange eingeplant': 'Printable — scheduled into the queue',
   'Entwurf — wird übersprungen': 'Draft — skipped',
+
+  // ── Profile ──
+  'Kalibrierung': 'Calibration',
+  'Sequenzen': 'Sequences',
+  'Regal-Konfig': 'Rack config',
+  'Einstellungen': 'Settings',
+  'Anderer / generisch': 'Other / generic',
+  'Keine Felder': 'No fields',
+  'Neuer Druck': 'New print',
+  'Nächster Druck': 'Next print',
+  'Poll-Intervall (s)': 'Poll interval (s)',
+  'Mindestdruckzeit (min)': 'Minimum print time (min)',
+  'AMS verwenden': 'Use AMS',
+  'Magazin-Fach': 'Magazine slot',
+  'keine anwendbaren Daten': 'no applicable data',
+  'Bauteile & Anleitungen': 'Parts & instructions',
+  'Bauteil {0}': 'Part {0}',
+  'Profil aus aktueller Konfiguration erzeugt.': 'Profile created from current configuration.',
+  '„{0}" in der Bibliothek gespeichert.': '“{0}” saved to the library.',
+  'Keine gültige Profildatei (schema fehlt)': 'Not a valid profile file (schema missing)',
+  'Datei konnte nicht gelesen werden: {0}': 'Could not read file: {0}',
+  '„{0}" angewendet: {1}. Sequenzen werden erst beim nächsten Auto-Farm-Start ausgeführt.':
+    '“{0}” applied: {1}. Sequences only run on the next Auto Farm start.',
+  'Bündele Kalibrierung, Sequenzen, Regal-Konfiguration, Einstellungen und Bauteil-Anleitungen zu einer Datei — exportieren, importieren oder lokal speichern. Das Importieren führt keinen G-Code aus; Sequenzen laufen erst beim nächsten Auto-Farm-Start.':
+    'Bundle calibration, sequences, rack configuration, settings and part instructions into a single file — export, import or save locally. Importing does not run any G-code; sequences only run on the next Auto Farm start.',
+  'Profil erstellen & exportieren': 'Create & export profile',
+  'Name': 'Name',
+  'Drucker-Modell': 'Printer model',
+  'Beschreibung': 'Description',
+  '+ Bauteil': '+ Part',
+  'Name (z.B. Greifer v2)': 'Name (e.g. Gripper v2)',
+  'Link (optional)': 'Link (optional)',
+  'Anleitung / Hinweise…': 'Instructions / notes…',
+  'Aus aktueller Konfig erzeugen': 'Create from current config',
+  '↓ Download (.om4d.json)': '↓ Download (.om4d.json)',
+  'In Bibliothek speichern': 'Save to library',
+  'Enthält:': 'Contains:',
+  'Profil importieren': 'Import profile',
+  '↑ Datei wählen': '↑ Select file',
+  'Profildatei (.om4d.json) wählen oder ein Profil aus der Bibliothek laden.':
+    'Select a profile file (.om4d.json) or load a profile from the library.',
+  'Anwenden': 'Apply',
+  '⚠ Überschreibt die aktuelle Kalibrierung/Sequenzen/Regal-Konfig. Vorher ggf. eigenes Profil sichern.':
+    '⚠ Overwrites the current calibration/sequences/rack config. Back up your own profile first if needed.',
+  'Lokale Bibliothek': 'Local library',
+  'Noch keine Profile gespeichert.': 'No profiles saved yet.',
+  'Laden': 'Load',
 }
 
 function deepMerge(base, over) {
