@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { fileService } from '../services/api'
+import { useLanguage } from '../services/i18n'
 
 /* ── Color swatch ─────────────────────────────────────────────── */
 function ColorDot({ hex, size = 'w-3 h-3' }) {
@@ -54,9 +55,10 @@ function Section({ title, children, defaultOpen = true }) {
 
 /* ── Single file column ───────────────────────────────────────── */
 function FileColumn({ data, label }) {
+  const { tr } = useLanguage()
   if (!data) return (
     <div className="flex-1 flex items-center justify-center py-16 text-surface-600 text-sm">
-      Keine Datei gewählt
+      {tr('Keine Datei gewählt')}
     </div>
   )
   if (data.error) return (
@@ -87,6 +89,7 @@ function FileColumn({ data, label }) {
 
 /* ── Row renderer for compare view ───────────────────────────── */
 function Rows({ a, b }) {
+  const { tr } = useLanguage()
   if (!a && !b) return null
   const two = a && b
 
@@ -107,32 +110,32 @@ function Rows({ a, b }) {
     <div className="space-y-5">
 
       {/* Overview */}
-      <Section title="Übersicht">
+      <Section title={tr('Übersicht')}>
         {row('Slicer',      a?.slicer,  b?.slicer)}
-        {row('Drucker',     a?.machine, b?.machine)}
-        {row('Druckzeit',   a?.estimated_time, b?.estimated_time)}
+        {row(tr('Drucker'),     a?.machine, b?.machine)}
+        {row(tr('Druckzeit'),   a?.estimated_time, b?.estimated_time)}
         {row('Max Z',       fmt(a?.max_z_mm, ' mm'), fmt(b?.max_z_mm, ' mm'), true)}
-        {row('Schichten',   fmt(a?.layer_count), fmt(b?.layer_count), true)}
-        {row('Düse',        fmt(a?.nozzle_diameter, ' mm'), fmt(b?.nozzle_diameter, ' mm'), true)}
-        {row('Quelle',      a?.source, b?.source)}
-        {row('GCode eingebettet', a?.has_gcode ? 'Ja' : 'Nein', b?.has_gcode ? 'Ja' : 'Nein')}
-        {row('Platte (Slicer)', a?.plate_num != null ? `Platte ${a.plate_num}` : null, b?.plate_num != null ? `Platte ${b.plate_num}` : null, true)}
-        {row('GCode-Pfad', a?.plate_gcode, b?.plate_gcode, true)}
+        {row(tr('Schichten'),   fmt(a?.layer_count), fmt(b?.layer_count), true)}
+        {row(tr('Düse'),        fmt(a?.nozzle_diameter, ' mm'), fmt(b?.nozzle_diameter, ' mm'), true)}
+        {row(tr('Quelle'),      a?.source, b?.source)}
+        {row(tr('GCode eingebettet'), a?.has_gcode ? tr('Ja') : tr('Nein'), b?.has_gcode ? tr('Ja') : tr('Nein'))}
+        {row(tr('Platte (Slicer)'), a?.plate_num != null ? tr('Platte {0}', a.plate_num) : null, b?.plate_num != null ? tr('Platte {0}', b.plate_num) : null, true)}
+        {row(tr('GCode-Pfad'), a?.plate_gcode, b?.plate_gcode, true)}
       </Section>
 
       {/* Layer settings */}
-      <Section title="Layer-Einstellungen">
-        {row('Layer-Höhe',         fmt(a?.layer_height, ' mm'),         fmt(b?.layer_height, ' mm'), true)}
-        {row('Erste Schicht',      fmt(a?.initial_layer_height, ' mm'), fmt(b?.initial_layer_height, ' mm'), true)}
+      <Section title={tr('Layer-Einstellungen')}>
+        {row(tr('Layer-Höhe'),         fmt(a?.layer_height, ' mm'),         fmt(b?.layer_height, ' mm'), true)}
+        {row(tr('Erste Schicht'),      fmt(a?.initial_layer_height, ' mm'), fmt(b?.initial_layer_height, ' mm'), true)}
         {row('Infill',             fmt(a?.infill_percent, ' %'),         fmt(b?.infill_percent, ' %'), true)}
-        {row('Druckgeschw.',       fmt(a?.print_speed, ' mm/s'),         fmt(b?.print_speed, ' mm/s'), true)}
-        {row('Support',            a?.support ? 'Ja' : 'Nein',           b?.support != null ? (b.support ? 'Ja' : 'Nein') : null)}
+        {row(tr('Druckgeschw.'),       fmt(a?.print_speed, ' mm/s'),         fmt(b?.print_speed, ' mm/s'), true)}
+        {row('Support',            a?.support ? tr('Ja') : tr('Nein'),           b?.support != null ? (b.support ? tr('Ja') : tr('Nein')) : null)}
         {row('Brim',               fmt(a?.brim_width, ' mm'),             fmt(b?.brim_width, ' mm'), true)}
-        {row('Ironing',            a?.ironing ? 'Ja' : 'Nein',           b?.ironing != null ? (b.ironing ? 'Ja' : 'Nein') : null)}
+        {row('Ironing',            a?.ironing ? tr('Ja') : tr('Nein'),           b?.ironing != null ? (b.ironing ? tr('Ja') : tr('Nein')) : null)}
       </Section>
 
       {/* Filaments — prefer ams_slots (project_settings) if available */}
-      <Section title="Filamente + AMS">
+      <Section title={tr('Filamente + AMS')}>
         {/* Slot overview from project_settings.config */}
         {(a?.ams_slots?.length > 0 || b?.ams_slots?.length > 0) ? (
           <div className="space-y-1">
@@ -170,7 +173,7 @@ function Rows({ a, b }) {
                         ✓ {s.used_m > 0 ? `${s.used_m}m` : ''}{s.used_g > 0 ? ` ${s.used_g}g` : ''}
                       </span>
                     ) : (
-                      <span className="text-surface-700 font-mono text-[10px] shrink-0">nicht gedruckt</span>
+                      <span className="text-surface-700 font-mono text-[10px] shrink-0">{tr('nicht gedruckt')}</span>
                     )}
                   </div>
                 )
@@ -186,7 +189,7 @@ function Rows({ a, b }) {
               )
             })}
             {/* Bed type */}
-            {row('Bett-Typ', a?.curr_bed_type || null, two ? (b?.curr_bed_type || null) : undefined)}
+            {row(tr('Bett-Typ'), a?.curr_bed_type || null, two ? (b?.curr_bed_type || null) : undefined)}
           </div>
         ) : (
           /* Fallback to gcode-header filaments */
@@ -196,7 +199,7 @@ function Rows({ a, b }) {
               const diff = two && bf && (f.type !== bf.type || f.ams_slot !== bf.ams_slot)
               return (
                 <div key={i} className={`grid ${two ? 'grid-cols-[180px_1fr_1fr]' : 'grid-cols-[180px_1fr]'} items-center gap-2 px-3 py-1.5 rounded ${diff ? 'bg-amber-950/25 border border-amber-800/30' : ''}`}>
-                  <span className="text-surface-500 text-xs text-right pr-2">Filament {i}</span>
+                  <span className="text-surface-500 text-xs text-right pr-2">{tr('Filament')} {i}</span>
                   <div className="flex items-center gap-1.5 text-xs min-w-0">
                     <ColorDot hex={f.color} />
                     <span className={`font-mono ${diff ? 'text-amber-300' : 'text-surface-200'}`}>{f.type || '—'}</span>
@@ -219,7 +222,7 @@ function Rows({ a, b }) {
 
       {/* ZIP contents */}
       {(a?.zip_files?.length > 0 || b?.zip_files?.length > 0) && (
-        <Section title="ZIP-Inhalt" defaultOpen={false}>
+        <Section title={tr('ZIP-Inhalt')} defaultOpen={false}>
           <div className={`grid ${two ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
             {[a, b].filter(Boolean).map((d, idx) => (
               <div key={idx} className="space-y-0.5">
@@ -233,11 +236,11 @@ function Rows({ a, b }) {
       )}
 
       {/* Raw header */}
-      <Section title="GCode-Header (roh)" defaultOpen={false}>
+      <Section title={tr('GCode-Header (roh)')} defaultOpen={false}>
         <div className={`grid ${two ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
           {[a, b].filter(Boolean).map((d, idx) => (
             <pre key={idx} className="text-[10px] font-mono text-surface-600 whitespace-pre-wrap leading-4 max-h-64 overflow-y-auto p-2 bg-surface-900 rounded">
-              {d.raw_header || '(leer)'}
+              {d.raw_header || tr('(leer)')}
             </pre>
           ))}
         </div>
@@ -249,11 +252,12 @@ function Rows({ a, b }) {
 
 /* ── File selector ────────────────────────────────────────────── */
 function FileSelect({ files, value, onChange, label }) {
+  const { tr } = useLanguage()
   return (
     <div className="flex flex-col gap-1 min-w-0">
       <label className="text-[10px] text-surface-600 uppercase tracking-wide">{label}</label>
       <select value={value ?? ''} onChange={e => onChange(e.target.value ? +e.target.value : null)} className="text-sm">
-        <option value="">— Datei wählen —</option>
+        <option value="">{tr('— Datei wählen —')}</option>
         {files.map(f => (
           <option key={f.id} value={f.id}>{f.original_filename}</option>
         ))}
@@ -264,6 +268,7 @@ function FileSelect({ files, value, onChange, label }) {
 
 /* ── Main page ────────────────────────────────────────────────── */
 function FileAnalyzer() {
+  const { tr } = useLanguage()
   const [files,    setFiles]    = useState([])
   const [idA,      setIdA]      = useState(null)
   const [idB,      setIdB]      = useState(null)
@@ -285,7 +290,7 @@ function FileAnalyzer() {
       const r = await fileService.deepAnalyze(id)
       setData(r.data)
     } catch (e) {
-      setData({ error: e.response?.data?.detail ?? 'Analyse fehlgeschlagen' })
+      setData({ error: e.response?.data?.detail ?? tr('Analyse fehlgeschlagen') })
     } finally {
       setLoading(false)
     }
@@ -299,18 +304,17 @@ function FileAnalyzer() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-base font-semibold text-surface-100 mb-1">Datei-Analyse</h2>
+        <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('Datei-Analyse')}</h2>
         <p className="text-sm text-surface-500">
-          Slicing-Metadaten, Temperaturen, Filamente und AMS-Mapping aus .3mf / .gcode extrahieren.
-          Zwei Dateien gleichzeitig wählen für Side-by-Side-Vergleich — Unterschiede werden <span className="text-amber-300">orange</span> hervorgehoben.
+          {tr('Slicing-Metadaten, Temperaturen, Filamente und AMS-Mapping aus .3mf / .gcode extrahieren. Zwei Dateien gleichzeitig wählen für Side-by-Side-Vergleich — Unterschiede werden orange hervorgehoben.')}
         </p>
       </div>
 
       {/* File selector */}
       <div className="card">
         <div className={`grid ${comparing ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2'} gap-4`}>
-          <FileSelect files={files} value={idA} onChange={setIdA} label="Datei A" />
-          <FileSelect files={files} value={idB} onChange={setIdB} label="Datei B (Vergleich)" />
+          <FileSelect files={files} value={idA} onChange={setIdA} label={tr('Datei A')} />
+          <FileSelect files={files} value={idB} onChange={setIdB} label={tr('Datei B (Vergleich)')} />
         </div>
       </div>
 
@@ -329,7 +333,7 @@ function FileAnalyzer() {
 
       {/* Loading states */}
       {(loadingA || loadingB) && (
-        <p className="text-sm text-surface-500 animate-pulse px-1">Analysiere…</p>
+        <p className="text-sm text-surface-500 animate-pulse px-1">{tr('Analysiere…')}</p>
       )}
 
       {/* Results */}
@@ -345,8 +349,8 @@ function FileAnalyzer() {
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
           </svg>
-          <p className="text-sm mb-1">Datei wählen um zu beginnen</p>
-          <p className="text-xs">Zwei Dateien wählen für direkten Vergleich</p>
+          <p className="text-sm mb-1">{tr('Datei wählen um zu beginnen')}</p>
+          <p className="text-xs">{tr('Zwei Dateien wählen für direkten Vergleich')}</p>
         </div>
       )}
     </div>

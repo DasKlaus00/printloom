@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { filamentService } from '../services/api'
+import { useLanguage } from '../services/i18n'
 
 const MATERIALS = [
   'Alle', 'PLA Basic', 'PLA Matte', 'PLA Silk', 'PLA Sparkle', 'PLA Marble',
@@ -39,6 +40,7 @@ function FilamentCard({ f, isCustom, idx, onEdit, onDelete }) {
 }
 
 function CustomForm({ initial, onSave, onCancel }) {
+  const { tr } = useLanguage()
   const [brand, setBrand]       = useState(initial?.brand    ?? '')
   const [material, setMaterial] = useState(initial?.material ?? '')
   const [name, setName]         = useState(initial?.name     ?? '')
@@ -55,22 +57,22 @@ function CustomForm({ initial, onSave, onCancel }) {
 
   return (
     <div className="rounded-xl border border-blue-700/40 bg-blue-950/20 p-4 space-y-3">
-      <p className="text-[11px] font-semibold text-blue-300">{initial ? 'Filament bearbeiten' : 'Neues Filament'}</p>
+      <p className="text-[11px] font-semibold text-blue-300">{initial ? tr('Filament bearbeiten') : tr('Neues Filament')}</p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <div>
-          <label className="block text-[9px] text-surface-500 mb-0.5">Marke*</label>
-          <input value={brand} onChange={e => setBrand(e.target.value)} placeholder="z.B. Bambu Lab" className="w-full text-[11px] h-7 py-0" />
+          <label className="block text-[9px] text-surface-500 mb-0.5">{tr('Marke*')}</label>
+          <input value={brand} onChange={e => setBrand(e.target.value)} placeholder={tr('z.B. Bambu Lab')} className="w-full text-[11px] h-7 py-0" />
         </div>
         <div>
-          <label className="block text-[9px] text-surface-500 mb-0.5">Material*</label>
-          <input value={material} onChange={e => setMaterial(e.target.value)} placeholder="z.B. PLA Basic" className="w-full text-[11px] h-7 py-0" />
+          <label className="block text-[9px] text-surface-500 mb-0.5">{tr('Material*')}</label>
+          <input value={material} onChange={e => setMaterial(e.target.value)} placeholder={tr('z.B. PLA Basic')} className="w-full text-[11px] h-7 py-0" />
         </div>
         <div>
-          <label className="block text-[9px] text-surface-500 mb-0.5">Name*</label>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="z.B. Midnight Black" className="w-full text-[11px] h-7 py-0" />
+          <label className="block text-[9px] text-surface-500 mb-0.5">{tr('Name*')}</label>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('z.B. Midnight Black')} className="w-full text-[11px] h-7 py-0" />
         </div>
         <div>
-          <label className="block text-[9px] text-surface-500 mb-0.5">Farbe</label>
+          <label className="block text-[9px] text-surface-500 mb-0.5">{tr('Farbe')}</label>
           <div className="flex items-center gap-2">
             <input type="color" value={colorHex} onChange={e => setColorHex(e.target.value)}
               className="w-8 h-7 rounded cursor-pointer border border-surface-700 p-0" />
@@ -79,22 +81,23 @@ function CustomForm({ initial, onSave, onCancel }) {
           </div>
         </div>
         <div>
-          <label className="block text-[9px] text-surface-500 mb-0.5">Artikel-Nr.</label>
-          <input value={article} onChange={e => setArticle(e.target.value)} placeholder="z.B. AC-P01A01" className="w-full text-[11px] font-mono h-7 py-0" />
+          <label className="block text-[9px] text-surface-500 mb-0.5">{tr('Artikel-Nr.')}</label>
+          <input value={article} onChange={e => setArticle(e.target.value)} placeholder={tr('z.B. AC-P01A01')} className="w-full text-[11px] font-mono h-7 py-0" />
         </div>
       </div>
       <div className="flex gap-2 pt-1">
         <button onClick={submit} disabled={saving || !brand || !material || !name}
           className="btn btn-secondary btn-sm text-xs">
-          {saving ? '…' : (initial ? 'Speichern' : 'Hinzufügen')}
+          {saving ? '…' : (initial ? tr('Speichern') : tr('Hinzufügen'))}
         </button>
-        <button onClick={onCancel} className="btn btn-ghost btn-sm text-xs">Abbrechen</button>
+        <button onClick={onCancel} className="btn btn-ghost btn-sm text-xs">{tr('Abbrechen')}</button>
       </div>
     </div>
   )
 }
 
 export default function FilamentLibrary() {
+  const { tr } = useLanguage()
   const [builtin, setBuiltin]       = useState([])
   const [custom, setCustom]         = useState([])
   const [loading, setLoading]       = useState(true)
@@ -112,7 +115,7 @@ export default function FilamentLibrary() {
       setBuiltin(r.data.builtin ?? [])
       setCustom(r.data.custom ?? [])
     } catch {
-      setFeedback({ ok: false, msg: 'Fehler beim Laden' })
+      setFeedback({ ok: false, msg: tr('Fehler beim Laden') })
     } finally {
       setLoading(false)
     }
@@ -138,9 +141,9 @@ export default function FilamentLibrary() {
       await filamentService.addCustom(data)
       await load()
       setShowForm(false)
-      setFeedback({ ok: true, msg: 'Filament hinzugefügt.' })
+      setFeedback({ ok: true, msg: tr('Filament hinzugefügt.') })
     } catch {
-      setFeedback({ ok: false, msg: 'Fehler beim Speichern' })
+      setFeedback({ ok: false, msg: tr('Fehler beim Speichern') })
     }
   }
 
@@ -149,20 +152,20 @@ export default function FilamentLibrary() {
       await filamentService.updateCustom(editIdx, data)
       await load()
       setEditEntry(null); setEditIdx(null)
-      setFeedback({ ok: true, msg: 'Filament aktualisiert.' })
+      setFeedback({ ok: true, msg: tr('Filament aktualisiert.') })
     } catch {
-      setFeedback({ ok: false, msg: 'Fehler beim Speichern' })
+      setFeedback({ ok: false, msg: tr('Fehler beim Speichern') })
     }
   }
 
   const handleDelete = async (idx) => {
-    if (!window.confirm('Filament wirklich löschen?')) return
+    if (!window.confirm(tr('Filament wirklich löschen?'))) return
     try {
       await filamentService.deleteCustom(idx)
       await load()
-      setFeedback({ ok: true, msg: 'Gelöscht.' })
+      setFeedback({ ok: true, msg: tr('Gelöscht.') })
     } catch {
-      setFeedback({ ok: false, msg: 'Fehler beim Löschen' })
+      setFeedback({ ok: false, msg: tr('Fehler beim Löschen') })
     }
   }
 
@@ -178,9 +181,9 @@ export default function FilamentLibrary() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-surface-100">Filamente</h1>
+        <h1 className="text-2xl font-bold text-surface-100">{tr('Filamente')}</h1>
         <p className="text-sm text-surface-500 mt-0.5">
-          Bambu Lab Katalog · {builtin.length} eingebaut · {custom.length} eigene
+          {tr('Bambu Lab Katalog · {0} eingebaut · {1} eigene', builtin.length, custom.length)}
         </p>
       </div>
 
@@ -196,7 +199,7 @@ export default function FilamentLibrary() {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Suchen…"
+          placeholder={tr('Suchen…')}
           className="text-[11px] h-7 py-0 w-44"
         />
         <div className="flex flex-wrap gap-1">
@@ -209,21 +212,21 @@ export default function FilamentLibrary() {
                   ? 'border-blue-600/80 bg-blue-900/30 text-blue-300'
                   : 'border-surface-700/50 text-surface-500 hover:text-surface-300'
               }`}
-            >{m}</button>
+            >{tr(m)}</button>
           ))}
         </div>
       </div>
 
-      {loading && <p className="text-xs text-surface-600">Lade…</p>}
+      {loading && <p className="text-xs text-surface-600">{tr('Lade…')}</p>}
 
       {/* Custom filaments */}
       <div className="card space-y-3">
         <div className="flex items-center justify-between">
-          <p className="section-label">Eigene Filamente</p>
+          <p className="section-label">{tr('Eigene Filamente')}</p>
           <button
             onClick={() => { setShowForm(true); setEditEntry(null); setEditIdx(null) }}
             className="btn btn-ghost btn-sm text-xs"
-          >+ Hinzufügen</button>
+          >{tr('+ Hinzufügen')}</button>
         </div>
 
         {(showForm && !editEntry) && (
@@ -242,7 +245,7 @@ export default function FilamentLibrary() {
         )}
 
         {filteredCustom.length === 0 && !showForm && !editEntry ? (
-          <p className="text-[11px] text-surface-600 py-2">Noch keine eigenen Filamente. Klicke „+ Hinzufügen".</p>
+          <p className="text-[11px] text-surface-600 py-2">{tr('Noch keine eigenen Filamente. Klicke „+ Hinzufügen".')}</p>
         ) : (
           <div className="grid gap-1.5 sm:grid-cols-2">
             {filteredCustom.map((f, i) => (
@@ -258,7 +261,7 @@ export default function FilamentLibrary() {
 
       {/* Built-in catalog by material group */}
       <div className="space-y-4">
-        <p className="section-label">Bambu Lab Katalog</p>
+        <p className="section-label">{tr('Bambu Lab Katalog')}</p>
         {Object.entries(builtinMaterialGroups).map(([mat, items]) => (
           <div key={mat} className="card space-y-2">
             <p className="text-[11px] font-semibold text-surface-400 mb-1">{mat}</p>
@@ -270,7 +273,7 @@ export default function FilamentLibrary() {
           </div>
         ))}
         {Object.keys(builtinMaterialGroups).length === 0 && !loading && (
-          <p className="text-[11px] text-surface-600">Keine Ergebnisse.</p>
+          <p className="text-[11px] text-surface-600">{tr('Keine Ergebnisse.')}</p>
         )}
       </div>
     </div>
