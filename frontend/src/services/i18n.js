@@ -294,6 +294,26 @@ const EN_STRINGS = {
   'Noch keine eigenen Filamente. Klicke „+ Hinzufügen".': 'No custom filaments yet. Click “+ Add”.',
   'Bambu Lab Katalog': 'Bambu Lab catalog',
   'Keine Ergebnisse.': 'No results.',
+
+  // ── Projekt ──
+  'Dateien mit Stückzahlen kombinieren und als Warteschlange an Auto Farm übergeben.':
+    'Combine files with quantities and hand them off to Auto Farm as a queue.',
+  '{0} hochgeladen': '{0} uploaded',
+  '{0} Jobs in Warteschlange (Fächer: {1}) — Auto Farm öffnen': '{0} jobs queued (slots: {1}) — open Auto Farm',
+  '↑ Hochladen': '↑ Upload',
+  'Keine Treffer': 'No matches',
+  'Noch keine Dateien — erst hochladen': 'No files yet — upload first',
+  '✓ im Projekt': '✓ in project',
+  'Projektname': 'Project name',
+  'Druckliste': 'Print list',
+  'Dateien aus der Bibliothek hinzufügen': 'Add files from the library',
+  'Als Entwurf': 'Mark as draft',
+  'Als druckbar': 'Mark as printable',
+  '{0} druckbar · {1} Entwurf': '{0} printable · {1} draft',
+  '▶ In Warteschlange ({0})': '▶ To queue ({0})',
+  'Alle Einträge sind Entwürfe — Status auf "druckbar" setzen': 'All entries are drafts — set status to “printable”',
+  'Druckbar — wird in Warteschlange eingeplant': 'Printable — scheduled into the queue',
+  'Entwurf — wird übersprungen': 'Draft — skipped',
 }
 
 function deepMerge(base, over) {

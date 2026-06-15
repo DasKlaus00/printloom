@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { fileService, projectService, autofarmService, rackManagerService } from '../services/api'
 import { autoSlot } from '../services/rackUtils'
+import { useLanguage } from '../services/i18n'
 
 function Projekt() {
+  const { tr } = useLanguage()
   const [files,       setFiles]       = useState([])
   const [items,       setItems]       = useState([])
   const [projName,    setProjName]    = useState('Mein Projekt')
@@ -52,7 +54,7 @@ function Projekt() {
       await fileService.upload(fd)
       const fr = await fileService.listFiles()
       setFiles((fr.data.files ?? []).filter(f => ['.3mf', '.gcode'].includes(f.file_type)))
-      showFeedback(`${file.name} hochgeladen`)
+      showFeedback(tr('{0} hochgeladen', file.name))
     } catch (err) {
       showFeedback(err.response?.data?.detail ?? err.message, false)
     } finally {
@@ -120,7 +122,7 @@ function Projekt() {
 
       await autofarmService.saveQueue([...existing, ...newJobs])
       const slots = [...new Set(newJobs.map(j => j.slot))].join(', ')
-      showFeedback(`${newJobs.length} Jobs in Warteschlange (Fächer: ${slots}) — Auto Farm öffnen`)
+      showFeedback(tr('{0} Jobs in Warteschlange (Fächer: {1}) — Auto Farm öffnen', newJobs.length, slots))
     } catch (err) {
       showFeedback(err.response?.data?.detail ?? err.message, false)
     }
@@ -135,9 +137,9 @@ function Projekt() {
 
       {/* Header */}
       <div>
-        <h2 className="text-base font-semibold text-surface-100 mb-1">Projekt</h2>
+        <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('Projekt')}</h2>
         <p className="text-sm text-surface-500">
-          Dateien mit Stückzahlen kombinieren und als Warteschlange an Auto Farm übergeben.
+          {tr('Dateien mit Stückzahlen kombinieren und als Warteschlange an Auto Farm übergeben.')}
         </p>
       </div>
 
@@ -156,14 +158,14 @@ function Projekt() {
         {/* ── Datei-Browser ──────────────────────────────────── */}
         <div className="card space-y-3">
           <div className="flex items-center gap-3">
-            <p className="section-label flex-1">Datei-Bibliothek</p>
+            <p className="section-label flex-1">{tr('Datei-Bibliothek')}</p>
             <input ref={uploadRef} type="file" accept=".3mf,.gcode" className="hidden" onChange={handleUpload} />
             <button
               onClick={() => uploadRef.current?.click()}
               disabled={uploading}
               className="btn btn-ghost btn-sm shrink-0"
             >
-              {uploading ? '…' : '↑ Hochladen'}
+              {uploading ? '…' : tr('↑ Hochladen')}
             </button>
           </div>
 
@@ -171,13 +173,13 @@ function Projekt() {
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Suchen…"
+            placeholder={tr('Suchen…')}
             className="w-full text-sm"
           />
 
           {!filtered.length ? (
             <p className="text-sm text-surface-600 text-center py-8">
-              {files.length ? 'Keine Treffer' : 'Noch keine Dateien — erst hochladen'}
+              {files.length ? tr('Keine Treffer') : tr('Noch keine Dateien — erst hochladen')}
             </p>
           ) : (
             <div className="space-y-1 max-h-[65vh] overflow-y-auto -mx-1 px-1">
@@ -196,13 +198,13 @@ function Projekt() {
                       </p>
                     </div>
                     {inProject && (
-                      <span className="text-[9px] text-emerald-500 font-mono shrink-0">✓ im Projekt</span>
+                      <span className="text-[9px] text-emerald-500 font-mono shrink-0">{tr('✓ im Projekt')}</span>
                     )}
                     <button
                       onClick={() => addItem(f)}
                       className="btn btn-ghost btn-sm opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-[11px]"
                     >
-                      + Hinzufügen
+                      {tr('+ Hinzufügen')}
                     </button>
                   </div>
                 )
@@ -220,17 +222,17 @@ function Projekt() {
               value={projName}
               onChange={e => setProjName(e.target.value)}
               className="w-full text-sm font-semibold bg-transparent border-0 border-b border-surface-700 focus:border-blue-500 outline-none text-surface-100 pb-1"
-              placeholder="Projektname"
+              placeholder={tr('Projektname')}
             />
           </div>
 
           {/* Items */}
           <div className="card space-y-2 min-h-[120px]">
-            <p className="section-label">Druckliste</p>
+            <p className="section-label">{tr('Druckliste')}</p>
 
             {!items.length ? (
               <p className="text-xs text-surface-600 text-center py-6">
-                Dateien aus der Bibliothek hinzufügen
+                {tr('Dateien aus der Bibliothek hinzufügen')}
               </p>
             ) : (
               <div className="space-y-1.5">
@@ -246,7 +248,7 @@ function Projekt() {
                     {/* Status toggle */}
                     <button
                       onClick={() => toggleStatus(item.id)}
-                      title={item.status === 'printable' ? 'Als Entwurf' : 'Als druckbar'}
+                      title={item.status === 'printable' ? tr('Als Entwurf') : tr('Als druckbar')}
                       className={`w-4 h-4 rounded-full border-2 shrink-0 transition-colors ${
                         item.status === 'printable'
                           ? 'border-emerald-500 bg-emerald-500'
@@ -281,9 +283,9 @@ function Projekt() {
           {/* Summary + action */}
           <div className="card space-y-3">
             <div className="flex items-center justify-between text-xs text-surface-500">
-              <span><span className="text-surface-200 font-semibold text-sm">{totalJobs}</span> Jobs gesamt</span>
+              <span><span className="text-surface-200 font-semibold text-sm">{totalJobs}</span> {tr('Jobs gesamt')}</span>
               <span className="font-mono">
-                {printable.length} druckbar · {items.filter(i => i.status === 'draft').length} Entwurf
+                {tr('{0} druckbar · {1} Entwurf', printable.length, items.filter(i => i.status === 'draft').length)}
               </span>
             </div>
             <button
@@ -291,19 +293,19 @@ function Projekt() {
               disabled={!printable.length}
               className="btn btn-primary w-full"
             >
-              ▶ In Warteschlange ({totalJobs})
+              {tr('▶ In Warteschlange ({0})', totalJobs)}
             </button>
             {!printable.length && items.length > 0 && (
               <p className="text-[10px] text-surface-600 text-center">
-                Alle Einträge sind Entwürfe — Status auf "druckbar" setzen
+                {tr('Alle Einträge sind Entwürfe — Status auf "druckbar" setzen')}
               </p>
             )}
           </div>
 
           {/* Legend */}
           <div className="text-[10px] text-surface-700 space-y-1 px-1">
-            <p><span className="inline-block w-3 h-3 rounded-full bg-emerald-500 mr-1.5 align-middle" />Druckbar — wird in Warteschlange eingeplant</p>
-            <p><span className="inline-block w-3 h-3 rounded-full border-2 border-surface-600 mr-1.5 align-middle" />Entwurf — wird übersprungen</p>
+            <p><span className="inline-block w-3 h-3 rounded-full bg-emerald-500 mr-1.5 align-middle" />{tr('Druckbar — wird in Warteschlange eingeplant')}</p>
+            <p><span className="inline-block w-3 h-3 rounded-full border-2 border-surface-600 mr-1.5 align-middle" />{tr('Entwurf — wird übersprungen')}</p>
           </div>
         </div>
       </div>
