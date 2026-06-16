@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { rackManagerService } from '../services/api'
 import { useAutoRefresh } from '../services/useAutoRefresh'
+import { useLanguage } from '../services/i18n'
 
 const STATUS_META = {
   free:     { label: 'Leer',     dot: 'dot-gray',  bg: 'bg-surface-800',    border: 'border-surface-700' },
@@ -11,6 +12,7 @@ const STATUS_META = {
 }
 
 function SlotCard({ id, slotLabel, slot, slotH, onReset, onLock }) {
+  const { tr } = useLanguage()
   const meta = STATUS_META[slot.status] ?? STATUS_META.free
   const fits = slot.object_height_mm != null && slot.object_height_mm > 0
     ? slot.object_height_mm <= slotH
@@ -19,14 +21,14 @@ function SlotCard({ id, slotLabel, slot, slotH, onReset, onLock }) {
   return (
     <div className={`rounded-lg border p-2.5 flex flex-col gap-1.5 ${meta.bg} ${meta.border}`}>
       <div className="flex items-center justify-between">
-        <span className="text-xs font-mono text-surface-500">{slotLabel ?? `Fach ${id}`}</span>
+        <span className="text-xs font-mono text-surface-500">{slotLabel ?? tr('Fach {0}', id)}</span>
         <div className="flex items-center gap-2">
           <span className={`dot ${meta.dot} ${slot.status === 'printing' ? 'animate-pulse' : ''}`} />
-          <span className="text-[10px] text-surface-400">{meta.label}</span>
+          <span className="text-[10px] text-surface-400">{tr(meta.label)}</span>
           {slot.status !== 'printing' && (
             <button
               onClick={() => onLock(id)}
-              title={slot.status === 'locked' ? 'Entsperren' : 'Sperren'}
+              title={slot.status === 'locked' ? tr('Entsperren') : tr('Sperren')}
               className={`text-[10px] leading-none transition-colors ${
                 slot.status === 'locked'
                   ? 'text-red-400 hover:text-surface-400'
@@ -39,7 +41,7 @@ function SlotCard({ id, slotLabel, slot, slotH, onReset, onLock }) {
           {slot.status !== 'free' && slot.status !== 'locked' && (
             <button
               onClick={() => onReset(id)}
-              title="Auf Leer zurücksetzen"
+              title={tr('Auf Leer zurücksetzen')}
               className="text-[10px] text-surface-600 hover:text-red-400 transition-colors leading-none"
             >
               ✕
@@ -71,6 +73,7 @@ function SlotCard({ id, slotLabel, slot, slotH, onReset, onLock }) {
 
 /* ── New Rack Dialog ──────────────────────────────────────────────── */
 function NewRackDialog({ onSave, onClose }) {
+  const { tr } = useLanguage()
   const [name,    setName]    = useState('')
   const [rows,    setRows]    = useState(1)
   const [cols,    setCols]    = useState(6)
@@ -94,30 +97,30 @@ function NewRackDialog({ onSave, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-surface-900 border border-surface-700 rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-surface-800">
-          <h3 className="text-sm font-semibold text-surface-100">Neues Rack anlegen</h3>
+          <h3 className="text-sm font-semibold text-surface-100">{tr('Neues Rack anlegen')}</h3>
           <button onClick={onClose} className="text-surface-500 hover:text-surface-300 text-lg leading-none">✕</button>
         </div>
         <div className="px-5 py-4 space-y-3">
           <div>
-            <label className="text-xs text-surface-500 block mb-1">Name</label>
-            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="z.B. Rack B" className="w-full" autoFocus />
+            <label className="text-xs text-surface-500 block mb-1">{tr('Name')}</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder={tr('z.B. Rack B')} className="w-full" autoFocus />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-xs text-surface-500 block mb-1">Reihen</label>
+              <label className="text-xs text-surface-500 block mb-1">{tr('Reihen')}</label>
               <input type="number" min="1" max="10" value={rows} onChange={e => setRows(e.target.value)} className="w-full font-mono" />
             </div>
             <div>
-              <label className="text-xs text-surface-500 block mb-1">Spalten</label>
+              <label className="text-xs text-surface-500 block mb-1">{tr('Spalten')}</label>
               <input type="number" min="1" max="12" value={cols} onChange={e => setCols(e.target.value)} className="w-full font-mono" />
             </div>
             <div>
-              <label className="text-xs text-surface-500 block mb-1">Höhe (mm)</label>
+              <label className="text-xs text-surface-500 block mb-1">{tr('Höhe (mm)')}</label>
               <input type="number" min="10" max="500" value={slotH} onChange={e => setSlotH(e.target.value)} className="w-full font-mono" />
             </div>
           </div>
           <div>
-            <label className="text-xs text-surface-500 block mb-1">Farbe</label>
+            <label className="text-xs text-surface-500 block mb-1">{tr('Farbe')}</label>
             <div className="flex items-center gap-2">
               <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0" />
               <span className="text-xs font-mono text-surface-500">{color}</span>
@@ -125,9 +128,9 @@ function NewRackDialog({ onSave, onClose }) {
           </div>
         </div>
         <div className="flex justify-end gap-3 px-5 py-4 border-t border-surface-800">
-          <button onClick={onClose} className="btn-ghost text-sm">Abbrechen</button>
+          <button onClick={onClose} className="btn-ghost text-sm">{tr('Abbrechen')}</button>
           <button onClick={handleSave} disabled={saving || !name.trim()} className="btn-primary text-sm">
-            {saving ? 'Erstellt…' : 'Erstellen'}
+            {saving ? tr('Erstellt…') : tr('Erstellen')}
           </button>
         </div>
       </div>
@@ -137,6 +140,7 @@ function NewRackDialog({ onSave, onClose }) {
 
 /* ── Main Component ───────────────────────────────────────────────── */
 function RackManager() {
+  const { tr } = useLanguage()
   const [data, setData]             = useState(null)
   const [racks, setRacks]           = useState([])
   const [selectedRackId, setSelectedRackId] = useState('default')
@@ -174,7 +178,7 @@ function RackManager() {
       setSlotsPerRack(r.data.slots_per_rack ?? 6)
       setSlotH(r.data.slot_height_mm ?? 50)
     } catch {
-      showFeedback('Laden fehlgeschlagen', false)
+      showFeedback(tr('Laden fehlgeschlagen'), false)
     }
   }, [])
 
@@ -197,9 +201,9 @@ function RackManager() {
     try {
       await rackManagerService.updateSlot(slotId, { status: 'free', file_name: null })
       await load()
-      showFeedback(`Fach ${slotId} zurückgesetzt`)
+      showFeedback(tr('Fach {0} zurückgesetzt', slotId))
     } catch {
-      showFeedback('Zurücksetzen fehlgeschlagen', false)
+      showFeedback(tr('Zurücksetzen fehlgeschlagen'), false)
     }
   }
 
@@ -213,23 +217,23 @@ function RackManager() {
         file_name: newStatus === 'free' ? null : (slot.file_name ?? null),
       })
       await load()
-      showFeedback(newStatus === 'locked' ? `Fach ${slotId} gesperrt` : `Fach ${slotId} entsperrt`)
+      showFeedback(newStatus === 'locked' ? tr('Fach {0} gesperrt', slotId) : tr('Fach {0} entsperrt', slotId))
     } catch {
-      showFeedback('Aktion fehlgeschlagen', false)
+      showFeedback(tr('Aktion fehlgeschlagen'), false)
     }
   }
 
   const handleResetAll = async () => {
-    if (!confirm('Alle Fächer auf "Leer" zurücksetzen?')) return
+    if (!confirm(tr('Alle Fächer auf "Leer" zurücksetzen?'))) return
     try {
       const nonFree = Object.entries(data?.slots ?? {}).filter(([, s]) => s.status !== 'free')
       if (!nonFree.length) return
       const res = await rackManagerService.clearSlots({ slot_ids: nonFree.map(([id]) => id) })
       await load()
       const n = res.data?.cleared ?? nonFree.length
-      showFeedback(`${n} Fach/Fächer zurückgesetzt`)
+      showFeedback(tr('{0} Fach/Fächer zurückgesetzt', n))
     } catch {
-      showFeedback('Zurücksetzen fehlgeschlagen', false)
+      showFeedback(tr('Zurücksetzen fehlgeschlagen'), false)
     }
   }
 
@@ -238,9 +242,9 @@ function RackManager() {
       const r = await rackManagerService.refillMagazine()
       await load()
       window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
-      showFeedback(`Magazin aufgefüllt (${r.data?.magazine_count ?? ''} Platten)`)
+      showFeedback(tr('Magazin aufgefüllt ({0} Platten)', r.data?.magazine_count ?? ''))
     } catch {
-      showFeedback('Magazin auffüllen fehlgeschlagen', false)
+      showFeedback(tr('Magazin auffüllen fehlgeschlagen'), false)
     }
   }
 
@@ -253,29 +257,29 @@ function RackManager() {
         slot_height_mm: Number(slotH),
       })
       await load()
-      showFeedback('Gespeichert')
+      showFeedback(tr('Gespeichert'))
     } catch {
-      showFeedback('Speichern fehlgeschlagen', false)
+      showFeedback(tr('Speichern fehlgeschlagen'), false)
     } finally {
       setSaving(false)
     }
   }
 
   const handleDeleteRack = async (rackId) => {
-    if (!confirm('Rack wirklich löschen?')) return
+    if (!confirm(tr('Rack wirklich löschen?'))) return
     try {
       await rackManagerService.deleteRack(rackId)
       await loadRacks()
-      showFeedback('Rack gelöscht')
+      showFeedback(tr('Rack gelöscht'))
     } catch (e) {
-      showFeedback(e.response?.data?.detail ?? 'Löschen fehlgeschlagen', false)
+      showFeedback(e.response?.data?.detail ?? tr('Löschen fehlgeschlagen'), false)
     }
   }
 
   const handleNewRackSaved = async () => {
     setShowNewRack(false)
     await loadRacks()
-    showFeedback('Rack erstellt')
+    showFeedback(tr('Rack erstellt'))
   }
 
   const slots = data?.slots ?? {}
@@ -309,8 +313,8 @@ function RackManager() {
       {racks.length > 0 && (
         <div className="card p-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="section-label">Regal auswählen</p>
-            <button onClick={() => setShowNewRack(true)} className="btn-ghost text-xs py-1 px-2">+ Neues Rack</button>
+            <p className="section-label">{tr('Regal auswählen')}</p>
+            <button onClick={() => setShowNewRack(true)} className="btn-ghost text-xs py-1 px-2">{tr('+ Neues Rack')}</button>
           </div>
           <div className="flex flex-wrap gap-2">
             {racks.map(rack => (
@@ -335,7 +339,7 @@ function RackManager() {
                   <button
                     onClick={e => { e.stopPropagation(); handleDeleteRack(rack.id) }}
                     className="ml-1 text-surface-600 hover:text-red-400 leading-none"
-                    title="Rack löschen"
+                    title={tr('Rack löschen')}
                   >
                     ✕
                   </button>
@@ -345,9 +349,9 @@ function RackManager() {
           </div>
           {selectedRack && (
             <p className="text-[10px] text-surface-600 mt-2">
-              Aktiv: <span className="text-surface-500 font-medium">{selectedRack.name}</span>
-              {' · '}{selectedRack.rows}×{selectedRack.cols} = {selectedRack.rows * selectedRack.cols} Fächer
-              {' · '}{selectedRack.slot_height_mm} mm Fachhöhe
+              {tr('Aktiv:')} <span className="text-surface-500 font-medium">{selectedRack.name}</span>
+              {' · '}{selectedRack.rows}×{selectedRack.cols} = {tr('{0} Fächer', selectedRack.rows * selectedRack.cols)}
+              {' · '}{tr('{0} mm Fachhöhe', selectedRack.slot_height_mm)}
             </p>
           )}
         </div>
@@ -355,12 +359,12 @@ function RackManager() {
 
       {/* ── Config ───────────────────────────────────────── */}
       <div className="card">
-        <p className="section-label">Rack Konfiguration</p>
+        <p className="section-label">{tr('Rack Konfiguration')}</p>
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div>
             <label className="text-xs text-surface-500 block mb-1">
-              Anzahl Racks
-              <span className="text-surface-700 ml-1">(nebeneinander)</span>
+              {tr('Anzahl Racks')}
+              <span className="text-surface-700 ml-1">{tr('(nebeneinander)')}</span>
             </label>
             <input
               type="number" min="1" max="10" value={numRacks}
@@ -370,8 +374,8 @@ function RackManager() {
           </div>
           <div>
             <label className="text-xs text-surface-500 block mb-1">
-              Fächer pro Rack
-              <span className="text-surface-700 ml-1">(übereinander)</span>
+              {tr('Fächer pro Rack')}
+              <span className="text-surface-700 ml-1">{tr('(übereinander)')}</span>
             </label>
             <input
               type="number" min="1" max="20" value={slotsPerRack}
@@ -380,7 +384,7 @@ function RackManager() {
             />
           </div>
           <div>
-            <label className="text-xs text-surface-500 block mb-1">Fachhöhe (mm)</label>
+            <label className="text-xs text-surface-500 block mb-1">{tr('Fachhöhe (mm)')}</label>
             <input
               type="number" min="10" max="500" step="1" value={slotH}
               onChange={e => setSlotH(e.target.value)}
@@ -391,11 +395,11 @@ function RackManager() {
 
         <div className="flex items-center gap-4">
           <button onClick={handleSave} disabled={saving || !hasChanges} className="btn btn-primary">
-            {saving ? 'Speichert...' : 'Speichern'}
+            {saving ? tr('Speichert...') : tr('Speichern')}
           </button>
           {data && (
             <span className="text-xs text-surface-600 font-mono">
-              Aktuell: {data.num_racks} Racks × {data.slots_per_rack} Fächer = {data.num_racks * data.slots_per_rack} gesamt · {data.slot_height_mm} mm
+              {tr('Aktuell: {0} Racks × {1} Fächer = {2} gesamt · {3} mm', data.num_racks, data.slots_per_rack, data.num_racks * data.slots_per_rack, data.slot_height_mm)}
             </span>
           )}
         </div>
@@ -412,7 +416,7 @@ function RackManager() {
           <div key={key} className="card text-center py-3">
             <span className={`dot ${dot} mx-auto block mb-1.5`} />
             <p className="text-2xl font-bold font-mono text-surface-200">{counts[key] ?? 0}</p>
-            <p className="text-xs text-surface-500 mt-0.5">{label}</p>
+            <p className="text-xs text-surface-500 mt-0.5">{tr(label)}</p>
           </div>
         ))}
       </div>
@@ -420,15 +424,15 @@ function RackManager() {
       {/* ── Rack Visual ──────────────────────────────────── */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <p className="section-label">Rack Übersicht</p>
+          <p className="section-label">{tr('Rack Übersicht')}</p>
           <div className="flex gap-2">
             {Object.values(slots).some(s => s.status !== 'free') && (
               <button onClick={handleResetAll} className="btn btn-ghost btn-sm text-xs text-amber-400 hover:text-amber-300"
-                title="Platten entnehmen — Magazin füllt sich automatisch wieder auf">
-                Alle entnehmen
+                title={tr('Platten entnehmen — Magazin füllt sich automatisch wieder auf')}>
+                {tr('Alle entnehmen')}
               </button>
             )}
-            <button onClick={load} className="btn btn-ghost btn-sm text-xs">Aktualisieren</button>
+            <button onClick={load} className="btn btn-ghost btn-sm text-xs">{tr('Aktualisieren')}</button>
           </div>
         </div>
 
@@ -439,7 +443,7 @@ function RackManager() {
           {Array.from({length: nr}, (_, r) => (
             <div key={r+1}>
               <p className="text-xs font-semibold text-center text-surface-400 mb-2 font-mono tracking-wide">
-                Rack {r+1}
+                {tr('Rack {0}', r+1)}
               </p>
               <div className="space-y-2">
                 {Array.from({length: spr}, (_, s) => {
@@ -451,7 +455,7 @@ function RackManager() {
                     <SlotCard
                       key={id}
                       id={id}
-                      slotLabel={`Fach ${s2+1}`}
+                      slotLabel={tr('Fach {0}', s2+1)}
                       slot={slot}
                       slotH={data?.slot_height_mm ?? 50}
                       onReset={handleResetSlot}
@@ -469,11 +473,11 @@ function RackManager() {
           {Object.entries(STATUS_META).map(([key, meta]) => (
             <div key={key} className="flex items-center gap-1.5 text-xs text-surface-500">
               <span className={`dot ${meta.dot}`} />
-              {meta.label}
+              {tr(meta.label)}
             </div>
           ))}
           <span className="ml-auto text-xs text-surface-700">
-            Status wird von Auto Farm verwaltet
+            {tr('Status wird von Auto Farm verwaltet')}
           </span>
         </div>
       </div>

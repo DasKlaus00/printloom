@@ -3,14 +3,16 @@ import { systemService, healthService, pushService } from '../services/api'
 import { pushSupported, pushUnsupportedReason, isSubscribed, syncSubscription, subscribe as pushSubscribe, unsubscribe as pushUnsubscribe } from '../services/push'
 import { VERSION } from '../version'
 import { THEMES, getTheme, applyTheme } from '../services/theme'
+import { useLanguage } from '../services/i18n'
 
 function ThemePicker() {
+  const { tr } = useLanguage()
   const [theme, setTheme] = useState(getTheme())
   const pick = (id) => { applyTheme(id); setTheme(id) }
   return (
     <div className="card p-6 space-y-4">
-      <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">Darstellung</h2>
-      <p className="text-xs text-surface-500 -mt-2">Farbschema der Oberfläche. Wird auf diesem Gerät gespeichert.</p>
+      <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Darstellung')}</h2>
+      <p className="text-xs text-surface-500 -mt-2">{tr('Farbschema der Oberfläche. Wird auf diesem Gerät gespeichert.')}</p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {THEMES.map(t => (
           <button
@@ -23,7 +25,7 @@ function ThemePicker() {
             }`}
           >
             <span className="w-full h-8 rounded-lg border border-white/10" style={{ backgroundColor: t.swatch }} />
-            <span className="font-medium">{t.label}</span>
+            <span className="font-medium">{tr(t.label)}</span>
           </button>
         ))}
       </div>
@@ -32,6 +34,7 @@ function ThemePicker() {
 }
 
 function PushNotifications() {
+  const { tr } = useLanguage()
   const [supported]   = useState(pushSupported())
   const [reason]      = useState(pushUnsupportedReason())
   const [available, setAvailable] = useState(null) // server-side push deps present?
@@ -53,14 +56,14 @@ function PushNotifications() {
 
   const enable = async () => {
     setBusy(true)
-    try { await pushSubscribe(); setSubscribed(true); flash('Push aktiviert — du bekommst jetzt Benachrichtigungen') }
-    catch (e) { flash(e.message || 'Aktivierung fehlgeschlagen', false) }
+    try { await pushSubscribe(); setSubscribed(true); flash(tr('Push aktiviert — du bekommst jetzt Benachrichtigungen')) }
+    catch (e) { flash(e.message || tr('Aktivierung fehlgeschlagen'), false) }
     finally { setBusy(false) }
   }
   const disable = async () => {
     setBusy(true)
-    try { await pushUnsubscribe(); setSubscribed(false); flash('Push deaktiviert') }
-    catch (e) { flash(e.message || 'Fehler', false) }
+    try { await pushUnsubscribe(); setSubscribed(false); flash(tr('Push deaktiviert')) }
+    catch (e) { flash(e.message || tr('Fehler'), false) }
     finally { setBusy(false) }
   }
   const test = async () => {
@@ -71,25 +74,25 @@ function PushNotifications() {
       await syncSubscription().catch(() => {})
       const d = r.data
       if (d.disabled) {
-        flash('Server-Push nicht verfügbar (Abhängigkeiten fehlen)', false)
+        flash(tr('Server-Push nicht verfügbar (Abhängigkeiten fehlen)'), false)
       } else if ((d.total ?? 0) === 0) {
-        flash('Kein Gerät registriert — auf diesem Gerät „Push aktivieren" erneut antippen (über HTTPS).', false)
+        flash(tr('Kein Gerät registriert — auf diesem Gerät „Push aktivieren" erneut antippen (über HTTPS).'), false)
       } else if (d.sent > 0) {
-        flash(`Test gesendet (${d.sent} Gerät(e))`)
+        flash(tr('Test gesendet ({0} Gerät(e))', d.sent))
       } else {
         // Device(s) registered but delivery failed — surface the real reason.
-        const why = (d.errors && d.errors.length) ? d.errors.join(' · ') : 'unbekannter Fehler'
-        flash(`Zustellung an ${d.total} Gerät(e) fehlgeschlagen — ${why}`, false)
+        const why = (d.errors && d.errors.length) ? d.errors.join(' · ') : tr('unbekannter Fehler')
+        flash(tr('Zustellung an {0} Gerät(e) fehlgeschlagen — {1}', d.total, why), false)
       }
-    } catch { flash('Test fehlgeschlagen', false) }
+    } catch { flash(tr('Test fehlgeschlagen'), false) }
     finally { setBusy(false) }
   }
 
   return (
     <div className="card p-6 space-y-4">
-      <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">Push-Benachrichtigungen</h2>
+      <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Push-Benachrichtigungen')}</h2>
       <p className="text-xs text-surface-500">
-        Erhalte auf diesem Gerät Push-Meldungen bei „fertig / Fehler / Eingriff nötig" — auch als Home-Screen-App (iOS 16.4+).
+        {tr('Erhalte auf diesem Gerät Push-Meldungen bei „fertig / Fehler / Eingriff nötig" — auch als Home-Screen-App (iOS 16.4+).')}
       </p>
 
       {msg && (
@@ -99,19 +102,19 @@ function PushNotifications() {
       )}
 
       {!supported ? (
-        <p className="text-xs text-amber-400">{reason || 'Dieser Browser/dieses Gerät unterstützt keine Web-Push-Benachrichtigungen.'}</p>
+        <p className="text-xs text-amber-400">{reason || tr('Dieser Browser/dieses Gerät unterstützt keine Web-Push-Benachrichtigungen.')}</p>
       ) : available === false ? (
-        <p className="text-xs text-amber-400">Server-seitiger Push ist nicht verfügbar (Abhängigkeiten fehlen). Nach dem nächsten Image-Update aktiv.</p>
+        <p className="text-xs text-amber-400">{tr('Server-seitiger Push ist nicht verfügbar (Abhängigkeiten fehlen). Nach dem nächsten Image-Update aktiv.')}</p>
       ) : (
         <div className="flex gap-3 flex-wrap">
           {!subscribed ? (
             <button onClick={enable} disabled={busy} className="btn-primary text-sm disabled:opacity-50">
-              {busy ? 'Aktiviere…' : 'Push aktivieren'}
+              {busy ? tr('Aktiviere…') : tr('Push aktivieren')}
             </button>
           ) : (
             <>
-              <button onClick={test} disabled={busy} className="btn-secondary text-sm">Test senden</button>
-              <button onClick={disable} disabled={busy} className="btn-secondary text-sm">Deaktivieren</button>
+              <button onClick={test} disabled={busy} className="btn-secondary text-sm">{tr('Test senden')}</button>
+              <button onClick={disable} disabled={busy} className="btn-secondary text-sm">{tr('Deaktivieren')}</button>
             </>
           )}
         </div>
@@ -140,6 +143,7 @@ function waitForRestart() {
 }
 
 export default function System({ onUpdateAvailable, onUpdatePhase }) {
+  const { tr } = useLanguage()
   const [info, setInfo]               = useState(null)
   const [checking, setChecking]       = useState(false)
   const [updating, setUpdating]       = useState(false)
@@ -159,7 +163,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
       setInfo(r.data)
       onUpdateAvailable?.(r.data.update_available)
     } catch {
-      if (!silent) setError('Versionscheck fehlgeschlagen — GitHub/Registry nicht erreichbar?')
+      if (!silent) setError(tr('Versionscheck fehlgeschlagen — GitHub/Registry nicht erreichbar?'))
     } finally {
       if (!silent) setChecking(false)
     }
@@ -182,7 +186,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
       if (e.response) {
         // Backend answered with an error → the update did NOT start. Show the real
         // reason (e.g. private ghcr package, no Docker socket) instead of waiting.
-        const detail = e.response.data?.detail || `Fehler ${e.response.status}`
+        const detail = e.response.data?.detail || tr('Fehler {0}', e.response.status)
         if (/watchtower|service not known/i.test(detail)) {
           setPhase('no-watchtower')
         } else {
@@ -213,10 +217,10 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
       a.download = `printloom-backup-${new Date().toISOString().split('T')[0]}.json`
       a.click()
       URL.revokeObjectURL(url)
-      setBackupFeedback({ ok: true, msg: 'Backup exportiert' })
+      setBackupFeedback({ ok: true, msg: tr('Backup exportiert') })
     } catch (e) {
-      const detail = e.response?.data?.detail || e.message || 'unbekannter Fehler'
-      setBackupFeedback({ ok: false, msg: `Export fehlgeschlagen: ${detail}` })
+      const detail = e.response?.data?.detail || e.message || tr('unbekannter Fehler')
+      setBackupFeedback({ ok: false, msg: tr('Export fehlgeschlagen: {0}', detail) })
     } finally {
       setTimeout(() => setBackupFeedback(null), 4000)
     }
@@ -230,9 +234,9 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
       const text = await file.text()
       const data = JSON.parse(text)
       await systemService.importBackup(data)
-      setBackupFeedback({ ok: true, msg: `Backup wiederhergestellt (v${data.current_version ?? '?'}, exportiert: ${data.exported_at?.split('T')[0] ?? '?'})` })
+      setBackupFeedback({ ok: true, msg: tr('Backup wiederhergestellt (v{0}, exportiert: {1})', data.current_version ?? '?', data.exported_at?.split('T')[0] ?? '?') })
     } catch (err) {
-      setBackupFeedback({ ok: false, msg: `Import fehlgeschlagen: ${err.message ?? err}` })
+      setBackupFeedback({ ok: false, msg: tr('Import fehlgeschlagen: {0}', err.message ?? err) })
     } finally {
       e.target.value = ''
       setTimeout(() => setBackupFeedback(null), 6000)
@@ -254,15 +258,15 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-surface-100">System</h1>
-        <p className="text-sm text-surface-500 mt-1">Darstellung, Versionsverwaltung &amp; Updates</p>
+        <h1 className="text-xl font-semibold text-surface-100">{tr('System')}</h1>
+        <p className="text-sm text-surface-500 mt-1">{tr('Darstellung, Versionsverwaltung & Updates')}</p>
       </div>
 
       <ThemePicker />
 
       {/* Release channel */}
       <div className="card p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">Release-Kanal</h2>
+        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Release-Kanal')}</h2>
         <div className="flex gap-3">
           <button
             onClick={() => switchChannel('latest')}
@@ -274,7 +278,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
           >
             <span className="text-lg">🏷️</span>
             <span className="font-semibold">Latest</span>
-            <span className="text-[11px] text-surface-500 text-center">Stabile Releases</span>
+            <span className="text-[11px] text-surface-500 text-center">{tr('Stabile Releases')}</span>
           </button>
           <button
             onClick={() => switchChannel('beta')}
@@ -286,14 +290,14 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
           >
             <span className="text-lg">🧪</span>
             <span className="font-semibold">Beta</span>
-            <span className="text-[11px] text-surface-500 text-center">Aktive Entwicklung</span>
+            <span className="text-[11px] text-surface-500 text-center">{tr('Aktive Entwicklung')}</span>
           </button>
         </div>
         {isBeta && (
           <div className="flex items-start gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
             <span className="text-blue-400 text-sm mt-0.5">ℹ</span>
             <p className="text-blue-300 text-xs">
-              Beta-Kanal aktiv — neue Features vor dem stabilen Release. Docker-Image-Tag:
+              {tr('Beta-Kanal aktiv — neue Features vor dem stabilen Release. Docker-Image-Tag:')}
               {' '}<span className="font-mono bg-blue-950/50 px-1 rounded">:beta</span>
             </p>
           </div>
@@ -302,16 +306,16 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
 
       {/* Version card */}
       <div className="card p-6 space-y-5">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">Version</h2>
+        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Version')}</h2>
 
         <div className="flex items-end gap-8">
           <div>
-            <p className="text-xs text-surface-500 mb-1">Installiert</p>
+            <p className="text-xs text-surface-500 mb-1">{tr('Installiert')}</p>
             <p className="text-3xl font-mono font-bold text-surface-100">v{VERSION}</p>
           </div>
           {info?.latest && !isBeta && (
             <div>
-              <p className="text-xs text-surface-500 mb-1">Neueste</p>
+              <p className="text-xs text-surface-500 mb-1">{tr('Neueste')}</p>
               <p className={`text-3xl font-mono font-bold ${info.update_available ? 'text-amber-400' : 'text-emerald-400'}`}>
                 v{info.latest}
               </p>
@@ -319,7 +323,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
           )}
           {isBeta && (
             <div>
-              <p className="text-xs text-surface-500 mb-1">Kanal</p>
+              <p className="text-xs text-surface-500 mb-1">{tr('Kanal')}</p>
               <p className="text-xl font-mono font-bold text-blue-400">beta</p>
             </div>
           )}
@@ -338,7 +342,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
               <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
                 <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
                 <span className="text-amber-300 text-sm font-medium">
-                  {isBeta ? 'Beta-Update verfügbar' : `Update verfügbar — v${info.latest}`}
+                  {isBeta ? tr('Beta-Update verfügbar') : tr('Update verfügbar — v{0}', info.latest)}
                 </span>
               </div>
             )
@@ -346,7 +350,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
             <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-3">
               <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
               <span className="text-emerald-400 text-sm">
-                {isBeta ? 'Beta ist aktuell' : `App ist aktuell (v${info.latest})`}
+                {isBeta ? tr('Beta ist aktuell') : tr('App ist aktuell (v{0})', info.latest)}
               </span>
             </div>
           )
@@ -356,24 +360,24 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
           <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
             <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
             <span className="text-blue-300 text-sm">
-              {isBeta ? 'Beta wird installiert/gewechselt' : 'Update läuft'} — App startet neu, bitte warten…
+              {isBeta ? tr('Beta wird installiert/gewechselt') : tr('Update läuft')}{tr(' — App startet neu, bitte warten…')}
             </span>
           </div>
         )}
         {phase === 'done' && (
           <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-3">
             <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
-            <span className="text-emerald-400 text-sm">Fertig — Seite wird neu geladen…</span>
+            <span className="text-emerald-400 text-sm">{tr('Fertig — Seite wird neu geladen…')}</span>
           </div>
         )}
         {phase === 'no-watchtower' && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-4 space-y-3">
-            <p className="text-amber-300 text-sm font-medium">Weder Docker-Socket noch Watchtower verfügbar — manuell:</p>
+            <p className="text-amber-300 text-sm font-medium">{tr('Weder Docker-Socket noch Watchtower verfügbar — manuell:')}</p>
             <pre className="bg-surface-900 rounded-lg px-3 py-2 text-xs font-mono text-emerald-300 select-all overflow-x-auto">
 {`docker pull ghcr.io/dasklaus00/printloom:${isBeta ? 'beta' : 'latest'}
 docker compose up -d`}
             </pre>
-            <button onClick={() => setPhase(null)} className="text-xs text-surface-500 hover:text-surface-300">Schließen</button>
+            <button onClick={() => setPhase(null)} className="text-xs text-surface-500 hover:text-surface-300">{tr('Schließen')}</button>
           </div>
         )}
         {error && (
@@ -387,9 +391,9 @@ docker compose up -d`}
           <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
             <span className="text-amber-400 text-sm mt-0.5">⚠</span>
             <p className="text-amber-300 text-xs">
-              Kein Docker-Socket erkannt — Ein-Klick-Update ist nicht möglich. In der Compose-Datei
+              {tr('Kein Docker-Socket erkannt — Ein-Klick-Update ist nicht möglich. In der Compose-Datei')}
               {' '}<span className="font-mono bg-amber-950/40 px-1 rounded">/var/run/docker.sock</span>{' '}
-              in den App-Container mounten (siehe <span className="font-mono">docker-compose.prod.yml.example</span>).
+              {tr('in den App-Container mounten (siehe')} <span className="font-mono">docker-compose.prod.yml.example</span>).
             </p>
           </div>
         )}
@@ -401,7 +405,7 @@ docker compose up -d`}
             disabled={!canUpdate}
             className="btn-secondary text-sm"
           >
-            {checking ? 'Prüfe…' : 'Auf Updates prüfen'}
+            {checking ? tr('Prüfe…') : tr('Auf Updates prüfen')}
           </button>
           {!confirmUpdate && !['done', 'running'].includes(phase) && (
             <button
@@ -410,10 +414,10 @@ docker compose up -d`}
               className="btn-primary text-sm"
             >
               {updating
-                ? 'Aktualisiert…'
+                ? tr('Aktualisiert…')
                 : isBeta
-                  ? 'Beta installieren / wechseln'
-                  : (info?.update_available ? 'Update installieren' : 'Neu installieren')}
+                  ? tr('Beta installieren / wechseln')
+                  : (info?.update_available ? tr('Update installieren') : tr('Neu installieren'))}
             </button>
           )}
         </div>
@@ -421,43 +425,38 @@ docker compose up -d`}
         {/* Backup-Disclaimer vor dem Update */}
         {confirmUpdate && !['done', 'running'].includes(phase) && (
           <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg px-4 py-4 space-y-3">
-            <p className="text-amber-300 text-sm font-medium">⚠ Vor dem Update ein Backup machen</p>
+            <p className="text-amber-300 text-sm font-medium">{tr('⚠ Vor dem Update ein Backup machen')}</p>
             <p className="text-amber-200/80 text-xs">
-              Ein Update kann Einstellungen verändern. Exportiere zur Sicherheit zuerst ein Backup deiner
-              Konfiguration (Geräte, Rack, Sequenzen, Zeitpläne) — dann erst aktualisieren.
+              {tr('Ein Update kann Einstellungen verändern. Exportiere zur Sicherheit zuerst ein Backup deiner Konfiguration (Geräte, Rack, Sequenzen, Zeitpläne) — dann erst aktualisieren.')}
             </p>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={exportBackup} className="btn-secondary text-sm">↓ Backup exportieren</button>
+              <button onClick={exportBackup} className="btn-secondary text-sm">{tr('↓ Backup exportieren')}</button>
               <button
                 onClick={() => { setConfirmUpdate(false); triggerUpdate() }}
                 disabled={!canUpdate}
                 className="btn-primary text-sm"
               >
-                {isBeta ? 'Verstanden — Beta installieren / wechseln' : 'Verstanden — jetzt aktualisieren'}
+                {isBeta ? tr('Verstanden — Beta installieren / wechseln') : tr('Verstanden — jetzt aktualisieren')}
               </button>
-              <button onClick={() => setConfirmUpdate(false)} className="btn-ghost text-sm">Abbrechen</button>
+              <button onClick={() => setConfirmUpdate(false)} className="btn-ghost text-sm">{tr('Abbrechen')}</button>
             </div>
           </div>
         )}
 
         <p className="text-[11px] text-surface-600">
-          Updates laufen <span className="text-surface-400">nur auf Knopfdruck</span> — kein automatisches Update im
-          Hintergrund. Ein Klick zieht das gewählte Kanal-Image (<span className="font-mono">:latest</span> bzw.
-          <span className="font-mono"> :beta</span>) und startet die App neu (auch der Kanalwechsel). Voraussetzung:
-          Docker-Socket gemountet (siehe Compose).
+          {tr('Updates laufen')} <span className="text-surface-400">{tr('nur auf Knopfdruck')}</span> {tr('— kein automatisches Update im Hintergrund. Ein Klick zieht das gewählte Kanal-Image (')}<span className="font-mono">:latest</span>{tr(' bzw.')}
+          <span className="font-mono"> :beta</span>{tr(') und startet die App neu (auch der Kanalwechsel). Voraussetzung: Docker-Socket gemountet (siehe Compose).')}
         </p>
       </div>
 
       {/* Backup & Restore */}
       <div className="card p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">Backup &amp; Restore</h2>
+        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Backup & Restore')}</h2>
         <p className="text-xs text-surface-500">
-          Sichert die <span className="text-surface-300">komplette Konfiguration</span> als JSON: Geräte
-          (Drucker &amp; OTTOeject inkl. Zugangsdaten), Kamera-/HA-Einstellungen, Kalibrierung, Sequenzen,
-          Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne &amp; Sprachpakete — exportieren oder wiederherstellen.
+          {tr('Sichert die')} <span className="text-surface-300">{tr('komplette Konfiguration')}</span> {tr('als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Kamera-/HA-Einstellungen, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.')}
         </p>
         <p className="text-[11px] text-amber-500/90">
-          ⚠ Die Datei enthält Zugangsdaten (Drucker-Access-Code, HA-/Telegram-Token). Sicher aufbewahren und nicht teilen.
+          {tr('⚠ Die Datei enthält Zugangsdaten (Drucker-Access-Code, HA-/Telegram-Token). Sicher aufbewahren und nicht teilen.')}
         </p>
 
         {backupFeedback && (
@@ -468,7 +467,7 @@ docker compose up -d`}
 
         <div className="flex gap-3 flex-wrap">
           <button onClick={exportBackup} className="btn-secondary text-sm">
-            ↓ Backup exportieren
+            {tr('↓ Backup exportieren')}
           </button>
           <div>
             <input
@@ -479,7 +478,7 @@ docker compose up -d`}
               className="hidden"
             />
             <button onClick={() => importRef.current?.click()} className="btn-secondary text-sm">
-              ↑ Backup importieren
+              {tr('↑ Backup importieren')}
             </button>
           </div>
         </div>
