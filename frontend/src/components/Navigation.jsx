@@ -111,24 +111,25 @@ const icons = {
   ),
 }
 
-function buildPages(t) {
+function buildPages(t, tr) {
   return [
     { id: 'dashboard',     label: t('nav.dashboard'),     icon: 'dashboard'   },
     { id: 'files',         label: t('nav.files'),         icon: 'files'       },
-    { id: 'steuerung',     label: 'Steuerung',            icon: 'controls'    },
+    { id: 'steuerung',     label: tr('Steuerung'),        icon: 'controls'    },
     { id: 'autofarm',      label: t('nav.autofarm'),      icon: 'autofarm'    },
-    { id: 'projekt',       label: 'Projekt',              icon: 'projekt'     },
+    { id: 'projekt',       label: tr('Projekt'),          icon: 'projekt'     },
     { id: 'sequence',      label: t('nav.sequence'),      icon: 'sequence'    },
     { id: 'profiles',      label: t('nav.profiles'),      icon: 'profiles'    },
-    { id: 'filamente',     label: 'Filamente',            icon: 'filamente'   },
+    { id: 'filamente',     label: tr('Filamente'),        icon: 'filamente'   },
     { id: 'configuration', label: t('nav.configuration'), icon: 'config'      },
-    { id: 'setup',         label: 'Setup-Assistent',      icon: 'config'      },
+    { id: 'setup',         label: tr('Setup-Assistent'),  icon: 'config'      },
     { id: 'system',        label: t('nav.system'),        icon: 'system'      },
   ]
 }
 
 /* ─── Schnell-Upload ──────────────────────────────────────────────── */
 function QuickUpload() {
+  const { tr } = useLanguage()
   const [dragging,   setDragging]   = useState(false)
   const [uploading,  setUploading]  = useState(false)
   const [lastFile,   setLastFile]   = useState(null)
@@ -137,7 +138,7 @@ function QuickUpload() {
 
   const doUpload = async (files) => {
     const valid = [...files].filter(f => f.name.endsWith('.gcode') || f.name.endsWith('.3mf'))
-    if (!valid.length) { setErr('Nur .gcode / .3mf'); setTimeout(() => setErr(null), 3000); return }
+    if (!valid.length) { setErr(tr('Nur .gcode / .3mf')); setTimeout(() => setErr(null), 3000); return }
     setUploading(true); setErr(null)
     try {
       for (const file of valid) {
@@ -149,7 +150,7 @@ function QuickUpload() {
       window.dispatchEvent(new CustomEvent('printloom:fileUploaded'))
       setTimeout(() => setLastFile(null), 4000)
     } catch (e) {
-      setErr(e.response?.data?.detail ?? 'Upload fehlgeschlagen')
+      setErr(e.response?.data?.detail ?? tr('Upload fehlgeschlagen'))
       setTimeout(() => setErr(null), 4000)
     }
     setUploading(false)
@@ -181,7 +182,7 @@ function QuickUpload() {
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-blue-400 animate-spin">
               <circle cx="12" cy="12" r="10" strokeDasharray="60" strokeDashoffset="20"/>
             </svg>
-            <span className="text-[11px] font-medium text-blue-400">Hochladen…</span>
+            <span className="text-[11px] font-medium text-blue-400">{tr('Hochladen…')}</span>
           </>
         ) : err ? (
           <>
@@ -196,7 +197,7 @@ function QuickUpload() {
               <polyline points="20 6 9 17 4 12"/>
             </svg>
             <span className="text-[11px] font-medium text-emerald-400 truncate max-w-[140px] text-center">{lastFile}</span>
-            <span className="text-[9px] text-emerald-600">Hochgeladen</span>
+            <span className="text-[9px] text-emerald-600">{tr('Hochgeladen')}</span>
           </>
         ) : (
           <>
@@ -208,7 +209,7 @@ function QuickUpload() {
               </svg>
             </div>
             <span className={`text-[11px] font-medium transition-colors duration-200 ${dragging ? 'text-blue-300' : 'text-surface-500'}`}>
-              {dragging ? 'Hier ablegen' : 'Schnell-Upload'}
+              {dragging ? tr('Hier ablegen') : tr('Schnell-Upload')}
             </span>
             <span className="text-[9px] text-surface-700 font-mono">.gcode · .3mf</span>
           </>
@@ -245,8 +246,8 @@ function LanguageToggle() {
 
 /* ─── Navigation ─────────────────────────────────────────────────── */
 function Navigation({ currentPage, setCurrentPage, updateAvailable }) {
-  const { t } = useLanguage()
-  const pages = buildPages(t)
+  const { t, tr } = useLanguage()
+  const pages = buildPages(t, tr)
   const [compact, setCompact] = useState(() => localStorage.getItem('ottomat3d_nav_compact') === '1')
 
   const toggleCompact = () => setCompact(v => {
@@ -277,7 +278,7 @@ function Navigation({ currentPage, setCurrentPage, updateAvailable }) {
         </div>
         <button
           onClick={toggleCompact}
-          title="Seitenleiste erweitern"
+          title={tr('Seitenleiste erweitern')}
           className="w-full py-3 flex items-center justify-center text-surface-700 hover:text-surface-400 border-t border-surface-800/50 transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -295,10 +296,10 @@ function Navigation({ currentPage, setCurrentPage, updateAvailable }) {
     <nav className="w-56 flex-shrink-0 bg-surface-900/60 border-r border-surface-800/50 flex flex-col backdrop-blur-sm">
       <div className="p-3 flex-1 overflow-y-auto">
         <div className="flex items-center justify-between px-3 mb-3">
-          <p className="section-label">Navigation</p>
+          <p className="section-label">{tr('Navigation')}</p>
           <button
             onClick={toggleCompact}
-            title="Seitenleiste minimieren"
+            title={tr('Seitenleiste minimieren')}
             className="text-surface-700 hover:text-surface-400 transition-colors"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -318,7 +319,7 @@ function Navigation({ currentPage, setCurrentPage, updateAvailable }) {
               </span>
               <span className="flex-1 text-left">{page.label}</span>
               {page.id === 'system' && updateAvailable && (
-                <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0 animate-pulse" title="Update verfügbar" />
+                <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0 animate-pulse" title={tr('Update verfügbar')} />
               )}
             </button>
           ))}

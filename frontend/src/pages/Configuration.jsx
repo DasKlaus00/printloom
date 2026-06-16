@@ -4,7 +4,7 @@ import { availableLanguages, setLanguage, useLanguage } from '../services/i18n'
 
 /* ─── Language & downloadable language packs ─────────────────────── */
 function LanguagePacks() {
-  const { lang } = useLanguage()
+  const { lang, tr } = useLanguage()
   const [installed, setInstalled] = useState({})
   const [status, setStatus]       = useState(null)
   const [busy, setBusy]           = useState(false)
@@ -22,10 +22,10 @@ function LanguagePacks() {
     reader.onload = async (ev) => {
       try {
         const pack = JSON.parse(ev.target.result)
-        if (!pack.code || !pack.translations) throw new Error('Pack braucht code + translations')
+        if (!pack.code || !pack.translations) throw new Error(tr('Pack braucht code + translations'))
         await systemService.importLang({ code: pack.code, name: pack.name, translations: pack.translations })
         await loadInstalled()
-        setStatus({ ok: true, msg: `Sprachpaket „${pack.code}" importiert.` })
+        setStatus({ ok: true, msg: tr('Sprachpaket „{0}" importiert.', pack.code) })
       } catch (e2) {
         setStatus({ ok: false, msg: e2.response?.data?.detail ?? e2.message })
       }
@@ -48,15 +48,15 @@ function LanguagePacks() {
   return (
     <div className="card space-y-3">
       <div>
-        <p className="section-label">Sprache & Sprachpakete</p>
+        <p className="section-label">{tr('Sprache & Sprachpakete')}</p>
         <p className="text-[11px] text-surface-600 mt-0.5">
-          Standard ist Deutsch. Weitere Sprachen lassen sich aus dem Server-Katalog laden oder als Datei importieren.
+          {tr('Standard ist Deutsch. Weitere Sprachen lassen sich aus dem Server-Katalog laden oder als Datei importieren.')}
         </p>
       </div>
 
       {/* Active language */}
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] text-surface-600 mr-1">Aktiv:</span>
+        <span className="text-[10px] text-surface-600 mr-1">{tr('Aktiv:')}</span>
         {langs.map(l => (
           <button key={l.code} onClick={() => setLanguage(l.code)} title={l.name}
             className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
@@ -70,7 +70,7 @@ function LanguagePacks() {
       {/* Installed packs */}
       {Object.keys(installed).length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-[10px] text-surface-600">Installierte Pakete</p>
+          <p className="text-[10px] text-surface-600">{tr('Installierte Pakete')}</p>
           {Object.entries(installed).map(([code, p]) => (
             <div key={code} className="flex items-center gap-2 text-xs">
               <span className="font-mono text-surface-300">{code.toUpperCase()}</span>
@@ -84,7 +84,7 @@ function LanguagePacks() {
       {/* Actions */}
       <div className="flex items-center gap-2 flex-wrap border-t border-surface-800/50 pt-3">
         <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={importFile} />
-        <button onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm">Pack importieren</button>
+        <button onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm">{tr('Pack importieren')}</button>
       </div>
 
       {status && (
@@ -100,6 +100,7 @@ function LanguagePacks() {
 
 /* ─── Farm-Einstellungen ─────────────────────────────────────────── */
 function FarmSettings() {
+  const { tr } = useLanguage()
   const [pollInterval,    setPollInterval]    = useState(20)
   const [minPrintMinutes, setMinPrintMinutes] = useState(0)
   const [useAms,          setUseAms]          = useState(true)
@@ -125,7 +126,7 @@ function FarmSettings() {
     setSaving(true); setStatus(null)
     try {
       await autofarmService.saveSettings({ poll_interval: pollInterval, min_print_minutes: minPrintMinutes, use_ams: useAms })
-      setStatus({ ok: true, msg: 'Einstellungen gespeichert.' })
+      setStatus({ ok: true, msg: tr('Einstellungen gespeichert.') })
     } catch (e) {
       setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
     } finally { setSaving(false) }
@@ -136,7 +137,7 @@ function FarmSettings() {
     try {
       const r = await autofarmService.setupHomingFile()
       setHomingFile({ configured: true, file_id: r.data.file_id, filename: r.data.filename })
-      setStatus({ ok: true, msg: 'Homing-Datei erstellt.' })
+      setStatus({ ok: true, msg: tr('Homing-Datei erstellt.') })
     } catch (e) {
       setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
     } finally { setHomingBusy(false) }
@@ -145,12 +146,12 @@ function FarmSettings() {
   return (
     <div className="card space-y-3">
       <div>
-        <p className="section-label">Farm-Einstellungen</p>
-        <p className="text-[11px] text-surface-600 mt-0.5">Drucker-Poll, Mindestdruckzeit, AMS, Homing-Datei</p>
+        <p className="section-label">{tr('Farm-Einstellungen')}</p>
+        <p className="text-[11px] text-surface-600 mt-0.5">{tr('Drucker-Poll, Mindestdruckzeit, AMS, Homing-Datei')}</p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="text-[10px] text-surface-500 block mb-1">Drucker-Poll (Sekunden)</label>
+          <label className="text-[10px] text-surface-500 block mb-1">{tr('Drucker-Poll (Sekunden)')}</label>
           <div className="flex items-center gap-2">
             <input type="number" min="1" max="600" value={pollInterval}
               onChange={e => setPollInterval(Math.max(1, Number(e.target.value)))}
@@ -159,36 +160,36 @@ function FarmSettings() {
           </div>
         </div>
         <div>
-          <label className="text-[10px] text-surface-500 block mb-1">Mindestdruckzeit (Minuten)</label>
+          <label className="text-[10px] text-surface-500 block mb-1">{tr('Mindestdruckzeit (Minuten)')}</label>
           <div className="flex items-center gap-2">
             <input type="number" min="0" max="999" value={minPrintMinutes}
               onChange={e => setMinPrintMinutes(Math.max(0, Number(e.target.value)))}
               className="w-20 font-mono text-xs" />
-            <span className="text-[10px] text-surface-700">{minPrintMinutes === 0 ? '(deaktiviert)' : 'min'}</span>
+            <span className="text-[10px] text-surface-700">{minPrintMinutes === 0 ? tr('(deaktiviert)') : tr('min')}</span>
           </div>
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <label className="text-xs text-surface-400 select-none">AMS verwenden</label>
+        <label className="text-xs text-surface-400 select-none">{tr('AMS verwenden')}</label>
         <button onClick={() => setUseAms(v => !v)}
           className={`relative w-9 h-5 rounded-full transition-colors ${useAms ? 'bg-blue-600' : 'bg-surface-700'}`}>
           <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${useAms ? 'translate-x-4' : 'translate-x-0'}`} />
         </button>
       </div>
       <div className="border-t border-surface-800/40 pt-3 space-y-2">
-        <p className="text-[10px] text-surface-400 font-medium">Homing-Datei (G28 + Z200)</p>
+        <p className="text-[10px] text-surface-400 font-medium">{tr('Homing-Datei (G28 + Z200)')}</p>
         <div className="flex items-center gap-2">
           {homingFile?.configured
             ? <span className="flex-1 text-[10px] font-mono text-emerald-400 truncate">✓ {homingFile.filename}</span>
-            : <span className="flex-1 text-[10px] font-mono text-surface-600">Nicht konfiguriert</span>}
+            : <span className="flex-1 text-[10px] font-mono text-surface-600">{tr('Nicht konfiguriert')}</span>}
           <button onClick={setupHoming} disabled={homingBusy} className="btn btn-ghost btn-sm text-[10px]">
-            {homingBusy ? '…' : homingFile?.configured ? '↺ Neu erstellen' : '+ Erstellen'}
+            {homingBusy ? '…' : homingFile?.configured ? tr('↺ Neu erstellen') : tr('+ Erstellen')}
           </button>
         </div>
-        <p className="text-[9px] text-surface-700 font-mono">Generiert eine .3mf mit G28+Z200 — im Sequenzeditor als ⇫ Homing verwenden</p>
+        <p className="text-[9px] text-surface-700 font-mono">{tr('Generiert eine .3mf mit G28+Z200 — im Sequenzeditor als ⇫ Homing verwenden')}</p>
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={save} disabled={saving} className="btn btn-secondary btn-sm">Speichern</button>
+        <button onClick={save} disabled={saving} className="btn btn-secondary btn-sm">{tr('Speichern')}</button>
         {status && (
           <span className={`text-[11px] font-mono ${status.ok ? 'text-emerald-400' : 'text-red-400'}`}>{status.msg}</span>
         )}
@@ -199,6 +200,7 @@ function FarmSettings() {
 
 /* ─── Regal-Konfiguration ────────────────────────────────────────── */
 function RegalKonfiguration() {
+  const { tr } = useLanguage()
   const [nr,             setNr]             = useState(3)
   const [spr,            setSpr]            = useState(6)
   const [h,              setH]              = useState(50)
@@ -246,7 +248,7 @@ function RegalKonfiguration() {
         magazine_counts:  magazineCounts.map(Number),
       })
       await load()
-      setStatus({ ok: true, msg: 'Regal gespeichert.' })
+      setStatus({ ok: true, msg: tr('Regal gespeichert.') })
       window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
     } catch (e) {
       setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
@@ -256,47 +258,47 @@ function RegalKonfiguration() {
   return (
     <div className="card space-y-3">
       <div>
-        <p className="section-label">Regal-Konfiguration</p>
-        <p className="text-[11px] text-surface-600 mt-0.5">Größe, Fach-Höhen, Magazin-Fach und Platten-Anzahl pro Rack</p>
+        <p className="section-label">{tr('Regal-Konfiguration')}</p>
+        <p className="text-[11px] text-surface-600 mt-0.5">{tr('Größe, Fach-Höhen, Magazin-Fach und Platten-Anzahl pro Rack')}</p>
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="text-[10px] text-surface-500 block mb-1">Anzahl Racks</label>
+          <label className="text-[10px] text-surface-500 block mb-1">{tr('Anzahl Racks')}</label>
           <input type="number" min="1" max="10" value={nr} onChange={e => handleNrChange(e.target.value)} className="w-full font-mono text-xs" />
         </div>
         <div>
-          <label className="text-[10px] text-surface-500 block mb-1">Fächer/Rack</label>
+          <label className="text-[10px] text-surface-500 block mb-1">{tr('Fächer/Rack')}</label>
           <input type="number" min="1" max="20" value={spr} onChange={e => setSpr(e.target.value)} className="w-full font-mono text-xs" />
         </div>
         <div>
-          <label className="text-[10px] text-surface-500 block mb-1">Fach-Höhe (mm)</label>
+          <label className="text-[10px] text-surface-500 block mb-1">{tr('Fach-Höhe (mm)')}</label>
           <input type="number" min="10" max="500" value={h} onChange={e => setH(e.target.value)} className="w-full font-mono text-xs" />
         </div>
       </div>
       <div>
         <label className="text-[10px] text-surface-500 block mb-1">
-          Höhen-Toleranz (%) <span className="text-surface-700">— Sicherheitspuffer</span>
+          {tr('Höhen-Toleranz (%)')} <span className="text-surface-700">{tr('— Sicherheitspuffer')}</span>
         </label>
         <div className="flex items-center gap-2">
           <input type="number" min="0" max="100" step="1" value={margin} onChange={e => setMargin(e.target.value)} className="w-20 font-mono text-xs" />
           <span className="text-[10px] text-surface-500">%</span>
-          {h > 0 && <span className="text-[9px] text-surface-700 font-mono">z.B. 100 mm → {Math.round(100 * (1 + margin/100))} mm effektiv</span>}
+          {h > 0 && <span className="text-[9px] text-surface-700 font-mono">{tr('z.B. 100 mm → {0} mm effektiv', Math.round(100 * (1 + margin/100)))}</span>}
         </div>
       </div>
       <div className="border-t border-surface-800/40 pt-2 space-y-2">
         <div className="flex items-center gap-2">
-          <p className="text-[10px] text-surface-500 flex-1">Magazin-Fach</p>
+          <p className="text-[10px] text-surface-500 flex-1">{tr('Magazin-Fach')}</p>
           <span className="text-[9px] text-surface-700 font-mono">{'{stack_slot}'} = {magazineSlot}</span>
         </div>
         <div className="flex items-center gap-2">
           <input type="number" min="1" max="99" value={magazineSlot}
             onChange={e => setMagazineSlot(e.target.value)} className="w-20 font-mono text-xs" />
-          <span className="text-[10px] text-surface-600">Fach in jedem Rack (Standard: 7)</span>
+          <span className="text-[10px] text-surface-600">{tr('Fach in jedem Rack (Standard: 7)')}</span>
         </div>
       </div>
       <div className="border-t border-surface-800/40 pt-2 space-y-2">
-        <p className="text-[10px] text-surface-500">Platten pro Magazin <span className="text-surface-700">— aktueller Bestand</span></p>
-        <p className="text-[9px] text-surface-700">Farm leert Rack 1 zuerst, dann 2, dann 3 usw.</p>
+        <p className="text-[10px] text-surface-500">{tr('Platten pro Magazin')} <span className="text-surface-700">{tr('— aktueller Bestand')}</span></p>
+        <p className="text-[9px] text-surface-700">{tr('Farm leert Rack 1 zuerst, dann 2, dann 3 usw.')}</p>
         <div className="flex items-center gap-2 flex-wrap">
           {magazineCounts.map((cnt, ri) => (
             <div key={ri} className="flex items-center gap-1.5">
@@ -309,12 +311,12 @@ function RegalKonfiguration() {
             </div>
           ))}
           <span className="text-[9px] text-surface-700 font-mono ml-1">
-            = {magazineCounts.reduce((s, c) => s + (+c || 0), 0)} gesamt
+            {tr('= {0} gesamt', magazineCounts.reduce((s, c) => s + (+c || 0), 0))}
           </span>
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={save} disabled={saving} className="btn btn-secondary btn-sm">Speichern</button>
+        <button onClick={save} disabled={saving} className="btn btn-secondary btn-sm">{tr('Speichern')}</button>
         {status && <span className={`text-[11px] font-mono ${status.ok ? 'text-emerald-400' : 'text-red-400'}`}>{status.msg}</span>}
       </div>
     </div>
@@ -350,6 +352,7 @@ function TestResultBar({ result }) {
 }
 
 function Configuration() {
+  const { tr } = useLanguage()
   const [devices, setDevices]     = useState([])
   const [showForm, setShowForm]   = useState(false)
   const [form, setForm]           = useState(INITIAL_FORM)
@@ -454,7 +457,7 @@ function Configuration() {
           <button key={id} onClick={() => setTab(id)}
             className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${
               tab === id ? 'border-blue-500 text-surface-100' : 'border-transparent text-surface-500 hover:text-surface-300'}`}>
-            {label}
+            {tr(label)}
           </button>
         ))}
       </div>
@@ -506,7 +509,7 @@ function Configuration() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-surface-500 block mb-1">Serial Number</label>
-                  <input name="serial_number" value={form.serial_number} onChange={handleChange} placeholder="z. B. 00M…" required />
+                  <input name="serial_number" value={form.serial_number} onChange={handleChange} placeholder={tr('z. B. 00M…')} required />
                 </div>
                 <div>
                   <label className="text-xs text-surface-500 block mb-1">Access Code</label>
@@ -576,20 +579,20 @@ function Configuration() {
       {/* ── Kameras (eigener Tab; gilt für den Bambu-Drucker) ─────── */}
       {tab === 'cameras' && (
         <div className="card space-y-3">
-          <p className="section-label">Kameras (AutoFarm)</p>
+          <p className="section-label">{tr('Kameras (AutoFarm)')}</p>
           {!bambu ? (
-            <p className="text-sm text-surface-500">Erst unter „Geräte" einen Bambu-Drucker anlegen — dann hier die Kameras konfigurieren.</p>
+            <p className="text-sm text-surface-500">{tr('Erst unter „Geräte" einen Bambu-Drucker anlegen — dann hier die Kameras konfigurieren.')}</p>
           ) : (
             <>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-surface-600 w-32 shrink-0">Oben (Bambu / quer)</span>
+                <span className="text-xs text-surface-600 w-32 shrink-0">{tr('Oben (Bambu / quer)')}</span>
                 <input type="text" placeholder="http://192.168.1.50:8889/bambu  (WebRTC/HLS/MJPEG)"
                   value={webcamTopUrls[bambu.id] ?? ''}
                   onChange={e => setWebcamTopUrls(prev => ({ ...prev, [bambu.id]: e.target.value }))}
                   className="flex-1 text-xs font-mono py-1" />
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-surface-600 w-32 shrink-0">Unten (hochkant)</span>
+                <span className="text-xs text-surface-600 w-32 shrink-0">{tr('Unten (hochkant)')}</span>
                 <input type="text" placeholder="http://192.168.1.50:8889/stream  (WebRTC/HLS/MJPEG)"
                   value={webcamUrls[bambu.id] ?? ''}
                   onChange={e => setWebcamUrls(prev => ({ ...prev, [bambu.id]: e.target.value }))}
@@ -599,27 +602,27 @@ function Configuration() {
               {/* Home-Assistant-Kamera (eingebaute X1C-Cam, Firmware ≥01.11). */}
               <div className="mt-1 pt-2 border-t border-surface-800 space-y-2">
                 <p className="text-[11px] text-surface-500 font-medium">
-                  🏠 X1C-Kamera über Home Assistant
-                  <span className="text-surface-600 font-normal"> — für die eingebaute Cam (oben). Wird in AutoFarm automatisch als „Oben"-Kamera genutzt.</span>
+                  {tr('🏠 X1C-Kamera über Home Assistant')}
+                  <span className="text-surface-600 font-normal">{tr(' — für die eingebaute Cam (oben). Wird in AutoFarm automatisch als „Oben"-Kamera genutzt.')}</span>
                 </p>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-surface-600 w-32 shrink-0">HA-URL</span>
+                  <span className="text-xs text-surface-600 w-32 shrink-0">{tr('HA-URL')}</span>
                   <input type="text" placeholder="http://192.168.1.60:8123"
                     value={haCams[bambu.id]?.url ?? ''}
                     onChange={e => setHaCams(prev => ({ ...prev, [bambu.id]: { ...prev[bambu.id], url: e.target.value } }))}
                     className="flex-1 text-xs font-mono py-1" />
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-surface-600 w-32 shrink-0">Entity-ID</span>
+                  <span className="text-xs text-surface-600 w-32 shrink-0">{tr('Entity-ID')}</span>
                   <input type="text" placeholder="camera.x1c_..._kamera"
                     value={haCams[bambu.id]?.entity ?? ''}
                     onChange={e => setHaCams(prev => ({ ...prev, [bambu.id]: { ...prev[bambu.id], entity: e.target.value } }))}
                     className="flex-1 text-xs font-mono py-1" />
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-surface-600 w-32 shrink-0">Token</span>
+                  <span className="text-xs text-surface-600 w-32 shrink-0">{tr('Token')}</span>
                   <input type="password" autoComplete="off"
-                    placeholder={haCams[bambu.id]?.tokenSet ? '•••••• (gesetzt — leer lassen zum Behalten)' : 'Long-Lived Access Token aus HA'}
+                    placeholder={haCams[bambu.id]?.tokenSet ? tr('•••••• (gesetzt — leer lassen zum Behalten)') : tr('Long-Lived Access Token aus HA')}
                     value={haCams[bambu.id]?.token ?? ''}
                     onChange={e => setHaCams(prev => ({ ...prev, [bambu.id]: { ...prev[bambu.id], token: e.target.value } }))}
                     className="flex-1 text-xs font-mono py-1" />
@@ -629,12 +632,12 @@ function Configuration() {
                     setHaTest(prev => ({ ...prev, [bambu.id]: 'loading' }))
                     try { const r = await printerService.haCameraTest(bambu.id); setHaTest(prev => ({ ...prev, [bambu.id]: r.data })) }
                     catch (e) { setHaTest(prev => ({ ...prev, [bambu.id]: { ok: false, detail: e.response?.data?.detail || String(e) } })) }
-                  }} className="btn btn-ghost btn-sm text-xs">Testen</button>
+                  }} className="btn btn-ghost btn-sm text-xs">{tr('Testen')}</button>
                   {haTest[bambu.id] === 'loading'
-                    ? <span className="text-[10px] text-surface-500">prüfe …</span>
+                    ? <span className="text-[10px] text-surface-500">{tr('prüfe …')}</span>
                     : haTest[bambu.id]
                       ? <span className={`text-[10px] ${haTest[bambu.id].ok ? 'text-green-400' : 'text-red-400'}`}>{haTest[bambu.id].detail}</span>
-                      : <span className="text-[10px] text-surface-600">erst speichern, dann testen</span>}
+                      : <span className="text-[10px] text-surface-600">{tr('erst speichern, dann testen')}</span>}
                   <button onClick={async () => {
                     // HA komplett entfernen (inkl. gespeichertem Token → ha_token: null löscht serverseitig).
                     try {
@@ -644,13 +647,13 @@ function Configuration() {
                       window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved'))
                     } catch (e) { console.error(e) }
                   }} className="btn btn-ghost btn-sm text-xs ml-auto text-red-400/80 hover:text-red-300">
-                    HA-Kamera entfernen
+                    {tr('HA-Kamera entfernen')}
                   </button>
                 </div>
               </div>
 
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] text-surface-600">Typ wird automatisch erkannt — Port 8889 = WebRTC (&lt;1 s), 8888/.m3u8 = HLS, sonst MJPEG.</p>
+                <p className="text-[10px] text-surface-600">{tr('Typ wird automatisch erkannt — Port 8889 = WebRTC (<1 s), 8888/.m3u8 = HLS, sonst MJPEG.')}</p>
                 <button onClick={async () => {
                   setSavingWebcam(bambu.id)
                   try {
@@ -669,7 +672,7 @@ function Configuration() {
                   } catch(e) { console.error(e) }
                   finally { setSavingWebcam(null) }
                 }} disabled={savingWebcam === bambu.id} className="btn btn-ghost btn-sm flex-shrink-0 text-xs">
-                  {savingWebcam === bambu.id ? '...' : 'Speichern'}
+                  {savingWebcam === bambu.id ? '...' : tr('Speichern')}
                 </button>
               </div>
             </>
