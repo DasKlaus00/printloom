@@ -671,6 +671,129 @@ const EN_STRINGS = {
   'Einlagern': 'Store',
   'In Drucker': 'Into printer',
   'Aus Drucker': 'From printer',
+
+  /* ── Sequence Editor ── */
+  'OTTOeject Makro': 'OTTOeject macro',
+  'OTTOeject GCode': 'OTTOeject GCode',
+  'Bambu GCode': 'Bambu GCode',
+  'Bambu Position Z': 'Bambu position Z',
+  'Bambu Homing': 'Bambu homing',
+  'Druckdatei senden': 'Send print file',
+  'Auf Druckende warten': 'Wait for print end',
+  'Bambu IDLE (alt)': 'Bambu IDLE (old)',
+  'Feste Datei': 'Fixed file',
+  'Warten (PAUSE)': 'Wait (PAUSE)',
+  'Warten (FAILED)': 'Wait (FAILED)',
+  'Fehler quit.': 'Clear error',
+  'Fehler werden ignoriert': 'Errors are ignored',
+  'Nur wenn {0} {1} {2}': 'Only if {0} {1} {2}',
+  'Wird ~1 Min vor Druckende vorgezogen': 'Brought forward ~1 min before print end',
+  'Einzeln ausführen: {0}': 'Run individually: {0}',
+  'Schritt aktivieren': 'Enable step',
+  'Schritt deaktivieren': 'Disable step',
+  'Parallel mit vorherigem Schritt ausführen': 'Run in parallel with previous step',
+  'Bearbeiten': 'Edit',
+  'Nach oben': 'Move up',
+  'Nach unten': 'Move down',
+  'Löschen': 'Delete',
+  'Schritt verschieben': 'Move step',
+  'Bezeichnung': 'Label',
+  'Verwendet die Homing-Datei aus Auto Farm → Einstellungen. Bambu meldet FINISH wenn G28+Z200 abgeschlossen → danach wait_print.':
+    'Uses the homing file from Auto Farm → Settings. Bambu reports FINISH when G28+Z200 is done → then wait_print.',
+  'Datei-ID': 'File ID',
+  '· Dateiliste → ID der hochgeladenen Homing-.3mf': '· File list → ID of the uploaded homing .3mf',
+  'z.B. 3': 'e.g. 3',
+  'Sendet diese Datei als echten Druckjob → Bambu meldet FINISH wenn fertig. Danach wait_print für zuverlässige Z200-Erkennung.':
+    'Sends this file as a real print job → Bambu reports FINISH when done. Then wait_print for reliable Z200 detection.',
+  'Makro-Name': 'Macro name',
+  'GCode (an OTTOeject)': 'GCode (to OTTOeject)',
+  'G-Code (an Bambu)': 'G-code (to Bambu)',
+  'Ziel': 'Target',
+  'Vorrat': 'Stock',
+  '· blockiert bis Position erreicht — kein Delay nötig': '· blocks until position reached — no delay needed',
+  'Wartezeit': 'Wait time',
+  'Sekunden': 'Seconds',
+  'Z-Höhe (mm)': 'Z height (mm)',
+  'Feed (mm/min)': 'Feed (mm/min)',
+  'Sendet G1 Z{0} F{1} + M400 als Mini-Druck und wartet, bis der Drucker FINISH meldet — also wirklich in Position ist (kein blinder Timer).':
+    'Sends G1 Z{0} F{1} + M400 as a mini print and waits until the printer reports FINISH — i.e. is really in position (no blind timer).',
+  'Mindestdauer G28+Z200': 'Minimum duration G28+Z200',
+  'Wartet die verbleibende Zeit bis G28+Z200 fertig ist. Zeit der Zwischenschritte (Homen, Tür, Platte holen) wird automatisch abgezogen.':
+    'Waits the remaining time until G28+Z200 is done. The time of the intermediate steps (homing, door, grab plate) is subtracted automatically.',
+  'Timeout': 'Timeout',
+  'Pollt MQTT bis gcode_state == PAUSE (= M400 U1 fertig, Drucker auf Z200 geparkt). Crash-Schutz: bei FAILED oder Timeout → Platte NICHT einlegen, Sequenz abgebrochen.':
+    'Polls MQTT until gcode_state == PAUSE (= M400 U1 done, printer parked at Z200). Crash protection: on FAILED or timeout → do NOT load plate, sequence aborted.',
+  'Optional — Fehler ignorieren, Schritt gilt immer als fertig': 'Optional — ignore errors, step always counts as done',
+  '⏱ Vor Druckende vorziehen — startet ~1 Min vor Druckende (OTTOeject schon mal in Position)':
+    '⏱ Bring forward before print end — starts ~1 min before print end (OTTOeject already in position)',
+  'Bedingung': 'Condition',
+  '— immer ausführen —': '— always run —',
+  'Kammertemperatur': 'Chamber temperature',
+  'Druckerstatus': 'Printer status',
+  'Sonst wird der Schritt übersprungen (bei Lesefehler läuft er sicherheitshalber).':
+    'Otherwise the step is skipped (on a read error it runs as a safety measure).',
+  '↺ Standard': '↺ Default',
+  'Keine Schritte — über + Hinzufügen ergänzen': 'No steps — add via + Add',
+  '∥ gleichzeitig': '∥ simultaneously',
+  '{0} Schritte': '{0} steps',
+  '+ Hinzufügen:': '+ Add:',
+  'Ziel-Fach des Jobs': "job's target slot",
+  'Vorrat-Stapel (aus Regal-Einstellungen)': 'stock stack (from rack settings)',
+  'Ungültiges Format — seq_new / seq_next fehlen': 'Invalid format — seq_new / seq_next missing',
+  'Ablauf des Auto Farms anpassen — Reihenfolge, Zeiten und Parallelausführung. Änderungen werden sofort gespeichert und beim nächsten Lauf verwendet.':
+    'Customize the Auto Farm workflow — order, timings and parallel execution. Changes are saved immediately and used on the next run.',
+  'Sequenzen aus JSON-Datei laden': 'Load sequences from JSON file',
+  '↑ Import': '↑ Import',
+  'Alle Sequenzen als JSON-Datei speichern': 'Save all sequences as a JSON file',
+  '↓ Export': '↓ Export',
+  'First Start (einmal)': 'First Start (once)',
+  'Läuft genau einmal beim Farm-Start: Drucker homen + auf Z200 fahren (positionsgenau).':
+    'Runs exactly once at farm start: home the printer + move to Z200 (position-accurate).',
+  'Zyklus (jeder Job)': 'Cycle (every job)',
+  'Wiederkehrender Ablauf für JEDEN Job. ⏱-markierte Schritte starten ~1 Min vor Druckende.':
+    'Recurring workflow for EVERY job. ⏱-marked steps start ~1 min before print end.',
+  'Legende': 'Legend',
+  'Klipper GCode': 'Klipper GCode',
+  'Makro': 'Macro',
+  'Warte Z200': 'Wait Z200',
+  'Delay': 'Delay',
+  'Homing': 'Homing',
+  'Senden': 'Send',
+  'Warten': 'Wait',
+  'Optional': 'Optional',
+  'Parallel': 'Parallel',
+  'Aktiv/Inaktiv': 'Active/Inactive',
+  'Drag-Handle': 'Drag handle',
+  'G-Code an Bambu Lab via MQTT — fire-and-forget, kein Completion-Feedback':
+    'G-code to Bambu Lab via MQTT — fire-and-forget, no completion feedback',
+  'Raw GCode an OTTOeject (Klipper) — blockiert bis Position erreicht, kein Delay nötig':
+    'Raw GCode to OTTOeject (Klipper) — blocks until position reached, no delay needed',
+  'OTTOeject-Makro — {rack} = Rack-Nr, {slot} = Fach-Nr (z.B. GRAB_FROM_RACK RACK={rack} SLOT={slot})':
+    'OTTOeject macro — {rack} = rack no., {slot} = slot no. (e.g. GRAB_FROM_RACK RACK={rack} SLOT={slot})',
+  'Wartet verbleibende G28-Zeit — Zwischenschritte (Homen, Tür, Platte) werden automatisch abgezogen':
+    'Waits the remaining G28 time — intermediate steps (homing, door, plate) are subtracted automatically',
+  'Feste Wartezeit — nur nötig wenn kein synchrones Feedback möglich':
+    'Fixed wait time — only needed when no synchronous feedback is possible',
+  'Konfigurierte Homing-.3mf senden (G28+Z200) — Bambu meldet FINISH → wait_print erkennt Z200 zuverlässig':
+    'Send the configured homing .3mf (G28+Z200) — Bambu reports FINISH → wait_print reliably detects Z200',
+  'Aktuelle Job-Druckdatei an den Bambu Lab senden': 'Send the current job print file to the Bambu Lab',
+  'Beliebige Datei per ID aus der Dateiliste senden': 'Send any file by ID from the file list',
+  'Per MQTT-Polling auf Druckende warten (FINISH) — hier läuft der 1-min Vorstart':
+    'Wait for print end via MQTT polling (FINISH) — the 1-min pre-start runs here',
+  'Pollt MQTT bis gcode_state=PAUSE (M400 U1 fertig) — Crash-Schutz bei FAILED oder Timeout':
+    'Polls MQTT until gcode_state=PAUSE (M400 U1 done) — crash protection on FAILED or timeout',
+  'Per MQTT-Polling auf Druckfehler warten (FAILED) — Sequenz läuft normal weiter':
+    'Wait for a print error via MQTT polling (FAILED) — sequence continues normally',
+  'Sendet stop-Befehl an Bambu — setzt FAILED zurück auf IDLE, Drucker bereit für nächsten Job':
+    'Sends a stop command to Bambu — resets FAILED back to IDLE, printer ready for the next job',
+  'Fehler werden ignoriert — Schritt gilt immer als erfolgreich abgeschlossen, Sequenz läuft weiter':
+    'Errors are ignored — step always counts as successfully completed, sequence continues',
+  'Schritt gleichzeitig mit dem vorigen Schritt ausführen (asyncio.gather)':
+    'Run step simultaneously with the previous step (asyncio.gather)',
+  'on = Schritt aktiv · off = deaktiviert (wird beim Ausführen übersprungen, bleibt in der Liste)':
+    'on = step active · off = disabled (skipped during execution, stays in the list)',
+  'Rechts am Schritt — Klicken und Ziehen zum freien Verschieben in der Liste':
+    'On the right of the step — click and drag to move it freely in the list',
 }
 
 function deepMerge(base, over) {
