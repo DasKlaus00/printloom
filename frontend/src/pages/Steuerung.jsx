@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { controlService, printerService, deviceService, deviceSettingsService, klipperConfigService } from '../services/api'
+import { useLanguage } from '../services/i18n'
 
 /* ── Drucker-Profile ───────────────────────────────────────── */
 const PRINTER_PROFILES = [
@@ -62,6 +63,7 @@ function TempGauge({ label, current, target }) {
 }
 
 function AmsPanel({ units, activeSlot }) {
+  const { tr } = useLanguage()
   if (!units?.length) return null
   return (
     <div className="card">
@@ -91,7 +93,7 @@ function AmsPanel({ units, activeSlot }) {
                         <div className="h-px rounded-full bg-emerald-500" style={{ width: `${slot.remain}%` }} />
                       </div>
                     )}
-                    {isActive && <span className="text-[8px] text-blue-400 animate-pulse">aktiv</span>}
+                    {isActive && <span className="text-[8px] text-blue-400 animate-pulse">{tr('aktiv')}</span>}
                   </div>
                 )
               })}
@@ -118,6 +120,7 @@ function PositionDisplay({ pos, loading }) {
 
 /* ── Mainsail Konfigurationsdateien ───────────────────────── */
 function KlipperConfigViewer() {
+  const { tr } = useLanguage()
   const [files,    setFiles]    = useState(null)
   const [selected, setSelected] = useState(null)
   const [content,  setContent]  = useState(null)
@@ -149,11 +152,11 @@ function KlipperConfigViewer() {
     <div className="card space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <p className="section-label">Klipper Konfiguration</p>
-          <p className="text-[10px] text-surface-600 mt-0.5">Nur lesend — Mainsail config/</p>
+          <p className="section-label">{tr('Klipper Konfiguration')}</p>
+          <p className="text-[10px] text-surface-600 mt-0.5">{tr('Nur lesend — Mainsail config/')}</p>
         </div>
         <button onClick={loadList} disabled={loading} className="btn btn-ghost btn-sm">
-          {loading ? '…' : files === null ? 'Laden' : '↺'}
+          {loading ? '…' : files === null ? tr('Laden') : '↺'}
         </button>
       </div>
 
@@ -162,11 +165,11 @@ function KlipperConfigViewer() {
       )}
 
       {files === null && !error && (
-        <p className="text-xs text-surface-600 py-2">Klicke „Laden" um die Konfigurationsdateien anzuzeigen.</p>
+        <p className="text-xs text-surface-600 py-2">{tr('Klicke „Laden" um die Konfigurationsdateien anzuzeigen.')}</p>
       )}
 
       {files !== null && files.length === 0 && !error && (
-        <p className="text-xs text-surface-600 py-2">Keine .cfg Dateien gefunden.</p>
+        <p className="text-xs text-surface-600 py-2">{tr('Keine .cfg Dateien gefunden.')}</p>
       )}
 
       {files?.length > 0 && (
@@ -201,6 +204,7 @@ function KlipperConfigViewer() {
 
 /* ── Hauptkomponente ───────────────────────────────────────── */
 export default function Steuerung() {
+  const { tr } = useLanguage()
   /* Drucker */
   const [bambuDevice,   setBambuDevice]   = useState(null)
   const [status,        setStatus]        = useState(null)
@@ -338,11 +342,11 @@ export default function Steuerung() {
 
   /* ── Makro / GCode ────────────────────────────────── */
   const gcode = async (cmd, label) => {
-    if (!bambuDevice) return showFeedback('Kein Bambu Lab Gerät konfiguriert', false)
+    if (!bambuDevice) return showFeedback(tr('Kein Bambu Lab Gerät konfiguriert'), false)
     setExecuting(label)
     try {
       await printerService.sendGcode(bambuDevice.id, cmd)
-      showFeedback(`${label} — gesendet`)
+      showFeedback(tr('{0} — gesendet', label))
     } catch (e) {
       showFeedback(e.response?.data?.detail ?? e.message, false)
     } finally { setExecuting(null) }
@@ -352,7 +356,7 @@ export default function Steuerung() {
     setExecuting(name)
     try {
       const r = await controlService.executeMacro({ macro_name: name })
-      showFeedback(r.data.success ? `${name} — OK` : r.data.message, r.data.success)
+      showFeedback(r.data.success ? tr('{0} — OK', name) : r.data.message, r.data.success)
     } catch (e) {
       showFeedback(e.response?.data?.detail ?? e.message, false)
     } finally { setExecuting(null) }
@@ -362,7 +366,7 @@ export default function Steuerung() {
     setMacroRunning(name)
     try {
       const r = await controlService.executeMacro({ macro_name: name })
-      showFeedback(r.data.success ? `${label} — OK` : r.data.message, r.data.success)
+      showFeedback(r.data.success ? tr('{0} — OK', label) : r.data.message, r.data.success)
     } catch (e) {
       showFeedback(e.response?.data?.detail ?? e.message, false)
     } finally { setMacroRunning(null) }
@@ -372,7 +376,7 @@ export default function Steuerung() {
     setJogBusy(true)
     try {
       await controlService.sendKlipperGcode(gc)
-      showFeedback(`${label} — gesendet`)
+      showFeedback(tr('{0} — gesendet', label))
       setTimeout(fetchPos, 1500)
     } catch (e) {
       showFeedback(e.response?.data?.detail ?? e.message, false)
@@ -382,23 +386,23 @@ export default function Steuerung() {
   const jogZ = (delta) => sendKlipperGcode(`G91\nG1 Z${delta} F1000\nG90`, `Z ${delta > 0 ? '+' : ''}${delta} mm`)
   const moveToZ = () => {
     const v = parseFloat(targetZ)
-    if (isNaN(v)) return showFeedback('Ungültiger Z-Wert', false)
+    if (isNaN(v)) return showFeedback(tr('Ungültiger Z-Wert'), false)
     sendKlipperGcode(`G90\nG1 Z${v} F1000`, `Z → ${v} mm`)
   }
 
   const emergencyStop = async () => {
-    if (!window.confirm('NOTAUS — alle Geräte deaktivieren?')) return
+    if (!window.confirm(tr('NOTAUS — alle Geräte deaktivieren?'))) return
     try {
       await controlService.emergencyStop()
       setEmergencyOn(true)
-      showFeedback('Notaus aktiviert', true)
+      showFeedback(tr('Notaus aktiviert'), true)
     } catch (e) { showFeedback(e.message, false) }
   }
   const resumeOps = async () => {
     try {
       await controlService.resume()
       setEmergencyOn(false)
-      showFeedback('Betrieb fortgesetzt', true)
+      showFeedback(tr('Betrieb fortgesetzt'), true)
     } catch (e) { showFeedback(e.message, false) }
   }
 
@@ -425,9 +429,9 @@ export default function Steuerung() {
     const b  = status.bed_temp          ?? 0
     const bt = status.bed_target_temp   ?? 0
     if (nt > 0 && Math.abs(n - nt) > tempThreshold)
-      tempWarnings.push(`Düse: ${n}°C (Ziel ${nt}°C)`)
+      tempWarnings.push(tr('Düse: {0}°C (Ziel {1}°C)', n, nt))
     if (bt > 0 && Math.abs(b - bt) > tempThreshold)
-      tempWarnings.push(`Bett: ${b}°C (Ziel ${bt}°C)`)
+      tempWarnings.push(tr('Bett: {0}°C (Ziel {1}°C)', b, bt))
   }
 
   return (
@@ -450,10 +454,10 @@ export default function Steuerung() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6"/>
           </svg>
-          Notaus
+          {tr('Notaus')}
         </button>
         <button onClick={resumeOps} disabled={!emergencyOn} className="flex-1 btn btn-ghost disabled:opacity-30">
-          ▶ Betrieb fortsetzen
+          {tr('▶ Betrieb fortsetzen')}
         </button>
       </div>
 
@@ -472,36 +476,36 @@ export default function Steuerung() {
                   <p className="text-base font-semibold text-surface-200">
                     {bambuDevice?.name ?? 'Bambu Lab'}
                   </p>
-                  <p className={`text-xs font-medium ${meta.color}`}>{meta.label}</p>
+                  <p className={`text-xs font-medium ${meta.color}`}>{tr(meta.label)}</p>
                 </div>
                 {fileName && (
                   <div className="px-2.5 py-1 rounded-lg bg-surface-900 border border-surface-700">
-                    <p className="text-[10px] text-surface-500">Druckt</p>
+                    <p className="text-[10px] text-surface-500">{tr('Druckt')}</p>
                     <p className="text-xs text-surface-200 truncate max-w-[200px]">{fileName}</p>
                   </div>
                 )}
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-surface-600">Warnschwelle</span>
+                  <span className="text-[10px] text-surface-600">{tr('Warnschwelle')}</span>
                   <input type="number" min="1" max="100" value={tempThreshold}
                     onChange={e => { const v = Math.max(1, Number(e.target.value)); setTempThreshold(v); localStorage.setItem('ottomat3d_temp_threshold', String(v)) }}
                     className="w-12 font-mono text-xs" />
                   <span className="text-[10px] text-surface-600">°C</span>
                 </div>
-                {lastUpdated && <p className="text-[10px] text-surface-600 font-mono">{lastUpdated.toLocaleTimeString('de-DE')}</p>}
+                {lastUpdated && <p className="text-[10px] text-surface-600 font-mono">{lastUpdated.toLocaleTimeString()}</p>}
                 <button onClick={() => setAutoRefresh(v => !v)} className={`btn btn-sm ${autoRefresh ? 'btn-primary' : 'btn-ghost'}`}>
-                  {autoRefresh ? '⟳ 15s' : '⟳ Man.'}
+                  {autoRefresh ? '⟳ 15s' : tr('⟳ Man.')}
                 </button>
                 <button onClick={() => bambuDevice && fetchStatus(bambuDevice.id)} disabled={polling} className="btn btn-ghost btn-sm">
-                  {polling ? '…' : 'Jetzt'}
+                  {polling ? '…' : tr('Jetzt')}
                 </button>
               </div>
             </div>
 
             {tempWarnings.length > 0 && (
               <div className="mt-2 px-3 py-2 rounded-lg bg-red-950/40 border border-red-800 text-red-300">
-                <p className="text-[10px] font-semibold mb-1">Temperaturwarnung</p>
+                <p className="text-[10px] font-semibold mb-1">{tr('Temperaturwarnung')}</p>
                 {tempWarnings.map((w, i) => <p key={i} className="text-[10px] font-mono">{w}</p>)}
               </div>
             )}
@@ -509,15 +513,15 @@ export default function Steuerung() {
             {(isRunning || status?.gcode_state === 'PAUSE') && (
               <div className="mt-3 space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-surface-500">Fortschritt</span>
+                  <span className="text-surface-500">{tr('Fortschritt')}</span>
                   <span className="font-mono font-semibold text-blue-300">{progress}%</span>
                 </div>
                 <div className="w-full bg-surface-900 rounded-full h-2.5 overflow-hidden">
                   <div className="h-2.5 rounded-full bg-gradient-to-r from-blue-700 to-blue-400 transition-all" style={{ width: `${progress}%` }} />
                 </div>
                 <div className="flex justify-between text-[10px] text-surface-500 font-mono">
-                  <span>Schicht {layer} / {totalLayer}</span>
-                  {remMin > 0 && <span>{remMin >= 60 ? `${Math.floor(remMin/60)}h ${remMin%60}min` : `${remMin} min`} verbleibend</span>}
+                  <span>{tr('Schicht {0} / {1}', layer, totalLayer)}</span>
+                  {remMin > 0 && <span>{tr('{0} verbleibend', remMin >= 60 ? `${Math.floor(remMin/60)}h ${remMin%60}min` : `${remMin} min`)}</span>}
                 </div>
               </div>
             )}
@@ -526,18 +530,18 @@ export default function Steuerung() {
           {/* Webcam */}
           <div className="card space-y-2">
             <div className="flex items-center justify-between">
-              <p className="section-label">Webcam</p>
+              <p className="section-label">{tr('Webcam')}</p>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => liveCam ? stopLiveCam() : connectLiveCam()}
                   disabled={!bambuDevice}
                   className={`btn btn-sm ${liveCam ? 'btn-primary' : 'btn-ghost'}`}
-                  title="Eingebaute X1C-Kamera (LAN-Liveview muss am Drucker aktiv sein)"
+                  title={tr('Eingebaute X1C-Kamera (LAN-Liveview muss am Drucker aktiv sein)')}
                 >
-                  {liveCam ? '⏹ Live stoppen' : '📷 Live (X1C)'}
+                  {liveCam ? tr('⏹ Live stoppen') : tr('📷 Live (X1C)')}
                 </button>
                 <button onClick={() => setEditWebcam(v => !v)} className="btn btn-ghost btn-sm">
-                  {editWebcam ? 'Abbrechen' : 'URL ändern'}
+                  {editWebcam ? tr('Abbrechen') : tr('URL ändern')}
                 </button>
               </div>
             </div>
@@ -546,27 +550,27 @@ export default function Steuerung() {
                 <input type="text" placeholder="http://192.168.x.x:8080/mjpeg"
                   value={editWebcamUrl} onChange={e => setEditWebcamUrl(e.target.value)}
                   className="w-full font-mono text-sm" />
-                <button onClick={saveWebcam} className="btn btn-primary btn-sm">Speichern</button>
+                <button onClick={saveWebcam} className="btn btn-primary btn-sm">{tr('Speichern')}</button>
                 <p className="text-[10px] text-surface-600">
-                  Externe Kamera (MJPEG/HTTP). Für die eingebaute X1C-Kamera einfach „📷 Live (X1C)".
+                  {tr('Externe Kamera (MJPEG/HTTP). Für die eingebaute X1C-Kamera einfach „📷 Live (X1C)".')}
                 </p>
               </div>
             ) : liveCam && bambuDevice ? (
               <div className="relative bg-black rounded-xl overflow-hidden" style={{ aspectRatio: '16/9' }}>
                 {liveCamErr ? (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-2 px-4 text-center">
-                    <p className="text-xs">X1C-Kamera nicht erreichbar</p>
+                    <p className="text-xs">{tr('X1C-Kamera nicht erreichbar')}</p>
                     {liveCamMsg && <p className="text-[10px] font-mono text-red-400/80 break-all max-w-full">{liveCamMsg}</p>}
-                    <p className="text-[10px] text-surface-700">„LAN-Modus Liveview" am Drucker aktivieren (Einstellungen → Allgemein), im selben Netz sein und sicherstellen, dass keine andere App (Bambu Studio / Handy-App) die Kamera belegt.</p>
-                    <button onClick={connectLiveCam} className="btn btn-ghost btn-sm mt-1">Neu verbinden</button>
+                    <p className="text-[10px] text-surface-700">{tr('„LAN-Modus Liveview" am Drucker aktivieren (Einstellungen → Allgemein), im selben Netz sein und sicherstellen, dass keine andere App (Bambu Studio / Handy-App) die Kamera belegt.')}</p>
+                    <button onClick={connectLiveCam} className="btn btn-ghost btn-sm mt-1">{tr('Neu verbinden')}</button>
                   </div>
                 ) : camReady ? (
                   <img src={`${printerService.cameraStreamUrl(bambuDevice.id)}?t=${camKey}`} alt="X1C Live"
-                    onError={() => { setLiveCamErr(true); if (!liveCamMsg) setLiveCamMsg('Stream-Verbindung abgebrochen') }}
+                    onError={() => { setLiveCamErr(true); if (!liveCamMsg) setLiveCamMsg(tr('Stream-Verbindung abgebrochen')) }}
                     className="w-full h-full object-contain" />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-xs">
-                    Verbinde mit Kamera …
+                    {tr('Verbinde mit Kamera …')}
                   </div>
                 )}
                 <span className="absolute top-2 left-2 text-[9px] font-mono px-1.5 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>
@@ -575,7 +579,7 @@ export default function Steuerung() {
               <div className="relative bg-black rounded-xl overflow-hidden" style={{ aspectRatio: '16/9' }}>
                 {imgErr ? (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-2">
-                    <p className="text-xs">Webcam nicht erreichbar</p>
+                    <p className="text-xs">{tr('Webcam nicht erreichbar')}</p>
                     <p className="text-[10px] font-mono text-surface-700">{webcamUrl}</p>
                   </div>
                 ) : (
@@ -585,10 +589,10 @@ export default function Steuerung() {
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-surface-600 rounded-xl border-2 border-dashed border-surface-800 gap-2">
-                <p className="text-sm">Keine Kamera aktiv</p>
+                <p className="text-sm">{tr('Keine Kamera aktiv')}</p>
                 <div className="flex gap-2">
-                  <button onClick={() => { setLiveCamErr(false); setCamKey(k => k + 1); setLiveCam(true) }} disabled={!bambuDevice} className="btn btn-primary btn-sm">📷 X1C Live starten</button>
-                  <button onClick={() => setEditWebcam(true)} className="btn btn-ghost btn-sm">Externe URL</button>
+                  <button onClick={() => { setLiveCamErr(false); setCamKey(k => k + 1); setLiveCam(true) }} disabled={!bambuDevice} className="btn btn-primary btn-sm">{tr('📷 X1C Live starten')}</button>
+                  <button onClick={() => setEditWebcam(true)} className="btn btn-ghost btn-sm">{tr('Externe URL')}</button>
                 </div>
               </div>
             )}
@@ -596,8 +600,8 @@ export default function Steuerung() {
 
           {/* Temperaturen */}
           <div className="grid grid-cols-2 gap-3">
-            <TempGauge label="Düsentemperatur" current={status?.nozzle_temp ?? 0} target={status?.nozzle_target_temp ?? 0} />
-            <TempGauge label="Betttemperatur"  current={status?.bed_temp ?? 0}    target={status?.bed_target_temp ?? 0}    />
+            <TempGauge label={tr('Düsentemperatur')} current={status?.nozzle_temp ?? 0} target={status?.nozzle_target_temp ?? 0} />
+            <TempGauge label={tr('Betttemperatur')}  current={status?.bed_temp ?? 0}    target={status?.bed_target_temp ?? 0}    />
           </div>
 
           {/* AMS */}
@@ -606,7 +610,7 @@ export default function Steuerung() {
           {/* Drucker Homing + Z-Achse (via Bambu GCode) */}
           <div className="card space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="section-label">Drucker</p>
+              <p className="section-label">{tr('Drucker')}</p>
               <select value={activePrId} onChange={e => { setActivePrId(e.target.value); localStorage.setItem('activePrinter', e.target.value) }} className="text-xs py-1">
                 {PRINTER_PROFILES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
               </select>
@@ -623,13 +627,13 @@ export default function Steuerung() {
             </div>
             {activePrinter.hasDoor && (
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => macro(activePrinter.open)}  disabled={busy} className="btn btn-ghost btn-sm">Tür öffnen</button>
-                <button onClick={() => macro(activePrinter.close)} disabled={busy} className="btn btn-ghost btn-sm">Tür schließen</button>
+                <button onClick={() => macro(activePrinter.open)}  disabled={busy} className="btn btn-ghost btn-sm">{tr('Tür öffnen')}</button>
+                <button onClick={() => macro(activePrinter.close)} disabled={busy} className="btn btn-ghost btn-sm">{tr('Tür schließen')}</button>
               </div>
             )}
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => macro(activePrinter.eject)} disabled={busy} className="btn btn-ghost btn-sm">Auswerfen</button>
-              <button onClick={() => macro(activePrinter.load)}  disabled={busy} className="btn btn-ghost btn-sm">Einlegen</button>
+              <button onClick={() => macro(activePrinter.eject)} disabled={busy} className="btn btn-ghost btn-sm">{tr('Auswerfen')}</button>
+              <button onClick={() => macro(activePrinter.load)}  disabled={busy} className="btn btn-ghost btn-sm">{tr('Einlegen')}</button>
             </div>
           </div>
         </div>
@@ -646,17 +650,17 @@ export default function Steuerung() {
               <button onClick={() => runMacro('TEST_STORAGE_RACK_CONFIGURATION', 'Test Rack')} disabled={busy} className="btn btn-ghost btn-sm text-xs">Test Rack</button>
             </div>
             <div>
-              <p className="text-[10px] text-surface-500 mb-1.5">Holen aus Fach</p>
+              <p className="text-[10px] text-surface-500 mb-1.5">{tr('Holen aus Fach')}</p>
               <div className="flex gap-1.5 flex-wrap">{slotBtns('GRAB_FROM_SLOT')}</div>
             </div>
             <div>
-              <p className="text-[10px] text-surface-500 mb-1.5">Einlagern in Fach</p>
+              <p className="text-[10px] text-surface-500 mb-1.5">{tr('Einlagern in Fach')}</p>
               <div className="flex gap-1.5 flex-wrap">{slotBtns('STORE_TO_SLOT')}</div>
             </div>
             {executing && (
               <div className="flex items-center gap-2 text-xs text-surface-400">
                 <span className="dot dot-blue animate-pulse" />
-                Läuft: <span className="font-mono text-surface-300">{executing}</span>
+                {tr('Läuft:')} <span className="font-mono text-surface-300">{executing}</span>
               </div>
             )}
           </div>
@@ -664,7 +668,7 @@ export default function Steuerung() {
           {/* Z Kalibrierung */}
           <div className="card space-y-3">
             <div className="flex items-center justify-between">
-              <p className="section-label">Z Kalibrierung</p>
+              <p className="section-label">{tr('Z Kalibrierung')}</p>
               <button onClick={fetchPos} disabled={posLoading} className="btn-icon">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
@@ -674,7 +678,7 @@ export default function Steuerung() {
             </div>
             <PositionDisplay pos={pos} loading={posLoading} />
             <div>
-              <p className="text-[10px] text-surface-500 mb-1.5">Schrittweite (mm)</p>
+              <p className="text-[10px] text-surface-500 mb-1.5">{tr('Schrittweite (mm)')}</p>
               <div className="flex gap-1">
                 {[0.1, 0.5, 1, 5, 10].map(s => (
                   <button key={s} onClick={() => setJogStep(s)} className={`flex-1 text-[10px] py-1 rounded border font-mono transition-colors ${
@@ -688,26 +692,26 @@ export default function Steuerung() {
               <button onClick={() => jogZ(-jogStep)} disabled={busy} className="btn btn-ghost btn-sm">Z −{jogStep}</button>
             </div>
             <div className="flex gap-2">
-              <input type="number" step="0.1" placeholder="Z Zielwert mm" value={targetZ}
+              <input type="number" step="0.1" placeholder={tr('Z Zielwert mm')} value={targetZ}
                 onChange={e => setTargetZ(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && moveToZ()}
                 className="flex-1 text-xs font-mono" />
-              <button onClick={moveToZ} disabled={busy || !targetZ} className="btn btn-ghost btn-sm">Fahren</button>
+              <button onClick={moveToZ} disabled={busy || !targetZ} className="btn btn-ghost btn-sm">{tr('Fahren')}</button>
             </div>
           </div>
 
           {/* Einzel-Fach Operationen */}
           <div className="card">
-            <p className="section-label mb-2">Einzel-Fach</p>
+            <p className="section-label mb-2">{tr('Einzel-Fach')}</p>
             <div className="space-y-1.5">
               {[1,2,3,4,5,6].map(slot => (
                 <div key={slot} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-900 border border-surface-700/50">
-                  <span className="text-xs text-surface-400 w-10 shrink-0">Fach {slot}</span>
-                  <button onClick={() => runMacro(`GRAB_FROM_SLOT_${slot}`, `Fach ${slot} holen`)}    disabled={busy} className="btn btn-ghost btn-sm text-[10px]">Holen</button>
-                  <button onClick={() => runMacro(`STORE_TO_SLOT_${slot}`, `Fach ${slot} einlagern`)} disabled={busy} className="btn btn-ghost btn-sm text-[10px]">Einlagern</button>
+                  <span className="text-xs text-surface-400 w-10 shrink-0">{tr('Fach {0}', slot)}</span>
+                  <button onClick={() => runMacro(`GRAB_FROM_SLOT_${slot}`, tr('Fach {0} holen', slot))}    disabled={busy} className="btn btn-ghost btn-sm text-[10px]">{tr('Holen')}</button>
+                  <button onClick={() => runMacro(`STORE_TO_SLOT_${slot}`, tr('Fach {0} einlagern', slot))} disabled={busy} className="btn btn-ghost btn-sm text-[10px]">{tr('Einlagern')}</button>
                   <div className="flex gap-1 ml-auto">
-                    <button onClick={() => runMacro(activePrinter.load,  'In Drucker')}  disabled={busy} className="btn btn-ghost btn-sm text-[9px]">→ Dr.</button>
-                    <button onClick={() => runMacro(activePrinter.eject, 'Aus Drucker')} disabled={busy} className="btn btn-ghost btn-sm text-[9px]">← Dr.</button>
+                    <button onClick={() => runMacro(activePrinter.load,  tr('In Drucker'))}  disabled={busy} className="btn btn-ghost btn-sm text-[9px]">→ Dr.</button>
+                    <button onClick={() => runMacro(activePrinter.eject, tr('Aus Drucker'))} disabled={busy} className="btn btn-ghost btn-sm text-[9px]">← Dr.</button>
                   </div>
                 </div>
               ))}
