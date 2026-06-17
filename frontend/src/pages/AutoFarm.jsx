@@ -684,8 +684,15 @@ function AutoFarm() {
     if (maxId >= _id) _id = maxId + 1
     setJobs(prev => {
       if (!prev.length) {
+        // Fresh page load while the farm already runs — map height like below so
+        // the rack preview works without waiting for a queue reload.
         return farmStatus.jobs.map(j => ({
-          ...j, objectHeight: null, heightLoading: false, note: '',
+          ...j,
+          computedHeight: j.object_height_mm ?? null,
+          objectHeight:   j.object_height_mm ?? null,
+          slot:           (j.slot && j.slot !== '1-0') ? j.slot : null,
+          heightLoading:  false,
+          note:           '',
         }))
       }
       const updated = prev.map(j => {
@@ -697,9 +704,10 @@ function AutoFarm() {
           progress:         bj.progress,
           remaining:        bj.remaining,
           estimatedMinutes: bj.estimatedMinutes ?? j.estimatedMinutes,
-          // Reflect the slot the backend assigned at runtime (e.g. dynamic
-          // '1-0' → real free slot), so the row shows the actual target fach.
-          slot:             bj.slot ?? j.slot,
+          // Use the real slot the backend assigns at print start, but keep our
+          // local preview while it still echoes the '1-0' placeholder (pending) —
+          // otherwise the rack viz loses the target fach for queued jobs mid-run.
+          slot:             (bj.slot && bj.slot !== '1-0') ? bj.slot : j.slot,
           needs_ams:        bj.needs_ams ?? j.needs_ams,
           ams_missing:      bj.ams_missing ?? j.ams_missing,
           snapshot:         bj.snapshot ?? j.snapshot,
@@ -710,10 +718,44 @@ function AutoFarm() {
       const known = new Set(updated.map(j => j.id))
       const added = farmStatus.jobs
         .filter(bj => !known.has(bj.id))
-        .map(bj => ({ ...bj, objectHeight: null, heightLoading: false, note: '' }))
+        .map(bj => ({
+          ...bj,
+          // Backend uses snake_case object_height_mm; the UI height bar + slot
+          // preview read computedHeight — map it so mid-run additions render fully.
+          computedHeight: bj.object_height_mm ?? null,
+          objectHeight:   bj.object_height_mm ?? null,
+          slot:           (bj.slot && bj.slot !== '1-0') ? bj.slot : null,
+          heightLoading:  false,
+          note:           '',
+        }))
       return added.length ? [...updated, ...added] : updated
     })
   }, [farmStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── Preview target slots while the farm runs ────────────────
+     Pending jobs (incl. ones added mid-run from the file library) carry the
+     backend's '1-0' placeholder until they actually start printing. Give them a
+     previewed free slot so the rack viz shows where each queued job will land.
+     This is purely visual and never persisted — the backend picks the real slot
+     at print start based on the live rack state. */
+  useEffect(() => {
+    if (!running || !rackData) return
+    const slotH = rackData.slot_height_mm ?? 50
+    setJobs(prev => {
+      let changed = false
+      const result = []
+      for (const j of prev) {
+        // Once a job is actually printing/done the backend owns its slot — leave it.
+        const backendOwned = ['printing', 'running', 'sending', 'done', 'error'].includes(j.status)
+        if (j.status !== 'pending' || backendOwned || !j.computedHeight) { result.push(j); continue }
+        const priorPending = result.filter(p => p.status === 'pending')
+        const preview = autoSlot(priorPending, rackData, j.computedHeight, slotH)
+        if (preview !== j.slot) changed = true
+        result.push(preview !== j.slot ? { ...j, slot: preview } : j)
+      }
+      return changed ? result : prev
+    })
+  }, [running, jobs, rackData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Browser tab title ───────────────────────────────────── */
   useEffect(() => {
@@ -792,7 +834,10 @@ function AutoFarm() {
   // signals a change (or when the tab regains focus), unless the farm is running.
   useEffect(() => {
     const reload = () => {
-      if (runningRef.current) return
+      // While running the in-memory farm queue is the source of truth; don't reload
+      // (it would clobber live state). Just refresh the status so the merge picks up
+      // mid-run additions immediately instead of waiting for the next 5s poll.
+      if (runningRef.current) { fetchStatus(); return }
       autofarmService.getQueue()
         .then(r => {
           const loaded = (r.data ?? []).map(j => ({ ...j, heightLoading: false, progress: j.progress ?? 0, remaining: j.remaining ?? 0 }))
@@ -804,7 +849,7 @@ function AutoFarm() {
     }
     window.addEventListener('printloom:queueChanged', reload)
     return () => window.removeEventListener('printloom:queueChanged', reload)
-  }, [])
+  }, [fetchStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!settingsLoaded) return
