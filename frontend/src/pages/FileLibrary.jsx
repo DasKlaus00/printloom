@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { fileService, folderService, printerService, deviceService, filamentService, autofarmService } from '../services/api'
 import { useAutoRefresh } from '../services/useAutoRefresh'
+import { useLanguage } from '../services/i18n'
 
 function ColorDot({ hex }) {
   if (!hex) return <span className="w-3 h-3 rounded-full bg-surface-700 inline-block" />
@@ -48,6 +49,7 @@ function MetaChips({ meta }) {
 }
 
 function ThumbnailPreview({ fileId }) {
+  const { tr } = useLanguage()
   const [show, setShow] = useState(false)
   const [err, setErr] = useState(false)
   const url = fileService.thumbnailUrl(fileId)
@@ -57,7 +59,7 @@ function ThumbnailPreview({ fileId }) {
       <button
         onClick={() => setShow(v => !v)}
         className="w-12 h-12 rounded-lg overflow-hidden bg-surface-900 border border-surface-700 flex items-center justify-center hover:border-blue-500 transition-colors"
-        title="Vorschau anzeigen"
+        title={tr('Vorschau anzeigen')}
       >
         {err ? (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-surface-600">
@@ -78,7 +80,7 @@ function ThumbnailPreview({ fileId }) {
           style={{ width: 200 }}
           onClick={() => setShow(false)}
         >
-          <img src={url} alt="Vorschau" className="w-full rounded-lg" onError={() => { setErr(true); setShow(false) }} />
+          <img src={url} alt={tr('Vorschau')} className="w-full rounded-lg" onError={() => { setErr(true); setShow(false) }} />
         </div>
       )}
     </div>
@@ -86,6 +88,7 @@ function ThumbnailPreview({ fileId }) {
 }
 
 function AmsInfoPanel({ fileId, fileType }) {
+  const { tr } = useLanguage()
   const [info, setInfo]       = useState(null)
   const [loading, setLoading] = useState(false)
   const [open, setOpen]       = useState(false)
@@ -97,7 +100,7 @@ function AmsInfoPanel({ fileId, fileType }) {
       const r = await fileService.getAmsInfo(fileId)
       setInfo(r.data)
     } catch {
-      setInfo({ error: 'Analyse fehlgeschlagen' })
+      setInfo({ error: tr('Analyse fehlgeschlagen') })
     } finally { setLoading(false) }
   }, [fileId, info])
 
@@ -112,7 +115,7 @@ function AmsInfoPanel({ fileId, fileType }) {
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        AMS-Analyse
+        {tr('AMS-Analyse')}
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
           className={`transition-transform ${open ? 'rotate-180' : ''}`}>
           <polyline points="6 9 12 15 18 9"/>
@@ -121,10 +124,10 @@ function AmsInfoPanel({ fileId, fileType }) {
 
       {open && (
         <div className="mt-2 pl-2 border-l border-surface-700 space-y-1.5">
-          {loading && <p className="text-[11px] text-surface-600 animate-pulse">Analysiere…</p>}
+          {loading && <p className="text-[11px] text-surface-600 animate-pulse">{tr('Analysiere…')}</p>}
           {info?.error && <p className="text-[11px] text-red-400">{info.error}</p>}
           {info && !info.error && info.filament_count === 0 && (
-            <p className="text-[11px] text-surface-600">Keine Filament-Info gefunden</p>
+            <p className="text-[11px] text-surface-600">{tr('Keine Filament-Info gefunden')}</p>
           )}
           {info && !info.error && info.filament_count > 0 && (
             <>
@@ -174,6 +177,7 @@ function loadPresets() {
    "add to queue" and maps each filament to the AMS slot with the same material and
    the closest colour (exact colour wins, else nearest same material — never blocks). */
 function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
+  const { tr } = useLanguage()
   const [open,       setOpen]       = useState(false)
   const [presets,    setPresets]    = useState(loadPresets)
   const [search,     setSearch]     = useState('')
@@ -241,13 +245,13 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
         className={`flex items-center gap-1.5 text-[11px] transition-colors ${
           hasPreset ? 'text-blue-400 hover:text-blue-300' : 'text-surface-500 hover:text-blue-400'
         }`}
-        title="Filament-Preset für AutoFarm"
+        title={tr('Filament-Preset für AutoFarm')}
       >
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
           <circle cx="12" cy="12" r="4"/>
           <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
         </svg>
-        Filament-Preset{hasPreset ? ` (${preset.filaments.length})` : ''}
+        {tr('Filament-Preset')}{hasPreset ? ` (${preset.filaments.length})` : ''}
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
           className={`transition-transform ${open ? 'rotate-180' : ''}`}>
           <polyline points="6 9 12 15 18 9"/>
@@ -258,8 +262,8 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
         <div className="mt-2 pl-2 border-l border-surface-700 space-y-1.5">
           <p className="text-[9px] text-surface-600">
             {amsSlots?.length
-              ? `AMS: ${amsSlots.length} Slot${amsSlots.length !== 1 ? 's' : ''} — beim Hinzufügen wird exakte Farbe gesucht, sonst nächstes gleiches Material`
-              : 'Einmal festlegen — wird beim Hinzufügen zur Queue automatisch auf den passenden AMS-Slot gemappt'}
+              ? tr('AMS: {0} Slots — beim Hinzufügen wird exakte Farbe gesucht, sonst nächstes gleiches Material', amsSlots.length)
+              : tr('Einmal festlegen — wird beim Hinzufügen zur Queue automatisch auf den passenden AMS-Slot gemappt')}
           </p>
 
           {/* Existing entries */}
@@ -283,7 +287,7 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
                 {match?.slot ? (
                   <span
                     className="flex items-center gap-0.5 shrink-0"
-                    title={match.exact ? 'Exakte Farbe im AMS' : `Material passt, andere Farbe (Slot ${match.slot.gid})`}
+                    title={match.exact ? tr('Exakte Farbe im AMS') : tr('Material passt, andere Farbe (Slot {0})', match.slot.gid)}
                   >
                     <span className="w-2.5 h-2.5 rounded-full border border-white/10"
                       style={{ backgroundColor: `#${match.slot.color || 'FFFFFF'}` }} />
@@ -292,12 +296,12 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
                     </span>
                   </span>
                 ) : match?.slot === null ? (
-                  <span className="text-[8px] text-red-500 shrink-0" title="Kein passender AMS-Slot">✗</span>
+                  <span className="text-[8px] text-red-500 shrink-0" title={tr('Kein passender AMS-Slot')}>✗</span>
                 ) : null}
                 <button
                   onClick={() => { setPickingIdx(i); setSearch('') }}
                   className="text-[9px] text-surface-700 hover:text-blue-400 transition-colors shrink-0"
-                  title="Filament ändern"
+                  title={tr('Filament ändern')}
                 >✎</button>
                 <button
                   onClick={() => removeEntry(i)}
@@ -334,13 +338,13 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
                   </button>
                 ))}
                 {filtered.length === 0 && (
-                  <p className="text-[9px] text-surface-600 text-center py-1">Keine Ergebnisse</p>
+                  <p className="text-[9px] text-surface-600 text-center py-1">{tr('Keine Ergebnisse')}</p>
                 )}
               </div>
               <button
                 onClick={() => { setPickingIdx(null); setSearch('') }}
                 className="text-[9px] text-surface-600 hover:text-surface-400 transition-colors"
-              >Abbrechen</button>
+              >{tr('Abbrechen')}</button>
             </div>
           )}
 
@@ -350,10 +354,10 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
               <button
                 onClick={() => { setPickingIdx('new'); setSearch('') }}
                 className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
-              >+ Filament</button>
+              >{tr('+ Filament')}</button>
               {hasPreset && (
                 <button onClick={clearPreset} className="text-[10px] text-surface-600 hover:text-red-400 transition-colors">
-                  Preset löschen
+                  {tr('Preset löschen')}
                 </button>
               )}
             </div>
@@ -370,6 +374,7 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
 function FileRow({ file, meta, folderOptions, folderById, searching, selected, onToggleSelect,
                   onSaveField, onMoveFolder, onDelete, onQueue, onSend, bambuId, sending, enqueuing,
                   amsSlots, catalog }) {
+  const { tr } = useLanguage()
   const [name, setName]         = useState(file.original_filename || '')
   const [pn, setPn]             = useState(file.part_number || '')
   const [material, setMaterial] = useState(file.material || '')
@@ -392,7 +397,7 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
       <div className="flex items-start gap-2.5">
         {isPrintable && (
           <input type="checkbox" checked={selected} onChange={onToggleSelect}
-            className="mt-1.5 w-4 h-4 p-0 shrink-0 cursor-pointer accent-blue-600" title="Für Queue auswählen" />
+            className="mt-1.5 w-4 h-4 p-0 shrink-0 cursor-pointer accent-blue-600" title={tr('Für Queue auswählen')} />
         )}
         {file.file_type === '.3mf' && <ThumbnailPreview fileId={file.id} />}
         <span className={`badge ${extColor[file.file_type] ?? 'badge-gray'} flex-shrink-0 mt-1`}>{file.file_type}</span>
@@ -406,21 +411,21 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
           {/* Properties side by side */}
           <div className="flex flex-wrap items-center gap-1.5">
             <input value={pn} onChange={e => setPn(e.target.value)} onBlur={() => save('part_number', pn, file.part_number)}
-              placeholder="SKU / Teile-Nr." className={`${fld} font-mono w-32`} title="Teilenummer / SKU" />
+              placeholder={tr('SKU / Teile-Nr.')} className={`${fld} font-mono w-32`} title={tr('Teilenummer / SKU')} />
             <input value={material} onChange={e => setMaterial(e.target.value)} onBlur={() => save('material', material, file.material)}
-              placeholder="Material" className={`${fld} w-24`} title="Material" />
+              placeholder={tr('Material')} className={`${fld} w-24`} title={tr('Material')} />
             <span className="flex items-center gap-1">
               <input type="color" value={colorVal}
                 onChange={e => { setColor(e.target.value); onSaveField(file.id, { color: e.target.value }) }}
-                className="w-7 h-7 p-0.5 cursor-pointer shrink-0" title="Farbe" />
+                className="w-7 h-7 p-0.5 cursor-pointer shrink-0" title={tr('Farbe')} />
               <input value={color} onChange={e => setColor(e.target.value)} onBlur={() => save('color', color, file.color)}
-                placeholder="#Farbe" className={`${fld} font-mono w-20`} />
+                placeholder={tr('#Farbe')} className={`${fld} font-mono w-20`} />
             </span>
             <input value={tags} onChange={e => setTags(e.target.value)} onBlur={() => save('tags', tags, file.tags)}
-              placeholder="Tags (Komma)" className={`${fld} flex-1 min-w-[8rem]`} title="Tags" />
+              placeholder={tr('Tags (Komma)')} className={`${fld} flex-1 min-w-[8rem]`} title={tr('Tags')} />
             <select value={file.folder_id ?? ''} onChange={e => onMoveFolder(file.id, e.target.value === '' ? null : Number(e.target.value))}
-              className={`${fld} w-36`} title="Ordner">
-              <option value="">📁 Wurzel</option>
+              className={`${fld} w-36`} title={tr('Ordner')}>
+              <option value="">{tr('📁 Wurzel')}</option>
               {folderOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select>
           </div>
@@ -438,16 +443,16 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
         <div className="flex items-center gap-2 flex-shrink-0">
           {isPrintable && (
             <button onClick={() => onQueue([file], 1)} disabled={enqueuing}
-              className="btn btn-primary btn-sm" title="In die Auto-Farm-Queue legen">+ Queue</button>
+              className="btn btn-primary btn-sm" title={tr('In die Auto-Farm-Queue legen')}>{tr('+ Queue')}</button>
           )}
           {isPrintable && (
             <button onClick={() => onSend(file)} disabled={sending === file.id || !bambuId}
-              className="btn btn-cyan btn-sm" title={bambuId ? 'Sofort an Drucker senden (ohne Queue)' : 'Kein Bambu-Gerät konfiguriert'}>
-              {sending === file.id ? 'Sende…' : 'Drucken'}
+              className="btn btn-cyan btn-sm" title={bambuId ? tr('Sofort an Drucker senden (ohne Queue)') : tr('Kein Bambu-Gerät konfiguriert')}>
+              {sending === file.id ? tr('Sende…') : tr('Drucken')}
             </button>
           )}
           <button onClick={() => onDelete(file.id, file.original_filename)}
-            className="btn-icon opacity-0 group-hover:opacity-100 transition-opacity" title="Löschen">
+            className="btn-icon opacity-0 group-hover:opacity-100 transition-opacity" title={tr('Löschen')}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
               <path d="M10 11v6"/><path d="M14 11v6"/>
@@ -460,6 +465,7 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
 }
 
 function FileLibrary() {
+  const { tr } = useLanguage()
   const [files, setFiles]       = useState([])
   const [folders, setFolders]   = useState([])
   const [currentFolder, setCurrentFolder] = useState(null)   // folder id or null (root)
@@ -501,7 +507,7 @@ function FileLibrary() {
         : (currentFolder != null ? { folder_id: currentFolder } : { root: true })
       const r = await fileService.queryFiles(params)
       setFiles(r.data.files)
-    } catch { showFeedback('Laden fehlgeschlagen', false) }
+    } catch { showFeedback(tr('Laden fehlgeschlagen'), false) }
     finally { setLoading(false) }
   }, [currentFolder, search])
 
@@ -608,17 +614,17 @@ function FileLibrary() {
       await folderService.create({ name, parent_id: currentFolder })
       setNewFolder('')
       await loadFolders()
-      showFeedback(`Ordner „${name}" erstellt`)
-    } catch { showFeedback('Ordner konnte nicht erstellt werden', false) }
+      showFeedback(tr('Ordner „{0}" erstellt', name))
+    } catch { showFeedback(tr('Ordner konnte nicht erstellt werden'), false) }
   }
 
   const deleteFolder = async (folder) => {
-    if (!confirm(`Ordner „${folder.name}" löschen? Inhalt wandert eine Ebene nach oben.`)) return
+    if (!confirm(tr('Ordner „{0}" löschen? Inhalt wandert eine Ebene nach oben.', folder.name))) return
     try {
       await folderService.remove(folder.id)
       await Promise.all([loadFolders(), loadFiles()])
-      showFeedback(`Ordner „${folder.name}" gelöscht`)
-    } catch { showFeedback('Ordner konnte nicht gelöscht werden', false) }
+      showFeedback(tr('Ordner „{0}" gelöscht', folder.name))
+    } catch { showFeedback(tr('Ordner konnte nicht gelöscht werden'), false) }
   }
 
   const renameFolder = async (folder, name) => {
@@ -626,7 +632,7 @@ function FileLibrary() {
     setRenamingId(null)
     if (!nm || nm === folder.name) return
     try { await folderService.update(folder.id, { name: nm }); await loadFolders() }
-    catch { showFeedback('Umbenennen fehlgeschlagen', false) }
+    catch { showFeedback(tr('Umbenennen fehlgeschlagen'), false) }
   }
 
   // Save a single metadata field — optimistic local update, no full reload (keeps focus/order).
@@ -634,7 +640,7 @@ function FileLibrary() {
     try {
       const r = await fileService.updateFile(fileId, patch)
       setFiles(prev => prev.map(f => f.id === fileId ? { ...f, ...r.data } : f))
-    } catch { showFeedback('Speichern fehlgeschlagen', false) }
+    } catch { showFeedback(tr('Speichern fehlgeschlagen'), false) }
   }
 
   // Moving to another folder: optimistic — drop it from the current view (or just
@@ -646,7 +652,7 @@ function FileLibrary() {
     try {
       await fileService.updateFile(fileId, { folder_id: folderId })
       loadFolders()
-    } catch { showFeedback('Verschieben fehlgeschlagen', false); loadFiles() }
+    } catch { showFeedback(tr('Verschieben fehlgeschlagen'), false); loadFiles() }
   }
 
   // ── Upload / files ──────────────────────────────────────────
@@ -668,27 +674,27 @@ function FileLibrary() {
     await Promise.all([loadFiles(), loadFolders()])
     setUploading(false)
     setUploadProgress(null)
-    if (fail === 0) showFeedback(arr.length === 1 ? `${arr[0].name} hochgeladen` : `${ok} Dateien hochgeladen`)
-    else showFeedback(`${ok} hochgeladen, ${fail} fehlgeschlagen`, fail === arr.length ? false : true)
+    if (fail === 0) showFeedback(arr.length === 1 ? tr('{0} hochgeladen', arr[0].name) : tr('{0} Dateien hochgeladen', ok))
+    else showFeedback(tr('{0} hochgeladen, {1} fehlgeschlagen', ok, fail), fail === arr.length ? false : true)
   }
 
   const handleInput  = (e) => doUpload(e.target.files)
   const handleDrop   = (e) => { e.preventDefault(); setDrag(false); doUpload(e.dataTransfer.files) }
   const handleDelete = async (id, name) => {
-    if (!confirm(`"${name}" löschen?`)) return
+    if (!confirm(tr('"{0}" löschen?', name))) return
     setFiles(prev => prev.filter(f => f.id !== id))   // optimistic — no reload jump
     try { await fileService.deleteFile(id); loadFolders() }
-    catch { showFeedback('Löschen fehlgeschlagen', false); loadFiles() }
+    catch { showFeedback(tr('Löschen fehlgeschlagen'), false); loadFiles() }
   }
 
   const handleSend = async (file) => {
-    if (!bambuId) return showFeedback('Kein Bambu Lab Gerät konfiguriert', false)
+    if (!bambuId) return showFeedback(tr('Kein Bambu Lab Gerät konfiguriert'), false)
     setSending(file.id)
     try {
       const r = await printerService.sendFile(bambuId, file.id, useAms)
       showFeedback(r.data.message)
     } catch (e) {
-      showFeedback(e.response?.data?.detail ?? 'Senden fehlgeschlagen', false)
+      showFeedback(e.response?.data?.detail ?? tr('Senden fehlgeschlagen'), false)
     } finally { setSending(null) }
   }
 
@@ -703,7 +709,7 @@ function FileLibrary() {
 
   const enqueueFiles = async (fileList, count = 1) => {
     const printable = fileList.filter(f => f.file_type === '.3mf' || f.file_type === '.gcode')
-    if (!printable.length) return showFeedback('Nur .3mf / .gcode können in die Queue', false)
+    if (!printable.length) return showFeedback(tr('Nur .3mf / .gcode können in die Queue'), false)
     setEnqueuing(true)
     try {
       const [statusRes, queueRes] = await Promise.all([
@@ -737,9 +743,9 @@ function FileLibrary() {
       window.dispatchEvent(new CustomEvent('printloom:queueChanged'))
       setSelected(new Set())
       setQty(1)
-      showFeedback(`${additions.length} Job${additions.length !== 1 ? 's' : ''} in die Queue gelegt`)
+      showFeedback(tr('{0} Job(s) in die Queue gelegt', additions.length))
     } catch {
-      showFeedback('In die Queue legen fehlgeschlagen', false)
+      showFeedback(tr('In die Queue legen fehlgeschlagen'), false)
     } finally { setEnqueuing(false) }
   }
 
@@ -774,7 +780,7 @@ function FileLibrary() {
       {/* Upload */}
       <div className="card">
         <p className="section-label">
-          Upload{breadcrumb.length > 0 && <span className="text-surface-600 normal-case font-normal"> → {breadcrumb.map(b => b.name).join(' / ')}</span>}
+          {tr('Upload')}{breadcrumb.length > 0 && <span className="text-surface-600 normal-case font-normal"> → {breadcrumb.map(b => b.name).join(' / ')}</span>}
         </p>
         <div
           onClick={() => inputRef.current?.click()}
@@ -795,13 +801,13 @@ function FileLibrary() {
           </svg>
           {uploading ? (
             <div className="space-y-1">
-              <p className="text-sm text-blue-400 animate-pulse">Wird hochgeladen…</p>
+              <p className="text-sm text-blue-400 animate-pulse">{tr('Wird hochgeladen…')}</p>
               {uploadProgress && <p className="text-xs text-surface-500 font-mono">{uploadProgress}</p>}
             </div>
           ) : (
             <>
-              <p className="text-sm text-surface-300 font-medium">Dateien hier ablegen oder klicken</p>
-              <p className="text-xs text-surface-600 mt-1">.3mf · .gcode · .stl · landet im aktuellen Ordner</p>
+              <p className="text-sm text-surface-300 font-medium">{tr('Dateien hier ablegen oder klicken')}</p>
+              <p className="text-xs text-surface-600 mt-1">{tr('.3mf · .gcode · .stl · landet im aktuellen Ordner')}</p>
             </>
           )}
         </div>
@@ -814,7 +820,7 @@ function FileLibrary() {
           <div className="flex items-center gap-1 text-sm min-w-0 flex-wrap">
             <button onClick={() => { setCurrentFolder(null); setSearch('') }}
               className={`px-1.5 py-0.5 rounded hover:bg-surface-700/50 transition-colors ${currentFolder == null && !searching ? 'text-surface-200 font-medium' : 'text-surface-500'}`}>
-              📁 Alle
+              {tr('📁 Alle')}
             </button>
             {breadcrumb.map(b => (
               <span key={b.id} className="flex items-center gap-1 min-w-0">
@@ -825,7 +831,7 @@ function FileLibrary() {
                 </button>
               </span>
             ))}
-            {searching && <span className="text-surface-500 ml-1">· Suche „{search}"</span>}
+            {searching && <span className="text-surface-500 ml-1">{tr('· Suche „{0}"', search)}</span>}
           </div>
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -836,7 +842,7 @@ function FileLibrary() {
               </button>
             </label>
             <div className="w-52">
-              <input type="text" placeholder="Alle Ordner durchsuchen…" value={search} onChange={e => setSearch(e.target.value)} />
+              <input type="text" placeholder={tr('Alle Ordner durchsuchen…')} value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
         </div>
@@ -844,20 +850,20 @@ function FileLibrary() {
         {/* New folder */}
         {!searching && (
           <div className="flex items-center gap-2 mb-4">
-            <input ref={newFolderRef} type="text" placeholder="Neuer Ordner…" value={newFolder}
+            <input ref={newFolderRef} type="text" placeholder={tr('Neuer Ordner…')} value={newFolder}
               onChange={e => setNewFolder(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && createFolder()}
               className="text-sm h-8 py-0 max-w-xs" />
-            <button onClick={createFolder} className="btn btn-ghost btn-sm whitespace-nowrap">+ Ordner</button>
+            <button onClick={createFolder} className="btn btn-ghost btn-sm whitespace-nowrap">{tr('+ Ordner')}</button>
           </div>
         )}
 
         {/* Bulk queue bar */}
         {selectedFiles.length > 0 && (
           <div className="flex items-center gap-3 flex-wrap mb-4 px-3 py-2 rounded-xl bg-blue-950/30 border border-blue-800/50">
-            <span className="text-sm text-blue-200 font-medium">{selectedFiles.length} ausgewählt</span>
+            <span className="text-sm text-blue-200 font-medium">{tr('{0} ausgewählt', selectedFiles.length)}</span>
             <div className="flex items-center gap-1">
-              <span className="text-[11px] text-surface-400">Menge je Datei</span>
+              <span className="text-[11px] text-surface-400">{tr('Menge je Datei')}</span>
               <button onClick={() => setQty(c => Math.max(1, c - 1))}
                 className="w-5 h-6 flex items-center justify-center border border-surface-700 rounded text-surface-400 hover:text-surface-100 text-xs">−</button>
               <span className="text-[11px] font-mono text-surface-200 w-5 text-center">{qty}</span>
@@ -865,28 +871,28 @@ function FileLibrary() {
                 className="w-5 h-6 flex items-center justify-center border border-surface-700 rounded text-surface-400 hover:text-surface-100 text-xs">+</button>
             </div>
             <button onClick={() => enqueueFiles(selectedFiles, qty)} disabled={enqueuing}
-              className="btn btn-primary btn-sm">{enqueuing ? 'Füge hinzu…' : `In Queue (${selectedFiles.length * qty})`}</button>
-            <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm">Auswahl aufheben</button>
+              className="btn btn-primary btn-sm">{enqueuing ? tr('Füge hinzu…') : tr('In Queue ({0})', selectedFiles.length * qty)}</button>
+            <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm">{tr('Auswahl aufheben')}</button>
             {/* Gesamtkalkulation der Auswahl */}
             <div className="flex items-center gap-3 ml-auto text-[12px]">
               {fmtDuration(selTotals.sec) && (
-                <span className="flex items-center gap-1 text-blue-200" title="Geschätzte Gesamt-Druckzeit (reine Druckzeit, ohne Wechsel)">
+                <span className="flex items-center gap-1 text-blue-200" title={tr('Geschätzte Gesamt-Druckzeit (reine Druckzeit, ohne Wechsel)')}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   ~{fmtDuration(selTotals.sec)}
                 </span>
               )}
               {selTotals.g > 0 && (
-                <span className="text-blue-200" title="Geschätztes Gesamt-Filament">≈ {Math.round(selTotals.g)} g</span>
+                <span className="text-blue-200" title={tr('Geschätztes Gesamt-Filament')}>≈ {Math.round(selTotals.g)} g</span>
               )}
               {selTotals.known < selTotals.total && (
-                <span className="text-surface-500" title="Für einige Dateien fehlt die Slicer-Zeitangabe">({selTotals.known}/{selTotals.total} mit Zeit)</span>
+                <span className="text-surface-500" title={tr('Für einige Dateien fehlt die Slicer-Zeitangabe')}>{tr('({0}/{1} mit Zeit)', selTotals.known, selTotals.total)}</span>
               )}
             </div>
           </div>
         )}
 
         {loading ? (
-          <p className="text-sm text-surface-500 py-6 text-center">Lädt…</p>
+          <p className="text-sm text-surface-500 py-6 text-center">{tr('Lädt…')}</p>
         ) : (
           <div className="space-y-2">
 
@@ -909,18 +915,18 @@ function FileLibrary() {
                     <p className="text-sm font-medium text-surface-200 truncate">{folder.name}</p>
                   )}
                   <p className="text-[11px] text-surface-500">
-                    {folder.file_count} Datei{folder.file_count !== 1 ? 'en' : ''}
-                    {folder.subfolder_count > 0 && `, ${folder.subfolder_count} Unterordner`}
+                    {tr('{0} Datei(en)', folder.file_count)}
+                    {folder.subfolder_count > 0 && tr(', {0} Unterordner', folder.subfolder_count)}
                   </p>
                 </div>
                 <button onClick={(e) => { e.stopPropagation(); setRenamingId(folder.id) }}
-                  className="btn-icon opacity-0 group-hover:opacity-100 transition-opacity" title="Ordner umbenennen">
+                  className="btn-icon opacity-0 group-hover:opacity-100 transition-opacity" title={tr('Ordner umbenennen')}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
                   </svg>
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); deleteFolder(folder) }}
-                  className="btn-icon opacity-0 group-hover:opacity-100 transition-opacity" title="Ordner löschen">
+                  className="btn-icon opacity-0 group-hover:opacity-100 transition-opacity" title={tr('Ordner löschen')}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
                   </svg>
@@ -931,7 +937,7 @@ function FileLibrary() {
             {/* Files */}
             {files.length === 0 && (searching || subfolders.length === 0) ? (
               <p className="text-sm text-surface-500 py-6 text-center">
-                {searching ? 'Keine Ergebnisse' : 'Dieser Ordner ist leer'}
+                {searching ? tr('Keine Ergebnisse') : tr('Dieser Ordner ist leer')}
               </p>
             ) : files.map(file => (
               <FileRow
