@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { deviceService, configService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
-import { availableLanguages, setLanguage, useLanguage } from '../services/i18n'
+import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } from '../services/i18n'
 
 /* ─── Language & downloadable language packs ─────────────────────── */
 function LanguagePacks() {
@@ -22,8 +22,15 @@ function LanguagePacks() {
     reader.onload = async (ev) => {
       try {
         const pack = JSON.parse(ev.target.result)
-        if (!pack.code || !pack.translations) throw new Error(tr('Pack braucht code + translations'))
-        await systemService.importLang({ code: pack.code, name: pack.name, translations: pack.translations })
+        const hasStrings = pack.strings && typeof pack.strings === 'object' && Object.keys(pack.strings).length > 0
+        const hasTranslations = pack.translations && typeof pack.translations === 'object' && Object.keys(pack.translations).length > 0
+        if (!pack.code || (!hasStrings && !hasTranslations))
+          throw new Error(tr('Pack braucht code + strings'))
+        await systemService.importLang({
+          code: pack.code, name: pack.name,
+          strings: hasStrings ? pack.strings : undefined,
+          translations: hasTranslations ? pack.translations : undefined,
+        })
         await loadInstalled()
         setStatus({ ok: true, msg: tr('Sprachpaket „{0}" importiert.', pack.code) })
       } catch (e2) {
@@ -31,6 +38,19 @@ function LanguagePacks() {
       }
     }
     reader.readAsText(file)
+  }
+
+  const exportTemplate = () => {
+    const template = {
+      code: 'xy',
+      name: 'Language Name',
+      strings: getTranslationTemplate(),
+    }
+    const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'printloom-lang-template.json'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   const remove = async (code) => {
@@ -84,8 +104,12 @@ function LanguagePacks() {
       {/* Actions */}
       <div className="flex items-center gap-2 flex-wrap border-t border-surface-800/50 pt-3">
         <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={importFile} />
+        <button onClick={exportTemplate} className="btn btn-ghost btn-sm">{tr('Template exportieren')}</button>
         <button onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm">{tr('Pack importieren')}</button>
       </div>
+      <p className="text-[10px] text-surface-600 leading-relaxed">
+        {tr('Template exportieren lädt eine JSON-Vorlage mit allen deutschen Strings und englischen Referenz-Übersetzungen. Einfach einer KI geben: „Übersetze alle Werte auf Französisch" — dann code + name anpassen und importieren.')}
+      </p>
 
       {status && (
         <div className={`text-[11px] font-mono px-2 py-1 rounded border ${

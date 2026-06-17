@@ -621,7 +621,8 @@ def _read_langpacks() -> dict:
 class LangPackIn(BaseModel):
     code: str
     name: Optional[str] = None
-    translations: Optional[dict] = None
+    translations: Optional[dict] = None   # key-based dict for t()
+    strings: Optional[dict] = None        # flat German→target dict for tr()
 
 
 @router.get("/lang/installed")
@@ -634,10 +635,17 @@ async def lang_installed():
 async def lang_import(body: LangPackIn):
     """Install a pack directly from an uploaded definition (offline / file import)."""
     code = (body.code or "").strip().lower()
-    if not code or not isinstance(body.translations, dict) or not body.translations:
-        raise HTTPException(400, "code und translations erforderlich")
+    has_strings = isinstance(body.strings, dict) and body.strings
+    has_translations = isinstance(body.translations, dict) and body.translations
+    if not code or (not has_strings and not has_translations):
+        raise HTTPException(400, "code und strings oder translations erforderlich")
     packs = _read_langpacks()
-    packs[code] = {"name": body.name or code.upper(), "translations": body.translations}
+    entry: dict = {"name": body.name or code.upper()}
+    if has_translations:
+        entry["translations"] = body.translations
+    if has_strings:
+        entry["strings"] = body.strings
+    packs[code] = entry
     storage.write_json(_langpacks_file(), packs)
     return {"success": True, "code": code, "installed": list(packs.keys())}
 
