@@ -4,6 +4,7 @@ import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout } from '../component
 import { parseSlotKey, slotsNeeded, autoSlot, checkClearance } from '../services/rackUtils'
 import { amsMissing, colorDist } from '../services/amsUtils'
 import { useQueueEta, fmtDur } from '../services/useQueueEta'
+import { useLanguage } from '../services/i18n'
 
 /* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
    Webcam am Drucker → 404), statt ein kaputtes Bild-Icon zu zeigen. */
@@ -18,22 +19,22 @@ function JobSnapshot({ name }) {
     </a>
   )
 }
-async function checkPreflight(bambuId) {
+async function checkPreflight(bambuId, tr = (s) => s) {
   const errors = []
   try {
     await printerService.getStatus(bambuId)
     // Printer may already be running — continuous mode handles that
   } catch {
-    errors.push('Bambu X1C nicht erreichbar — Verbindung prüfen')
+    errors.push(tr('Bambu X1C nicht erreichbar — Verbindung prüfen'))
   }
   try {
     const r = await controlService.getKlipperInfo()
     if (!r.data.ready) {
       const stateMsg = r.data.state_message ? `: ${r.data.state_message}` : ''
-      errors.push(`OTTOeject nicht bereit (${r.data.state}${stateMsg}) — bitte Firmware neu starten`)
+      errors.push(tr('OTTOeject nicht bereit ({0}{1}) — bitte Firmware neu starten', r.data.state, stateMsg))
     }
   } catch {
-    errors.push('OTTOeject nicht erreichbar — Verbindung prüfen')
+    errors.push(tr('OTTOeject nicht erreichbar — Verbindung prüfen'))
   }
   return errors
 }
@@ -55,6 +56,7 @@ const loadTemplates = () => {
 }
 
 function AmsMapper({ filaments, amsSlots, value, onChange }) {
+  const { tr } = useLanguage()
   const norm = c => (c||'').replace('#','').toUpperCase().slice(0,6)
 
   const mapArr = React.useMemo(() => {
@@ -65,8 +67,8 @@ function AmsMapper({ filaments, amsSlots, value, onChange }) {
     return filaments.map((_,i) => amsSlots[i]?.gid ?? 0)
   }, [value, filaments, amsSlots])
 
-  if (!filaments.length) return <p className="text-[10px] text-surface-600 py-1">Keine Filament-Info in Datei (älteres Format)</p>
-  if (!amsSlots.length)  return <p className="text-[10px] text-surface-600 py-1">Kein AMS erkannt — Drucker offline?</p>
+  if (!filaments.length) return <p className="text-[10px] text-surface-600 py-1">{tr('Keine Filament-Info in Datei (älteres Format)')}</p>
+  if (!amsSlots.length)  return <p className="text-[10px] text-surface-600 py-1">{tr('Kein AMS erkannt — Drucker offline?')}</p>
 
   const autoMatch = () => {
     const nm = filaments.map((f, fi) => {
@@ -103,14 +105,14 @@ function AmsMapper({ filaments, amsSlots, value, onChange }) {
             </select>
             <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0"
                   style={{ backgroundColor: slot?.color ? `#${slot.color.slice(0,6)}` : '#555' }} />
-            {!matches && <span className="text-amber-500 text-[9px]" title="Farbe unterschiedlich">⚠</span>}
+            {!matches && <span className="text-amber-500 text-[9px]" title={tr('Farbe unterschiedlich')}>⚠</span>}
           </div>
         )
       })}
       <div className="flex items-center gap-2 pt-1 border-t border-surface-800/40">
-        <span className="text-[9px] text-surface-700 font-mono">Map: {mapArr.join(',')}</span>
+        <span className="text-[9px] text-surface-700 font-mono">{tr('Map:')} {mapArr.join(',')}</span>
         <button onClick={autoMatch} className="ml-auto text-[9px] text-blue-400 hover:text-blue-300 transition-colors">
-          Auto-Match
+          {tr('Auto-Match')}
         </button>
       </div>
     </div>
@@ -124,19 +126,20 @@ const RACK_LABEL = { free: 'Leer', ready: 'Bereit', printing: 'Druckt', done: 'F
 /* ── Aktueller Schritt (Dashboard-Panel) ──────────────────────
    idle=true → zeigt auch im Leerlauf einen Platzhalter (sonst leeres Panel). */
 function CurrentStep({ farmStatus, idle }) {
+  const { tr } = useLanguage()
   const active = farmStatus?.running && farmStatus?.seq_step_label
   if (!active) {
     if (!idle) return null
     return (
       <div className="card p-2.5">
-        <p className="section-label mb-1">Aktueller Schritt</p>
-        <p className="text-[10px] text-surface-600">Kein aktiver Schritt</p>
+        <p className="section-label mb-1">{tr('Aktueller Schritt')}</p>
+        <p className="text-[10px] text-surface-600">{tr('Kein aktiver Schritt')}</p>
       </div>
     )
   }
   return (
     <div className="card p-2.5 bg-blue-950/20 border-blue-800/40">
-      <p className="section-label mb-1">Aktueller Schritt</p>
+      <p className="section-label mb-1">{tr('Aktueller Schritt')}</p>
       <div className="flex items-center gap-1.5">
         <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0" />
         <p className="text-[9px] font-mono text-blue-300 truncate">{farmStatus.seq_step_label}</p>
@@ -147,6 +150,7 @@ function CurrentStep({ farmStatus, idle }) {
 
 /* ── Farm-Visualisierung: Ablauf-Phasen ─── */
 function FarmViz({ farmStatus, jobs, curJobId }) {
+  const { tr } = useLanguage()
   const curJob     = jobs.find(j => j.id === curJobId)
   const isPrinting = curJob?.status === 'printing'
 
@@ -187,7 +191,7 @@ function FarmViz({ farmStatus, jobs, curJobId }) {
             {activePhase === p.id && running
               ? <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse shrink-0" />
               : <span className="w-1 h-1 rounded-full bg-surface-800 shrink-0" />}
-            {p.label}
+            {tr(p.label)}
           </div>
         ))}
       </div>
@@ -324,6 +328,7 @@ function guessCamType(url) {
 /* Ein Stream (Typ aus URL erkannt: WebRTC/HLS/MJPEG). Blendet sich bei Fehler
    sauber aus (statt kaputtem Bild) und bietet einen Reconnect-Knopf. */
 function StreamView({ url, portrait, label }) {
+  const { tr } = useLanguage()
   const [err, setErr] = useState(false)
   const [k,   setK]   = useState(0)
   useEffect(() => { setErr(false); setK(x => x + 1) }, [url])
@@ -336,13 +341,13 @@ function StreamView({ url, portrait, label }) {
       {!url ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1 px-3 text-center">
           <p className="text-[10px]">{label}</p>
-          <p className="text-[9px] text-surface-700">URL in Konfiguration → Kameras</p>
+          <p className="text-[9px] text-surface-700">{tr('URL in Konfiguration → Kameras')}</p>
         </div>
       ) : err ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1.5 px-3 text-center">
-          <p className="text-[10px]">{label} nicht erreichbar</p>
+          <p className="text-[10px]">{tr('{0} nicht erreichbar', label)}</p>
           <p className="text-[9px] font-mono text-surface-700 break-all">{src}</p>
-          <button onClick={reconnect} className="btn btn-ghost btn-sm">Neu verbinden</button>
+          <button onClick={reconnect} className="btn btn-ghost btn-sm">{tr('Neu verbinden')}</button>
         </div>
       ) : type === 'webrtc' ? (
         <WhepVideo key={k} src={src} onError={() => setErr(true)} className="w-full h-full object-contain" />
@@ -355,7 +360,7 @@ function StreamView({ url, portrait, label }) {
         <>
           <span className="absolute top-1.5 left-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>
           <span className="absolute top-1.5 right-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-black/60 text-surface-300">{CAM_TYPE_LABEL[type]}</span>
-          <button onClick={reconnect} title="Neu verbinden"
+          <button onClick={reconnect} title={tr('Neu verbinden')}
             className="absolute bottom-1.5 right-1.5 text-[11px] leading-none px-1.5 py-1 rounded bg-black/50 text-surface-300 hover:text-white">⟳</button>
         </>
       )}
@@ -366,6 +371,7 @@ function StreamView({ url, portrait, label }) {
 /* Eingebaute X1C-Kamera (proprietäres Port-6000-Protokoll übers Backend).
    Fallback für die obere Kachel, wenn keine Bambu-URL hinterlegt ist. */
 function X1CView({ bambuId }) {
+  const { tr } = useLanguage()
   const [live,  setLive]  = useState(false)
   const [ready, setReady] = useState(false)
   const [err,   setErr]   = useState('')
@@ -390,32 +396,32 @@ function X1CView({ bambuId }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-surface-500">Oben · X1C (RTSPS · direkt)</span>
+        <span className="text-[10px] text-surface-500">{tr('Oben · X1C (RTSPS · direkt)')}</span>
         <button onClick={() => live ? stop() : connect()} disabled={!bambuId}
           className={`btn btn-sm px-2 ${live ? 'btn-primary' : 'btn-ghost'}`}
-          title="LAN-Liveview muss am Drucker aktiv sein">
-          {live ? '⏹ Stopp' : '📷 Live'}
+          title={tr('LAN-Liveview muss am Drucker aktiv sein')}>
+          {live ? tr('⏹ Stopp') : tr('📷 Live')}
         </button>
       </div>
       <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '16/9', maxWidth: '100%' }}>
         {live ? (
           err ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1.5 px-3 text-center">
-              <p className="text-[10px]">X1C nicht erreichbar</p>
+              <p className="text-[10px]">{tr('X1C nicht erreichbar')}</p>
               {err && <p className="text-[9px] font-mono text-red-400/80 break-all">{err}</p>}
-              <button onClick={connect} className="btn btn-ghost btn-sm mt-0.5">Neu verbinden</button>
+              <button onClick={connect} className="btn btn-ghost btn-sm mt-0.5">{tr('Neu verbinden')}</button>
             </div>
           ) : ready ? (
             <img src={`${printerService.cameraStreamUrl(bambuId)}?t=${key}`} alt="X1C Live"
-              onError={() => setErr(e => e || 'Stream-Verbindung abgebrochen')}
+              onError={() => setErr(e => e || tr('Stream-Verbindung abgebrochen'))}
               className="w-full h-full object-contain" />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-[10px]">Verbinde …</div>
+            <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-[10px]">{tr('Verbinde …')}</div>
           )
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1 px-3 text-center">
-            <p className="text-[10px]">{bambuId ? 'X1C bereit' : 'Kein Drucker'}</p>
-            {bambuId && <p className="text-[9px] text-surface-700">„📷 Live" drücken</p>}
+            <p className="text-[10px]">{bambuId ? tr('X1C bereit') : tr('Kein Drucker')}</p>
+            {bambuId && <p className="text-[9px] text-surface-700">{tr('„📷 Live" drücken')}</p>}
           </div>
         )}
         {live && ready && <span className="absolute top-1.5 left-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>}
@@ -429,6 +435,7 @@ function X1CView({ bambuId }) {
    Doppelpuffer: das sichtbare Bild wird erst getauscht, wenn das nächste geladen
    ist → kein Flackern, keine Blackframes. */
 function HaPollView({ deviceId, label, portrait = false }) {
+  const { tr } = useLanguage()
   const [src, setSrc] = useState(null)
   const [err, setErr] = useState(false)
   useEffect(() => {
@@ -450,12 +457,12 @@ function HaPollView({ deviceId, label, portrait = false }) {
       {src ? (
         <img src={src} alt={label} className="w-full h-full object-contain" />
       ) : !err ? (
-        <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-[10px]">Verbinde mit Home Assistant …</div>
+        <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-[10px]">{tr('Verbinde mit Home Assistant …')}</div>
       ) : null}
       {err && (
         <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1 px-3 text-center">
-          <p className="text-[10px]">{label} nicht erreichbar</p>
-          <p className="text-[9px] text-surface-700">Home Assistant / Token prüfen</p>
+          <p className="text-[10px]">{tr('{0} nicht erreichbar', label)}</p>
+          <p className="text-[9px] text-surface-700">{tr('Home Assistant / Token prüfen')}</p>
         </div>
       )}
       {src && !err && (
@@ -471,19 +478,20 @@ function HaPollView({ deviceId, label, portrait = false }) {
 /* Beide Kameras fest übereinander: oben Bambu (quer) bzw. X1C, unten hochkant.
    URLs kommen aus der Konfiguration (Konfiguration → Kameras). */
 function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, onToggle }) {
+  const { tr } = useLanguage()
   return (
     <div className="card p-2.5 space-y-2.5">
       <div className="flex items-center justify-between gap-2">
-        <p className="section-label mb-0">Kameras</p>
+        <p className="section-label mb-0">{tr('Kameras')}</p>
         <div className="flex items-center gap-2">
-          <span className="text-[9px] text-surface-600 hidden sm:inline">Konfiguration → Kameras</span>
+          <span className="text-[9px] text-surface-600 hidden sm:inline">{tr('Konfiguration → Kameras')}</span>
           <button
             onClick={onToggle}
             disabled={!bambuId}
-            title={cameraOn ? 'Kamera ausschalten (Anzeige + Snapshots)' : 'Kamera einschalten'}
+            title={cameraOn ? tr('Kamera ausschalten (Anzeige + Snapshots)') : tr('Kamera einschalten')}
             className={`btn btn-sm px-2 ${cameraOn ? 'btn-primary' : 'btn-ghost'}`}
           >
-            {cameraOn ? '📷 An' : '⨯ Aus'}
+            {cameraOn ? tr('📷 An') : tr('⨯ Aus')}
           </button>
         </div>
       </div>
@@ -491,17 +499,17 @@ function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, o
         <>
           {/* Oben: X1C via Home Assistant > externe Bambu-URL > eingebaute X1C (Port 6000) */}
           {haCamReady
-            ? <HaPollView deviceId={bambuId} label="X1C (Home Assistant)" />
+            ? <HaPollView deviceId={bambuId} label={tr('X1C (Home Assistant)')} />
             : webcamUrlTop
-              ? <StreamView url={webcamUrlTop} portrait={false} label="Bambu (oben)" />
+              ? <StreamView url={webcamUrlTop} portrait={false} label={tr('Bambu (oben)')} />
               : <X1CView bambuId={bambuId} />}
           {/* Unten: Hochkant */}
-          <StreamView url={webcamUrl} portrait={true} label="Hochkant (unten)" />
+          <StreamView url={webcamUrl} portrait={true} label={tr('Hochkant (unten)')} />
         </>
       ) : (
         <div className="flex flex-col items-center justify-center text-surface-600 gap-1 py-8 text-center">
-          <p className="text-[11px]">Kamera aus</p>
-          <p className="text-[9px] text-surface-700">Kein Livebild, keine automatischen Snapshots</p>
+          <p className="text-[11px]">{tr('Kamera aus')}</p>
+          <p className="text-[9px] text-surface-700">{tr('Kein Livebild, keine automatischen Snapshots')}</p>
         </div>
       )}
     </div>
@@ -509,6 +517,7 @@ function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, o
 }
 
 function AutoFarm() {
+  const { tr } = useLanguage()
   const [gcodeFiles,      setGcodeFiles]      = useState([])
   const [rackData,        setRackData]        = useState(null)
   const [bambuId,         setBambuId]         = useState(null)
@@ -590,7 +599,7 @@ function AutoFarm() {
       window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved'))
     } catch {
       setCameraOn(!next)  // bei Fehler zurückrollen
-      showFeedback('Kamera-Status konnte nicht gespeichert werden', false)
+      showFeedback(tr('Kamera-Status konnte nicht gespeichert werden'), false)
     }
   }, [bambuId, cameraOn])
 
@@ -639,7 +648,7 @@ function AutoFarm() {
     setDashHidden([])
     dashLoadedRef.current = true
     systemService.saveDashboardLayout({ layout: DEFAULT_LAYOUT, hidden: [] }).catch(() => {})
-    showFeedback('Dashboard auf Standard zurückgesetzt')
+    showFeedback(tr('Dashboard auf Standard zurückgesetzt'))
   }, [])
 
   const fetchAmsSlots = useCallback(async () => {
@@ -732,7 +741,7 @@ function AutoFarm() {
   useEffect(() => {
     const nowRunning = farmStatus?.running ?? false
     if (prevRunningRef.current && !nowRunning && farmStatus?.stop_reason === 'completed') {
-      showFeedback('✓ Alle Jobs abgearbeitet — Auto Farm beendet')
+      showFeedback(tr('✓ Alle Jobs abgearbeitet — Auto Farm beendet'))
     }
     prevRunningRef.current = nowRunning
   }, [farmStatus?.running, farmStatus?.stop_reason]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -854,7 +863,7 @@ function AutoFarm() {
       }
     }
     if ([r, f, d].some(x => x.status === 'rejected')) {
-      showFeedback('Einige Daten konnten nicht geladen werden', false)
+      showFeedback(tr('Einige Daten konnten nicht geladen werden'), false)
     }
   }, [])
 
@@ -1037,7 +1046,7 @@ function AutoFarm() {
     localStorage.setItem(TEMPLATES_KEY, JSON.stringify(all))
     setTemplates(all)
     setTplName('')
-    showFeedback(`Vorlage „${name}" gespeichert (${jobs.length} Jobs)`)
+    showFeedback(tr('Vorlage „{0}" gespeichert ({1} Jobs)', name, jobs.length))
   }
 
   const applyTemplate = (name) => {
@@ -1053,8 +1062,8 @@ function AutoFarm() {
     setTplOpen(false)
     showFeedback(
       missing
-        ? `${added} Jobs geladen — ${missing} Datei(en) nicht mehr vorhanden`
-        : `Vorlage „${name}" geladen (${added} Jobs)`,
+        ? tr('{0} Jobs geladen — {1} Datei(en) nicht mehr vorhanden', added, missing)
+        : tr('Vorlage „{0}" geladen ({1} Jobs)', name, added),
       added > 0
     )
   }
@@ -1154,7 +1163,7 @@ function AutoFarm() {
       const r = await rackManagerService.getAll()
       setRackData(r.data)
     } catch {
-      showFeedback('Fach konnte nicht geleert werden', false)
+      showFeedback(tr('Fach konnte nicht geleert werden'), false)
     }
   }
 
@@ -1170,12 +1179,12 @@ function AutoFarm() {
           autofarmService.saveQueue(updated.map(({ heightLoading, ...rest }) => rest)).catch(() => {})
           return updated
         })
-        showFeedback(`Fach ${slotKey} → "${pendingJob.fileName}" zugewiesen`)
+        showFeedback(tr('Fach {0} → "{1}" zugewiesen', slotKey, pendingJob.fileName))
       } else {
-        showFeedback(`Fach ${slotKey} geleert — kein ausstehender Job`)
+        showFeedback(tr('Fach {0} geleert — kein ausstehender Job', slotKey))
       }
     } catch {
-      showFeedback('Zuweisung fehlgeschlagen', false)
+      showFeedback(tr('Zuweisung fehlgeschlagen'), false)
     }
   }
 
@@ -1187,9 +1196,9 @@ function AutoFarm() {
       const r = await rackManagerService.getAll()
       setRackData(r.data)
       const n = res.data?.cleared ?? done.length
-      showFeedback(`${n} ${n === 1 ? 'Fach' : 'Fächer'} geleert`)
+      showFeedback(tr('{0} Fach/Fächer geleert', n))
     } catch {
-      showFeedback('Regal konnte nicht geleert werden', false)
+      showFeedback(tr('Regal konnte nicht geleert werden'), false)
     }
   }
 
@@ -1199,9 +1208,9 @@ function AutoFarm() {
       const r = await rackManagerService.getAll()
       setRackData(r.data)
       window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
-      showFeedback(`Magazin aufgefüllt (${r.data.magazine_count} Platten)`)
+      showFeedback(tr('Magazin aufgefüllt ({0} Platten)', r.data.magazine_count))
     } catch {
-      showFeedback('Magazin konnte nicht aufgefüllt werden', false)
+      showFeedback(tr('Magazin konnte nicht aufgefüllt werden'), false)
     }
   }
 
@@ -1219,19 +1228,19 @@ function AutoFarm() {
 
   /* ── Farm control ────────────────────────────────────────── */
   const startFarm = async () => {
-    if (!bambuId) return showFeedback('Kein Bambu Lab Gerät konfiguriert', false)
+    if (!bambuId) return showFeedback(tr('Kein Bambu Lab Gerät konfiguriert'), false)
 
-    const preflightErrors = await checkPreflight(bambuId)
+    const preflightErrors = await checkPreflight(bambuId, tr)
     if (preflightErrors.length) return showFeedback(preflightErrors[0], false)
 
     const pending = jobs.filter(j => j.status === 'pending')
-    if (!pending.length) return showFeedback('Keine Jobs in der Warteschlange', false)
+    if (!pending.length) return showFeedback(tr('Keine Jobs in der Warteschlange'), false)
 
     // Queue preflight (hard block): every job's filaments must match the live AMS.
     const amsBlocked = pending.filter(j => jobNeedsAms(j))
     if (amsBlocked.length) {
       return showFeedback(
-        `Manuelle AMS-Festlegung notwendig für ${amsBlocked.length} Job(s) — Filament zuweisen, dann starten`,
+        tr('Manuelle AMS-Festlegung notwendig für {0} Job(s) — Filament zuweisen, dann starten', amsBlocked.length),
         false,
       )
     }
@@ -1249,7 +1258,7 @@ function AutoFarm() {
         else assigned.push({ slot: s, computedHeight: h, status: 'pending' })
       }
       if (noSlot > 0) {
-        showFeedback(`⚠ Nur Platz für ${pending.length - noSlot}/${pending.length} Jobs — Farm pausiert bei vollem Regal`, false)
+        showFeedback(tr('⚠ Nur Platz für {0}/{1} Jobs — Farm pausiert bei vollem Regal', pending.length - noSlot, pending.length), false)
       }
     }
 
@@ -1268,7 +1277,7 @@ function AutoFarm() {
         })),
       })
       await fetchStatus()
-      showFeedback('Auto Farm gestartet')
+      showFeedback(tr('Auto Farm gestartet'))
     } catch (e) {
       showFeedback(e.response?.data?.detail ?? e.message, false)
     }
@@ -1292,12 +1301,12 @@ function AutoFarm() {
       setRackCfgNr(r.data.num_racks); setRackCfgSpr(r.data.slots_per_rack); setRackCfgH(r.data.slot_height_mm)
       setStackRack(r.data.stack_rack ?? 1); setStackSlot(r.data.stack_slot ?? 7)
       setMaxPlates(r.data.max_plates ?? 4)
-      showFeedback('Regal gespeichert')
+      showFeedback(tr('Regal gespeichert'))
     } catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
   }
 
   const forceReset = async () => {
-    try { await autofarmService.forceReset(); await fetchStatus(); showFeedback('Farm-State zurückgesetzt') }
+    try { await autofarmService.forceReset(); await fetchStatus(); showFeedback(tr('Farm-State zurückgesetzt')) }
     catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
   }
 
@@ -1351,18 +1360,18 @@ function AutoFarm() {
 
       {!bambuId && (
         <div className="px-4 py-3 rounded-lg bg-amber-950/40 border border-amber-800 text-amber-300 text-sm flex items-center gap-2">
-          <span className="dot dot-amber" /> Kein Bambu Lab Gerät konfiguriert — bitte erst unter Configuration einrichten
+          <span className="dot dot-amber" /> {tr('Kein Bambu Lab Gerät konfiguriert — bitte erst unter Configuration einrichten')}
         </div>
       )}
 
       {running && !curJobId && !pendingJobs.length && (
         <div className="px-4 py-3 rounded-lg bg-surface-800/60 border border-surface-700 text-surface-400 text-sm flex items-center gap-2">
-          <span className="dot dot-gray animate-pulse" /> Wartet auf neue Jobs — "+ Datei" klicken um fortzufahren
+          <span className="dot dot-gray animate-pulse" /> {tr('Wartet auf neue Jobs — "+ Datei" klicken um fortzufahren')}
         </div>
       )}
       {running && !jobs.find(j => j.id === curJobId) && !!curJobId && (
         <div className="px-4 py-3 rounded-lg bg-blue-950/40 border border-blue-800 text-blue-300 text-sm flex items-center gap-2">
-          <span className="dot dot-blue animate-pulse" /> Auto Farm läuft im Server — Status wird live aktualisiert
+          <span className="dot dot-blue animate-pulse" /> {tr('Auto Farm läuft im Server — Status wird live aktualisiert')}
         </div>
       )}
 
@@ -1375,24 +1384,24 @@ function AutoFarm() {
             {running && (
               <p className="text-[11px] text-surface-600 font-mono mt-0.5">
                 {paused
-                  ? 'Pausiert'
+                  ? tr('Pausiert')
                   : curJobId
-                    ? `Läuft · ${jobs.find(j => j.id === curJobId)?.fileName?.replace(/\.[^.]+$/, '')?.slice(0, 28) ?? '…'}`
+                    ? tr('Läuft · {0}', jobs.find(j => j.id === curJobId)?.fileName?.replace(/\.[^.]+$/, '')?.slice(0, 28) ?? '…')
                     : pendingJobs.length
-                      ? `${pendingJobs.length} Job${pendingJobs.length > 1 ? 's' : ''} wartet`
-                      : 'Wartet auf Jobs…'}
+                      ? tr('{0} Job(s) wartet', pendingJobs.length)
+                      : tr('Wartet auf Jobs…')}
               </p>
             )}
           </div>
           {running && (
             <div className="flex items-center gap-1.5">
               <span className="dot dot-blue animate-pulse" />
-              <span className="text-xs text-blue-400 font-medium">{paused ? 'Pausiert' : 'Läuft'}</span>
+              <span className="text-xs text-blue-400 font-medium">{paused ? tr('Pausiert') : tr('Läuft')}</span>
             </div>
           )}
           {errorJobs.length > 0 && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-red-950/40 border border-red-800 text-red-400">
-              {errorJobs.length} Fehler
+              {tr('{0} Fehler', errorJobs.length)}
             </span>
           )}
         </div>
@@ -1415,15 +1424,15 @@ function AutoFarm() {
           <button
             onClick={() => setEditingDash(e => !e)}
             className={`btn btn-sm ${editingDash ? 'btn-primary' : 'btn-ghost'}`}
-            title="Dashboard anpassen: Panels verschieben, Größe ändern, ein-/ausblenden"
+            title={tr('Dashboard anpassen: Panels verschieben, Größe ändern, ein-/ausblenden')}
           >
-            {editingDash ? '✓ Fertig' : '✎ Layout'}
+            {editingDash ? tr('✓ Fertig') : tr('✎ Layout')}
           </button>
           {!running ? (
             <>
               {jobs.some(j => j.status !== 'pending') && (
-                <button onClick={resetFarm} className="btn btn-ghost btn-sm text-surface-500 hover:text-surface-300" title="Alle auf Ausstehend zurücksetzen">
-                  ↺ Reset
+                <button onClick={resetFarm} className="btn btn-ghost btn-sm text-surface-500 hover:text-surface-300" title={tr('Alle auf Ausstehend zurücksetzen')}>
+                  {tr('↺ Reset')}
                 </button>
               )}
               <button
@@ -1431,7 +1440,7 @@ function AutoFarm() {
                 disabled={!bambuId}
                 className="btn btn-primary btn-sm"
               >
-                ▶ Aktivieren
+                {tr('▶ Aktivieren')}
                 {pendingJobs.length > 0 && (
                   <span className="ml-1.5 opacity-60 text-[10px] font-mono">{pendingJobs.length}</span>
                 )}
@@ -1443,12 +1452,12 @@ function AutoFarm() {
                 onClick={togglePause}
                 className={`btn btn-sm ${paused ? 'btn-primary' : 'btn-ghost text-amber-400 hover:text-amber-300'}`}
               >
-                {paused ? '▶ Fortsetzen' : '⏸ Pause'}
+                {paused ? tr('▶ Fortsetzen') : tr('⏸ Pause')}
               </button>
-              <button onClick={stopFarm} className="btn btn-danger btn-sm">■ Stopp</button>
+              <button onClick={stopFarm} className="btn btn-danger btn-sm">{tr('■ Stopp')}</button>
               <button
                 onClick={forceReset}
-                title="Erzwingt das Zurücksetzen des Farm-States — benutze dies wenn Stopp nicht reagiert"
+                title={tr('Erzwingt das Zurücksetzen des Farm-States — benutze dies wenn Stopp nicht reagiert')}
                 className="btn btn-ghost btn-sm text-surface-600 hover:text-red-400 text-[10px]"
               >↺</button>
             </>
@@ -1459,14 +1468,14 @@ function AutoFarm() {
       {/* Paused banner */}
       {paused && (
         <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm border bg-amber-950/40 border-amber-800 text-amber-300">
-          <span className="dot dot-amber animate-pulse" /> Pausiert — warte auf Fortsetzen…
+          <span className="dot dot-amber animate-pulse" /> {tr('Pausiert — warte auf Fortsetzen…')}
         </div>
       )}
 
       {/* ── Bearbeiten-Leiste: Panels ein-/ausblenden ── */}
       {editingDash && (
         <div className="card p-2.5 flex items-center gap-2 flex-wrap">
-          <span className="section-label mb-0 mr-1">Panels</span>
+          <span className="section-label mb-0 mr-1">{tr('Panels')}</span>
           {PANELS.map(p => {
             const on = !dashHidden.includes(p.id)
             return (
@@ -1474,15 +1483,15 @@ function AutoFarm() {
                 className={`text-[11px] font-medium px-2 h-7 rounded-lg border transition-colors ${
                   on ? 'border-blue-700 bg-blue-950/40 text-blue-300'
                      : 'border-surface-700 text-surface-600 hover:text-surface-400'}`}
-                title={on ? 'Ausblenden' : 'Einblenden'}>
-                {on ? '☑' : '☐'} {p.label}
+                title={on ? tr('Ausblenden') : tr('Einblenden')}>
+                {on ? '☑' : '☐'} {tr(p.label)}
               </button>
             )
           })}
           <button onClick={resetDash}
             className="ml-auto text-[11px] text-surface-500 hover:text-surface-300 transition-colors"
-            title="Positionen, Größen und Sichtbarkeit auf Standard zurücksetzen">
-            ↺ Standard
+            title={tr('Positionen, Größen und Sichtbarkeit auf Standard zurücksetzen')}>
+            {tr('↺ Standard')}
           </button>
         </div>
       )}
@@ -1506,13 +1515,13 @@ function AutoFarm() {
         <div className="card">
           <div className="flex items-start justify-between mb-4 gap-2 flex-wrap">
             <div>
-              <p className="section-label">Warteschlange</p>
+              <p className="section-label">{tr('Warteschlange')}</p>
               {eta.ready && eta.jobs > 0 && (
                 <p className="text-[11px] text-surface-500 font-mono mt-0.5">
                   {fmtDur(eta.totalSec)
-                    ? <>~{fmtDur(eta.totalSec)} gesamt{eta.finishAt && <span className="text-surface-600"> · fertig ~{eta.finishAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</span>}</>
-                    : 'Gesamtzeit unbekannt'}
-                  {eta.known < eta.jobs && <span className="text-surface-600"> ({eta.known}/{eta.jobs} mit Zeit)</span>}
+                    ? <>{tr('~{0} gesamt', fmtDur(eta.totalSec))}{eta.finishAt && <span className="text-surface-600">{tr(' · fertig ~{0} Uhr', eta.finishAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</span>}</>
+                    : tr('Gesamtzeit unbekannt')}
+                  {eta.known < eta.jobs && <span className="text-surface-600"> {tr('({0}/{1} mit Zeit)', eta.known, eta.jobs)}</span>}
                 </p>
               )}
             </div>
@@ -1522,8 +1531,8 @@ function AutoFarm() {
                 <button
                   onClick={() => setTplOpen(o => !o)}
                   className="btn btn-ghost btn-sm shrink-0"
-                  title="Warteschlangen-Vorlagen speichern/laden"
-                >☰ Vorlagen{tplOpen ? ' ▲' : ' ▼'}</button>
+                  title={tr('Warteschlangen-Vorlagen speichern/laden')}
+                >{tr('☰ Vorlagen')}{tplOpen ? ' ▲' : ' ▼'}</button>
                 {tplOpen && (
                   <div className="absolute right-0 top-full mt-1 z-20 w-64 card p-2 space-y-2 shadow-xl border border-surface-700">
                     <div className="flex items-center gap-1">
@@ -1532,19 +1541,19 @@ function AutoFarm() {
                         value={tplName}
                         onChange={e => setTplName(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') saveTemplate() }}
-                        placeholder="Name der aktuellen Queue…"
+                        placeholder={tr('Name der aktuellen Queue…')}
                         className="flex-1 text-[11px] h-7 py-0 px-1.5"
                       />
                       <button
                         onClick={saveTemplate}
                         disabled={!tplName.trim() || !jobs.length}
                         className="btn btn-ghost btn-sm shrink-0 disabled:opacity-40"
-                        title={!jobs.length ? 'Warteschlange ist leer' : 'Aktuelle Warteschlange speichern'}
+                        title={!jobs.length ? tr('Warteschlange ist leer') : tr('Aktuelle Warteschlange speichern')}
                       >＋</button>
                     </div>
                     <div className="max-h-48 overflow-y-auto space-y-0.5">
                       {Object.keys(templates).length === 0 ? (
-                        <p className="text-[10px] text-surface-600 text-center py-2">Noch keine Vorlagen</p>
+                        <p className="text-[10px] text-surface-600 text-center py-2">{tr('Noch keine Vorlagen')}</p>
                       ) : (
                         Object.entries(templates).map(([name, entries]) => {
                           const total = entries.reduce((s, e) => s + (e.count || 1), 0)
@@ -1553,15 +1562,15 @@ function AutoFarm() {
                               <button
                                 onClick={() => applyTemplate(name)}
                                 className="flex-1 min-w-0 text-left"
-                                title={`${total} Jobs laden`}
+                                title={tr('{0} Jobs laden', total)}
                               >
                                 <span className="text-[11px] text-surface-200 truncate block">{name}</span>
-                                <span className="text-[9px] text-surface-600 font-mono">{entries.length} Datei(en) · {total} Jobs</span>
+                                <span className="text-[9px] text-surface-600 font-mono">{tr('{0} Datei(en) · {1} Jobs', entries.length, total)}</span>
                               </button>
                               <button
                                 onClick={() => deleteTemplate(name)}
                                 className="text-[10px] text-surface-700 hover:text-red-400 transition-colors shrink-0"
-                                title="Vorlage löschen"
+                                title={tr('Vorlage löschen')}
                               >×</button>
                             </div>
                           )
@@ -1572,7 +1581,7 @@ function AutoFarm() {
                 )}
               </div>
               <span className="text-[11px] text-surface-500 italic px-1">
-                Jobs in der <span className="text-surface-300">Datei-Bibliothek</span> hinzufügen →
+                {tr('Jobs in der')} <span className="text-surface-300">{tr('Datei-Bibliothek')}</span> {tr('hinzufügen →')}
               </span>
             </div>
           </div>
@@ -1580,7 +1589,7 @@ function AutoFarm() {
           {/* Multi-plate selector — pick which plates of the .3mf to enqueue */}
           {filePlates.length > 1 && (
             <div className="flex items-center gap-1.5 flex-wrap mb-4 -mt-2">
-              <span className="text-[10px] text-surface-500 font-mono">Platten:</span>
+              <span className="text-[10px] text-surface-500 font-mono">{tr('Platten:')}</span>
               {filePlates.map(p => {
                 const on = selPlates.includes(p)
                 return (
@@ -1591,12 +1600,12 @@ function AutoFarm() {
                       on ? 'border-blue-700 bg-blue-950/40 text-blue-300'
                          : 'border-surface-700 text-surface-500 hover:text-surface-300'
                     }`}
-                    title={`Platte ${p}${on ? ' — ausgewählt' : ''}`}
+                    title={on ? tr('Platte {0} — ausgewählt', p) : tr('Platte {0}', p)}
                   >P{p}</button>
                 )
               })}
               <span className="text-[9px] text-surface-600">
-                {selPlates.length} ausgewählt → je {addCount > 1 ? `${addCount}×` : '1'} Job
+                {tr('{0} ausgewählt → je {1} Job', selPlates.length, addCount > 1 ? `${addCount}×` : '1')}
               </span>
             </div>
           )}
@@ -1608,10 +1617,10 @@ function AutoFarm() {
                 <path d="M12 2L2 7l10 5 10-5-10-5z"/>
                 <path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
               </svg>
-              <p className="text-sm mb-1">Keine Jobs</p>
+              <p className="text-sm mb-1">{tr('Keine Jobs')}</p>
               <p className="text-xs text-surface-700">
-                + Datei klicken um zu beginnen<br/>
-                Regal-Fächer werden automatisch vergeben
+                {tr('+ Datei klicken um zu beginnen')}<br/>
+                {tr('Regal-Fächer werden automatisch vergeben')}
               </p>
             </div>
           ) : (
@@ -1645,7 +1654,7 @@ function AutoFarm() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-mono text-surface-700 w-5 shrink-0 text-right">#{idx+1}</span>
                       <span className={`dot ${sm.dot} ${busy && sm.pulse ? 'animate-pulse' : ''} shrink-0`} />
-                      <span className={`text-xs font-medium ${sm.color} shrink-0`}>{sm.label}</span>
+                      <span className={`text-xs font-medium ${sm.color} shrink-0`}>{tr(sm.label)}</span>
                       {job.status === 'printing' && job.progress > 0 && (
                         <span className="text-xs text-surface-500 font-mono shrink-0">
                           {job.progress}%{job.remaining > 0 ? ` · ~${job.remaining} min` : ''}
@@ -1693,12 +1702,12 @@ function AutoFarm() {
                     <div className="flex items-center gap-2 flex-wrap">
                       {job.plate != null && (
                         <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300"
-                          title={`Platte ${job.plate} aus Multi-Plate-.3mf`}>
-                          Platte {job.plate}
+                          title={tr('Platte {0} aus Multi-Plate-.3mf', job.plate)}>
+                          {tr('Platte {0}', job.plate)}
                         </span>
                       )}
                       {job.heightLoading ? (
-                        <span className="text-[10px] text-surface-700 font-mono animate-pulse">Höhe…</span>
+                        <span className="text-[10px] text-surface-700 font-mono animate-pulse">{tr('Höhe…')}</span>
                       ) : displayH != null && displayH > 0 ? (
                         <span
                           className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
@@ -1707,7 +1716,7 @@ function AutoFarm() {
                               : 'text-emerald-400 border-emerald-900/60 bg-emerald-950/20'
                           }`}
                           title={job.layerCount > 0 && job.layerHeightMm > 0
-                            ? `Roh: ${job.objectHeight} mm · ${job.layerCount} Schichten × ${job.layerHeightMm} mm · +${heightMarginPct}% = ${job.computedHeight} mm`
+                            ? tr('Roh: {0} mm · {1} Schichten × {2} mm · +{3}% = {4} mm', job.objectHeight, job.layerCount, job.layerHeightMm, heightMarginPct, job.computedHeight)
                             : `${job.objectHeight} mm (${job.heightSource ?? ''})`}
                         >
                           {displayH} mm
@@ -1719,17 +1728,17 @@ function AutoFarm() {
                           )}
                         </span>
                       ) : (
-                        <span className="text-[10px] text-surface-700 font-mono">Höhe unbekannt</span>
+                        <span className="text-[10px] text-surface-700 font-mono">{tr('Höhe unbekannt')}</span>
                       )}
                       <div className="flex-1" />
                       <div className="flex items-center gap-1 text-[10px] text-surface-600">
-                        <span>Fach</span>
+                        <span>{tr('Fach')}</span>
                         {isOverflow ? (
-                          <span className="font-mono text-[10px] text-amber-500 px-1 rounded border border-amber-800/60" title="Regal voll — kein freies Fach in der Vorschau">Regal voll</span>
+                          <span className="font-mono text-[10px] text-amber-500 px-1 rounded border border-amber-800/60" title={tr('Regal voll — kein freies Fach in der Vorschau')}>{tr('Regal voll')}</span>
                         ) : hasRealSlot ? (
                           <span className="font-mono text-[10px] text-surface-400">{job.slot}</span>
                         ) : (
-                          <span className="font-mono text-[10px] text-surface-600 px-1 rounded border border-surface-800/50" title="Fach wird bei Ausführung automatisch zugewiesen">Auto</span>
+                          <span className="font-mono text-[10px] text-surface-600 px-1 rounded border border-surface-800/50" title={tr('Fach wird bei Ausführung automatisch zugewiesen')}>{tr('Auto')}</span>
                         )}
                       </div>
                     </div>
@@ -1748,7 +1757,7 @@ function AutoFarm() {
                           <span
                             className="text-[9px] font-mono px-1 rounded border border-red-800/60 bg-red-950/30 text-red-400"
                             title={jobAmsMissing(job).map(m => `${m.type ?? '?'} ${m.color ?? ''} (${m.reason})`).join(', ')}
-                          >⚠ Manuelle AMS-Festlegung</span>
+                          >{tr('⚠ Manuelle AMS-Festlegung')}</span>
                         )}
                         <button
                           onClick={() => {
@@ -1768,7 +1777,7 @@ function AutoFarm() {
                         {(amsOpenIds.has(job.id) || jobNeedsAms(job)) && (
                           <div className="w-full">
                             {amsLoading ? (
-                              <p className="text-[10px] text-surface-700 animate-pulse">AMS laden…</p>
+                              <p className="text-[10px] text-surface-700 animate-pulse">{tr('AMS laden…')}</p>
                             ) : (
                               <AmsMapper
                                 filaments={job.filaments ?? []}
@@ -1791,10 +1800,10 @@ function AutoFarm() {
                     {/* ── Error state ── */}
                     {job.status === 'error' && (
                       <div className="flex items-center gap-3 pt-0.5">
-                        <span className="text-xs text-red-400 flex-1">Fehlgeschlagen</span>
+                        <span className="text-xs text-red-400 flex-1">{tr('Fehlgeschlagen')}</span>
                         {!running && (
                           <button onClick={() => resetJob(job.id)} className="text-[10px] text-blue-400 hover:text-blue-300 font-mono transition-colors">
-                            ↺ Wiederholen
+                            {tr('↺ Wiederholen')}
                           </button>
                         )}
                       </div>
@@ -1818,7 +1827,7 @@ function AutoFarm() {
           <div className="card">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <p className="section-label">Regal</p>
+                <p className="section-label">{tr('Regal')}</p>
                 {rackData && (
                   <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
                     rackData.magazine_count === 0 ? 'border-red-800/60 bg-red-950/30 text-red-400' :
@@ -1835,16 +1844,16 @@ function AutoFarm() {
                   <button
                     onClick={clearAllDoneSlots}
                     className="text-xs text-amber-500 hover:text-amber-400 font-medium transition-colors"
-                    title="Fertige Platten entnehmen — Magazin füllt sich automatisch wieder auf"
+                    title={tr('Fertige Platten entnehmen — Magazin füllt sich automatisch wieder auf')}
                   >
-                    Alle entnehmen
+                    {tr('Alle entnehmen')}
                   </button>
                 )}
               </div>
             </div>
 
             {numRacks === 0 ? (
-              <p className="text-xs text-surface-700 py-3 text-center">Kein Regal konfiguriert</p>
+              <p className="text-xs text-surface-700 py-3 text-center">{tr('Kein Regal konfiguriert')}</p>
             ) : (
               <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${numRacks}, 1fr)` }}>
                 {Array.from({length: numRacks}, (_, ri) => (
@@ -1888,11 +1897,11 @@ function AutoFarm() {
                             }`} />
                             <div className="flex-1 min-w-0">
                               {isDone ? (
-                                <p className="text-[9px] text-amber-400 truncate leading-tight">{slot.file_name?.replace(/\.[^.]+$/, '').slice(0, 12) || 'Fertig'}</p>
+                                <p className="text-[9px] text-amber-400 truncate leading-tight">{slot.file_name?.replace(/\.[^.]+$/, '').slice(0, 12) || tr('Fertig')}</p>
                               ) : topJob ? (
                                 <p className="text-[9px] text-surface-400 truncate leading-tight">{topJob.fileName.replace(/\.[^.]+$/, '').slice(0, 12)}</p>
                               ) : (
-                                <p className="text-[9px] text-surface-800">{isLocked ? 'Sperr' : ''}</p>
+                                <p className="text-[9px] text-surface-800">{isLocked ? tr('Sperr') : ''}</p>
                               )}
                             </div>
                             {heightPct > 0 && (
@@ -1905,9 +1914,9 @@ function AutoFarm() {
                             )}
                             {(isDone || isStuck) && (
                               <div className="flex items-center gap-0.5 shrink-0 ml-0.5">
-                                <button onClick={() => clearRackSlot(key)} title="Fach leeren" className={`text-[9px] hover:text-amber-300 ${isStuck ? 'text-red-500' : 'text-amber-500'}`}>✓</button>
+                                <button onClick={() => clearRackSlot(key)} title={tr('Fach leeren')} className={`text-[9px] hover:text-amber-300 ${isStuck ? 'text-red-500' : 'text-amber-500'}`}>✓</button>
                                 {isDone && (
-                                  <button onClick={() => assignJobToSlot(key)} title="Leeren + nächsten Job zuweisen" className="text-[9px] text-blue-500 hover:text-blue-300">↻</button>
+                                  <button onClick={() => assignJobToSlot(key)} title={tr('Leeren + nächsten Job zuweisen')} className="text-[9px] text-blue-500 hover:text-blue-300">↻</button>
                                 )}
                               </div>
                             )}
@@ -1924,16 +1933,16 @@ function AutoFarm() {
             {slots.length > 0 && (
               <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-surface-800/40">
                 <span className="text-[9px] text-surface-700 flex items-center gap-1">
-                  <span className="dot dot-amber w-1.5 h-1.5" /> Fertig
+                  <span className="dot dot-amber w-1.5 h-1.5" /> {tr('Fertig')}
                 </span>
                 <span className="text-[9px] text-surface-700 flex items-center gap-1">
-                  <span className="dot dot-blue w-1.5 h-1.5" /> Druckt
+                  <span className="dot dot-blue w-1.5 h-1.5" /> {tr('Druckt')}
                 </span>
                 <span className="text-[9px] text-surface-700 flex items-center gap-1">
-                  <span className="dot dot-gray w-1.5 h-1.5 opacity-30" /> Leer
+                  <span className="dot dot-gray w-1.5 h-1.5 opacity-30" /> {tr('Leer')}
                 </span>
                 <span className="flex-1 text-right text-[9px] text-surface-700 font-mono">
-                  {slotH} mm/Fach
+                  {tr('{0} mm/Fach', slotH)}
                 </span>
               </div>
             )}
@@ -1946,7 +1955,7 @@ function AutoFarm() {
           <div className="card">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 min-w-0">
-                <p className="section-label shrink-0">Aktivität</p>
+                <p className="section-label shrink-0">{tr('Aktivität')}</p>
                 {seqProgress && (
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-900/40 border border-blue-700/60 text-blue-300 animate-pulse truncate">
                     {seqProgress.label}
@@ -1954,13 +1963,13 @@ function AutoFarm() {
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                <button onClick={() => autofarmService.downloadLogFile()} className="text-xs text-surface-700 hover:text-blue-400 transition-colors" title="Persistentes Log-File herunterladen (alle Läufe)">↓ Log</button>
-                <button onClick={exportLog} className="text-xs text-surface-700 hover:text-surface-400 transition-colors" title="Aktuellen Log als .txt">↓</button>
+                <button onClick={() => autofarmService.downloadLogFile()} className="text-xs text-surface-700 hover:text-blue-400 transition-colors" title={tr('Persistentes Log-File herunterladen (alle Läufe)')}>{tr('↓ Log')}</button>
+                <button onClick={exportLog} className="text-xs text-surface-700 hover:text-surface-400 transition-colors" title={tr('Aktuellen Log als .txt')}>↓</button>
                 <button onClick={() => { autofarmService.clearLog().catch(() => {}); setFarmStatus(s => s ? { ...s, log: [] } : s) }} className="text-xs text-surface-700 hover:text-surface-400 transition-colors">✕</button>
               </div>
             </div>
             {!farmLog.length ? (
-              <p className="text-[10px] text-surface-700 py-2">Noch keine Aktivität</p>
+              <p className="text-[10px] text-surface-700 py-2">{tr('Noch keine Aktivität')}</p>
             ) : (
               <div className="space-y-0.5 font-mono text-[10px] max-h-52 overflow-y-auto">
                 {farmLog.map((line, i) => (
