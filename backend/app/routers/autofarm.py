@@ -123,8 +123,7 @@ _task: Optional[asyncio.Task] = None
 def _read_stats() -> dict:
     return storage.read_json(STATS_PATH, {
         "total_jobs": 0, "successful_jobs": 0, "failed_jobs": 0,
-        "total_print_min": 0, "errors": {}, "since": None,
-        "current_streak": 0, "best_streak": 0})
+        "total_print_min": 0, "errors": {}, "since": None})
 
 
 def _write_stats(data: dict):
@@ -139,9 +138,6 @@ def _record_success(print_min: int = 0):
     s["total_jobs"]      = s.get("total_jobs", 0) + 1
     s["successful_jobs"] = s.get("successful_jobs", 0) + 1
     s["total_print_min"] = s.get("total_print_min", 0) + max(0, print_min)
-    # Error-free streak (F.5 milestones)
-    s["current_streak"]  = s.get("current_streak", 0) + 1
-    s["best_streak"]     = max(s.get("best_streak", 0), s["current_streak"])
     if not s.get("since"):
         s["since"] = datetime.now().isoformat()
     _write_stats(s)
@@ -151,7 +147,6 @@ def _record_failure(error_msg: str = ""):
     s = _read_stats()
     s["total_jobs"]  = s.get("total_jobs", 0) + 1
     s["failed_jobs"] = s.get("failed_jobs", 0) + 1
-    s["current_streak"] = 0   # a failure breaks the error-free streak
     if error_msg:
         errs = s.get("errors", {})
         key  = error_msg[:70]

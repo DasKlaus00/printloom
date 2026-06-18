@@ -1029,15 +1029,6 @@ const EN_STRINGS = {
   '{0} Jobs': '{0} jobs',
   '~{0} · fertig ~{1} Uhr': '~{0} · done ~{1}',
 
-  // ── Meilensteine (F.5) ──
-  'Meilensteine': 'Milestones',
-  'Jobs gedruckt': 'Jobs printed',
-  'Druckstunden': 'Print hours',
-  'Fehlerfrei-Serie': 'Error-free streak',
-  'Erreichte Stufe': 'Tier reached',
-  '🏆 Höchste Stufe erreicht!': '🏆 Highest tier reached!',
-  'nächste Stufe: {0}{1}': 'next tier: {0}{1}',
-
   // ── Datei-Bibliothek: Sortieren & Filtern ──
   'Keine Datei passt zum Filter': 'No file matches the filter',
   'Sortieren': 'Sort',
