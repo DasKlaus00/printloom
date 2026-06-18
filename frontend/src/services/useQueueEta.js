@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import { autofarmService, fileService } from './api'
 
-/* Gemeinsame ETA-Berechnung für Dashboard & AutoFarm: summiert die echte
-   Slicer-Druckzeit (quick-meta) aller noch nicht fertigen Jobs. Der gerade
-   laufende Job zählt mit seiner Live-Restzeit (mc_remaining_time = Minuten),
-   die anderen mit ihrer geschätzten Druckzeit + einem Platten-Wechsel-Aufschlag. */
+/* Gemeinsame ETA-Berechnung für Dashboard, AutoFarm & Planer.
+   Pro Job zählt die beste verfügbare Druckzeit:
+     1. Live-Restzeit des laufenden Jobs (mc_remaining_time, Minuten)
+     2. echte Historie aus früheren Läufen (farm_history.json, Wanduhr-Schnitt)  ← B.2
+     3. Slicer-Schätzung (quick-meta)
+   Wartende Jobs bekommen zusätzlich einen Platten-Wechsel-Aufschlag. */
 
-const _metaCache = {}            // fileId → meta | null  (modulweit, von beiden Seiten geteilt)
-const CHANGEOVER_SEC = 180       // ~3 min Platten-Wechsel/Auswurf je wartendem Job
+const _metaCache = {}            // fileId → meta | null  (modulweit, von allen Seiten geteilt)
+export const CHANGEOVER_SEC = 180  // ~3 min Platten-Wechsel/Auswurf je wartendem Job
 const PRINTING = new Set(['printing', 'running', 'sending'])
 
 export function fmtDur(sec) {
@@ -17,46 +19,64 @@ export function fmtDur(sec) {
   return h ? `${h} h ${m} min` : `${m} min`
 }
 
+/* Lädt die quick-meta einer Datei (gecacht) — vom Planer genutzt. */
+export async function ensureMeta(fileId) {
+  if (fileId == null) return null
+  if (_metaCache[fileId] === undefined) {
+    try { _metaCache[fileId] = (await fileService.getQuickMeta(fileId)).data || null }
+    catch { _metaCache[fileId] = null }
+  }
+  return _metaCache[fileId]
+}
+
+export function getCachedMeta(fileId) {
+  return _metaCache[fileId] ?? null
+}
+
+/* Beste reine Druckzeit (Sekunden) eines Jobs aus Live/Historie/Slicer.
+   `src` meldet zurück, woher der Wert stammt ('live'|'hist'|'slicer'|'none'). */
+export function jobPrintSec(job, meta, hist) {
+  if (PRINTING.has(job.status) && job.remaining > 0) return { sec: job.remaining * 60, src: 'live' }
+  const h = hist?.[job.fileId] ?? hist?.[String(job.fileId)]
+  if (h?.avg_min > 0) return { sec: Math.round(h.avg_min * 60), src: 'hist' }
+  const est = meta?.time_seconds || 0
+  return { sec: est, src: est > 0 ? 'slicer' : 'none' }
+}
+
 export function useQueueEta(pollMs = 15000) {
   const [eta, setEta] = useState({
     ready: false, running: false, jobs: 0,
-    printSec: 0, overheadSec: 0, totalSec: 0, known: 0, finishAt: null,
+    printSec: 0, overheadSec: 0, totalSec: 0, known: 0, histCount: 0, finishAt: null,
   })
 
   const compute = useCallback(async () => {
     try {
-      const [st, q] = await Promise.all([
+      const [st, q, hi] = await Promise.all([
         autofarmService.getStatus().catch(() => ({ data: {} })),
         autofarmService.getQueue().catch(() => ({ data: [] })),
+        autofarmService.getHistory().catch(() => ({ data: {} })),
       ])
       const running = !!st.data?.running
+      const hist = hi.data || {}
       const raw = q.data
       const jobs = (Array.isArray(raw) ? raw : (raw?.jobs ?? [])).filter(j => j.status !== 'done')
 
-      // fehlende Druckzeiten nachladen (einmalig je Datei)
+      // fehlende Slicer-Druckzeiten nachladen (einmalig je Datei)
       const need = [...new Set(jobs.map(j => j.fileId).filter(id => id != null && _metaCache[id] === undefined))]
-      await Promise.all(need.map(async id => {
-        try { _metaCache[id] = (await fileService.getQuickMeta(id)).data || null }
-        catch { _metaCache[id] = null }
-      }))
+      await Promise.all(need.map(id => ensureMeta(id)))
 
-      let printSec = 0, overheadSec = 0, known = 0
+      let printSec = 0, overheadSec = 0, known = 0, histCount = 0
       for (const j of jobs) {
-        const est = _metaCache[j.fileId]?.time_seconds || 0
-        if (PRINTING.has(j.status)) {
-          // läuft gerade → Live-Restzeit (Minuten) bevorzugen
-          printSec += j.remaining > 0 ? j.remaining * 60 : est
-          if (est > 0 || j.remaining > 0) known++
-        } else {
-          printSec += est
-          overheadSec += CHANGEOVER_SEC
-          if (est > 0) known++
-        }
+        const { sec, src } = jobPrintSec(j, _metaCache[j.fileId], hist)
+        printSec += sec
+        if (src === 'hist') histCount++
+        if (sec > 0) known++
+        if (!PRINTING.has(j.status)) overheadSec += CHANGEOVER_SEC
       }
       const totalSec = printSec + overheadSec
       setEta({
         ready: true, running, jobs: jobs.length,
-        printSec, overheadSec, totalSec, known,
+        printSec, overheadSec, totalSec, known, histCount,
         finishAt: totalSec > 0 ? new Date(Date.now() + totalSec * 1000) : null,
       })
     } catch {

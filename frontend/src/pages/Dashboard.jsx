@@ -16,6 +16,60 @@ function parseKey(k) {
   return p.length === 2 ? [+p[0], +p[1]] : [1, +p[0]]
 }
 
+/* F.5 — Meilenstein-/Achievement-System. Stufen aus der eigenen Farm-Historie:
+   gedruckte Jobs, kumulierte Druckstunden, längste fehlerfreie Serie. */
+const MILESTONES = [
+  { id: 'jobs',   icon: '🖨️', label: 'Jobs gedruckt',   unit: '',   tiers: [1, 10, 50, 100, 500, 1000], get: s => s.successful_jobs || 0 },
+  { id: 'hours',  icon: '⏱️', label: 'Druckstunden',     unit: ' h', tiers: [10, 50, 100, 500, 1000, 5000], get: s => Math.floor((s.total_print_min || 0) / 60) },
+  { id: 'streak', icon: '🔥', label: 'Fehlerfrei-Serie', unit: '',   tiers: [5, 10, 25, 50, 100], get: s => s.best_streak || 0 },
+]
+
+function Achievements({ stats, tr }) {
+  const cards = MILESTONES.map(m => {
+    const val = m.get(stats)
+    const reachedIdx = m.tiers.reduce((acc, t, i) => (val >= t ? i : acc), -1)
+    const next = m.tiers[reachedIdx + 1] ?? null
+    return {
+      ...m, val,
+      reached: reachedIdx >= 0 ? m.tiers[reachedIdx] : 0,
+      next,
+      pct: next ? Math.min(100, Math.round((val / next) * 100)) : 100,
+      maxed: next === null,
+    }
+  })
+  return (
+    <div className="card">
+      <p className="section-label mb-3">{tr('Meilensteine')}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {cards.map(c => (
+          <div key={c.id} className="rounded-xl border border-surface-800/60 bg-surface-900/40 p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-lg shrink-0">{c.icon}</span>
+              <div className="min-w-0">
+                <p className="text-[11px] text-surface-400 truncate">{tr(c.label)}</p>
+                <p className="text-lg font-bold font-mono text-surface-100 leading-none">{c.val}{c.unit}</p>
+              </div>
+              {c.reached > 0 && (
+                <span className="ml-auto text-[10px] font-mono text-emerald-400 shrink-0" title={tr('Erreichte Stufe')}>★ {c.reached}{c.unit}</span>
+              )}
+            </div>
+            {c.maxed ? (
+              <p className="text-[10px] text-amber-400 font-medium">{tr('🏆 Höchste Stufe erreicht!')}</p>
+            ) : (
+              <>
+                <div className="h-1.5 bg-surface-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500/70 rounded-full transition-all" style={{ width: `${c.pct}%` }} />
+                </div>
+                <p className="text-[9px] text-surface-600 mt-1 font-mono">{tr('nächste Stufe: {0}{1}', c.next, c.unit)}</p>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* Printer utilization over the last 24h. Reconstructs active spans by pairing
    print_start with the next print_done/error/farm_stop; renders them on a time bar
    with error markers. Gaps inside farm-running windows read as idle. */
@@ -468,6 +522,9 @@ export default function Dashboard() {
           </div>
         )
       })()}
+
+      {/* ══ Meilensteine (F.5) ════════════════════════════════ */}
+      {stats && stats.total_jobs > 0 && <Achievements stats={stats} tr={tr} />}
 
       {/* ══ Usage timeline (24h) ══════════════════════════════ */}
       {timeline && timeline.events?.length > 0 && <UsageTimeline data={timeline} />}

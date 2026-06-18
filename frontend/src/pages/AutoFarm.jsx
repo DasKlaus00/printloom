@@ -3,7 +3,7 @@ import { rackManagerService, fileService, deviceService, printerService, control
 import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout } from '../components/DashboardGrid'
 import { parseSlotKey, slotsNeeded, autoSlot, checkClearance } from '../services/rackUtils'
 import { amsMissing, colorDist } from '../services/amsUtils'
-import { useQueueEta, fmtDur } from '../services/useQueueEta'
+import { useQueueEta, fmtDur, jobPrintSec, ensureMeta, getCachedMeta, CHANGEOVER_SEC } from '../services/useQueueEta'
 import { useLanguage } from '../services/i18n'
 
 /* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
@@ -516,6 +516,72 @@ function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, o
   )
 }
 
+/* ── B.3 Was-wäre-wenn-Planer ─────────────────────────────────
+   Zeigt für die aktuelle Queue-Reihenfolge eine Zeitleiste: pro Job die
+   beste verfügbare Dauer (Live > Historie > Slicer) + Wechsel-Aufschlag, mit
+   kumulierter Fertig-Uhrzeit. Reihenfolge ändern (Smart-Sort / ↑↓) → Planer
+   rechnet sofort neu, ohne irgendetwas zu starten. */
+function QueuePlanner({ jobs, tr }) {
+  const [hist, setHist] = useState({})
+  const [tick, setTick] = useState(0)
+
+  const active = jobs.filter(j => ['pending', 'running', 'printing', 'sending'].includes(j.status))
+  const sig = active.map(j => `${j.id}:${j.status}:${j.remaining || 0}`).join(',')
+
+  useEffect(() => {
+    let cancelled = false
+    autofarmService.getHistory().then(r => { if (!cancelled) setHist(r.data || {}) }).catch(() => {})
+    Promise.all(active.map(j => ensureMeta(j.fileId))).then(() => { if (!cancelled) setTick(t => t + 1) })
+    return () => { cancelled = true }
+  }, [sig]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!active.length) {
+    return <p className="text-[11px] text-surface-600 py-3 text-center">{tr('Keine wartenden Jobs zum Planen')}</p>
+  }
+
+  const now = Date.now()
+  let acc = 0
+  const rows = active.map((j, i) => {
+    if (i > 0) acc += CHANGEOVER_SEC
+    const { sec, src } = jobPrintSec(j, getCachedMeta(j.fileId), hist)
+    acc += sec
+    return { j, sec, src, end: new Date(now + acc * 1000) }
+  })
+  const totalSec = acc
+  const clk = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const srcMeta = {
+    live:   { sym: '●', cls: 'text-blue-400',    title: tr('Live-Restzeit') },
+    hist:   { sym: '📊', cls: 'text-emerald-400', title: tr('aus echter Historie') },
+    slicer: { sym: '~', cls: 'text-surface-500',  title: tr('Slicer-Schätzung') },
+    none:   { sym: '?', cls: 'text-amber-500',    title: tr('keine Zeitangabe') },
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="space-y-1">
+        {rows.map(({ j, sec, src, end }, i) => {
+          const m = srcMeta[src] ?? srcMeta.none
+          return (
+            <div key={j.id} className="flex items-center gap-2 text-[11px]">
+              <span className="font-mono text-surface-600 w-4 text-right shrink-0">{i + 1}</span>
+              <span className="text-surface-300 flex-1 min-w-0 truncate">{j.fileName?.replace(/\.[^.]+$/, '')}</span>
+              <span className={`shrink-0 ${m.cls}`} title={m.title}>{m.sym}</span>
+              <span className="font-mono text-surface-400 w-16 text-right shrink-0">{fmtDur(sec) ?? '—'}</span>
+              <span className="font-mono text-surface-600 w-12 text-right shrink-0" title={tr('voraussichtlich fertig')}>{clk(end)}</span>
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex items-center justify-between border-t border-surface-800/50 pt-1.5 text-[11px]">
+        <span className="text-surface-500">{tr('{0} Jobs', rows.length)}</span>
+        <span className="font-mono text-surface-300">
+          {fmtDur(totalSec) ? tr('~{0} · fertig ~{1} Uhr', fmtDur(totalSec), clk(new Date(now + totalSec * 1000))) : tr('Gesamtzeit unbekannt')}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function AutoFarm() {
   const { tr } = useLanguage()
   const [gcodeFiles,      setGcodeFiles]      = useState([])
@@ -541,6 +607,7 @@ function AutoFarm() {
   const [templates,       setTemplates]       = useState(loadTemplates)
   const [tplOpen,         setTplOpen]         = useState(false)
   const [tplName,         setTplName]         = useState('')
+  const [plannerOpen,     setPlannerOpen]     = useState(false)
   const [filePlates,      setFilePlates]      = useState([])     // plate numbers in selected file (multi-plate .3mf)
   const [selPlates,       setSelPlates]       = useState([])     // which plates to enqueue
   const [amsSlots,        setAmsSlots]        = useState([])
@@ -1183,6 +1250,40 @@ function AutoFarm() {
     })
   }
 
+  /* ── B.1 Smart-Sortierung ─────────────────────────────────────
+     Gruppiert wartende Jobs nach Filament-Signatur (Material+Farbe bzw. AMS-
+     Belegung), damit gleichartige Jobs nacheinander laufen → minimiert AMS-/
+     Spulen-Wechsel. Laufende/fertige Jobs bleiben an ihrer Position. */
+  const jobFilamentKey = (j) => {
+    if (j.filaments?.length)
+      return j.filaments.map(f => `${(f.type || '').toUpperCase()}|${(f.color || '').toUpperCase().replace('#', '')}`).sort().join('+')
+    if ((j.amsMap || '').trim()) return `ams:${j.amsMap.trim()}`
+    return `file:${j.fileId}`
+  }
+
+  const smartSort = () => setJobs(prev => {
+    const pending = prev.filter(j => j.status === 'pending')
+    if (pending.length < 2) return prev
+    const order = []
+    const groups = {}
+    pending.forEach(j => {
+      const k = jobFilamentKey(j)
+      if (!groups[k]) { groups[k] = []; order.push(k) }
+      groups[k].push(j)
+    })
+    const sorted = order.flatMap(k => groups[k])
+    // No change? Don't churn state.
+    if (sorted.every((j, i) => j.id === pending[i].id)) {
+      showFeedback(tr('Bereits optimal gruppiert ({0} Filament-Gruppen)', order.length))
+      return prev
+    }
+    let pi = 0
+    const next = prev.map(j => j.status === 'pending' ? sorted[pi++] : j)
+    syncReorder(next)   // pushes new order to the backend while running; debounced save otherwise
+    showFeedback(tr('Nach Filament sortiert — {0} Gruppen, weniger AMS-Wechsel', order.length))
+    return next
+  })
+
   // Persist the external webcam URL (shared with the Steuerung page via device settings)
   const saveWebcamUrl = useCallback(async (url) => {
     setWebcamUrl(url)
@@ -1567,10 +1668,27 @@ function AutoFarm() {
                     ? <>{tr('~{0} gesamt', fmtDur(eta.totalSec))}{eta.finishAt && <span className="text-surface-600">{tr(' · fertig ~{0} Uhr', eta.finishAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</span>}</>
                     : tr('Gesamtzeit unbekannt')}
                   {eta.known < eta.jobs && <span className="text-surface-600"> {tr('({0}/{1} mit Zeit)', eta.known, eta.jobs)}</span>}
+                  {eta.histCount > 0 && <span className="text-emerald-500/80" title={tr('Basierend auf echten früheren Druckzeiten')}> {tr('· 📊 {0} aus Historie', eta.histCount)}</span>}
                 </p>
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* B.1 Smart-Sortierung */}
+              {pendingJobs.length > 1 && (
+                <button
+                  onClick={smartSort}
+                  className="btn btn-ghost btn-sm shrink-0"
+                  title={tr('Wartende Jobs nach Filament gruppieren → weniger AMS-Wechsel')}
+                >{tr('⚡ Smart')}</button>
+              )}
+              {/* B.3 Planer */}
+              {activeJobs.length > 0 && (
+                <button
+                  onClick={() => setPlannerOpen(o => !o)}
+                  className={`btn btn-sm shrink-0 ${plannerOpen ? 'btn-primary' : 'btn-ghost'}`}
+                  title={tr('Zeitplan der Warteschlange anzeigen (Was-wäre-wenn)')}
+                >{tr('🗓 Planer')}</button>
+              )}
               {/* Queue-Vorlagen */}
               <div className="relative">
                 <button
@@ -1630,6 +1748,13 @@ function AutoFarm() {
               </span>
             </div>
           </div>
+
+          {/* B.3 Planer-Panel */}
+          {plannerOpen && (
+            <div className="mb-4 -mt-1 p-2.5 rounded-xl bg-surface-900/60 border border-surface-700/60">
+              <QueuePlanner jobs={jobs} tr={tr} />
+            </div>
+          )}
 
           {/* Multi-plate selector — pick which plates of the .3mf to enqueue */}
           {filePlates.length > 1 && (

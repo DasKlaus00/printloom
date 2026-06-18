@@ -141,6 +141,7 @@ export const autofarmService = {
   clearLogFile:      ()      => api.delete('/autofarm/log/file'),
   getStats:          ()      => api.get('/autofarm/stats'),
   resetStats:        ()      => api.delete('/autofarm/stats'),
+  getHistory:        ()      => api.get('/autofarm/history'),
   getTimeline:       (hours = 24) => api.get('/autofarm/timeline', { params: { hours } }),
   getFileFilaments:  (id)    => api.get(`/autofarm/file_filaments/${id}`),
   testCycle:         ()      => api.post('/autofarm/test-cycle'),

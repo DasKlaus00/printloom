@@ -486,10 +486,44 @@ function FileLibrary() {
   const [qty, setQty]             = useState(1)
   const [enqueuing, setEnqueuing] = useState(false)
   const [metaById, setMetaById]   = useState({})   // fileId → {time_seconds, filament_g, …}
+  // Sort & filter (client-side over the current folder/search result)
+  const [sortBy,     setSortBy]     = useState(() => localStorage.getItem('ottomat3d_lib_sort') || 'name')
+  const [sortDir,    setSortDir]    = useState(() => localStorage.getItem('ottomat3d_lib_dir')  || 'asc')
+  const [filterType, setFilterType] = useState('all')
   const inputRef = useRef()
   const newFolderRef = useRef()
 
   const searching = search.trim().length > 0
+
+  useEffect(() => { localStorage.setItem('ottomat3d_lib_sort', sortBy) }, [sortBy])
+  useEffect(() => { localStorage.setItem('ottomat3d_lib_dir', sortDir) }, [sortDir])
+
+  // Filtered + sorted view of the loaded files (folders stay above, unaffected).
+  const visibleFiles = useMemo(() => {
+    let out = files
+    if (filterType !== 'all') out = out.filter(f => f.file_type === filterType)
+    const dir = sortDir === 'asc' ? 1 : -1
+    const val = (f) => {
+      switch (sortBy) {
+        case 'date': return new Date(f.uploaded_at || 0).getTime()
+        case 'size': return f.file_size || 0
+        case 'time': return metaById[f.id]?.time_seconds || 0
+        case 'type': return f.file_type || ''
+        default:     return (f.original_filename || '').toLowerCase()
+      }
+    }
+    return [...out].sort((a, b) => {
+      const va = val(a), vb = val(b)
+      if (typeof va === 'string') return dir * va.localeCompare(vb)
+      return dir * (va - vb)
+    })
+  }, [files, filterType, sortBy, sortDir, metaById])
+
+  // Which file types are actually present → only offer meaningful filter chips.
+  const presentTypes = useMemo(
+    () => [...new Set(files.map(f => f.file_type))].filter(Boolean).sort(),
+    [files]
+  )
 
   const showFeedback = (msg, ok = true) => {
     setFeedback({ msg, ok })
@@ -891,6 +925,41 @@ function FileLibrary() {
           </div>
         )}
 
+        {/* Sort & filter bar */}
+        {!loading && files.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap mb-3 text-[11px]">
+            <span className="text-surface-600">{tr('Sortieren')}</span>
+            <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+              className="h-7 py-0 px-1.5 text-[11px] bg-surface-900 border border-surface-700 rounded">
+              <option value="name">{tr('Name')}</option>
+              <option value="date">{tr('Datum')}</option>
+              <option value="size">{tr('Größe')}</option>
+              <option value="time">{tr('Druckzeit')}</option>
+              <option value="type">{tr('Typ')}</option>
+            </select>
+            <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+              className="h-7 px-2 bg-surface-900 border border-surface-700 rounded text-surface-300 hover:text-surface-100"
+              title={sortDir === 'asc' ? tr('Aufsteigend') : tr('Absteigend')}>
+              {sortDir === 'asc' ? '↑' : '↓'}
+            </button>
+            {presentTypes.length > 1 && (
+              <div className="flex items-center gap-1 ml-1">
+                <button onClick={() => setFilterType('all')}
+                  className={`h-7 px-2 rounded border transition-colors ${filterType === 'all' ? 'border-blue-700 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>
+                  {tr('Alle')}
+                </button>
+                {presentTypes.map(t => (
+                  <button key={t} onClick={() => setFilterType(t)}
+                    className={`h-7 px-2 rounded border font-mono transition-colors ${filterType === t ? 'border-blue-700 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
+            <span className="text-surface-700 ml-auto">{tr('{0} Datei(en)', visibleFiles.length)}</span>
+          </div>
+        )}
+
         {loading ? (
           <p className="text-sm text-surface-500 py-6 text-center">{tr('Lädt…')}</p>
         ) : (
@@ -935,11 +1004,12 @@ function FileLibrary() {
             ))}
 
             {/* Files */}
-            {files.length === 0 && (searching || subfolders.length === 0) ? (
+            {visibleFiles.length === 0 && (searching || subfolders.length === 0) ? (
               <p className="text-sm text-surface-500 py-6 text-center">
-                {searching ? tr('Keine Ergebnisse') : tr('Dieser Ordner ist leer')}
+                {files.length > 0 ? tr('Keine Datei passt zum Filter')
+                  : searching ? tr('Keine Ergebnisse') : tr('Dieser Ordner ist leer')}
               </p>
-            ) : files.map(file => (
+            ) : visibleFiles.map(file => (
               <FileRow
                 key={file.id}
                 file={file}

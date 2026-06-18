@@ -37,8 +37,10 @@ SETTINGS_PATH = "/app/db/farm_settings.json"
 QUEUE_PATH    = "/app/db/farm_queue.json"
 LOG_PATH      = "/app/db/farm_log.txt"
 STATS_PATH    = "/app/db/farm_stats.json"
+HISTORY_PATH  = "/app/db/farm_history.json"
 TIMELINE_PATH = "/app/db/farm_timeline.json"
 TIMELINE_MAX  = 1000  # keep the most recent N events
+HISTORY_KEEP  = 8     # rolling samples per file for the duration average
 
 SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
 
@@ -121,7 +123,8 @@ _task: Optional[asyncio.Task] = None
 def _read_stats() -> dict:
     return storage.read_json(STATS_PATH, {
         "total_jobs": 0, "successful_jobs": 0, "failed_jobs": 0,
-        "total_print_min": 0, "errors": {}, "since": None})
+        "total_print_min": 0, "errors": {}, "since": None,
+        "current_streak": 0, "best_streak": 0})
 
 
 def _write_stats(data: dict):
@@ -136,6 +139,9 @@ def _record_success(print_min: int = 0):
     s["total_jobs"]      = s.get("total_jobs", 0) + 1
     s["successful_jobs"] = s.get("successful_jobs", 0) + 1
     s["total_print_min"] = s.get("total_print_min", 0) + max(0, print_min)
+    # Error-free streak (F.5 milestones)
+    s["current_streak"]  = s.get("current_streak", 0) + 1
+    s["best_streak"]     = max(s.get("best_streak", 0), s["current_streak"])
     if not s.get("since"):
         s["since"] = datetime.now().isoformat()
     _write_stats(s)
@@ -145,6 +151,7 @@ def _record_failure(error_msg: str = ""):
     s = _read_stats()
     s["total_jobs"]  = s.get("total_jobs", 0) + 1
     s["failed_jobs"] = s.get("failed_jobs", 0) + 1
+    s["current_streak"] = 0   # a failure breaks the error-free streak
     if error_msg:
         errs = s.get("errors", {})
         key  = error_msg[:70]
@@ -153,6 +160,34 @@ def _record_failure(error_msg: str = ""):
     if not s.get("since"):
         s["since"] = datetime.now().isoformat()
     _write_stats(s)
+
+
+# ── Per-file duration history (B.2 — real ETA from past runs) ─────────────────
+# farm_history.json: { "<file_id>": {"samples": [min, …], "avg_min": x, "n": k} }
+def _read_history() -> dict:
+    data = storage.read_json(HISTORY_PATH, {})
+    return data if isinstance(data, dict) else {}
+
+
+def _record_duration(file_id, minutes: float):
+    """Append a measured full-cycle duration (wall-clock running→done, in minutes)
+    for a file and keep a rolling average over the last HISTORY_KEEP samples."""
+    if file_id is None or minutes <= 0:
+        return
+    try:
+        hist = _read_history()
+        key  = str(file_id)
+        entry = hist.get(key) or {"samples": []}
+        samples = [float(x) for x in entry.get("samples", []) if x] + [round(float(minutes), 1)]
+        samples = samples[-HISTORY_KEEP:]
+        hist[key] = {
+            "samples": samples,
+            "avg_min": round(sum(samples) / len(samples), 1),
+            "n":       len(samples),
+        }
+        storage.write_json(HISTORY_PATH, hist)
+    except Exception as e:
+        logger.warning(f"history write failed: {e}")
 
 
 def _record_event(etype: str, job: str = "", detail: str = ""):
@@ -1445,6 +1480,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             _log(f"── Job: {job['fileName']} ──")
 
             _set_job(job["id"], {"status": "running"})
+            job_started_at = datetime.now()   # wall-clock for the per-file history (B.2)
 
             try:
                 # First Start runs exactly ONCE before the first job's cycle
@@ -1461,9 +1497,11 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 cycle_normal, cycle_prep = _split_prep(seq_next)
                 await _exec_sequence(cycle_normal, job, device, use_ams, poll_sec, min_min, cycle_prep, [])
                 completed += 1
+                actual_min = (datetime.now() - job_started_at).total_seconds() / 60.0
                 _set_job(job["id"], {"status": "done"})
                 _rack_update(job["slot"], "done")
-                _record_success(job.get("estimatedMinutes") or 0)
+                _record_success(round(actual_min) or job.get("estimatedMinutes") or 0)
+                _record_duration(job.get("fileId"), actual_min)
                 _record_event("print_done", job.get("fileName", ""), f"Fach {job['slot']}")
                 cur_slot = None
                 _farm["current_job_id"] = None
@@ -1972,6 +2010,13 @@ async def reset_stats():
     except Exception:
         pass
     return {"success": True}
+
+
+@router.get("/history")
+async def get_history():
+    """Per-file measured durations (avg of recent real runs) for the history-based
+    ETA. Keyed by file id: { "<id>": {"avg_min": x, "n": k, "samples": [...]} }."""
+    return _read_history()
 
 
 @router.get("/timeline")
