@@ -128,6 +128,8 @@ function FarmSettings() {
   const [pollInterval,    setPollInterval]    = useState(20)
   const [minPrintMinutes, setMinPrintMinutes] = useState(0)
   const [useAms,          setUseAms]          = useState(true)
+  const [connAlarm,       setConnAlarm]       = useState(true)
+  const [stallMin,        setStallMin]        = useState(0)
   const [homingFile,      setHomingFile]      = useState(null)
   const [homingBusy,      setHomingBusy]      = useState(false)
   const [loaded,          setLoaded]          = useState(false)
@@ -141,6 +143,8 @@ function FarmSettings() {
         setPollInterval(r.data.poll_interval ?? 20)
         setMinPrintMinutes(r.data.min_print_minutes ?? 0)
         setUseAms(r.data.use_ams ?? true)
+        setConnAlarm(r.data.conn_alarm ?? true)
+        setStallMin(r.data.progress_stall_min ?? 0)
       }).catch(() => {}).finally(() => setLoaded(true))
     autofarmService.getHomingFileInfo()
       .then(r => setHomingFile(r.data)).catch(() => {})
@@ -149,7 +153,10 @@ function FarmSettings() {
   const save = async () => {
     setSaving(true); setStatus(null)
     try {
-      await autofarmService.saveSettings({ poll_interval: pollInterval, min_print_minutes: minPrintMinutes, use_ams: useAms })
+      await autofarmService.saveSettings({
+        poll_interval: pollInterval, min_print_minutes: minPrintMinutes, use_ams: useAms,
+        conn_alarm: connAlarm, progress_stall_min: Math.max(0, Math.round(Number(stallMin) || 0)),
+      })
       setStatus({ ok: true, msg: tr('Einstellungen gespeichert.') })
     } catch (e) {
       setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
@@ -199,6 +206,28 @@ function FarmSettings() {
           className={`relative w-9 h-5 rounded-full transition-colors ${useAms ? 'bg-blue-600' : 'bg-surface-700'}`}>
           <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${useAms ? 'translate-x-4' : 'translate-x-0'}`} />
         </button>
+      </div>
+
+      {/* Watchdog (Roadmap 1.1 / 1.7) */}
+      <div className="border-t border-surface-800/40 pt-3 space-y-2.5">
+        <p className="text-[10px] text-surface-400 font-medium">{tr('Watchdog')}</p>
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-surface-400 select-none flex-1">{tr('Alarm bei Verbindungsverlust')}
+            <span className="block text-[9px] text-surface-700">{tr('Push, wenn der Reconnect zum Drucker mehrfach scheitert')}</span></label>
+          <button onClick={() => setConnAlarm(v => !v)}
+            className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${connAlarm ? 'bg-blue-600' : 'bg-surface-700'}`}>
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${connAlarm ? 'translate-x-4' : 'translate-x-0'}`} />
+          </button>
+        </div>
+        <div>
+          <label className="text-[10px] text-surface-500 block mb-1">{tr('Stillstand-Watchdog (Minuten ohne Fortschritt)')}</label>
+          <div className="flex items-center gap-2">
+            <input type="number" min="0" max="999" value={stallMin}
+              onChange={e => setStallMin(Math.max(0, Number(e.target.value)))}
+              className="w-20 font-mono text-xs" />
+            <span className="text-[10px] text-surface-700">{Number(stallMin) === 0 ? tr('(deaktiviert)') : tr('min → pausiert bei möglicher Verstopfung')}</span>
+          </div>
+        </div>
       </div>
       <div className="border-t border-surface-800/40 pt-3 space-y-2">
         <p className="text-[10px] text-surface-400 font-medium">{tr('Homing-Datei (G28 + Z200)')}</p>

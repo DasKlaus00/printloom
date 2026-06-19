@@ -16,13 +16,13 @@ der stundenlang weiterläuft, kostet Material, Zeit und im schlimmsten Fall die 
 
 | Nr. | Feature | ★ | Aufwand | Beschreibung |
 |-----|---------|---|---------|--------------|
-| 1.1 | **Watchdog & Auto-Reconnect** | ★★★ | M | Erkennt MQTT-Abriss / Klipper-Disconnect / eingefrorenen Fortschritt → automatischer Reconnect, sonst Pause + Alarm. |
+| 1.1 | **Watchdog & Auto-Reconnect** ✅ | ★★★ | M | Reconnect je Poll; bei wiederholtem Verbindungsverlust Push-Alarm, der Druck läuft am Gerät weiter. *(v1.0.30)* |
 | 1.2 | **Filament-Runout-Erkennung** | ★★★ | M | Leerstand/Runout aus MQTT/AMS auswerten → pausieren statt in der Luft weiterdrucken. |
 | 1.3 | **Konfigurierbare Fehlerstrategie** | ★★★ | M | Pro Fehlerfall festlegen: X× Retry / Job überspringen / Farm pausieren / Drucker parken. |
 | 1.4 | **Erste-Schicht-Kamera-Check** | ★★ | M | Snapshot nach Layer 1 → bei erkanntem Fehlstart (keine Haftung/Spaghetti) pausieren + Push mit Bild. |
 | 1.5 | **Fehldruck-Erkennung im Lauf** | ★★ | L | Periodische Snapshot-Prüfung auf Spaghetti/Ablösung. Erst regelbasiert, optional lokales Modell — rein lokal. |
 | 1.6 | **Temperatur-Überwachung & Alarm** | ★★ | S | Hotend/Bett/Kammer gegen Grenzwerte prüfen → Übertemperatur sofort pausieren + alarmieren. |
-| 1.7 | **Extrusions-/Verstopfungs-Erkennung** | ★★ | M | Extrusionsfehler/Klogs aus MQTT erkennen → pausieren statt Luftdruck. |
+| 1.7 | **Extrusions-/Verstopfungs-Erkennung** ✅ | ★★ | M | Fortschritts-Watchdog: kein mc_percent-Fortschritt während RUNNING (konfigurierbares Zeitfenster) → Pause + Push-Alarm. *(v1.0.30)* |
 | 1.8 | **Stromausfall-Wiederaufnahme** | ★ | M | Power-Loss-Recovery-Status sichtbar machen und kontrolliert fortsetzen statt blind neu zu starten. |
 
 ## Säule 2 — Intelligente Planung
@@ -95,27 +95,16 @@ Daten rein und raus — Anbindung an Werkzeuge, die schon im Einsatz sind.
 | 6.7 | **Prometheus-/Metriken-Endpoint** | ★ | S | Farm-Kennzahlen als Prometheus-Format → Grafana-Dashboards ohne Cloud. |
 | 6.8 | **Automatische Backups** | ★★ | S | Zeitgesteuertes Backup der kompletten Konfiguration (lokal), mit Aufbewahrung der letzten N. |
 
-## Säule 7 — Flotte (mehrere Drucker)
-
-Das Datenmodell trägt mehrere Geräte bereits — fehlt die Orchestrierung.
-
-| Nr. | Feature | ★ | Aufwand | Beschreibung |
-|-----|---------|---|---------|--------------|
-| 7.1 | **Mehrere Drucker betreiben** | ★★★ | L | Mehr als eine X1C konfigurieren und parallel fahren. |
-| 7.2 | **Job-Verteilung / Load-Balancing** | ★★★ | L | Jobs automatisch auf freie/passende Drucker (Filament, Auslastung, Regalplatz). |
-| 7.3 | **Flotten-Dashboard** | ★★ | M | Alle Drucker/Regale/Queues/Kameras auf einen Blick. |
-| 7.4 | **Pro-Drucker-Kosten & -Auslastung** | ★ | S | Verbrauch, Kosten und Erfolgsrate je Maschine getrennt auswerten. |
-
-## Säule 8 — Bedienung & Auswertung
+## Säule 7 — Bedienung & Auswertung
 
 Qualitätsmerkmale, die den Alltag spürbar erleichtern.
 
 | Nr. | Feature | ★ | Aufwand | Beschreibung |
 |-----|---------|---|---------|--------------|
-| 8.1 | **3MF-Thumbnails in Queue & Job** | ★★ | M | Eingebettetes Vorschaubild in Warteschlange, Planer und Fach-Belegung. |
-| 8.2 | **Ausschuss-Quote pro Datei** | ★★ | S | Welche Dateien scheitern überdurchschnittlich oft → gezielt nachbessern. |
-| 8.3 | **Auslastungs-Heatmap** | ★ | S | Drucklast nach Wochentag/Stunde → Planung von Wartung & Betrieb. |
-| 8.4 | **Job-Notizen & Kommentare** | ★ | S | Freitext je Job/Auftrag (Kundenhinweis, Sonderbehandlung). |
+| 7.1 | **3MF-Thumbnails in Queue & Job** | ★★ | M | Eingebettetes Vorschaubild in Warteschlange, Planer und Fach-Belegung. |
+| 7.2 | **Ausschuss-Quote pro Datei** | ★★ | S | Welche Dateien scheitern überdurchschnittlich oft → gezielt nachbessern. |
+| 7.3 | **Auslastungs-Heatmap** | ★ | S | Drucklast nach Wochentag/Stunde → Planung von Wartung & Betrieb. |
+| 7.4 | **Job-Notizen & Kommentare** | ★ | S | Freitext je Job/Auftrag (Kundenhinweis, Sonderbehandlung). |
 
 ---
 

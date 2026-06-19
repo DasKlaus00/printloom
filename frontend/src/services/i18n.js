@@ -1070,6 +1070,13 @@ const EN_STRINGS = {
   'Strom + Maschine': 'Power + machine',
   'Gesamtkosten': 'Total cost',
   'Kosten: Strom + Maschine + Filament': 'Cost: power + machine + filament',
+
+  // ── Watchdog (1.1 / 1.7) ──
+  'Watchdog': 'Watchdog',
+  'Alarm bei Verbindungsverlust': 'Alert on connection loss',
+  'Push, wenn der Reconnect zum Drucker mehrfach scheitert': 'Push when reconnecting to the printer fails repeatedly',
+  'Stillstand-Watchdog (Minuten ohne Fortschritt)': 'Stall watchdog (minutes without progress)',
+  'min → pausiert bei möglicher Verstopfung': 'min → pauses on possible clog',
 }
 
 function deepMerge(base, over) {

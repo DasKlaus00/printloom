@@ -52,7 +52,10 @@ _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": Tru
                      "power_price_eur_kwh":   0.30,
                      "machine_rate_eur_h":    0.0,
                      "filament_price_eur_kg": 20.0,
-                     "idle_off_min":          0}    # 0 = Auto-Abschaltung aus
+                     "idle_off_min":          0,    # 0 = Auto-Abschaltung aus
+                     # Watchdog (Roadmap 1.1/1.7)
+                     "conn_alarm":            True,  # Push bei wiederholtem Verbindungsverlust (1.1)
+                     "progress_stall_min":    0}     # 0 = aus; sonst Pause bei N min ohne Fortschritt (1.7)
 
 # ── Homing .3mf generator ────────────────────────────────────
 _HOMING_GCODE = """; Printloom Homing Sequence
@@ -901,10 +904,22 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
     reconn_fails = 0
     retries = 0
     idle_grace = 0  # consecutive IDLE polls before giving up (grace for slow print start)
+    # Watchdog (1.1 Verbindung / 1.7 Fortschritt)
+    conn_alarm   = bool(_farm.get("conn_alarm", True))
+    stall_min    = int(_farm.get("progress_stall_min", 0) or 0)
+    conn_alarmed = False
+    last_pct_seen   = -1
+    last_rem_seen   = 10**9
+    last_progress_t = loop.time()
+    stall_notified  = False
 
     while not _farm["stopping"]:
-        while _farm["paused"] and not _farm["stopping"]:
-            await asyncio.sleep(0.5)
+        if _farm["paused"]:
+            while _farm["paused"] and not _farm["stopping"]:
+                await asyncio.sleep(0.5)
+            # Nach manuellem Fortsetzen den Fortschritts-Watchdog neu scharf stellen.
+            last_progress_t = loop.time()
+            stall_notified = False
         if _farm["stopping"]:
             break
 
@@ -935,6 +950,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
             _set_job(job["id"], {"progress": pct, "remaining": rem})
             _log(f"Drucker: {state}  {pct}%{f'  ~{rem} min' if rem > 0 else ''}")
             reconn_fails = 0
+            conn_alarmed = False
             await _handle_hms(p.get("hms", []) or [])
 
             if state == "RUNNING":
@@ -943,6 +959,27 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                 idle_grace = 0
                 if pct > max_pct:
                     max_pct = pct
+
+                # ── Fortschritts-Watchdog (1.7) — kein mc_percent-Fortschritt während
+                # RUNNING deutet auf Verstopfung/Extrusions-/Vorschubfehler hin. Greift
+                # erst wenn der Druck wirklich läuft (pct > 0), nicht beim Aufheizen. ──
+                progressed = pct > last_pct_seen or (rem > 0 and rem < last_rem_seen)
+                if progressed:
+                    last_pct_seen = max(last_pct_seen, pct)
+                    last_rem_seen = rem if rem > 0 else last_rem_seen
+                    last_progress_t = loop.time()
+                    stall_notified = False
+                elif stall_min > 0 and pct > 0 and not stall_notified \
+                        and (loop.time() - last_progress_t) >= stall_min * 60:
+                    stall_notified = True
+                    _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — "
+                         "möglicher Verstopfungs-/Extrusionsfehler — pausiert")
+                    _record_event("error", job.get("fileName", ""), f"Stillstand {stall_min}min @ {pct}%")
+                    _farm["paused"] = True
+                    _farm["error"] = (f"Kein Druckfortschritt seit {stall_min} min ({pct}%) — "
+                                      "Düse/Filament prüfen (mögliche Verstopfung), dann fortsetzen")
+                    await _notify(f"🛑 *Printloom — Stillstand erkannt*\n`{job.get('fileName','')}`\n"
+                                  f"Kein Fortschritt seit {stall_min} min bei {pct}% — mögliche Verstopfung")
                 if first_run and rem > 0:
                     total_layers = p.get("total_layer_num", 0)
                     layer_h      = job.get("layerHeightMm", 0.0)
@@ -1043,6 +1080,12 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
             reconn_fails += 1
             if reconn_fails >= 5:
                 raise RuntimeError(f"Verbindung dauerhaft unterbrochen ({reconn_fails}×)")
+            # Verbindungs-Watchdog (1.1): einmaliger Alarm, sobald der Reconnect
+            # mehrfach scheitert — der Druck läuft am Gerät weiter, nur die Brücke fehlt.
+            if conn_alarm and reconn_fails >= 3 and not conn_alarmed:
+                conn_alarmed = True
+                await _notify("⚠ *Printloom — Verbindung zum Drucker verloren*\n"
+                              f"`{job.get('fileName','')}`\nReconnect läuft — Drucker/Netzwerk prüfen")
             _log(f"⚠ Verbindung unterbrochen ({reconn_fails}/5) — retry…")
 
     raise RuntimeError("Gestoppt")
@@ -1697,6 +1740,8 @@ class SettingsPayload(BaseModel):
     machine_rate_eur_h:    float = 0.0
     filament_price_eur_kg: float = 20.0
     idle_off_min:          int   = 0
+    conn_alarm:            bool  = True
+    progress_stall_min:    int   = 0
 
 class QueuePayload(BaseModel):
     jobs: List[dict] = []
@@ -1737,6 +1782,8 @@ async def start_farm(req: StartRequest):
         "jobs":            [j.model_dump() for j in req.jobs],
         "log":             [],
         "hms_ignore":      _hms_ignore,
+        "conn_alarm":         bool(_settings.get("conn_alarm", True)),
+        "progress_stall_min": int(_settings.get("progress_stall_min", 0) or 0),
     })
 
     _record_event("farm_start", "", f"{len([j for j in req.jobs if j.status == 'pending'])} Jobs")
