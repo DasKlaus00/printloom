@@ -79,6 +79,8 @@ export const printerService = {
 export const deviceSettingsService = {
   getSettings:    (deviceId)        => api.get(`/devices/${deviceId}/settings`),
   updateSettings: (deviceId, data)  => api.put(`/devices/${deviceId}/settings`, data),
+  getPower:       (deviceId)        => api.get(`/devices/${deviceId}/power`),
+  switchPower:    (deviceId, on)    => api.post(`/devices/${deviceId}/power/switch`, { on }),
 }
 
 export const rackManagerService = {

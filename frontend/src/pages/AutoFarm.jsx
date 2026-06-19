@@ -523,6 +523,7 @@ function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, o
    rechnet sofort neu, ohne irgendetwas zu starten. */
 function QueuePlanner({ jobs, tr }) {
   const [hist, setHist] = useState({})
+  const [cost, setCost] = useState(null)   // { power_price_eur_kwh, machine_rate_eur_h, filament_price_eur_kg }
   const [tick, setTick] = useState(0)
 
   const active = jobs.filter(j => ['pending', 'running', 'printing', 'sending'].includes(j.status))
@@ -531,6 +532,7 @@ function QueuePlanner({ jobs, tr }) {
   useEffect(() => {
     let cancelled = false
     autofarmService.getHistory().then(r => { if (!cancelled) setHist(r.data || {}) }).catch(() => {})
+    autofarmService.getSettings().then(r => { if (!cancelled) setCost(r.data) }).catch(() => {})
     Promise.all(active.map(j => ensureMeta(j.fileId))).then(() => { if (!cancelled) setTick(t => t + 1) })
     return () => { cancelled = true }
   }, [sig]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -539,13 +541,28 @@ function QueuePlanner({ jobs, tr }) {
     return <p className="text-[11px] text-surface-600 py-3 text-center">{tr('Keine wartenden Jobs zum Planen')}</p>
   }
 
+  // Kosten je Job: Strom (Historie-kWh) + Maschinenzeit + Filament (Gramm aus Meta).
+  const pPrice = cost?.power_price_eur_kwh ?? 0
+  const mRate  = cost?.machine_rate_eur_h ?? 0
+  const fPrice = cost?.filament_price_eur_kg ?? 0
+  const jobCost = (j, sec) => {
+    const h = hist[j.fileId] ?? hist[String(j.fileId)]
+    const grams = getCachedMeta(j.fileId)?.filament_g || 0
+    const e = (h?.avg_kwh || 0) * pPrice
+    const m = (sec / 3600) * mRate
+    const f = (grams / 1000) * fPrice
+    return e + m + f
+  }
+  const costOn = pPrice > 0 || mRate > 0 || fPrice > 0
+
   const now = Date.now()
-  let acc = 0
+  let acc = 0, totalCost = 0
   const rows = active.map((j, i) => {
     if (i > 0) acc += CHANGEOVER_SEC
     const { sec, src } = jobPrintSec(j, getCachedMeta(j.fileId), hist)
     acc += sec
-    return { j, sec, src, end: new Date(now + acc * 1000) }
+    const c = jobCost(j, sec); totalCost += c
+    return { j, sec, src, cost: c, end: new Date(now + acc * 1000) }
   })
   const totalSec = acc
   const clk = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -559,7 +576,7 @@ function QueuePlanner({ jobs, tr }) {
   return (
     <div className="space-y-1.5">
       <div className="space-y-1">
-        {rows.map(({ j, sec, src, end }, i) => {
+        {rows.map(({ j, sec, src, cost: c, end }, i) => {
           const m = srcMeta[src] ?? srcMeta.none
           return (
             <div key={j.id} className="flex items-center gap-2 text-[11px]">
@@ -567,6 +584,7 @@ function QueuePlanner({ jobs, tr }) {
               <span className="text-surface-300 flex-1 min-w-0 truncate">{j.fileName?.replace(/\.[^.]+$/, '')}</span>
               <span className={`shrink-0 ${m.cls}`} title={m.title}>{m.sym}</span>
               <span className="font-mono text-surface-400 w-16 text-right shrink-0">{fmtDur(sec) ?? '—'}</span>
+              {costOn && <span className="font-mono text-amber-400/80 w-14 text-right shrink-0" title={tr('Kosten: Strom + Maschine + Filament')}>{c > 0 ? `${c.toFixed(2)} €` : '—'}</span>}
               <span className="font-mono text-surface-600 w-12 text-right shrink-0" title={tr('voraussichtlich fertig')}>{clk(end)}</span>
             </div>
           )
@@ -575,6 +593,7 @@ function QueuePlanner({ jobs, tr }) {
       <div className="flex items-center justify-between border-t border-surface-800/50 pt-1.5 text-[11px]">
         <span className="text-surface-500">{tr('{0} Jobs', rows.length)}</span>
         <span className="font-mono text-surface-300">
+          {costOn && totalCost > 0 && <span className="text-amber-400/80 mr-2">{totalCost.toFixed(2)} €</span>}
           {fmtDur(totalSec) ? tr('~{0} · fertig ~{1} Uhr', fmtDur(totalSec), clk(new Date(now + totalSec * 1000))) : tr('Gesamtzeit unbekannt')}
         </span>
       </div>

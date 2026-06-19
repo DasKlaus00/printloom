@@ -47,7 +47,12 @@ SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
 HOMING_3MF_PATH = "/app/db/printloom_homing.3mf"
 
 _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": True,
-                     "hms_ignore": ["0C00-0100-0001-0004"]}
+                     "hms_ignore": ["0C00-0100-0001-0004"],
+                     # Energie & Kosten (Roadmap 3.1/3.2/3.4) — reine Zahlen, keine Geheimnisse
+                     "power_price_eur_kwh":   0.30,
+                     "machine_rate_eur_h":    0.0,
+                     "filament_price_eur_kg": 20.0,
+                     "idle_off_min":          0}    # 0 = Auto-Abschaltung aus
 
 # ── Homing .3mf generator ────────────────────────────────────
 _HOMING_GCODE = """; Printloom Homing Sequence
@@ -123,7 +128,7 @@ _task: Optional[asyncio.Task] = None
 def _read_stats() -> dict:
     return storage.read_json(STATS_PATH, {
         "total_jobs": 0, "successful_jobs": 0, "failed_jobs": 0,
-        "total_print_min": 0, "errors": {}, "since": None})
+        "total_print_min": 0, "total_kwh": 0.0, "errors": {}, "since": None})
 
 
 def _write_stats(data: dict):
@@ -133,11 +138,12 @@ def _write_stats(data: dict):
         logger.warning(f"stats write failed: {e}")
 
 
-def _record_success(print_min: int = 0):
+def _record_success(print_min: int = 0, kwh: float = 0.0):
     s = _read_stats()
     s["total_jobs"]      = s.get("total_jobs", 0) + 1
     s["successful_jobs"] = s.get("successful_jobs", 0) + 1
     s["total_print_min"] = s.get("total_print_min", 0) + max(0, print_min)
+    s["total_kwh"]       = round(s.get("total_kwh", 0.0) + max(0.0, kwh), 4)
     if not s.get("since"):
         s["since"] = datetime.now().isoformat()
     _write_stats(s)
@@ -164,25 +170,74 @@ def _read_history() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _record_duration(file_id, minutes: float):
+def _record_duration(file_id, minutes: float, kwh: float = 0.0):
     """Append a measured full-cycle duration (wall-clock running→done, in minutes)
-    for a file and keep a rolling average over the last HISTORY_KEEP samples."""
+    and energy (kWh) for a file; keep rolling averages over the last HISTORY_KEEP runs."""
     if file_id is None or minutes <= 0:
         return
     try:
         hist = _read_history()
         key  = str(file_id)
-        entry = hist.get(key) or {"samples": []}
+        entry = hist.get(key) or {}
         samples = [float(x) for x in entry.get("samples", []) if x] + [round(float(minutes), 1)]
         samples = samples[-HISTORY_KEEP:]
-        hist[key] = {
+        out = {
             "samples": samples,
             "avg_min": round(sum(samples) / len(samples), 1),
             "n":       len(samples),
         }
+        if kwh and kwh > 0:
+            ksamples = [float(x) for x in entry.get("kwh_samples", []) if x] + [round(float(kwh), 4)]
+            ksamples = ksamples[-HISTORY_KEEP:]
+            out["kwh_samples"] = ksamples
+            out["avg_kwh"]     = round(sum(ksamples) / len(ksamples), 4)
+        elif entry.get("avg_kwh"):
+            out["kwh_samples"] = entry.get("kwh_samples", [])
+            out["avg_kwh"]     = entry["avg_kwh"]
+        hist[key] = out
         storage.write_json(HISTORY_PATH, hist)
     except Exception as e:
         logger.warning(f"history write failed: {e}")
+
+
+# ── Smart-Plug-Anbindung (Roadmap 3.1/3.2) ───────────────────────────────────
+def _device_settings(device_id: int) -> dict:
+    from app.models.models import SystemConfig
+    db = SessionLocal()
+    try:
+        row = db.query(SystemConfig).filter(SystemConfig.key == f"device_settings_{device_id}").first()
+        if row:
+            try: return json.loads(row.value)
+            except Exception: return {}
+        return {}
+    finally:
+        db.close()
+
+
+async def _read_energy_kwh(device_id: int):
+    """Kumulierter Energiezähler der Steckdose (kWh) oder None, wenn nicht konfiguriert."""
+    from app.services import power
+    s = _device_settings(device_id)
+    if not power.plug_configured(s):
+        return None
+    return (await power.read_power(s)).get("energy_kwh")
+
+
+async def _idle_shutdown_after(device_id: int, minutes: int):
+    """Wartet `minutes` und schaltet die Steckdose ab, sofern die Farm bis dahin
+    nicht wieder läuft. Abgekoppelte Task am Ende eines Farm-Laufs (3.2)."""
+    from app.services import power
+    try:
+        await asyncio.sleep(max(1, minutes) * 60)
+        if _farm["running"]:
+            return  # Farm wieder aktiv → nicht abschalten
+        s = _device_settings(device_id)
+        if power.plug_configured(s) and await power.set_plug(s, False):
+            _log(f"⏻ Auto-Abschaltung: Steckdose nach {minutes} min Leerlauf ausgeschaltet")
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.warning(f"idle shutdown failed: {e}")
 
 
 def _record_event(etype: str, job: str = "", detail: str = ""):
@@ -1476,6 +1531,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
 
             _set_job(job["id"], {"status": "running"})
             job_started_at = datetime.now()   # wall-clock for the per-file history (B.2)
+            job_start_kwh  = await _read_energy_kwh(bambu_id)   # plug energy counter (3.1)
 
             try:
                 # First Start runs exactly ONCE before the first job's cycle
@@ -1493,10 +1549,14 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 await _exec_sequence(cycle_normal, job, device, use_ams, poll_sec, min_min, cycle_prep, [])
                 completed += 1
                 actual_min = (datetime.now() - job_started_at).total_seconds() / 60.0
+                end_kwh  = await _read_energy_kwh(bambu_id)
+                used_kwh = 0.0
+                if job_start_kwh is not None and end_kwh is not None and end_kwh >= job_start_kwh:
+                    used_kwh = round(end_kwh - job_start_kwh, 4)
                 _set_job(job["id"], {"status": "done"})
                 _rack_update(job["slot"], "done")
-                _record_success(round(actual_min) or job.get("estimatedMinutes") or 0)
-                _record_duration(job.get("fileId"), actual_min)
+                _record_success(round(actual_min) or job.get("estimatedMinutes") or 0, used_kwh)
+                _record_duration(job.get("fileId"), actual_min, used_kwh)
                 _record_event("print_done", job.get("fileName", ""), f"Fach {job['slot']}")
                 cur_slot = None
                 _farm["current_job_id"] = None
@@ -1574,6 +1634,16 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
         _record_event("farm_stop", "", _farm.get("stop_reason") or "")
         _log("═══ Auto Farm beendet ═══")
 
+        # Auto-Abschaltung (3.2): nach Leerlauf die Steckdose abschalten, sofern
+        # konfiguriert und die Farm regulär (nicht manuell) durchgelaufen ist.
+        try:
+            idle_min = int(_read_config(SETTINGS_PATH, _DEFAULT_SETTINGS).get("idle_off_min", 0) or 0)
+            if idle_min > 0 and completed > 0 and _device_settings(bambu_id).get("plug_type", "none") != "none":
+                _log(f"⏻ Auto-Abschaltung in {idle_min} min geplant (sofern kein neuer Job startet)")
+                asyncio.create_task(_idle_shutdown_after(bambu_id, idle_min))
+        except Exception as e:
+            logger.warning(f"idle shutdown scheduling failed: {e}")
+
 
 # ── Pydantic schemas ─────────────────────────────────────────
 class JobIn(BaseModel):
@@ -1623,6 +1693,10 @@ class SettingsPayload(BaseModel):
     min_print_minutes: int  = 0
     use_ams:           bool = True
     hms_ignore:        List[str] = ["0C00-0100-0001-0004"]
+    power_price_eur_kwh:   float = 0.30
+    machine_rate_eur_h:    float = 0.0
+    filament_price_eur_kg: float = 20.0
+    idle_off_min:          int   = 0
 
 class QueuePayload(BaseModel):
     jobs: List[dict] = []

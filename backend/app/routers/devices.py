@@ -82,15 +82,26 @@ async def delete_device(device_id: int, db: Session = Depends(get_db)):
     return {"message": "Device deleted successfully"}
 
 
+# Felder, die als Geheimnis behandelt werden: nie an den Browser, beim Speichern
+# bedeutet "" → behalten, null → löschen, "wert" → setzen. Statt des Werts geht
+# nur ein <feld>_set Flag raus.
+_SECRET_FIELDS = ("ha_token", "plug_password")
+
+
+def _mask_secrets(settings: dict) -> dict:
+    out = dict(settings)
+    for f in _SECRET_FIELDS:
+        if out.get(f):
+            out[f] = ""
+            out[f"{f}_set"] = True
+    return out
+
+
 @router.get("/{device_id}/settings")
 async def get_device_settings(device_id: int, db: Session = Depends(get_db)):
     if not db.query(Device).filter(Device.id == device_id).first():
         raise HTTPException(404, "Device not found")
-    settings = _get_device_settings(db, device_id)
-    # HA-Token niemals an den Browser geben — nur signalisieren, ob eins gesetzt ist.
-    if settings.get("ha_token"):
-        settings = {**settings, "ha_token": "", "ha_token_set": True}
-    return settings
+    return _mask_secrets(_get_device_settings(db, device_id))
 
 @router.put("/{device_id}/settings")
 async def update_device_settings(device_id: int, body: dict, db: Session = Depends(get_db)):
@@ -98,23 +109,47 @@ async def update_device_settings(device_id: int, body: dict, db: Session = Depen
         raise HTTPException(404, "Device not found")
     settings = _get_device_settings(db, device_id)
     body = dict(body)
-    body.pop("ha_token_set", None)  # rein informativ, nie speichern
-    # Token-Sonderfälle (Frontend bekommt das Token nie zu sehen):
-    #   ha_token == null  → explizit LÖSCHEN
-    #   ha_token == ""    → BEHALTEN (normales Speichern soll es nicht wegwerfen)
-    #   ha_token == "..." → setzen
-    if "ha_token" in body:
-        if body["ha_token"] is None:
-            settings.pop("ha_token", None)
-            body.pop("ha_token")
-        elif not body["ha_token"] and settings.get("ha_token"):
-            body.pop("ha_token")
+    for f in _SECRET_FIELDS:
+        body.pop(f"{f}_set", None)  # rein informativ, nie speichern
+        # Geheimnis-Sonderfälle (Frontend bekommt den Wert nie zu sehen):
+        #   null  → explizit LÖSCHEN · ""  → BEHALTEN · "wert" → setzen
+        if f in body:
+            if body[f] is None:
+                settings.pop(f, None)
+                body.pop(f)
+            elif not body[f] and settings.get(f):
+                body.pop(f)
     settings.update(body)
     _set_device_settings(db, device_id, settings)
-    # Antwort ebenfalls maskieren.
-    if settings.get("ha_token"):
-        settings = {**settings, "ha_token": "", "ha_token_set": True}
-    return settings
+    return _mask_secrets(settings)
+
+
+# ── Smart-Plug: Live-Leistung lesen & schalten (Roadmap 3.1/3.2) ─────────────
+@router.get("/{device_id}/power")
+async def device_power(device_id: int, db: Session = Depends(get_db)):
+    """Momentanleistung (W), Energiezähler (kWh) und Ein/Aus-Status der Steckdose."""
+    if not db.query(Device).filter(Device.id == device_id).first():
+        raise HTTPException(404, "Device not found")
+    from app.services import power
+    settings = _get_device_settings(db, device_id)
+    if not power.plug_configured(settings):
+        return {"configured": False, "watts": None, "energy_kwh": None, "on": None}
+    data = await power.read_power(settings)
+    return {"configured": True, **data}
+
+
+@router.post("/{device_id}/power/switch")
+async def device_power_switch(device_id: int, body: dict, db: Session = Depends(get_db)):
+    if not db.query(Device).filter(Device.id == device_id).first():
+        raise HTTPException(404, "Device not found")
+    from app.services import power
+    settings = _get_device_settings(db, device_id)
+    if not power.plug_configured(settings):
+        raise HTTPException(400, "Keine Steckdose konfiguriert")
+    ok = await power.set_plug(settings, bool(body.get("on")))
+    if not ok:
+        raise HTTPException(502, "Steckdose nicht erreichbar")
+    return {"success": True, "on": bool(body.get("on"))}
 
 @router.post("/{device_id}/test")
 async def test_device(device_id: int, db: Session = Depends(get_db)):

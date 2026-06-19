@@ -21,6 +21,9 @@ der stundenlang weiterläuft, kostet Material, Zeit und im schlimmsten Fall die 
 | 1.3 | **Konfigurierbare Fehlerstrategie** | ★★★ | M | Pro Fehlerfall festlegen: X× Retry / Job überspringen / Farm pausieren / Drucker parken. |
 | 1.4 | **Erste-Schicht-Kamera-Check** | ★★ | M | Snapshot nach Layer 1 → bei erkanntem Fehlstart (keine Haftung/Spaghetti) pausieren + Push mit Bild. |
 | 1.5 | **Fehldruck-Erkennung im Lauf** | ★★ | L | Periodische Snapshot-Prüfung auf Spaghetti/Ablösung. Erst regelbasiert, optional lokales Modell — rein lokal. |
+| 1.6 | **Temperatur-Überwachung & Alarm** | ★★ | S | Hotend/Bett/Kammer gegen Grenzwerte prüfen → Übertemperatur sofort pausieren + alarmieren. |
+| 1.7 | **Extrusions-/Verstopfungs-Erkennung** | ★★ | M | Extrusionsfehler/Klogs aus MQTT erkennen → pausieren statt Luftdruck. |
+| 1.8 | **Stromausfall-Wiederaufnahme** | ★ | M | Power-Loss-Recovery-Status sichtbar machen und kontrolliert fortsetzen statt blind neu zu starten. |
 
 ## Säule 2 — Intelligente Planung
 
@@ -34,6 +37,9 @@ ohne Cloud.
 | 2.3 | **Warteschlangen-Planer** ✅ | ★★ | M | Zeitleiste der Queue mit Fertig-Uhrzeiten; reagiert sofort auf Umsortieren. *(v1.0.27)* |
 | 2.4 | **Auto-Nesting auf Platte** | ★★ | L | Mehrere kleine Teile automatisch zu einer Platte bündeln → eine Druck-/Auswurf-Runde statt vieler. |
 | 2.5 | **Zeitfenster / Betriebszeiten** | ★★ | S | Nur in definierten Fenstern drucken (Ruhezeiten, Stromtarif); Farm startet bei Jobs selbst. |
+| 2.6 | **Job-Prioritäten & Liefertermine** | ★★ | M | Hoch/Normal/Niedrig + Fälligkeitsdatum → automatische Reihenfolge nach Deadline. |
+| 2.7 | **Job-Abhängigkeiten** | ★ | M | „Erst nach Job X" erzwingen (z. B. Baugruppen-Teile in fester Reihenfolge). |
+| 2.8 | **Wiederkehrende Jobs** | ★ | S | Feste Queues per Zeitplan automatisch einreihen (täglich/wöchentlich). |
 
 ## Säule 3 — Energie & Betriebskosten
 
@@ -41,11 +47,13 @@ Dauerbetrieb kostet Strom. Sichtbar machen, automatisch abschalten, planbar mach
 
 | Nr. | Feature | ★ | Aufwand | Beschreibung |
 |-----|---------|---|---------|--------------|
-| 3.1 | **Smart-Plug-Verbrauch** | ★★★ | M | Tasmota/Shelly/HA-Steckdose auslesen → echter Stromverbrauch je Job statt Schätzung. |
-| 3.2 | **Auto-Abschaltung im Leerlauf** | ★★★ | M | Drucker/Kammerlicht/Lüftung nach X Minuten ohne Job stromlos schalten (über 3.1). |
+| 3.1 | **Smart-Plug-Verbrauch** ✅ | ★★★ | M | Tasmota/Shelly/HA-Steckdose auslesen → echter Stromverbrauch je Job statt Schätzung. *(v1.0.29)* |
+| 3.2 | **Auto-Abschaltung im Leerlauf** ✅ | ★★★ | M | Drucker/Kammerlicht/Lüftung nach X Minuten ohne Job stromlos schalten (über 3.1). *(v1.0.29)* |
 | 3.3 | **Off-Peak-Planung** | ★★ | S | Druckstart an günstige Stromtarif-Fenster koppeln. |
-| 3.4 | **Kosten-Tracking & Kalkulation** | ★★ | S | Filament + Strom + Maschinenzeit → Kosten je Druck/Auftrag, exportierbar. |
+| 3.4 | **Kosten-Tracking & Kalkulation** ✅ | ★★ | S | Filament + Strom + Maschinenzeit → Kosten je Druck/Auftrag, exportierbar. *(v1.0.29)* |
 | 3.5 | **Intelligenter Vorlauf** | ★ | S | Bett/Düse erst rechtzeitig vor Job-Start vorheizen statt dauerhaft warm halten. |
+| 3.6 | **Trockner-Steckdosen-Steuerung** | ★ | S | Filament-Trockner über denselben Plug-Adapter zeit-/feuchtigkeitsgesteuert schalten. |
+| 3.7 | **Lastspitzen-Vermeidung** | ★ | M | Mehrere Aufheizvorgänge zeitlich versetzen, um die Anschlussleistung nicht zu überlasten. |
 
 ## Säule 4 — Material & Kalibrierung
 
@@ -58,6 +66,8 @@ Weniger Fehldrucke durch gepflegtes Material-Know-how und Bestandsführung.
 | 4.3 | **Geführter Kalibrier-Assistent** | ★★ | L | Flow, Pressure Advance, Temp-Tower Schritt für Schritt; Ergebnisse speichern. |
 | 4.4 | **Kalibrierwerte je Spule/Marke** | ★★ | M | Werte pro Filament hinterlegen und beim Druck automatisch anwenden. |
 | 4.5 | **Trocknungs-Tracking** | ★ | S | Pro Spule „zuletzt getrocknet"-Datum + Warnung bei feuchtem Material. |
+| 4.6 | **Spulen-Restgewicht-Kalibrierung** | ★★ | S | Leergewicht je Spulentyp hinterlegen → echtes Restgewicht statt nur Prozent. |
+| 4.7 | **Filament-Lagerzeit-Warnung** | ★ | S | Anbruch-/Ablaufdatum je Spule; Warnung bei zu langer Lagerung. |
 
 ## Säule 5 — Steuerung & Hardware
 
@@ -82,6 +92,30 @@ Daten rein und raus — Anbindung an Werkzeuge, die schon im Einsatz sind.
 | 6.4 | **Status-Report (Push/E-Mail)** | ★★ | S | Periodische Zusammenfassung: Jobs, Erfolgsrate, Verbrauch, Kosten, anstehende Wartung. |
 | 6.5 | **Sequenz-/Profil-Sharing-Pakete** | ★ | S | Sequenzen, Filament-Presets & Regal-Layouts als importierbare Datei exportieren (wie die Sprachpakete). |
 | 6.6 | **Wartungsintervall-Tracking** | ★ | S | Erinnerung nach X Druckstunden/Jobs (Düse, Riemen, Reinigung). |
+| 6.7 | **Prometheus-/Metriken-Endpoint** | ★ | S | Farm-Kennzahlen als Prometheus-Format → Grafana-Dashboards ohne Cloud. |
+| 6.8 | **Automatische Backups** | ★★ | S | Zeitgesteuertes Backup der kompletten Konfiguration (lokal), mit Aufbewahrung der letzten N. |
+
+## Säule 7 — Flotte (mehrere Drucker)
+
+Das Datenmodell trägt mehrere Geräte bereits — fehlt die Orchestrierung.
+
+| Nr. | Feature | ★ | Aufwand | Beschreibung |
+|-----|---------|---|---------|--------------|
+| 7.1 | **Mehrere Drucker betreiben** | ★★★ | L | Mehr als eine X1C konfigurieren und parallel fahren. |
+| 7.2 | **Job-Verteilung / Load-Balancing** | ★★★ | L | Jobs automatisch auf freie/passende Drucker (Filament, Auslastung, Regalplatz). |
+| 7.3 | **Flotten-Dashboard** | ★★ | M | Alle Drucker/Regale/Queues/Kameras auf einen Blick. |
+| 7.4 | **Pro-Drucker-Kosten & -Auslastung** | ★ | S | Verbrauch, Kosten und Erfolgsrate je Maschine getrennt auswerten. |
+
+## Säule 8 — Bedienung & Auswertung
+
+Qualitätsmerkmale, die den Alltag spürbar erleichtern.
+
+| Nr. | Feature | ★ | Aufwand | Beschreibung |
+|-----|---------|---|---------|--------------|
+| 8.1 | **3MF-Thumbnails in Queue & Job** | ★★ | M | Eingebettetes Vorschaubild in Warteschlange, Planer und Fach-Belegung. |
+| 8.2 | **Ausschuss-Quote pro Datei** | ★★ | S | Welche Dateien scheitern überdurchschnittlich oft → gezielt nachbessern. |
+| 8.3 | **Auslastungs-Heatmap** | ★ | S | Drucklast nach Wochentag/Stunde → Planung von Wartung & Betrieb. |
+| 8.4 | **Job-Notizen & Kommentare** | ★ | S | Freitext je Job/Auftrag (Kundenhinweis, Sonderbehandlung). |
 
 ---
 

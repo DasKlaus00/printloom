@@ -1037,6 +1037,39 @@ const EN_STRINGS = {
   'Typ': 'Type',
   'Aufsteigend': 'Ascending',
   'Absteigend': 'Descending',
+
+  // ── Energie & Kosten / Smart-Plug (3.1/3.2/3.4) ──
+  'Energie & Kosten': 'Energy & costs',
+  'Smart-Steckdose für Stromverbrauch, Auto-Abschaltung und Kostenrechnung':
+    'Smart plug for power consumption, auto-shutdown and cost calculation',
+  'Steckdosen-Typ': 'Plug type',
+  'Keine': 'None',
+  'Home Assistant': 'Home Assistant',
+  'Nutzt URL + Token aus der Kamera-Konfiguration. Entitäten angeben:':
+    'Uses the URL + token from the camera config. Enter the entities:',
+  'Schalter-Entität (switch.…)': 'Switch entity (switch.…)',
+  'Leistungs-Sensor (W, sensor.…)': 'Power sensor (W, sensor.…)',
+  'Energie-Zähler (kWh, sensor.…)': 'Energy counter (kWh, sensor.…)',
+  'Geräte-URL': 'Device URL',
+  'Passwort (optional)': 'Password (optional)',
+  '(gesetzt)': '(set)',
+  'Live prüfen': 'Check live',
+  'AN': 'ON',
+  'AUS': 'OFF',
+  'Ein': 'On',
+  'Aus': 'Off',
+  'Auto-Abschaltung nach Leerlauf (min)': 'Auto-shutdown after idle (min)',
+  '(aus)': '(off)',
+  'Strompreis (€/kWh)': 'Power price (€/kWh)',
+  'Maschinenstundensatz (€/h)': 'Machine rate (€/h)',
+  'Filamentpreis (€/kg)': 'Filament price (€/kg)',
+  'Gespeichert.': 'Saved.',
+  'Kein Bambu-Gerät konfiguriert': 'No Bambu device configured',
+  'kWh gesamt': 'kWh total',
+  'Stromkosten': 'Power cost',
+  'Strom + Maschine': 'Power + machine',
+  'Gesamtkosten': 'Total cost',
+  'Kosten: Strom + Maschine + Filament': 'Cost: power + machine + filament',
 }
 
 function deepMerge(base, over) {

@@ -107,6 +107,7 @@ export default function Dashboard() {
   const [lastRefresh, setLastRefresh] = useState(null)
   const [stats,       setStats]       = useState(null)
   const [timeline,    setTimeline]    = useState(null)
+  const [costCfg,     setCostCfg]     = useState(null)   // Strompreis etc. für Kostenanzeige
   const eta = useQueueEta()   // echte Rest-Druckzeit der Warteschlange
 
   const refresh = useCallback(async () => {
@@ -120,6 +121,7 @@ export default function Dashboard() {
       setRackData(rd.data)
       autofarmService.getStats().then(r => setStats(r.data)).catch(() => {})
       autofarmService.getTimeline(24).then(r => setTimeline(r.data)).catch(() => {})
+      autofarmService.getSettings().then(r => setCostCfg(r.data)).catch(() => {})
       const b = dd.data.find(x => x.device_type === 'bambu_lab')
       if (b) setBambuId(b.id)
 
@@ -452,6 +454,33 @@ export default function Dashboard() {
                 <p className="text-[9px] text-surface-600 mt-0.5">{tr('Fehlschläge')}</p>
               </div>
             </div>
+            {(stats.total_kwh > 0 || (costCfg?.machine_rate_eur_h > 0 && stats.total_print_min > 0)) && (() => {
+              const kwh   = stats.total_kwh || 0
+              const price = costCfg?.power_price_eur_kwh ?? 0.30
+              const rate  = costCfg?.machine_rate_eur_h ?? 0
+              const eCost = kwh * price
+              const mCost = (stats.total_print_min / 60) * rate
+              const total = eCost + mCost
+              return (
+                <div className="border-t border-surface-800/40 pt-2.5 mb-2.5">
+                  <p className="text-[9px] text-surface-600 mb-1.5">{tr('Energie & Kosten')}</p>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <p className="text-base font-bold font-mono text-amber-400">{kwh.toFixed(1)}</p>
+                      <p className="text-[9px] text-surface-600">{tr('kWh gesamt')}</p>
+                    </div>
+                    <div>
+                      <p className="text-base font-bold font-mono text-amber-400">{eCost.toFixed(2)} €</p>
+                      <p className="text-[9px] text-surface-600">{tr('Stromkosten')}</p>
+                    </div>
+                    <div>
+                      <p className="text-base font-bold font-mono text-surface-200">{total.toFixed(2)} €</p>
+                      <p className="text-[9px] text-surface-600">{rate > 0 ? tr('Strom + Maschine') : tr('Gesamtkosten')}</p>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
             {topErrors.length > 0 && (
               <div className="border-t border-surface-800/40 pt-2.5">
                 <p className="text-[9px] text-surface-600 mb-1.5">{tr('Häufigste Fehler')}</p>

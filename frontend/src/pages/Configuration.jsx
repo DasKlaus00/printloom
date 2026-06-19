@@ -375,6 +375,181 @@ function TestResultBar({ result }) {
   )
 }
 
+/* ─── Energie & Kosten: Smart-Plug + Stromtarif (Roadmap 3.1/3.2/3.4) ──── */
+function PowerSettings() {
+  const { tr } = useLanguage()
+  const [bambuId, setBambuId] = useState(null)
+  const [cfg, setCfg] = useState({
+    plug_type: 'none', plug_url: '', plug_password: '', plug_password_set: false,
+    plug_switch_entity: '', plug_power_entity: '', plug_energy_entity: '',
+  })
+  const [cost, setCost] = useState({ power_price_eur_kwh: 0.30, machine_rate_eur_h: 0, filament_price_eur_kg: 20, idle_off_min: 0 })
+  const [live, setLive] = useState(null)   // { watts, on, energy_kwh } | 'loading'
+  const [status, setStatus] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    deviceService.listDevices().then(async d => {
+      const b = d.data.find(x => x.device_type === 'bambu_lab')
+      if (!b) return
+      setBambuId(b.id)
+      try {
+        const s = await deviceSettingsService.getSettings(b.id)
+        setCfg(c => ({
+          ...c,
+          plug_type: s.data.plug_type ?? 'none',
+          plug_url: s.data.plug_url ?? '',
+          plug_password: '', plug_password_set: !!s.data.plug_password_set,
+          plug_switch_entity: s.data.plug_switch_entity ?? '',
+          plug_power_entity:  s.data.plug_power_entity ?? '',
+          plug_energy_entity: s.data.plug_energy_entity ?? '',
+        }))
+      } catch {}
+    }).catch(() => {})
+    autofarmService.getSettings().then(r => setCost({
+      power_price_eur_kwh:   r.data.power_price_eur_kwh ?? 0.30,
+      machine_rate_eur_h:    r.data.machine_rate_eur_h ?? 0,
+      filament_price_eur_kg: r.data.filament_price_eur_kg ?? 20,
+      idle_off_min:          r.data.idle_off_min ?? 0,
+    })).catch(() => {})
+  }, [])
+
+  const isHa = cfg.plug_type === 'ha'
+  const isHttp = cfg.plug_type === 'tasmota' || cfg.plug_type === 'shelly'
+
+  const save = async () => {
+    if (!bambuId) { setStatus({ ok: false, msg: tr('Kein Bambu-Gerät konfiguriert') }); return }
+    setSaving(true); setStatus(null)
+    try {
+      const payload = {
+        plug_type: cfg.plug_type, plug_url: cfg.plug_url.trim(),
+        plug_switch_entity: cfg.plug_switch_entity.trim(),
+        plug_power_entity:  cfg.plug_power_entity.trim(),
+        plug_energy_entity: cfg.plug_energy_entity.trim(),
+      }
+      if (cfg.plug_password.trim()) payload.plug_password = cfg.plug_password.trim()
+      await deviceSettingsService.updateSettings(bambuId, payload)
+      await autofarmService.saveSettings({
+        power_price_eur_kwh:   Number(cost.power_price_eur_kwh) || 0,
+        machine_rate_eur_h:    Number(cost.machine_rate_eur_h) || 0,
+        filament_price_eur_kg: Number(cost.filament_price_eur_kg) || 0,
+        idle_off_min:          Math.max(0, Math.round(Number(cost.idle_off_min) || 0)),
+      })
+      setStatus({ ok: true, msg: tr('Gespeichert.') })
+    } catch (e) {
+      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
+    } finally { setSaving(false) }
+  }
+
+  const test = async () => {
+    if (!bambuId) return
+    setLive('loading')
+    try {
+      const r = await deviceSettingsService.getPower(bambuId)
+      setLive(r.data?.configured ? r.data : { error: tr('Nicht konfiguriert') })
+    } catch (e) { setLive({ error: e.response?.data?.detail ?? e.message }) }
+  }
+
+  const switchPlug = async (on) => {
+    if (!bambuId) return
+    try { await deviceSettingsService.switchPower(bambuId, on); setTimeout(test, 800) }
+    catch (e) { setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message }) }
+  }
+
+  const num = (key, step = '0.01') => (
+    <input type="number" step={step} min="0" value={cost[key]}
+      onChange={e => setCost(c => ({ ...c, [key]: e.target.value }))}
+      className="w-24 font-mono text-xs" />
+  )
+
+  return (
+    <div className="card space-y-3">
+      <div>
+        <p className="section-label">{tr('Energie & Kosten')}</p>
+        <p className="text-[11px] text-surface-600 mt-0.5">{tr('Smart-Steckdose für Stromverbrauch, Auto-Abschaltung und Kostenrechnung')}</p>
+      </div>
+
+      {/* Steckdosen-Typ */}
+      <div>
+        <label className="text-[10px] text-surface-500 block mb-1">{tr('Steckdosen-Typ')}</label>
+        <select value={cfg.plug_type} onChange={e => setCfg(c => ({ ...c, plug_type: e.target.value }))}
+          className="text-xs h-8 py-0 px-2 bg-surface-900 border border-surface-700 rounded">
+          <option value="none">{tr('Keine')}</option>
+          <option value="ha">{tr('Home Assistant')}</option>
+          <option value="tasmota">Tasmota</option>
+          <option value="shelly">Shelly (Gen2)</option>
+        </select>
+      </div>
+
+      {isHa && (
+        <div className="space-y-2">
+          <p className="text-[10px] text-surface-600">{tr('Nutzt URL + Token aus der Kamera-Konfiguration. Entitäten angeben:')}</p>
+          <div className="grid grid-cols-1 gap-2">
+            <label className="text-[10px] text-surface-500">{tr('Schalter-Entität (switch.…)')}
+              <input value={cfg.plug_switch_entity} onChange={e => setCfg(c => ({ ...c, plug_switch_entity: e.target.value }))}
+                placeholder="switch.drucker_steckdose" className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
+            <label className="text-[10px] text-surface-500">{tr('Leistungs-Sensor (W, sensor.…)')}
+              <input value={cfg.plug_power_entity} onChange={e => setCfg(c => ({ ...c, plug_power_entity: e.target.value }))}
+                placeholder="sensor.drucker_power" className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
+            <label className="text-[10px] text-surface-500">{tr('Energie-Zähler (kWh, sensor.…)')}
+              <input value={cfg.plug_energy_entity} onChange={e => setCfg(c => ({ ...c, plug_energy_entity: e.target.value }))}
+                placeholder="sensor.drucker_energy" className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
+          </div>
+        </div>
+      )}
+
+      {isHttp && (
+        <div className="space-y-2">
+          <label className="text-[10px] text-surface-500 block">{tr('Geräte-URL')}
+            <input value={cfg.plug_url} onChange={e => setCfg(c => ({ ...c, plug_url: e.target.value }))}
+              placeholder="http://10.10.30.50" className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
+          {cfg.plug_type === 'tasmota' && (
+            <label className="text-[10px] text-surface-500 block">{tr('Passwort (optional)')}
+              <input type="password" value={cfg.plug_password} onChange={e => setCfg(c => ({ ...c, plug_password: e.target.value }))}
+                placeholder={cfg.plug_password_set ? '•••••• ' + tr('(gesetzt)') : ''} className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
+          )}
+        </div>
+      )}
+
+      {/* Test + Live + Schalten */}
+      {cfg.plug_type !== 'none' && (
+        <div className="flex items-center gap-2 flex-wrap border-t border-surface-800/40 pt-3">
+          <button onClick={test} className="btn btn-ghost btn-sm">{tr('Live prüfen')}</button>
+          {live === 'loading' && <span className="text-[11px] text-surface-500">{tr('Lädt…')}</span>}
+          {live && live !== 'loading' && !live.error && (
+            <>
+              <span className="text-[11px] font-mono text-surface-300">{live.watts != null ? `${Math.round(live.watts)} W` : '— W'}</span>
+              {live.energy_kwh != null && <span className="text-[11px] font-mono text-surface-500">{live.energy_kwh} kWh</span>}
+              {live.on != null && <span className={`text-[10px] font-mono ${live.on ? 'text-emerald-400' : 'text-surface-600'}`}>{live.on ? tr('AN') : tr('AUS')}</span>}
+              <button onClick={() => switchPlug(true)} className="btn btn-ghost btn-sm text-[10px]">{tr('Ein')}</button>
+              <button onClick={() => switchPlug(false)} className="btn btn-ghost btn-sm text-[10px]">{tr('Aus')}</button>
+            </>
+          )}
+          {live?.error && <span className="text-[11px] font-mono text-red-400">{live.error}</span>}
+        </div>
+      )}
+
+      {/* Auto-Abschaltung + Kosten */}
+      <div className="border-t border-surface-800/40 pt-3 grid grid-cols-2 gap-3">
+        <label className="text-[10px] text-surface-500">{tr('Auto-Abschaltung nach Leerlauf (min)')}
+          <div className="flex items-center gap-2 mt-0.5">
+            <input type="number" min="0" step="1" value={cost.idle_off_min}
+              onChange={e => setCost(c => ({ ...c, idle_off_min: e.target.value }))} className="w-20 font-mono text-xs" />
+            <span className="text-[9px] text-surface-700">{Number(cost.idle_off_min) > 0 ? tr('min') : tr('(aus)')}</span>
+          </div></label>
+        <label className="text-[10px] text-surface-500">{tr('Strompreis (€/kWh)')}<div className="mt-0.5">{num('power_price_eur_kwh')}</div></label>
+        <label className="text-[10px] text-surface-500">{tr('Maschinenstundensatz (€/h)')}<div className="mt-0.5">{num('machine_rate_eur_h')}</div></label>
+        <label className="text-[10px] text-surface-500">{tr('Filamentpreis (€/kg)')}<div className="mt-0.5">{num('filament_price_eur_kg', '0.5')}</div></label>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button onClick={save} disabled={saving} className="btn btn-secondary btn-sm">{tr('Speichern')}</button>
+        {status && <span className={`text-[11px] font-mono ${status.ok ? 'text-emerald-400' : 'text-red-400'}`}>{status.msg}</span>}
+      </div>
+    </div>
+  )
+}
+
 function Configuration() {
   const { tr } = useLanguage()
   const [devices, setDevices]     = useState([])
@@ -488,6 +663,7 @@ function Configuration() {
 
       {/* ── Allgemein: Farm + Regal ──────────────────────────────── */}
       {tab === 'general' && <FarmSettings />}
+      {tab === 'general' && <PowerSettings />}
       {tab === 'general' && <RegalKonfiguration />}
 
       {/* ── Devices ──────────────────────────────────────────────── */}
