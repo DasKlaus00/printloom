@@ -1080,6 +1080,8 @@ const EN_STRINGS = {
   'Strom + Maschine': 'Power + machine',
   'Gesamtkosten': 'Total cost',
   'Kosten: Strom + Maschine + Filament': 'Cost: power + machine + filament',
+  'Noch kein Stromverbrauch erfasst — Smart-Steckdose unter Konfiguration → Energie & Kosten einrichten.':
+    'No power consumption recorded yet — set up the smart plug under Configuration → Energy & costs.',
 
   // ── Watchdog (1.1 / 1.7) ──
   'Watchdog': 'Watchdog',

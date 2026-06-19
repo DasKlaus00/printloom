@@ -454,7 +454,7 @@ export default function Dashboard() {
                 <p className="text-[9px] text-surface-600 mt-0.5">{tr('Fehlschläge')}</p>
               </div>
             </div>
-            {(stats.total_kwh > 0 || (costCfg?.machine_rate_eur_h > 0 && stats.total_print_min > 0)) && (() => {
+            {(() => {
               const kwh   = stats.total_kwh || 0
               const price = costCfg?.power_price_eur_kwh ?? 0.30
               const rate  = costCfg?.machine_rate_eur_h ?? 0
@@ -478,6 +478,11 @@ export default function Dashboard() {
                       <p className="text-[9px] text-surface-600">{rate > 0 ? tr('Strom + Maschine') : tr('Gesamtkosten')}</p>
                     </div>
                   </div>
+                  {kwh === 0 && (
+                    <p className="text-[9px] text-surface-700 mt-1.5 text-center">
+                      {tr('Noch kein Stromverbrauch erfasst — Smart-Steckdose unter Konfiguration → Energie & Kosten einrichten.')}
+                    </p>
+                  )}
                 </div>
               )
             })()}
