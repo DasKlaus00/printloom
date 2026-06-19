@@ -22,11 +22,19 @@ logger = logging.getLogger(__name__)
 _TIMEOUT = 6.0
 
 
+def _ha_url(s: dict) -> str:
+    # Eigene Plug-URL hat Vorrang, sonst die aus der Kamera-Konfiguration.
+    return (s.get("plug_url") or s.get("ha_url") or "").rstrip("/")
+
+
+def _ha_token(s: dict) -> str:
+    return s.get("plug_token") or s.get("ha_token") or ""
+
+
 def plug_configured(s: dict) -> bool:
     t = (s.get("plug_type") or "none").lower()
     if t == "ha":
-        return bool((s.get("ha_url") or "").strip() and (s.get("ha_token") or "").strip()
-                    and (s.get("plug_switch_entity") or "").strip())
+        return bool(_ha_url(s) and _ha_token(s) and (s.get("plug_switch_entity") or "").strip())
     if t in ("tasmota", "shelly"):
         return bool((s.get("plug_url") or "").strip())
     return False
@@ -48,8 +56,8 @@ async def _ha_state(client, url, token, entity):
 
 
 async def _read_ha(s: dict) -> dict:
-    url   = (s.get("ha_url") or "").rstrip("/")
-    token = s.get("ha_token") or ""
+    url   = _ha_url(s)
+    token = _ha_token(s)
     out = {"watts": None, "energy_kwh": None, "on": None}
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         sw = (s.get("plug_switch_entity") or "").strip()
@@ -75,8 +83,8 @@ async def _read_ha(s: dict) -> dict:
 
 
 async def _switch_ha(s: dict, on: bool) -> bool:
-    url   = (s.get("ha_url") or "").rstrip("/")
-    token = s.get("ha_token") or ""
+    url   = _ha_url(s)
+    token = _ha_token(s)
     entity = (s.get("plug_switch_entity") or "").strip()
     if not (url and token and entity):
         return False

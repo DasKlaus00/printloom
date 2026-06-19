@@ -85,7 +85,7 @@ async def delete_device(device_id: int, db: Session = Depends(get_db)):
 # Felder, die als Geheimnis behandelt werden: nie an den Browser, beim Speichern
 # bedeutet "" → behalten, null → löschen, "wert" → setzen. Statt des Werts geht
 # nur ein <feld>_set Flag raus.
-_SECRET_FIELDS = ("ha_token", "plug_password")
+_SECRET_FIELDS = ("ha_token", "plug_password", "plug_token")
 
 
 def _mask_secrets(settings: dict) -> dict:

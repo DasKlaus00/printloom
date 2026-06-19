@@ -1047,6 +1047,11 @@ const EN_STRINGS = {
   'Home Assistant': 'Home Assistant',
   'Nutzt URL + Token aus der Kamera-Konfiguration. Entitäten angeben:':
     'Uses the URL + token from the camera config. Enter the entities:',
+  'Eigene Home-Assistant-URL + Token eingeben (oder leer lassen → nutzt die Kamera-Konfiguration). Dann die Entitäten angeben:':
+    'Enter your own Home Assistant URL + token (or leave empty → uses the camera config). Then enter the entities:',
+  'Home-Assistant-URL': 'Home Assistant URL',
+  'Long-Lived-Token': 'Long-lived token',
+  'leer = aus Kamera-Konfig': 'empty = from camera config',
   'Schalter-Entität (switch.…)': 'Switch entity (switch.…)',
   'Leistungs-Sensor (W, sensor.…)': 'Power sensor (W, sensor.…)',
   'Energie-Zähler (kWh, sensor.…)': 'Energy counter (kWh, sensor.…)',
