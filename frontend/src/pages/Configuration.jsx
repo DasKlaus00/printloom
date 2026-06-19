@@ -410,7 +410,7 @@ function PowerSettings() {
   const [bambuId, setBambuId] = useState(null)
   const [cfg, setCfg] = useState({
     plug_type: 'none', plug_url: '', plug_password: '', plug_password_set: false,
-    plug_token: '', plug_token_set: false,
+    plug_token: '', plug_token_set: false, cam_ha_token_set: false,
     plug_switch_entity: '', plug_power_entity: '', plug_energy_entity: '',
   })
   const [cost, setCost] = useState({ power_price_eur_kwh: 0.30, machine_rate_eur_h: 0, filament_price_eur_kg: 20, idle_off_min: 0 })
@@ -431,6 +431,7 @@ function PowerSettings() {
           plug_url: s.data.plug_url ?? '',
           plug_password: '', plug_password_set: !!s.data.plug_password_set,
           plug_token: '', plug_token_set: !!s.data.plug_token_set,
+          cam_ha_token_set: !!s.data.ha_token_set,
           plug_switch_entity: s.data.plug_switch_entity ?? '',
           plug_power_entity:  s.data.plug_power_entity ?? '',
           plug_energy_entity: s.data.plug_energy_entity ?? '',
@@ -513,16 +514,21 @@ function PowerSettings() {
         </select>
       </div>
 
-      {isHa && (
+      {isHa && (() => {
+        const tokenAvailable = !!cfg.plug_token.trim() || cfg.plug_token_set || cfg.cam_ha_token_set
+        return (
         <div className="space-y-2">
-          <p className="text-[10px] text-surface-600">{tr('Eigene Home-Assistant-URL + Token eingeben (oder leer lassen → nutzt die Kamera-Konfiguration). Dann die Entitäten angeben:')}</p>
+          <p className="text-[10px] text-surface-600">{tr('Eigene Home-Assistant-URL + Long-Lived-Token eintragen. Leer lassen funktioniert nur, wenn HA bereits für die Kamera eingerichtet ist (dann werden dessen URL + Token genutzt).')}</p>
           <label className="text-[10px] text-surface-500 block">{tr('Home-Assistant-URL')}
             <input value={cfg.plug_url} onChange={e => setCfg(c => ({ ...c, plug_url: e.target.value }))}
               placeholder="http://10.10.30.40:8123" className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
           <label className="text-[10px] text-surface-500 block">{tr('Long-Lived-Token')}
             <input type="password" value={cfg.plug_token} onChange={e => setCfg(c => ({ ...c, plug_token: e.target.value }))}
-              placeholder={cfg.plug_token_set ? '•••••• ' + tr('(gesetzt)') : tr('leer = aus Kamera-Konfig')}
+              placeholder={cfg.plug_token_set || cfg.cam_ha_token_set ? '•••••• ' + tr('(gesetzt)') : tr('Token aus HA → Profil → Sicherheit')}
               className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
+          {!tokenAvailable && (
+            <p className="text-[10px] text-amber-400">{tr('⚠ Kein Token vorhanden — bitte Long-Lived-Token eintragen (deine Kamera nutzt kein Home Assistant).')}</p>
+          )}
           <div className="grid grid-cols-1 gap-2">
             <label className="text-[10px] text-surface-500">{tr('Schalter-Entität (switch.…)')}
               <input value={cfg.plug_switch_entity} onChange={e => setCfg(c => ({ ...c, plug_switch_entity: e.target.value }))}
@@ -535,7 +541,7 @@ function PowerSettings() {
                 placeholder="sensor.drucker_energy" className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
           </div>
         </div>
-      )}
+      )})()}
 
       {isHttp && (
         <div className="space-y-2">

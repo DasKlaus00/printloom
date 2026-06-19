@@ -1052,6 +1052,11 @@ const EN_STRINGS = {
   'Home-Assistant-URL': 'Home Assistant URL',
   'Long-Lived-Token': 'Long-lived token',
   'leer = aus Kamera-Konfig': 'empty = from camera config',
+  'Eigene Home-Assistant-URL + Long-Lived-Token eintragen. Leer lassen funktioniert nur, wenn HA bereits für die Kamera eingerichtet ist (dann werden dessen URL + Token genutzt).':
+    'Enter your own Home Assistant URL + long-lived token. Leaving it empty only works if HA is already set up for the camera (its URL + token are then used).',
+  'Token aus HA → Profil → Sicherheit': 'Token from HA → Profile → Security',
+  '⚠ Kein Token vorhanden — bitte Long-Lived-Token eintragen (deine Kamera nutzt kein Home Assistant).':
+    '⚠ No token available — please enter a long-lived token (your camera does not use Home Assistant).',
   'Schalter-Entität (switch.…)': 'Switch entity (switch.…)',
   'Leistungs-Sensor (W, sensor.…)': 'Power sensor (W, sensor.…)',
   'Energie-Zähler (kWh, sensor.…)': 'Energy counter (kWh, sensor.…)',
