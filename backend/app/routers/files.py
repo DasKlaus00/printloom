@@ -216,6 +216,17 @@ async def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Thumbnail-Extraktion fehlgeschlagen: {e}")
 
 
+# P5: geparste quick-meta cachen — Datei-Header werden sonst bei jedem Aufruf neu
+# gelesen (zip öffnen / 64 KB lesen). Schlüssel = file_id, Signatur = (Pfad, Größe,
+# mtime) → ändert sich die Datei, wird automatisch neu geparst.
+_QMETA_CACHE: dict = {}
+
+
+def _qmeta_sig(path: str):
+    st = os.stat(path)
+    return (path, st.st_size, int(st.st_mtime))
+
+
 @router.get("/{file_id}/quick-meta")
 async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
     """Druckzeit und Filamentverbrauch schnell aus Datei-Header lesen."""
@@ -226,6 +237,13 @@ async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
         return {"estimated_time": None, "filament_g": None, "filament_m": None, "max_z_mm": None}
     if not os.path.exists(file.file_path):
         raise HTTPException(status_code=404, detail="Datei nicht auf Disk")
+    try:
+        sig = _qmeta_sig(file.file_path)
+        cached = _QMETA_CACHE.get(file_id)
+        if cached and cached[0] == sig:
+            return cached[1]
+    except OSError:
+        sig = None
     try:
         if file.file_type == '.3mf':
             with zipfile.ZipFile(file.file_path, 'r') as zf:
@@ -245,7 +263,7 @@ async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
             with open(file.file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 raw = f.read(65536)
         parsed = _parse_header(raw)
-        return {
+        result = {
             "estimated_time": parsed.get("estimated_time"),
             "time_seconds":   parsed.get("time_seconds"),
             "filament_g":     parsed.get("total_filament_g"),
@@ -253,6 +271,9 @@ async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
             "max_z_mm":       parsed.get("max_z_mm"),
             "layer_count":    parsed.get("layer_count"),
         }
+        if sig:
+            _QMETA_CACHE[file_id] = (sig, result)
+        return result
     except Exception as e:
         logger.warning(f"quick-meta failed for {file_id}: {e}")
         return {"estimated_time": None, "time_seconds": None, "filament_g": None, "filament_m": None, "max_z_mm": None}
