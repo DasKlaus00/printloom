@@ -1818,7 +1818,7 @@ function AutoFarm() {
                 const sm      = S[job.status] ?? S.pending
                 const busy    = running && job.id === curJobId
                 const displayH = job.computedHeight ?? job.objectHeight
-                const fits     = displayH != null && displayH > 0 ? displayH <= slotH : null
+                const slotsUsed = (displayH > 0) ? slotsNeeded(displayH, slotH) : 0
                 const pending = job.status === 'pending'
 
                 // '1-0' has two meanings: a real "rack full" result from the
@@ -1899,21 +1899,14 @@ function AutoFarm() {
                         <span className="text-[10px] text-surface-700 font-mono animate-pulse">{tr('Höhe…')}</span>
                       ) : displayH != null && displayH > 0 ? (
                         <span
-                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-                            fits === false
-                              ? 'text-red-400 border-red-900/60 bg-red-950/20'
-                              : 'text-emerald-400 border-emerald-900/60 bg-emerald-950/20'
-                          }`}
+                          className="text-[10px] font-mono px-1.5 py-0.5 rounded border text-emerald-400 border-emerald-900/60 bg-emerald-950/20"
                           title={job.layerCount > 0 && job.layerHeightMm > 0
                             ? tr('Roh: {0} mm · {1} Schichten × {2} mm · +{3}% = {4} mm', job.objectHeight, job.layerCount, job.layerHeightMm, heightMarginPct, job.computedHeight)
                             : `${job.objectHeight} mm (${job.heightSource ?? ''})`}
                         >
                           {displayH} mm
-                          {job.computedHeight > 0 && (
-                            <span className="opacity-50 ml-1 text-[9px]">+{heightMarginPct}%</span>
-                          )}
-                          {!job.computedHeight && job.layerCount > 0 && job.layerHeightMm > 0 && (
-                            <span className="opacity-50 ml-1">({job.layerHeightMm}×{job.layerCount})</span>
+                          {slotsUsed > 0 && (
+                            <span className="opacity-70 ml-1 text-[9px]">· {tr(slotsUsed === 1 ? '{0} Fach' : '{0} Fächer', slotsUsed)}</span>
                           )}
                         </span>
                       ) : (

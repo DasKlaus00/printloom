@@ -395,6 +395,7 @@ const EN_STRINGS = {
   'Rack löschen': 'Delete rack',
   'Aktiv:': 'Active:',
   '{0} Fächer': '{0} slots',
+  '{0} Fach': '{0} slot',
   '{0} mm Fachhöhe': '{0} mm slot height',
   'Rack Konfiguration': 'Rack configuration',
   'Anzahl Racks': 'Number of racks',
