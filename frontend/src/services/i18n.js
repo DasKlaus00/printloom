@@ -1014,6 +1014,7 @@ const EN_STRINGS = {
   'Kein Treffer für „{0}"': 'No match for “{0}”',
   '{0} von {1} Zeilen': '{0} of {1} lines',
   'Tastenkürzel: Leertaste': 'Shortcut: Spacebar',
+  'Ziehen zum Umsortieren': 'Drag to reorder',
 
   // ── Language packs ──
   'Pack braucht code + strings': 'Pack needs code + strings',

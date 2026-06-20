@@ -515,7 +515,11 @@ function FileLibrary() {
   const { tr } = useLanguage()
   const [files, setFiles]       = useState([])
   const [folders, setFolders]   = useState([])
-  const [currentFolder, setCurrentFolder] = useState(null)   // folder id or null (root)
+  // Q5: zuletzt geöffneten Ordner merken (über Reload/Seitenwechsel hinweg)
+  const [currentFolder, setCurrentFolder] = useState(() => {
+    const v = localStorage.getItem('printloom.fileLibrary.folder')
+    return v != null && v !== '' ? Number(v) : null
+  })
   const [bambuId, setBambuId]   = useState(null)
   const [loading, setLoading]   = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -667,6 +671,19 @@ function FileLibrary() {
     })()
     return () => { cancelled = true }
   }, [files])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Q5: gemerkten Ordner persistieren …
+  useEffect(() => {
+    if (currentFolder == null) localStorage.removeItem('printloom.fileLibrary.folder')
+    else localStorage.setItem('printloom.fileLibrary.folder', String(currentFolder))
+  }, [currentFolder])
+
+  // … und auf Root zurückfallen, falls der gemerkte Ordner inzwischen weg ist.
+  useEffect(() => {
+    if (currentFolder != null && folders.length > 0 && !folders.some(f => f.id === currentFolder)) {
+      setCurrentFolder(null)
+    }
+  }, [folders, currentFolder])
 
   // ── Folder helpers ──────────────────────────────────────────
   const folderById = useMemo(() => Object.fromEntries(folders.map(f => [f.id, f])), [folders])

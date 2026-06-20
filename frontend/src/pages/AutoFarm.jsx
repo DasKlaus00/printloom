@@ -646,6 +646,7 @@ function AutoFarm() {
   const [dashLayout,  setDashLayout]  = useState(DEFAULT_LAYOUT)
   const [dashHidden,  setDashHidden]  = useState([])
   const [logFilter,   setLogFilter]   = useState('')   // Q2: Aktivitäts-Log durchsuchen
+  const [dragId,      setDragId]      = useState(null) // Q1: gezogener Job (Drag-&-Drop)
   const dashSaveRef   = useRef(null)
   const rootRef       = useRef(null)   // Q3: Sichtbarkeits-Check für Tastenkürzel
   const logFilterRef  = useRef(null)
@@ -1268,6 +1269,23 @@ function AutoFarm() {
     syncReorder(next)
     return next
   })
+
+  // Q1: gezogenen Job vor das Ziel einsortieren (nur zwischen wartenden Jobs).
+  const moveJobTo = (dragJobId, targetId) => {
+    if (dragJobId == null || dragJobId === targetId) return
+    setJobs(prev => {
+      const from = prev.findIndex(j => j.id === dragJobId)
+      const to   = prev.findIndex(j => j.id === targetId)
+      if (from < 0 || to < 0) return prev
+      if (prev[from].status !== 'pending' || prev[to].status !== 'pending') return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      const insertAt = next.findIndex(j => j.id === targetId)   // nach Entfernen neu bestimmen
+      next.splice(insertAt, 0, moved)
+      syncReorder(next)
+      return next
+    })
+  }
 
   const resetJob = (id) => {
     setJobs(prev => {
@@ -1904,7 +1922,12 @@ function AutoFarm() {
                 return (
                   <div
                     key={job.id}
+                    onDragOver={pending && dragId != null && dragId !== job.id ? (e) => e.preventDefault() : undefined}
+                    onDrop={pending && dragId != null ? (e) => { e.preventDefault(); moveJobTo(dragId, job.id); setDragId(null) } : undefined}
                     className={`rounded-xl border p-2.5 space-y-1.5 transition-colors ${
+                      dragId === job.id ? 'opacity-40' : ''
+                    } ${
+                      dragId != null && dragId !== job.id && pending ? 'border-dashed border-blue-700/60' :
                       busy                ? 'border-blue-700 bg-blue-950/20' :
                       job.status==='done'  ? 'border-surface-800 bg-surface-900/20 opacity-40' :
                       job.status==='error' ? 'border-red-900/70 bg-red-950/15' :
@@ -1932,6 +1955,12 @@ function AutoFarm() {
                             className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▲</button>
                           <button onClick={() => moveJobDown(job.id)} disabled={idx === jobs.length - 1}
                             className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▼</button>
+                          <span
+                            draggable
+                            onDragStart={(e) => { setDragId(job.id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(job.id)) } catch {} }}
+                            onDragEnd={() => setDragId(null)}
+                            title={tr('Ziehen zum Umsortieren')}
+                            className="w-5 h-5 flex items-center justify-center text-surface-700 hover:text-surface-300 cursor-grab active:cursor-grabbing select-none leading-none">⠿</span>
                         </>
                       )}
                       {!busy && !['running', 'printing', 'sending'].includes(job.status) && (
