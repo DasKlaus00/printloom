@@ -17,8 +17,8 @@ der stundenlang weiterläuft, kostet Material, Zeit und im schlimmsten Fall die 
 | Nr. | Feature | ★ | Aufwand | Beschreibung |
 |-----|---------|---|---------|--------------|
 | 1.1 | **Watchdog & Auto-Reconnect** ✅ | ★★★ | M | Reconnect je Poll; bei wiederholtem Verbindungsverlust Push-Alarm, der Druck läuft am Gerät weiter. *(v1.0.30)* |
-| 1.2 | **Filament-Runout-Erkennung** | ★★★ | M | Leerstand/Runout aus MQTT/AMS auswerten → pausieren statt in der Luft weiterdrucken. |
-| 1.3 | **Konfigurierbare Fehlerstrategie** | ★★★ | M | Pro Fehlerfall festlegen: X× Retry / Job überspringen / Farm pausieren / Drucker parken. |
+| 1.2 | ~~Filament-Runout-Erkennung~~ | — | — | Übernimmt der X1C bereits selbst (eigene Runout-Pause) — nicht nötig. |
+| 1.3 | **Konfigurierbare Fehlerstrategie** ✅ | ★★★ | M | Pro Fehlertyp (HMS, FAILED, Verbindung, Stillstand, Fach, AMS) wählbar: Pausieren / Job überspringen / Farm stoppen / Ignorieren; FAILED mit konfigurierbaren Wiederholungen. *(v1.0.34)* |
 | 1.4 | **Erste-Schicht-Kamera-Check** | ★★ | M | Snapshot nach Layer 1 → bei erkanntem Fehlstart (keine Haftung/Spaghetti) pausieren + Push mit Bild. |
 | 1.5 | **Fehldruck-Erkennung im Lauf** | ★★ | L | Periodische Snapshot-Prüfung auf Spaghetti/Ablösung. Erst regelbasiert, optional lokales Modell — rein lokal. |
 | 1.6 | **Temperatur-Überwachung & Alarm** | ★★ | S | Hotend/Bett/Kammer gegen Grenzwerte prüfen → Übertemperatur sofort pausieren + alarmieren. |

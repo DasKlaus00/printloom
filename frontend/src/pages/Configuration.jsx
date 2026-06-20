@@ -595,6 +595,79 @@ function PowerSettings() {
   )
 }
 
+/* ─── Fehlerstrategie (Roadmap 1.3) ──────────────────────────────── */
+const ERROR_CATALOG = [
+  { key: 'hms',             label: 'Drucker-Fehler (HMS)',        desc: 'Schwere/fatale Druckermeldung (z. B. Hardwarefehler)',        actions: ['pause', 'skip', 'stop', 'ignore'] },
+  { key: 'print_failed',    label: 'Druck fehlgeschlagen',         desc: 'Drucker meldet FAILED nach den Wiederholungen',               actions: ['skip', 'pause', 'stop'] },
+  { key: 'connection_lost', label: 'Verbindung verloren',          desc: 'Drucker nach mehreren Reconnects nicht erreichbar',           actions: ['skip', 'pause', 'stop'] },
+  { key: 'progress_stall',  label: 'Stillstand / kein Fortschritt', desc: 'Watchdog: kein Druckfortschritt (mögliche Verstopfung)',      actions: ['pause', 'skip', 'stop'] },
+  { key: 'no_slot',         label: 'Kein freies Regalfach',        desc: 'Regal voll — kein Platz für die fertige Platte',              actions: ['pause', 'stop'] },
+  { key: 'ams_unmatched',   label: 'AMS-Festlegung nötig',         desc: 'Kein passendes Filament im AMS gefunden',                     actions: ['pause', 'skip'] },
+]
+const ERROR_DEFAULTS = { hms: 'pause', print_failed: 'skip', connection_lost: 'skip', progress_stall: 'pause', no_slot: 'pause', ams_unmatched: 'pause' }
+const ACTION_LABEL = { pause: 'Pausieren', skip: 'Job überspringen', stop: 'Farm stoppen', ignore: 'Ignorieren' }
+
+function ErrorStrategy() {
+  const { tr } = useLanguage()
+  const [strategy, setStrategy] = useState({})
+  const [retries, setRetries]   = useState(1)
+  const [saving, setSaving]     = useState(false)
+  const [status, setStatus]     = useState(null)
+
+  useEffect(() => {
+    autofarmService.getSettings().then(r => {
+      setStrategy({ ...ERROR_DEFAULTS, ...(r.data.error_strategy || {}) })
+      setRetries(r.data.failed_retries ?? 1)
+    }).catch(() => setStrategy({ ...ERROR_DEFAULTS }))
+  }, [])
+
+  const save = async () => {
+    setSaving(true); setStatus(null)
+    try {
+      await autofarmService.saveSettings({ error_strategy: strategy, failed_retries: Math.max(0, Math.round(Number(retries) || 0)) })
+      setStatus({ ok: true, msg: tr('Gespeichert.') })
+    } catch (e) {
+      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="card space-y-3">
+      <div>
+        <p className="section-label">{tr('Fehlerstrategie')}</p>
+        <p className="text-[11px] text-surface-600 mt-0.5">{tr('Festlegen, was die Farm bei jedem Fehlertyp automatisch tut')}</p>
+      </div>
+      <div className="space-y-2">
+        {ERROR_CATALOG.map(err => (
+          <div key={err.key} className="flex items-center gap-3 py-1.5 border-b border-surface-800/40 last:border-0">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-surface-200">{tr(err.label)}</p>
+              <p className="text-[10px] text-surface-600">{tr(err.desc)}</p>
+              {err.key === 'print_failed' && (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-[10px] text-surface-500">{tr('Wiederholungen:')}</span>
+                  <input type="number" min="0" max="9" value={retries}
+                    onChange={e => setRetries(Math.max(0, Number(e.target.value)))}
+                    className="w-12 font-mono text-xs h-6 py-0" />
+                </div>
+              )}
+            </div>
+            <select value={strategy[err.key] ?? ERROR_DEFAULTS[err.key]}
+              onChange={e => setStrategy(s => ({ ...s, [err.key]: e.target.value }))}
+              className="text-xs h-8 py-0 px-2 bg-surface-900 border border-surface-700 rounded shrink-0">
+              {err.actions.map(a => <option key={a} value={a}>{tr(ACTION_LABEL[a])}</option>)}
+            </select>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <button onClick={save} disabled={saving} className="btn btn-secondary btn-sm">{tr('Speichern')}</button>
+        {status && <span className={`text-[11px] font-mono ${status.ok ? 'text-emerald-400' : 'text-red-400'}`}>{status.msg}</span>}
+      </div>
+    </div>
+  )
+}
+
 function Configuration() {
   const { tr } = useLanguage()
   const [devices, setDevices]     = useState([])
@@ -708,6 +781,7 @@ function Configuration() {
 
       {/* ── Allgemein: Farm + Regal ──────────────────────────────── */}
       {tab === 'general' && <FarmSettings />}
+      {tab === 'general' && <ErrorStrategy />}
       {tab === 'general' && <PowerSettings />}
       {tab === 'general' && <RegalKonfiguration />}
 

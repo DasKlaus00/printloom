@@ -55,7 +55,10 @@ _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": Tru
                      "idle_off_min":          0,    # 0 = Auto-Abschaltung aus
                      # Watchdog (Roadmap 1.1/1.7)
                      "conn_alarm":            True,  # Push bei wiederholtem Verbindungsverlust (1.1)
-                     "progress_stall_min":    0}     # 0 = aus; sonst Pause bei N min ohne Fortschritt (1.7)
+                     "progress_stall_min":    0,     # 0 = aus; sonst Pause bei N min ohne Fortschritt (1.7)
+                     # Fehlerstrategie (Roadmap 1.3) — {error_key: action}; leer = Defaults
+                     "error_strategy":        {},
+                     "failed_retries":        1}     # Wiederholungen bei FAILED vor der gewählten Aktion
 
 # ── Homing .3mf generator ────────────────────────────────────
 _HOMING_GCODE = """; Printloom Homing Sequence
@@ -400,6 +403,14 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
 
         new_slot = _find_slot_for_height(height_mm, exclude_job_id=job.get("id"))
         if new_slot is None:
+            action = _estrat("no_slot")
+            if action == "stop":
+                _log(f"⚠ Kein freies Fach für {height_mm:.0f}mm — Farm wird gestoppt (Strategie)")
+                _farm["stopping"] = True
+                raise RuntimeError("Gestoppt")
+            if action == "skip":
+                _log(f"⚠ Kein freies Fach für {height_mm:.0f}mm — Job übersprungen (Strategie)")
+                raise RuntimeError(f"Kein freies Fach für {height_mm:.0f}mm")
             _log(f"⚠ Kein freies Fach für {height_mm:.0f}mm — Farm pausiert")
             _farm["paused"] = True
             _farm["error"]  = f"Kein freies Fach für {height_mm:.0f}mm — Regal leeren, dann fortsetzen"
@@ -820,6 +831,15 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
         )
         _log(f"⚠ AMS-Abgleich für {job['fileName']}: {desc} — manuelle Festlegung notwendig")
         _set_job(job["id"], {"needs_ams": True, "ams_missing": missing})
+        action = _estrat("ams_unmatched")
+        if action == "stop":
+            _log("⚠ AMS-Abgleich fehlt — Farm wird gestoppt (Strategie)")
+            _farm["stopping"] = True
+            raise RuntimeError("Gestoppt")
+        if action == "skip":
+            _log(f"⚠ AMS-Abgleich fehlt — Job übersprungen (Strategie): {desc}")
+            await _notify(f"⚠ *Printloom — AMS fehlt, Job übersprungen*\n`{job['fileName']}`\n{desc}")
+            raise RuntimeError(f"AMS-Abgleich fehlgeschlagen — {desc}")
         _farm["paused"] = True
         _farm["error"] = f"Manuelle AMS-Festlegung notwendig für {job['fileName']} — {desc}"
         if not notified:
@@ -838,6 +858,24 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
     raise RuntimeError("Gestoppt")
 
 
+# ── Fehlerstrategie (Roadmap 1.3) ────────────────────────────────────────────
+# Pro Fehlerart eine Aktion: 'pause' (warten), 'skip' (Job als Fehler, nächster),
+# 'stop' (Farm anhalten), 'ignore' (weiterlaufen). Defaults = bisheriges Verhalten,
+# damit ohne Konfiguration nichts anders läuft.
+_ERROR_DEFAULTS = {
+    "hms":             "pause",
+    "print_failed":    "skip",
+    "connection_lost": "skip",
+    "progress_stall":  "pause",
+    "no_slot":         "pause",
+    "ams_unmatched":   "pause",
+}
+
+
+def _estrat(key: str) -> str:
+    return (_farm.get("error_strategy") or {}).get(key) or _ERROR_DEFAULTS.get(key, "pause")
+
+
 async def _handle_hms(hms_list: list):
     """On new fatal/serious printer HMS codes (deduped per print): pause + notify,
     UNLESS the code is on the soft-list — then only log + notify, never stop the
@@ -851,13 +889,24 @@ async def _handle_hms(hms_list: list):
         if cs in seen:
             continue
         seen.add(cs)
-        if hms.normalize_code(cs) in soft:
-            _log(f"ℹ HMS {sev} (ignoriert, Druck läuft weiter): {cs} — {text}")
+        action = _estrat("hms")
+        if action == "ignore" or hms.normalize_code(cs) in soft:
+            why = "Soft-Liste" if hms.normalize_code(cs) in soft else "Strategie: ignorieren"
+            _log(f"ℹ HMS {sev} (ignoriert, {why}): {cs} — {text}")
             await _notify(f"ℹ *Printloom — Drucker-Hinweis (unkritisch)*\nHMS {cs} ({sev})\n{text}")
             continue
-        _log(f"🛑 HMS {sev}: {cs} — {text}")
         _record_failure(f"HMS {cs}")
         _record_event("error", "", f"HMS {cs} ({sev})")
+        if action == "stop":
+            _log(f"🛑 HMS {sev}: {cs} — Farm wird gestoppt (Strategie)")
+            await _notify(f"🛑 *Printloom — Drucker-Fehler, Farm gestoppt*\nHMS {cs} ({sev})\n{text}")
+            _farm["stopping"] = True
+            return
+        if action == "skip":
+            _log(f"🛑 HMS {sev}: {cs} — Job wird übersprungen (Strategie)")
+            await _notify(f"🛑 *Printloom — Drucker-Fehler, Job übersprungen*\nHMS {cs} ({sev})\n{text}")
+            raise RuntimeError(f"HMS {cs}: {text}")
+        _log(f"🛑 HMS {sev}: {cs} — {text}")
         _farm["paused"] = True
         _farm["error"] = f"Drucker-Fehler (HMS {cs}): {text} — beheben, dann fortsetzen"
         await _notify(f"🛑 *Printloom — Drucker-Fehler*\nHMS {cs} ({sev})\n{text}")
@@ -972,14 +1021,21 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                 elif stall_min > 0 and pct > 0 and not stall_notified \
                         and (loop.time() - last_progress_t) >= stall_min * 60:
                     stall_notified = True
-                    _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — "
-                         "möglicher Verstopfungs-/Extrusionsfehler — pausiert")
                     _record_event("error", job.get("fileName", ""), f"Stillstand {stall_min}min @ {pct}%")
-                    _farm["paused"] = True
-                    _farm["error"] = (f"Kein Druckfortschritt seit {stall_min} min ({pct}%) — "
-                                      "Düse/Filament prüfen (mögliche Verstopfung), dann fortsetzen")
                     await _notify(f"🛑 *Printloom — Stillstand erkannt*\n`{job.get('fileName','')}`\n"
                                   f"Kein Fortschritt seit {stall_min} min bei {pct}% — mögliche Verstopfung")
+                    action = _estrat("progress_stall")
+                    if action == "stop":
+                        _log(f"🛑 Watchdog: Stillstand bei {pct}% — Farm wird gestoppt (Strategie)")
+                        _farm["stopping"] = True
+                    elif action == "skip":
+                        _log(f"🛑 Watchdog: Stillstand bei {pct}% — Job übersprungen (Strategie)")
+                        raise RuntimeError(f"Stillstand seit {stall_min} min bei {pct}% — mögliche Verstopfung")
+                    else:
+                        _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — pausiert")
+                        _farm["paused"] = True
+                        _farm["error"] = (f"Kein Druckfortschritt seit {stall_min} min ({pct}%) — "
+                                          "Düse/Filament prüfen (mögliche Verstopfung), dann fortsetzen")
                 if first_run and rem > 0:
                     total_layers = p.get("total_layer_num", 0)
                     layer_h      = job.get("layerHeightMm", 0.0)
@@ -1052,14 +1108,39 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                 if fail_count < 2:
                     _log(f"⚠ FAILED ({fail_count}/2) — warte…")
                     continue
-                if retries < 1:
+                max_retries = int(_farm.get("failed_retries", 1) or 0)
+                if retries < max_retries:
                     retries += 1
-                    _log("⚠ Retry 1/1…")
+                    _log(f"⚠ Retry {retries}/{max_retries}…")
                     _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
                     await _do_send_file(job, device, True)
                     _set_job(job["id"], {"status": "printing"})
                     fail_count = 0
                     continue
+                action = _estrat("print_failed")
+                if action == "stop":
+                    _log("🔴 Druck fehlgeschlagen — Farm wird gestoppt (Strategie)")
+                    await _notify(f"🔴 *Printloom — Druck fehlgeschlagen, Farm gestoppt*\n`{job['fileName']}`")
+                    _farm["stopping"] = True
+                    raise RuntimeError("Gestoppt")
+                if action == "pause":
+                    _log("🔴 Druck fehlgeschlagen — pausiert (Strategie)")
+                    _farm["paused"] = True
+                    _farm["error"] = "Druck fehlgeschlagen — prüfen, dann fortsetzen (neuer Versuch)"
+                    await _notify(f"🔴 *Printloom — Druck fehlgeschlagen, pausiert*\n`{job['fileName']}`")
+                    while _farm["paused"] and not _farm["stopping"]:
+                        await asyncio.sleep(0.5)
+                    if _farm["stopping"]:
+                        raise RuntimeError("Gestoppt")
+                    # Nach Fortsetzen erneut senden und weiter beobachten.
+                    _farm["error"] = None
+                    retries = 0
+                    fail_count = 0
+                    _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
+                    await _do_send_file(job, device, True)
+                    _set_job(job["id"], {"status": "printing"})
+                    continue
+                # skip (Default): optionale Fehler-Sequenz, dann Job als Fehler markieren
                 if fail_steps:
                     _log("🔴 Druck fehlgeschlagen — Fehler-Sequenz läuft…")
                     try:
@@ -1079,6 +1160,24 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
         except Exception as e:
             reconn_fails += 1
             if reconn_fails >= 5:
+                action = _estrat("connection_lost")
+                if action == "stop":
+                    _log("⚠ Verbindung dauerhaft unterbrochen — Farm wird gestoppt (Strategie)")
+                    _farm["stopping"] = True
+                    raise RuntimeError("Gestoppt")
+                if action == "pause":
+                    _log("⚠ Verbindung dauerhaft unterbrochen — pausiert (Strategie)")
+                    _farm["paused"] = True
+                    _farm["error"] = "Verbindung zum Drucker verloren — prüfen, dann fortsetzen"
+                    while _farm["paused"] and not _farm["stopping"]:
+                        await asyncio.sleep(0.5)
+                    if _farm["stopping"]:
+                        raise RuntimeError("Gestoppt")
+                    _farm["error"] = None
+                    reconn_fails = 0
+                    conn_alarmed = False
+                    continue
+                # skip (Default): Job als Fehler markieren, nächster Job
                 raise RuntimeError(f"Verbindung dauerhaft unterbrochen ({reconn_fails}×)")
             # Verbindungs-Watchdog (1.1): einmaliger Alarm, sobald der Reconnect
             # mehrfach scheitert — der Druck läuft am Gerät weiter, nur die Brücke fehlt.
@@ -1742,6 +1841,8 @@ class SettingsPayload(BaseModel):
     idle_off_min:          int   = 0
     conn_alarm:            bool  = True
     progress_stall_min:    int   = 0
+    error_strategy:        dict  = {}
+    failed_retries:        int   = 1
 
 class QueuePayload(BaseModel):
     jobs: List[dict] = []
@@ -1784,6 +1885,8 @@ async def start_farm(req: StartRequest):
         "hms_ignore":      _hms_ignore,
         "conn_alarm":         bool(_settings.get("conn_alarm", True)),
         "progress_stall_min": int(_settings.get("progress_stall_min", 0) or 0),
+        "error_strategy":     dict(_settings.get("error_strategy") or {}),
+        "failed_retries":     max(0, int(_settings.get("failed_retries", 1) or 0)),
     })
 
     _record_event("farm_start", "", f"{len([j for j in req.jobs if j.status == 'pending'])} Jobs")

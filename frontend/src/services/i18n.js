@@ -1083,6 +1083,27 @@ const EN_STRINGS = {
   'Noch kein Stromverbrauch erfasst — Smart-Steckdose unter Konfiguration → Energie & Kosten einrichten.':
     'No power consumption recorded yet — set up the smart plug under Configuration → Energy & costs.',
 
+  // ── Fehlerstrategie (1.3) ──
+  'Fehlerstrategie': 'Error strategy',
+  'Festlegen, was die Farm bei jedem Fehlertyp automatisch tut': 'Define what the farm does automatically for each error type',
+  'Drucker-Fehler (HMS)': 'Printer error (HMS)',
+  'Schwere/fatale Druckermeldung (z. B. Hardwarefehler)': 'Severe/fatal printer message (e.g. hardware fault)',
+  'Druck fehlgeschlagen': 'Print failed',
+  'Drucker meldet FAILED nach den Wiederholungen': 'Printer reports FAILED after the retries',
+  'Verbindung verloren': 'Connection lost',
+  'Drucker nach mehreren Reconnects nicht erreichbar': 'Printer unreachable after several reconnects',
+  'Stillstand / kein Fortschritt': 'Stall / no progress',
+  'Watchdog: kein Druckfortschritt (mögliche Verstopfung)': 'Watchdog: no print progress (possible clog)',
+  'Kein freies Regalfach': 'No free rack slot',
+  'Regal voll — kein Platz für die fertige Platte': 'Rack full — no room for the finished plate',
+  'AMS-Festlegung nötig': 'AMS assignment needed',
+  'Kein passendes Filament im AMS gefunden': 'No matching filament found in the AMS',
+  'Pausieren': 'Pause',
+  'Job überspringen': 'Skip job',
+  'Farm stoppen': 'Stop farm',
+  'Ignorieren': 'Ignore',
+  'Wiederholungen:': 'Retries:',
+
   // ── Watchdog (1.1 / 1.7) ──
   'Watchdog': 'Watchdog',
   'Alarm bei Verbindungsverlust': 'Alert on connection loss',
