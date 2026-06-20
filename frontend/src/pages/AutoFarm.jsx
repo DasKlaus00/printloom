@@ -1507,6 +1507,30 @@ function AutoFarm() {
     }
   })
 
+  // Höhe eines Fachs (aus Regal-Status oder zugewiesenem Job) und Name dazu.
+  const slotHeightAt = (r, sNum) => {
+    const k = `${r}-${sNum}`
+    const sd = rackData?.slots?.[k]
+    const j  = (slotJobMap[k] ?? [])[0]
+    return (sd?.object_height_mm) || (j?.computedHeight ?? j?.objectHeight) || 0
+  }
+  const slotNameAt = (r, sNum) => {
+    const k = `${r}-${sNum}`
+    return rackData?.slots?.[k]?.file_name || (slotJobMap[k] ?? [])[0]?.fileName || ''
+  }
+  // Liefert das Basis-Fach (sNum eines tieferen Fachs), dessen Objekt in (r,sNum)
+  // hineinragt — sonst null. Belegt-Logik identisch zu rackUtils/Backend.
+  const ghostBaseSlot = (r, sNum) => {
+    for (let s = sNum - 1; s >= 1; s--) {
+      const h = slotHeightAt(r, s)
+      if (h <= 0) continue
+      let used = Math.ceil(h / slotH)
+      if (h % slotH === 0) used += 1
+      if (used > (sNum - s)) return s
+    }
+    return null
+  }
+
   /* ─────────────────────────────────────────────────────────── */
   return (
     <div className="space-y-4">
@@ -2057,6 +2081,12 @@ function AutoFarm() {
                         const dispH        = topJob?.computedHeight ?? topJob?.objectHeight
                         const heightPct    = dispH ? Math.min(100, (dispH / slotH) * 100) : 0
                         const overHeight   = dispH && dispH > slotH
+                        // Ghost-Fach: in dieses leere Fach ragt ein hohes Teil aus einem
+                        // tieferen Fach hinein → als reserviert (Ghost) zeigen, nicht als leer.
+                        const occupied     = isDone || isActive || isLocked || !!topJob
+                        const ghostBase    = !occupied ? ghostBaseSlot(ri+1, si2+1) : null
+                        const isGhost      = ghostBase != null
+                        const ghostName    = isGhost ? slotNameAt(ri+1, ghostBase) : ''
 
                         return (
                           <div
@@ -2066,6 +2096,7 @@ function AutoFarm() {
                               isActive ? 'border-blue-800/40 bg-blue-950/10' :
                               isLocked ? 'border-red-900/40 bg-red-950/10' :
                               topJob   ? 'border-surface-700/50 bg-surface-900' :
+                              isGhost  ? 'border-dashed border-surface-700/40 bg-surface-800/15' :
                               'border-surface-800/20 bg-transparent'
                             }`}
                           >
@@ -2075,22 +2106,25 @@ function AutoFarm() {
                               isActive ? 'dot-blue animate-pulse' :
                               isLocked ? 'dot-red' :
                               topJob   ? (S[topJob.status]?.dot ?? 'dot-gray') :
+                              isGhost  ? 'dot-gray opacity-50' :
                               'dot-gray opacity-30'
                             }`} />
                             <div className="flex-1 min-w-0">
                               {isDone ? (
-                                <p className="text-[9px] text-amber-400 truncate leading-tight">{slot.file_name?.replace(/\.[^.]+$/, '').slice(0, 12) || tr('Fertig')}</p>
+                                <p className="text-[9px] text-amber-400 truncate leading-tight">{slot.file_name?.replace(/\.[^.]+$/, '') || tr('Fertig')}</p>
                               ) : topJob ? (
-                                <p className="text-[9px] text-surface-400 truncate leading-tight">{topJob.fileName.replace(/\.[^.]+$/, '').slice(0, 12)}</p>
+                                <p className="text-[9px] text-surface-400 truncate leading-tight">{topJob.fileName.replace(/\.[^.]+$/, '')}</p>
+                              ) : isGhost ? (
+                                <p className="text-[9px] text-surface-600 italic truncate leading-tight" title={tr('Belegt durch „{0}" (ragt aus Fach {1})', ghostName.replace(/\.[^.]+$/, ''), ghostBase)}>↑ {ghostName.replace(/\.[^.]+$/, '')}</p>
                               ) : (
                                 <p className="text-[9px] text-surface-800">{isLocked ? tr('Sperr') : ''}</p>
                               )}
                             </div>
-                            {heightPct > 0 && (
+                            {(heightPct > 0 || isGhost) && (
                               <div className="w-1 h-5 bg-surface-800 rounded-full overflow-hidden shrink-0">
                                 <div
-                                  className={`w-full rounded-full ${overHeight ? 'bg-amber-500/70' : isActive ? 'bg-blue-400/70' : 'bg-surface-500/60'}`}
-                                  style={{ height: `${heightPct}%`, marginTop: `${100 - heightPct}%` }}
+                                  className={`w-full rounded-full ${isGhost ? 'bg-surface-600/40' : overHeight ? 'bg-amber-500/70' : isActive ? 'bg-blue-400/70' : 'bg-surface-500/60'}`}
+                                  style={{ height: `${isGhost ? 100 : heightPct}%`, marginTop: `${isGhost ? 0 : 100 - heightPct}%` }}
                                 />
                               </div>
                             )}

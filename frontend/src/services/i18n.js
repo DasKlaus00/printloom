@@ -396,6 +396,7 @@ const EN_STRINGS = {
   'Aktiv:': 'Active:',
   '{0} Fächer': '{0} slots',
   '{0} Fach': '{0} slot',
+  'Belegt durch „{0}" (ragt aus Fach {1})': 'Occupied by "{0}" (extends from slot {1})',
   '{0} mm Fachhöhe': '{0} mm slot height',
   'Rack Konfiguration': 'Rack configuration',
   'Anzahl Racks': 'Number of racks',
