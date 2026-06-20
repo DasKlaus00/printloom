@@ -1015,6 +1015,14 @@ const EN_STRINGS = {
   '{0} von {1} Zeilen': '{0} of {1} lines',
   'Tastenkürzel: Leertaste': 'Shortcut: Spacebar',
   'Ziehen zum Umsortieren': 'Drag to reorder',
+  'Bestätigen': 'Confirm',
+  'Gerät löschen': 'Delete device',
+  'Dieses Gerät wirklich löschen?': 'Really delete this device?',
+  'Filament löschen': 'Delete filament',
+  'Datei löschen': 'Delete file',
+  'Regal zurücksetzen': 'Reset rack',
+  'Zurücksetzen': 'Reset',
+  'NOTAUS': 'EMERGENCY STOP',
 
   // ── Language packs ──
   'Pack braucht code + strings': 'Pack needs code + strings',

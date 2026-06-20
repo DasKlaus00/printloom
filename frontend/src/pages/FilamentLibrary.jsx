@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { filamentService } from '../services/api'
 import { useLanguage } from '../services/i18n'
+import { confirmDialog } from '../services/confirm'
 
 const MATERIALS = [
   'Alle', 'PLA Basic', 'PLA Matte', 'PLA Silk', 'PLA Sparkle', 'PLA Marble',
@@ -159,7 +160,7 @@ export default function FilamentLibrary() {
   }
 
   const handleDelete = async (idx) => {
-    if (!window.confirm(tr('Filament wirklich löschen?'))) return
+    if (!(await confirmDialog({ title: tr('Filament löschen'), message: tr('Filament wirklich löschen?'), confirmLabel: tr('Löschen') }))) return
     try {
       await filamentService.deleteCustom(idx)
       await load()

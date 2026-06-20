@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { deviceService, configService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
 import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } from '../services/i18n'
+import { confirmDialog } from '../services/confirm'
 
 /* ─── Language & downloadable language packs ─────────────────────── */
 function LanguagePacks() {
@@ -746,7 +747,7 @@ function Configuration() {
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this device?')) return
+    if (!(await confirmDialog({ title: tr('Gerät löschen'), message: tr('Dieses Gerät wirklich löschen?'), confirmLabel: tr('Löschen') }))) return
     await deviceService.deleteDevice(id)
     await load()
   }

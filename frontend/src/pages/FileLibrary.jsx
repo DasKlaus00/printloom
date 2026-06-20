@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { fileService, folderService, printerService, deviceService, filamentService, autofarmService } from '../services/api'
 import { useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
+import { confirmDialog } from '../services/confirm'
 
 function ColorDot({ hex }) {
   if (!hex) return <span className="w-3 h-3 rounded-full bg-surface-700 inline-block" />
@@ -728,7 +729,7 @@ function FileLibrary() {
   }
 
   const deleteFolder = async (folder) => {
-    if (!confirm(tr('Ordner „{0}" löschen? Inhalt wandert eine Ebene nach oben.', folder.name))) return
+    if (!(await confirmDialog({ title: tr('Ordner löschen'), message: tr('Ordner „{0}" löschen? Inhalt wandert eine Ebene nach oben.', folder.name), confirmLabel: tr('Löschen') }))) return
     try {
       await folderService.remove(folder.id)
       await Promise.all([loadFolders(), loadFiles()])
@@ -790,7 +791,7 @@ function FileLibrary() {
   const handleInput  = (e) => doUpload(e.target.files)
   const handleDrop   = (e) => { e.preventDefault(); setDrag(false); doUpload(e.dataTransfer.files) }
   const handleDelete = async (id, name) => {
-    if (!confirm(tr('"{0}" löschen?', name))) return
+    if (!(await confirmDialog({ title: tr('Datei löschen'), message: tr('"{0}" löschen?', name), confirmLabel: tr('Löschen') }))) return
     setFiles(prev => prev.filter(f => f.id !== id))   // optimistic — no reload jump
     try { await fileService.deleteFile(id); loadFolders() }
     catch { showFeedback(tr('Löschen fehlgeschlagen'), false); loadFiles() }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { controlService, printerService, deviceService, deviceSettingsService, klipperConfigService } from '../services/api'
 import { useLanguage } from '../services/i18n'
+import { confirmDialog } from '../services/confirm'
 
 /* ── Drucker-Profile ───────────────────────────────────────── */
 const PRINTER_PROFILES = [
@@ -391,7 +392,7 @@ export default function Steuerung() {
   }
 
   const emergencyStop = async () => {
-    if (!window.confirm(tr('NOTAUS — alle Geräte deaktivieren?'))) return
+    if (!(await confirmDialog({ title: tr('NOTAUS'), message: tr('NOTAUS — alle Geräte deaktivieren?'), confirmLabel: tr('Deaktivieren') }))) return
     try {
       await controlService.emergencyStop()
       setEmergencyOn(true)

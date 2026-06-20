@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { rackManagerService } from '../services/api'
 import { useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
+import { confirmDialog } from '../services/confirm'
 
 const STATUS_META = {
   free:     { label: 'Leer',     dot: 'dot-gray',  bg: 'bg-surface-800',    border: 'border-surface-700' },
@@ -224,7 +225,7 @@ function RackManager() {
   }
 
   const handleResetAll = async () => {
-    if (!confirm(tr('Alle Fächer auf "Leer" zurücksetzen?'))) return
+    if (!(await confirmDialog({ title: tr('Regal zurücksetzen'), message: tr('Alle Fächer auf "Leer" zurücksetzen?'), confirmLabel: tr('Zurücksetzen') }))) return
     try {
       const nonFree = Object.entries(data?.slots ?? {}).filter(([, s]) => s.status !== 'free')
       if (!nonFree.length) return
@@ -266,7 +267,7 @@ function RackManager() {
   }
 
   const handleDeleteRack = async (rackId) => {
-    if (!confirm(tr('Rack wirklich löschen?'))) return
+    if (!(await confirmDialog({ title: tr('Rack löschen'), message: tr('Rack wirklich löschen?'), confirmLabel: tr('Löschen') }))) return
     try {
       await rackManagerService.deleteRack(rackId)
       await loadRacks()

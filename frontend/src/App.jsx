@@ -24,6 +24,7 @@ class ErrorBoundary extends Component {
   }
 }
 import Navigation from './components/Navigation'
+import ConfirmHost from './components/ConfirmHost'
 import Dashboard from './pages/Dashboard'           // Landing-Seite → eager
 import Setup, { SETUP_DONE_KEY } from './pages/Setup' // braucht SETUP_DONE_KEY beim Start
 
@@ -349,6 +350,7 @@ function App() {
           )}
         </div>
       )}
+      <ConfirmHost />
     </div>
   )
 }
