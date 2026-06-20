@@ -312,6 +312,7 @@ function App() {
               <div className="text-center space-y-2">
                 <p className="text-lg font-semibold text-surface-100">{tr('Update läuft…')}</p>
                 <p className="text-sm text-surface-400">{tr('Container wird neugestartet — bitte warten')}</p>
+                <p className="text-sm text-blue-400/90 mt-1">{tr('Die Seite lädt sich nach Fertigstellung automatisch neu')}</p>
                 <p className="text-xs text-surface-600 mt-3">{tr('Keine Eingaben möglich während des Updates')}</p>
               </div>
             </>

@@ -171,6 +171,7 @@ const EN_STRINGS = {
   'Update läuft…': 'Update in progress…',
   'Container wird neugestartet — bitte warten': 'Container is restarting — please wait',
   'Keine Eingaben möglich während des Updates': 'No input possible during the update',
+  'Die Seite lädt sich nach Fertigstellung automatisch neu': 'The page reloads automatically when finished',
   'Update abgeschlossen': 'Update complete',
   'Seite wird neu geladen…': 'Reloading page…',
 
