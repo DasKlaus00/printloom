@@ -200,6 +200,24 @@ export default function Dashboard() {
                     farmRunning ? 'bg-emerald-400 animate-pulse' :
                     'bg-surface-700'
 
+  // Q4: Skeleton beim allerersten Laden (noch kein erfolgreicher Refresh)
+  if (!lastRefresh) {
+    return (
+      <div className="space-y-3 w-full max-w-md mx-auto pb-6" aria-busy="true">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="card animate-pulse space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="h-3 w-32 rounded bg-surface-800" />
+              <div className="h-6 w-12 rounded bg-surface-800" />
+            </div>
+            <div className="h-2 w-full rounded bg-surface-800/70" />
+            <div className="h-2 w-2/3 rounded bg-surface-800/70" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-3 w-full max-w-md mx-auto pb-6">
 

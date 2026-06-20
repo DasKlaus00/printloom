@@ -1006,6 +1006,14 @@ const EN_STRINGS = {
   '↓ Log': '↓ Log',
   'Aktuellen Log als .txt': 'Current log as .txt',
   'Noch keine Aktivität': 'No activity yet',
+  'Filter…': 'Filter…',
+  'Filter löschen': 'Clear filter',
+  'Sichtbare Zeilen kopieren': 'Copy visible lines',
+  'Log kopiert ({0} Zeilen)': 'Log copied ({0} lines)',
+  'Kopieren nicht möglich': 'Copy failed',
+  'Kein Treffer für „{0}"': 'No match for “{0}”',
+  '{0} von {1} Zeilen': '{0} of {1} lines',
+  'Tastenkürzel: Leertaste': 'Shortcut: Spacebar',
 
   // ── Language packs ──
   'Pack braucht code + strings': 'Pack needs code + strings',

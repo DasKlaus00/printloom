@@ -1000,7 +1000,18 @@ function FileLibrary() {
         )}
 
         {loading ? (
-          <p className="text-sm text-surface-500 py-6 text-center">{tr('Lädt…')}</p>
+          <div className="space-y-2" aria-busy="true">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-900 border border-surface-700/40 animate-pulse">
+                <div className="w-5 h-5 rounded bg-surface-800 shrink-0" />
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="h-3 rounded bg-surface-800" style={{ width: `${55 + (i * 11) % 35}%` }} />
+                  <div className="h-2 rounded bg-surface-800/70 w-24" />
+                </div>
+                <div className="h-3 w-12 rounded bg-surface-800 shrink-0" />
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="space-y-2">
 

@@ -644,7 +644,11 @@ function AutoFarm() {
   const [editingDash, setEditingDash] = useState(false)
   const [dashLayout,  setDashLayout]  = useState(DEFAULT_LAYOUT)
   const [dashHidden,  setDashHidden]  = useState([])
+  const [logFilter,   setLogFilter]   = useState('')   // Q2: Aktivitäts-Log durchsuchen
   const dashSaveRef   = useRef(null)
+  const rootRef       = useRef(null)   // Q3: Sichtbarkeits-Check für Tastenkürzel
+  const logFilterRef  = useRef(null)
+  const togglePauseRef = useRef(null)
   const dashLoadedRef = useRef(false)
   const prevRunningRef = useRef(false)
   const pollTimerRef = useRef(null)
@@ -1391,6 +1395,17 @@ function AutoFarm() {
     URL.revokeObjectURL(url)
   }
 
+  /* ── Log in die Zwischenablage (gefiltert, älteste zuerst) ── */
+  const copyLog = async (lines) => {
+    const text = [...lines].reverse().join('\n')
+    try {
+      await navigator.clipboard.writeText(text)
+      showFeedback(tr('Log kopiert ({0} Zeilen)', lines.length))
+    } catch {
+      showFeedback(tr('Kopieren nicht möglich'), false)
+    }
+  }
+
   /* ── Farm control ────────────────────────────────────────── */
   const startFarm = async () => {
     if (!bambuId) return showFeedback(tr('Kein Bambu Lab Gerät konfiguriert'), false)
@@ -1479,6 +1494,32 @@ function AutoFarm() {
     try { await autofarmService.pause(); await fetchStatus() }
     catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
   }
+  togglePauseRef.current = togglePause
+
+  /* ── Q3: Tastenkürzel — nur aktiv, wenn diese Seite sichtbar ist ──
+     (App.jsx hält Seiten im DOM, daher Sichtbarkeits-Check via offsetParent).
+     '/' fokussiert den Log-Filter · Esc verlässt ihn · Leertaste pausiert/
+     setzt fort (nur während eines Laufs; Start bleibt bewusst nur per Klick). */
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!rootRef.current || rootRef.current.offsetParent === null) return
+      const t = e.target
+      const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
+                           t.tagName === 'SELECT' || t.isContentEditable)
+      if (e.key === '/' && !typing) {
+        e.preventDefault()
+        logFilterRef.current?.focus()
+      } else if (e.key === 'Escape' && t === logFilterRef.current) {
+        setLogFilter('')
+        t.blur()
+      } else if (e.code === 'Space' && !typing && runningRef.current) {
+        e.preventDefault()
+        togglePauseRef.current?.()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   /* ── Derived helpers ─────────────────────────────────────── */
   const slotH      = rackData?.slot_height_mm  ?? 50
@@ -1532,7 +1573,7 @@ function AutoFarm() {
 
   /* ─────────────────────────────────────────────────────────── */
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" ref={rootRef}>
 
       {/* Feedback */}
       {feedback && (
@@ -1638,6 +1679,7 @@ function AutoFarm() {
             <>
               <button
                 onClick={togglePause}
+                title={tr('Tastenkürzel: Leertaste')}
                 className={`btn btn-sm ${paused ? 'btn-primary' : 'btn-ghost text-amber-400 hover:text-amber-300'}`}
               >
                 {paused ? tr('▶ Fortsetzen') : tr('⏸ Pause')}
@@ -2179,6 +2221,26 @@ function AutoFarm() {
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
+                {farmLog.length > 0 && (
+                  <div className="relative">
+                    <input
+                      ref={logFilterRef}
+                      value={logFilter}
+                      onChange={e => setLogFilter(e.target.value)}
+                      placeholder={tr('Filter…')}
+                      className="w-24 focus:w-32 transition-all bg-surface-900/60 border border-surface-800 rounded px-2 py-0.5 text-[10px] text-surface-300 placeholder-surface-700 focus:outline-none focus:border-blue-700"
+                    />
+                    {logFilter && (
+                      <button onClick={() => setLogFilter('')} className="absolute right-1 top-1/2 -translate-y-1/2 text-surface-600 hover:text-surface-300 text-[10px]" title={tr('Filter löschen')}>✕</button>
+                    )}
+                  </div>
+                )}
+                {(() => {
+                  const shown = logFilter ? farmLog.filter(l => l.toLowerCase().includes(logFilter.toLowerCase())) : farmLog
+                  return (
+                    <button onClick={() => copyLog(shown)} disabled={!shown.length} className="text-xs text-surface-700 hover:text-blue-400 disabled:opacity-40 transition-colors" title={tr('Sichtbare Zeilen kopieren')}>⧉</button>
+                  )
+                })()}
                 <button onClick={() => autofarmService.downloadLogFile()} className="text-xs text-surface-700 hover:text-blue-400 transition-colors" title={tr('Persistentes Log-File herunterladen (alle Läufe)')}>{tr('↓ Log')}</button>
                 <button onClick={exportLog} className="text-xs text-surface-700 hover:text-surface-400 transition-colors" title={tr('Aktuellen Log als .txt')}>↓</button>
                 <button onClick={() => { autofarmService.clearLog().catch(() => {}); setFarmStatus(s => s ? { ...s, log: [] } : s) }} className="text-xs text-surface-700 hover:text-surface-400 transition-colors">✕</button>
@@ -2186,9 +2248,13 @@ function AutoFarm() {
             </div>
             {!farmLog.length ? (
               <p className="text-[10px] text-surface-700 py-2">{tr('Noch keine Aktivität')}</p>
-            ) : (
+            ) : (() => {
+              const shown = logFilter ? farmLog.filter(l => l.toLowerCase().includes(logFilter.toLowerCase())) : farmLog
+              if (!shown.length) return <p className="text-[10px] text-surface-700 py-2">{tr('Kein Treffer für „{0}"', logFilter)}</p>
+              return (
               <div className="space-y-0.5 font-mono text-[10px] max-h-52 overflow-y-auto">
-                {farmLog.map((line, i) => (
+                {logFilter && <p className="text-[10px] text-surface-600 sticky top-0 bg-surface-900 py-0.5">{tr('{0} von {1} Zeilen', shown.length, farmLog.length)}</p>}
+                {shown.map((line, i) => (
                   <p key={i} className={
                     line.includes('FEHLER') ? 'text-red-400' :
                     line.includes('═══')    ? 'text-surface-500 font-semibold' :
@@ -2198,7 +2264,8 @@ function AutoFarm() {
                   }>{line}</p>
                 ))}
               </div>
-            )}
+              )
+            })()}
           </div>
             </div>
           ),
