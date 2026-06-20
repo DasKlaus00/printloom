@@ -654,7 +654,7 @@ function ErrorStrategy() {
             </div>
             <select value={strategy[err.key] ?? ERROR_DEFAULTS[err.key]}
               onChange={e => setStrategy(s => ({ ...s, [err.key]: e.target.value }))}
-              className="text-xs h-8 py-0 px-2 bg-surface-900 border border-surface-700 rounded shrink-0">
+              className="w-44 text-xs h-8 py-0 px-2 bg-surface-900 border border-surface-700 rounded shrink-0">
               {err.actions.map(a => <option key={a} value={a}>{tr(ACTION_LABEL[a])}</option>)}
             </select>
           </div>

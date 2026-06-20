@@ -1573,7 +1573,10 @@ function AutoFarm() {
       addGhost(j.slot, j.computedHeight ?? j.objectHeight, j.fileName)
   })
   Object.entries(rackData?.slots ?? {}).forEach(([k, sd]) => {
-    if (sd?.object_height_mm > 0) addGhost(k, sd.object_height_mm, sd.file_name)
+    // Nur für wirklich belegte Fächer — ein entnommenes (Status „empty") Fach darf
+    // keinen Ghost mehr erzeugen, auch wenn die alte Höhe noch im Datensatz steht.
+    if (sd?.object_height_mm > 0 && ['printing', 'done'].includes(sd.status))
+      addGhost(k, sd.object_height_mm, sd.file_name)
   })
 
   /* ─────────────────────────────────────────────────────────── */

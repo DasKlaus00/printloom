@@ -499,8 +499,12 @@ def update_slot(slot_id: str, body: dict, db: Session = Depends(get_db)):
     for field in ("status", "file_id", "file_name", "object_height_mm", "note"):
         if field in body:
             slot[field] = body[field]
-    # Taking a plate out of the rack auto-refills the magazine.
+    # Taking a plate out of the rack auto-refills the magazine and fully clears
+    # the slot — sonst bleibt die alte Objekthöhe stehen und erzeugt im Regal
+    # weiter eine „Ghost"-Platte über dem (jetzt leeren) Fach.
     if slot.get("status") == "free" and old_status in _PLATE_PRESENT:
+        slot.update({"file_id": None, "file_name": None,
+                     "object_height_mm": None, "note": ""})
         _refill_one(data, slot_id)
     _save(data)
     return {"success": True, "slot": slot}
