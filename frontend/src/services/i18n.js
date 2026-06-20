@@ -1037,6 +1037,11 @@ const EN_STRINGS = {
   'Typ': 'Type',
   'Aufsteigend': 'Ascending',
   'Absteigend': 'Descending',
+  'Sortieren / filtern': 'Sort / filter',
+  '↑ Aufsteigend': '↑ Ascending',
+  '↓ Absteigend': '↓ Descending',
+  'Alle anzeigen': 'Show all',
+  '(keine Werte)': '(no values)',
 
   // ── Energie & Kosten / Smart-Plug (3.1/3.2/3.4) ──
   'Energie & Kosten': 'Energy & costs',

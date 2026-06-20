@@ -371,6 +371,53 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
 
 /* One file as a row with all part properties inline & editable (side by side).
    Text fields save on blur; color/folder on change — no full reload, just local update. */
+/* Spalten-Kopf mit Dropdown: Sortieren + (optional) Werte-Filter — Excel-AutoFilter-Stil. */
+function ColHeader({ label, width, sortable, sortActive, sortDir, onSort, values, activeValue, onPick, tr }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef()
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+  const filtered = values && activeValue && activeValue !== 'all'
+  const item = "block w-full text-left px-2 py-1 text-[11px] rounded hover:bg-surface-700/60 truncate"
+  return (
+    <div ref={ref} className="relative shrink-0" style={width ? { width } : undefined}>
+      <button onClick={() => setOpen(o => !o)}
+        className={`w-full flex items-center gap-1 px-2 py-1.5 text-[11px] font-semibold rounded transition-colors ${
+          filtered || sortActive ? 'text-blue-300 bg-blue-950/30' : 'text-surface-200 hover:bg-surface-700/50'}`}
+        title={tr('Sortieren / filtern')}>
+        <span className="truncate">{label}</span>
+        {sortActive && <span className="text-[9px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+        {filtered && <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />}
+        <span className="ml-auto text-[8px] opacity-60">▼</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-30 min-w-[11rem] card p-1 shadow-xl border border-surface-700 max-h-72 overflow-y-auto">
+          {sortable && (
+            <>
+              <button onClick={() => { onSort('asc'); setOpen(false) }} className={`${item} ${sortActive && sortDir === 'asc' ? 'text-blue-300' : 'text-surface-300'}`}>{tr('↑ Aufsteigend')}</button>
+              <button onClick={() => { onSort('desc'); setOpen(false) }} className={`${item} ${sortActive && sortDir === 'desc' ? 'text-blue-300' : 'text-surface-300'}`}>{tr('↓ Absteigend')}</button>
+              {values && <div className="border-t border-surface-800 my-1" />}
+            </>
+          )}
+          {values && (
+            <>
+              <button onClick={() => { onPick('all'); setOpen(false) }} className={`${item} ${!filtered ? 'text-blue-300' : 'text-surface-300'}`}>{tr('Alle anzeigen')}</button>
+              {values.length === 0 && <p className="px-2 py-1 text-[10px] text-surface-600">{tr('(keine Werte)')}</p>}
+              {values.map(v => (
+                <button key={v} onClick={() => { onPick(v); setOpen(false) }}
+                  className={`${item} font-mono ${activeValue === v ? 'text-blue-300' : 'text-surface-300'}`}>{v}</button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FileRow({ file, meta, folderOptions, folderById, searching, selected, onToggleSelect,
                   onSaveField, onMoveFolder, onDelete, onQueue, onSend, bambuId, sending, enqueuing,
                   amsSlots, catalog }) {
@@ -489,7 +536,7 @@ function FileLibrary() {
   // Sort & filter (client-side over the current folder/search result)
   const [sortBy,     setSortBy]     = useState(() => localStorage.getItem('ottomat3d_lib_sort') || 'name')
   const [sortDir,    setSortDir]    = useState(() => localStorage.getItem('ottomat3d_lib_dir')  || 'asc')
-  const [filterType, setFilterType] = useState('all')
+  const [filters,    setFilters]    = useState({ type: 'all', material: 'all', tags: 'all' })
   const inputRef = useRef()
   const newFolderRef = useRef()
 
@@ -498,18 +545,23 @@ function FileLibrary() {
   useEffect(() => { localStorage.setItem('ottomat3d_lib_sort', sortBy) }, [sortBy])
   useEffect(() => { localStorage.setItem('ottomat3d_lib_dir', sortDir) }, [sortDir])
 
+  const fileTags = (f) => (f.tags || '').split(',').map(t => t.trim()).filter(Boolean)
+
   // Filtered + sorted view of the loaded files (folders stay above, unaffected).
   const visibleFiles = useMemo(() => {
     let out = files
-    if (filterType !== 'all') out = out.filter(f => f.file_type === filterType)
+    if (filters.type     !== 'all') out = out.filter(f => f.file_type === filters.type)
+    if (filters.material !== 'all') out = out.filter(f => (f.material || '') === filters.material)
+    if (filters.tags     !== 'all') out = out.filter(f => fileTags(f).includes(filters.tags))
     const dir = sortDir === 'asc' ? 1 : -1
     const val = (f) => {
       switch (sortBy) {
-        case 'date': return new Date(f.uploaded_at || 0).getTime()
-        case 'size': return f.file_size || 0
-        case 'time': return metaById[f.id]?.time_seconds || 0
-        case 'type': return f.file_type || ''
-        default:     return (f.original_filename || '').toLowerCase()
+        case 'date':     return new Date(f.uploaded_at || 0).getTime()
+        case 'size':     return f.file_size || 0
+        case 'time':     return metaById[f.id]?.time_seconds || 0
+        case 'type':     return f.file_type || ''
+        case 'material': return (f.material || '').toLowerCase()
+        default:         return (f.original_filename || '').toLowerCase()
       }
     }
     return [...out].sort((a, b) => {
@@ -517,13 +569,19 @@ function FileLibrary() {
       if (typeof va === 'string') return dir * va.localeCompare(vb)
       return dir * (va - vb)
     })
-  }, [files, filterType, sortBy, sortDir, metaById])
+  }, [files, filters, sortBy, sortDir, metaById])
 
-  // Which file types are actually present → only offer meaningful filter chips.
-  const presentTypes = useMemo(
-    () => [...new Set(files.map(f => f.file_type))].filter(Boolean).sort(),
-    [files]
-  )
+  // Distinct values actually present → fill the per-column filter dropdowns.
+  const presentTypes     = useMemo(() => [...new Set(files.map(f => f.file_type))].filter(Boolean).sort(), [files])
+  const presentMaterials = useMemo(() => [...new Set(files.map(f => f.material))].filter(Boolean).sort(), [files])
+  const presentTags      = useMemo(() => {
+    const s = new Set()
+    files.forEach(f => fileTags(f).forEach(t => s.add(t)))
+    return [...s].sort()
+  }, [files])
+
+  const sortByCol = (key) => (dir) => { setSortBy(key); setSortDir(dir) }
+  const pickFilter = (col) => (v) => setFilters(f => ({ ...f, [col]: v }))
 
   const showFeedback = (msg, ok = true) => {
     setFeedback({ msg, ok })
@@ -925,38 +983,19 @@ function FileLibrary() {
           </div>
         )}
 
-        {/* Sort & filter bar */}
+        {/* Spalten-Kopfzeile mit Filter/Sortier-Dropdowns (AutoFilter-Stil) */}
         {!loading && files.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap mb-3 text-[11px]">
-            <span className="text-surface-600">{tr('Sortieren')}</span>
-            <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-              className="h-7 py-0 px-1.5 text-[11px] bg-surface-900 border border-surface-700 rounded">
-              <option value="name">{tr('Name')}</option>
-              <option value="date">{tr('Datum')}</option>
-              <option value="size">{tr('Größe')}</option>
-              <option value="time">{tr('Druckzeit')}</option>
-              <option value="type">{tr('Typ')}</option>
-            </select>
-            <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
-              className="h-7 px-2 bg-surface-900 border border-surface-700 rounded text-surface-300 hover:text-surface-100"
-              title={sortDir === 'asc' ? tr('Aufsteigend') : tr('Absteigend')}>
-              {sortDir === 'asc' ? '↑' : '↓'}
-            </button>
-            {presentTypes.length > 1 && (
-              <div className="flex items-center gap-1 ml-1">
-                <button onClick={() => setFilterType('all')}
-                  className={`h-7 px-2 rounded border transition-colors ${filterType === 'all' ? 'border-blue-700 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>
-                  {tr('Alle')}
-                </button>
-                {presentTypes.map(t => (
-                  <button key={t} onClick={() => setFilterType(t)}
-                    className={`h-7 px-2 rounded border font-mono transition-colors ${filterType === t ? 'border-blue-700 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>
-                    {t}
-                  </button>
-                ))}
-              </div>
-            )}
-            <span className="text-surface-700 ml-auto">{tr('{0} Datei(en)', visibleFiles.length)}</span>
+          <div className="flex items-center gap-1 mb-3 px-2 py-1 rounded-lg bg-surface-800/70 border border-surface-700 overflow-x-auto">
+            <ColHeader label={tr('Name')} width="14rem" sortable sortActive={sortBy === 'name'} sortDir={sortDir} onSort={sortByCol('name')} tr={tr} />
+            <ColHeader label={tr('Typ')} width="7rem" sortable sortActive={sortBy === 'type'} sortDir={sortDir} onSort={sortByCol('type')}
+              values={presentTypes} activeValue={filters.type} onPick={pickFilter('type')} tr={tr} />
+            <ColHeader label={tr('Material')} width="8rem" sortable sortActive={sortBy === 'material'} sortDir={sortDir} onSort={sortByCol('material')}
+              values={presentMaterials} activeValue={filters.material} onPick={pickFilter('material')} tr={tr} />
+            <ColHeader label={tr('Tags')} width="8rem" values={presentTags} activeValue={filters.tags} onPick={pickFilter('tags')} tr={tr} />
+            <ColHeader label={tr('Größe')} width="6rem" sortable sortActive={sortBy === 'size'} sortDir={sortDir} onSort={sortByCol('size')} tr={tr} />
+            <ColHeader label={tr('Druckzeit')} width="7rem" sortable sortActive={sortBy === 'time'} sortDir={sortDir} onSort={sortByCol('time')} tr={tr} />
+            <ColHeader label={tr('Datum')} width="7rem" sortable sortActive={sortBy === 'date'} sortDir={sortDir} onSort={sortByCol('date')} tr={tr} />
+            <span className="ml-auto pr-1 text-[10px] text-surface-600 font-mono shrink-0">{tr('{0} Datei(en)', visibleFiles.length)}</span>
           </div>
         )}
 
