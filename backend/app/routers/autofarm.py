@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from app.db.database import SessionLocal
@@ -2023,6 +2023,58 @@ async def get_status(light: bool = False):
     if light:
         data.pop("log", None)
     return data
+
+
+# ── P6: WebSocket-Live-Kanal ─────────────────────────────────
+# Statt dass jeder Client den Status pollt, pusht der Server Änderungen.
+# Ein einziger Broadcaster-Task vergleicht den serialisierten Farm-Status im
+# 1-s-Takt mit dem zuletzt gesendeten und schickt nur bei Änderung. Läuft nur,
+# solange Clients verbunden sind. Frontend fällt bei Abriss auf HTTP-Poll zurück.
+_ws_clients: set = set()
+_ws_task: Optional[asyncio.Task] = None
+_ws_last_payload: Optional[str] = None
+
+
+def _ws_snapshot() -> str:
+    """Farm-Status als JSON — interne Underscore-Felder (z. B. Sets) ausgeblendet."""
+    data = {k: v for k, v in _farm.items() if not k.startswith("_")}
+    return json.dumps(data, default=str, ensure_ascii=False)
+
+
+async def _ws_broadcaster():
+    global _ws_task, _ws_last_payload
+    try:
+        while _ws_clients:
+            payload = _ws_snapshot()
+            if payload != _ws_last_payload:
+                _ws_last_payload = payload
+                for ws in list(_ws_clients):
+                    try:
+                        await ws.send_text(payload)
+                    except Exception:
+                        _ws_clients.discard(ws)
+            await asyncio.sleep(1.0)
+    finally:
+        _ws_task = None
+
+
+@router.websocket("/ws")
+async def farm_ws(ws: WebSocket):
+    global _ws_task
+    await ws.accept()
+    _ws_clients.add(ws)
+    try:
+        await ws.send_text(_ws_snapshot())            # Initial-Snapshot sofort
+        if _ws_task is None or _ws_task.done():        # Broadcaster bei Bedarf starten
+            _ws_task = asyncio.create_task(_ws_broadcaster())
+        while True:                                    # offen halten, nur Disconnect erkennen
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        _ws_clients.discard(ws)
 
 
 @router.post("/stop")

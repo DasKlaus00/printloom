@@ -10,6 +10,7 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        ws: true,   // WebSocket-Live-Kanal (/api/autofarm/ws) im Dev durchreichen
       },
     },
   },

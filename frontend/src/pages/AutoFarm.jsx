@@ -4,6 +4,7 @@ import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout } from '../component
 import { parseSlotKey, slotsNeeded, autoSlot, checkClearance } from '../services/rackUtils'
 import { amsMissing, colorDist } from '../services/amsUtils'
 import { useQueueEta, fmtDur, jobPrintSec, ensureMeta, getCachedMeta, CHANGEOVER_SEC } from '../services/useQueueEta'
+import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { useLanguage } from '../services/i18n'
 
 /* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
@@ -869,6 +870,11 @@ function AutoFarm() {
 
   useEffect(() => { fetchStatus() }, [fetchStatus])
 
+  // P6: Status kommt live per WebSocket (mit HTTP-Poll-Fallback) — ersetzt das
+  // bisherige 5s-Status-Polling. fetchStatus bleibt für sofortige Updates nach
+  // Aktionen (Start/Stop/Pause) erhalten.
+  useFarmStatusStream(setFarmStatus)
+
   // Auto-stop notification — only fires when farm stopped on its own (not manual)
   useEffect(() => {
     const nowRunning = farmStatus?.running ?? false
@@ -880,10 +886,9 @@ function AutoFarm() {
 
   useEffect(() => {
     if (running) {
-      // Während die Farm läuft auch das Regal mitziehen, damit fertige Fächer
-      // sofort orange/„fertig" werden — ohne F5.
+      // Status läuft jetzt über den WebSocket (P6). Während die Farm läuft ziehen
+      // wir nur noch das Regal nach, damit fertige Fächer sofort „fertig" werden.
       const poll = () => {
-        fetchStatus()
         rackManagerService.getAll().then(r => setRackData(r.data)).catch(() => {})
       }
       pollTimerRef.current = setInterval(poll, 5000)
@@ -891,7 +896,7 @@ function AutoFarm() {
       if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null }
     }
     return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current) }
-  }, [running, fetchStatus])
+  }, [running])
 
   useEffect(() => {
     autofarmService.getSettings()

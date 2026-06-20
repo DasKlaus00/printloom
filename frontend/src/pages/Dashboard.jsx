@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { deviceService, printerService, rackManagerService, autofarmService } from '../services/api'
 import { useQueueEta, fmtDur } from '../services/useQueueEta'
+import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { useLanguage } from '../services/i18n'
 
 function fmtMin(min) {
@@ -108,16 +109,22 @@ export default function Dashboard() {
   const [stats,       setStats]       = useState(null)
   const [timeline,    setTimeline]    = useState(null)
   const [costCfg,     setCostCfg]     = useState(null)   // Strompreis etc. für Kostenanzeige
+  const farmStatusRef = useRef(null)                     // P6: aktueller Status für refresh()
+  farmStatusRef.current = farmStatus
   const eta = useQueueEta()   // echte Rest-Druckzeit der Warteschlange
+
+  // P6: Farm-Status live per WebSocket (mit HTTP-Poll-Fallback) — der erste
+  // Snapshot setzt zugleich lastRefresh, damit das Skeleton verschwindet.
+  useFarmStatusStream((data) => { setFarmStatus(data); setLastRefresh(new Date()) })
 
   const refresh = useCallback(async () => {
     try {
-      const [fs, rd, dd] = await Promise.all([
-        autofarmService.getStatus(true),
+      // Status kommt live per WebSocket (useFarmStatusStream) — hier nur noch
+      // Regal/Geräte/Statistik/Kosten, die der WS-Kanal nicht abdeckt.
+      const [rd, dd] = await Promise.all([
         rackManagerService.getAll(),
         deviceService.listDevices(),
       ])
-      setFarmStatus(fs.data)
       setRackData(rd.data)
       autofarmService.getStats().then(r => setStats(r.data)).catch(() => {})
       autofarmService.getTimeline(24).then(r => setTimeline(r.data)).catch(() => {})
@@ -125,7 +132,7 @@ export default function Dashboard() {
       const b = dd.data.find(x => x.device_type === 'bambu_lab')
       if (b) setBambuId(b.id)
 
-      if (!fs.data?.running) {
+      if (!farmStatusRef.current?.running) {
         autofarmService.getQueue()
           .then(r => setQueueJobs((r.data?.jobs ?? r.data ?? []).filter(j => j.status === 'pending')))
           .catch(() => {})
