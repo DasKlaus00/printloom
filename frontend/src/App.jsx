@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, Component } from 'react'
+import React, { useState, useEffect, useCallback, Component, Suspense } from 'react'
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -24,21 +24,24 @@ class ErrorBoundary extends Component {
   }
 }
 import Navigation from './components/Navigation'
-import Dashboard from './pages/Dashboard'
-import Configuration from './pages/Configuration'
-import FileLibrary from './pages/FileLibrary'
-import FilamentLibrary from './pages/FilamentLibrary'
-import RackManager from './pages/RackManager'
-import AutoFarm from './pages/AutoFarm'
-import Steuerung from './pages/Steuerung'
-import System from './pages/System'
-import SequenceEditor from './pages/SequenceEditor'
-import Profiles from './pages/Profiles'
-import FileAnalyzer from './pages/FileAnalyzer'
-import AmsDiagnostics from './pages/AmsDiagnostics'
-import MobileView from './pages/MobileView'
-import Projekt from './pages/Projekt'
-import Setup, { SETUP_DONE_KEY } from './pages/Setup'
+import Dashboard from './pages/Dashboard'           // Landing-Seite → eager
+import Setup, { SETUP_DONE_KEY } from './pages/Setup' // braucht SETUP_DONE_KEY beim Start
+
+/* Alle übrigen Seiten lazy: jede landet als eigener Chunk und wird erst beim
+   ersten Aufruf geladen → deutlich kleineres Start-Bundle. */
+const Configuration   = React.lazy(() => import('./pages/Configuration'))
+const FileLibrary     = React.lazy(() => import('./pages/FileLibrary'))
+const FilamentLibrary = React.lazy(() => import('./pages/FilamentLibrary'))
+const RackManager     = React.lazy(() => import('./pages/RackManager'))
+const AutoFarm        = React.lazy(() => import('./pages/AutoFarm'))
+const Steuerung       = React.lazy(() => import('./pages/Steuerung'))
+const System          = React.lazy(() => import('./pages/System'))
+const SequenceEditor  = React.lazy(() => import('./pages/SequenceEditor'))
+const Profiles        = React.lazy(() => import('./pages/Profiles'))
+const FileAnalyzer    = React.lazy(() => import('./pages/FileAnalyzer'))
+const AmsDiagnostics  = React.lazy(() => import('./pages/AmsDiagnostics'))
+const MobileView      = React.lazy(() => import('./pages/MobileView'))
+const Projekt         = React.lazy(() => import('./pages/Projekt'))
 import { healthService, systemService, deviceService } from './services/api'
 import { loadLangPacks, useLanguage } from './services/i18n'
 import { VERSION } from './version'
@@ -106,6 +109,15 @@ function StatusPill({ label, target }) {
     >
       <span className={`dot ${st.dot} ${st.pulse ? 'animate-pulse' : ''}`} />
       <span className="hidden sm:inline">{label}</span>
+    </div>
+  )
+}
+
+/* Platzhalter, während ein lazy geladener Seiten-Chunk noch lädt */
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center py-24">
+      <div className="w-8 h-8 rounded-full border-4 border-surface-700 border-t-blue-500 animate-spin" />
     </div>
   )
 }
@@ -243,7 +255,9 @@ function App() {
     return (
       <div key={id} hidden={currentPage !== id}>
         <ErrorBoundary>
-          <Component {...extraProps} />
+          <Suspense fallback={<PageFallback />}>
+            <Component {...extraProps} />
+          </Suspense>
         </ErrorBoundary>
       </div>
     )
@@ -251,7 +265,11 @@ function App() {
 
   // MobileView renders standalone without nav/header
   if (currentPage === 'mobile') {
-    return <MobileView />
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <MobileView />
+      </Suspense>
+    )
   }
 
   return (

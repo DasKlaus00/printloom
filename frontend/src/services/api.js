@@ -122,7 +122,7 @@ export const systemService = {
 
 export const autofarmService = {
   start:         (data)  => api.post('/autofarm/start', data),
-  getStatus:     ()      => api.get('/autofarm/status'),
+  getStatus:     (light) => api.get('/autofarm/status', light ? { params: { light: 1 } } : undefined),
   stop:          ()      => api.post('/autofarm/stop'),
   forceReset:    ()      => api.post('/autofarm/force-reset'),
   reorderJobs:   (ids)   => api.put('/autofarm/jobs/reorder', { job_ids: ids }),

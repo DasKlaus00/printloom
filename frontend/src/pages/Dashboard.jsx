@@ -113,7 +113,7 @@ export default function Dashboard() {
   const refresh = useCallback(async () => {
     try {
       const [fs, rd, dd] = await Promise.all([
-        autofarmService.getStatus(),
+        autofarmService.getStatus(true),
         rackManagerService.getAll(),
         deviceService.listDevices(),
       ])

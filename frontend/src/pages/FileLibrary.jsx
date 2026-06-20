@@ -805,7 +805,7 @@ function FileLibrary() {
     setEnqueuing(true)
     try {
       const [statusRes, queueRes] = await Promise.all([
-        autofarmService.getStatus().catch(() => ({ data: {} })),
+        autofarmService.getStatus(true).catch(() => ({ data: {} })),
         autofarmService.getQueue().catch(() => ({ data: [] })),
       ])
       const running = !!statusRes.data?.running

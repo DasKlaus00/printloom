@@ -51,15 +51,17 @@ export function useQueueEta(pollMs = 15000) {
 
   const compute = useCallback(async () => {
     try {
-      const [st, q, hi] = await Promise.all([
-        autofarmService.getStatus().catch(() => ({ data: {} })),
+      // Kein eigener /status-Poll mehr: `running` lässt sich aus der Queue ableiten
+      // (ein druckender Job ⇒ Farm läuft). Spart auf Dashboard & AutoFarm je einen
+      // doppelten Status-Request pro Intervall.
+      const [q, hi] = await Promise.all([
         autofarmService.getQueue().catch(() => ({ data: [] })),
         autofarmService.getHistory().catch(() => ({ data: {} })),
       ])
-      const running = !!st.data?.running
       const hist = hi.data || {}
       const raw = q.data
       const jobs = (Array.isArray(raw) ? raw : (raw?.jobs ?? [])).filter(j => j.status !== 'done')
+      const running = jobs.some(j => PRINTING.has(j.status))
 
       // fehlende Slicer-Druckzeiten nachladen (einmalig je Datei)
       const need = [...new Set(jobs.map(j => j.fileId).filter(id => id != null && _metaCache[id] === undefined))]

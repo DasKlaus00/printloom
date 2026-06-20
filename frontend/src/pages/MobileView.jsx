@@ -57,7 +57,7 @@ export default function MobileView() {
     try {
       const [rr, fr] = await Promise.allSettled([
         rackManagerService.getAll(),
-        autofarmService.getStatus(),
+        autofarmService.getStatus(true),
       ])
       if (rr.status === 'fulfilled') setRackData(rr.value.data)
       if (fr.status === 'fulfilled') setFarmState(fr.value.data)

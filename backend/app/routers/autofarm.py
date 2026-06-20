@@ -2002,8 +2002,13 @@ async def remove_job_from_farm(job_id: int):
 
 
 @router.get("/status")
-async def get_status():
-    return dict(_farm)
+async def get_status(light: bool = False):
+    # `light=1` lässt das Aktivitäts-Log (bis 200 Einträge) weg — Dashboard,
+    # Mobile-View, Datei-Bibliothek & ETA-Hook brauchen es nicht und pollen oft.
+    data = dict(_farm)
+    if light:
+        data.pop("log", None)
+    return data
 
 
 @router.post("/stop")
