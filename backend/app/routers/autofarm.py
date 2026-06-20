@@ -962,232 +962,246 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
     last_progress_t = loop.time()
     stall_notified  = False
 
-    while not _farm["stopping"]:
-        if _farm["paused"]:
-            while _farm["paused"] and not _farm["stopping"]:
-                await asyncio.sleep(0.5)
-            # Nach manuellem Fortsetzen den Fortschritts-Watchdog neu scharf stellen.
-            last_progress_t = loop.time()
-            stall_notified = False
-        if _farm["stopping"]:
-            break
+    mqtt = None  # P4: persistente MQTT-Verbindung über alle Polls dieses Drucks
+    def _wp_disconnect():
+        nonlocal mqtt
+        if mqtt is not None:
+            try: mqtt.disconnect()
+            except Exception: pass
+            mqtt = None
+    try:
+        while not _farm["stopping"]:
+            if _farm["paused"]:
+                while _farm["paused"] and not _farm["stopping"]:
+                    await asyncio.sleep(0.5)
+                # Nach manuellem Fortsetzen den Fortschritts-Watchdog neu scharf stellen.
+                last_progress_t = loop.time()
+                stall_notified = False
+            if _farm["stopping"]:
+                break
 
-        await asyncio.sleep(poll_sec)
-        if _farm["stopping"]:
-            break
+            await asyncio.sleep(poll_sec)
+            if _farm["stopping"]:
+                break
 
-        try:
-            mqtt = BambuLabMQTT(device)
-            connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
-            if not connected:
-                raise ConnectionError("MQTT nicht erreichbar")
             try:
+                # P4: bestehende Verbindung wiederverwenden; nur neu aufbauen, wenn keine
+                # da ist oder die letzte abgerissen wurde. Spart pro Poll einen kompletten
+                # MQTT-Connect/Disconnect über die gesamte Druckdauer.
+                if mqtt is None or not getattr(mqtt, "connected", False):
+                    _wp_disconnect()
+                    mqtt = BambuLabMQTT(device)
+                    connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+                    if not connected:
+                        mqtt = None
+                        raise ConnectionError("MQTT nicht erreichbar")
                 await loop.run_in_executor(None, mqtt.request_status)
                 await asyncio.sleep(1.5)
                 raw = mqtt.get_last_message()
-            finally:
-                mqtt.disconnect()
 
-            if not raw:
-                raise ConnectionError("Keine MQTT-Antwort")
+                if not raw:
+                    raise ConnectionError("Keine MQTT-Antwort")
 
-            p = raw.get("print", {})
-            state = p.get("gcode_state", "IDLE")
-            pct   = p.get("mc_percent", 0)
-            rem   = p.get("mc_remaining_time", 0)
+                p = raw.get("print", {})
+                state = p.get("gcode_state", "IDLE")
+                pct   = p.get("mc_percent", 0)
+                rem   = p.get("mc_remaining_time", 0)
 
-            _set_job(job["id"], {"progress": pct, "remaining": rem})
-            _log(f"Drucker: {state}  {pct}%{f'  ~{rem} min' if rem > 0 else ''}")
-            reconn_fails = 0
-            conn_alarmed = False
-            await _handle_hms(p.get("hms", []) or [])
+                _set_job(job["id"], {"progress": pct, "remaining": rem})
+                _log(f"Drucker: {state}  {pct}%{f'  ~{rem} min' if rem > 0 else ''}")
+                reconn_fails = 0
+                conn_alarmed = False
+                await _handle_hms(p.get("hms", []) or [])
 
-            if state == "RUNNING":
-                was_running = True
-                fail_count = 0
-                idle_grace = 0
-                if pct > max_pct:
-                    max_pct = pct
+                if state == "RUNNING":
+                    was_running = True
+                    fail_count = 0
+                    idle_grace = 0
+                    if pct > max_pct:
+                        max_pct = pct
 
-                # ── Fortschritts-Watchdog (1.7) — kein mc_percent-Fortschritt während
-                # RUNNING deutet auf Verstopfung/Extrusions-/Vorschubfehler hin. Greift
-                # erst wenn der Druck wirklich läuft (pct > 0), nicht beim Aufheizen. ──
-                progressed = pct > last_pct_seen or (rem > 0 and rem < last_rem_seen)
-                if progressed:
-                    last_pct_seen = max(last_pct_seen, pct)
-                    last_rem_seen = rem if rem > 0 else last_rem_seen
-                    last_progress_t = loop.time()
-                    stall_notified = False
-                elif stall_min > 0 and pct > 0 and not stall_notified \
-                        and (loop.time() - last_progress_t) >= stall_min * 60:
-                    stall_notified = True
-                    _record_event("error", job.get("fileName", ""), f"Stillstand {stall_min}min @ {pct}%")
-                    await _notify(f"🛑 *Printloom — Stillstand erkannt*\n`{job.get('fileName','')}`\n"
-                                  f"Kein Fortschritt seit {stall_min} min bei {pct}% — mögliche Verstopfung")
-                    action = _estrat("progress_stall")
-                    if action == "stop":
-                        _log(f"🛑 Watchdog: Stillstand bei {pct}% — Farm wird gestoppt (Strategie)")
-                        _farm["stopping"] = True
-                    elif action == "skip":
-                        _log(f"🛑 Watchdog: Stillstand bei {pct}% — Job übersprungen (Strategie)")
-                        raise RuntimeError(f"Stillstand seit {stall_min} min bei {pct}% — mögliche Verstopfung")
-                    else:
-                        _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — pausiert")
-                        _farm["paused"] = True
-                        _farm["error"] = (f"Kein Druckfortschritt seit {stall_min} min ({pct}%) — "
-                                          "Düse/Filament prüfen (mögliche Verstopfung), dann fortsetzen")
-                if first_run and rem > 0:
-                    total_layers = p.get("total_layer_num", 0)
-                    layer_h      = job.get("layerHeightMm", 0.0)
-                    unassigned   = job.get("slot", "1-1") == "1-0"
-                    if total_layers > 0 and layer_h > 0:
-                        first_run = False
-                        actual_h  = round(total_layers * layer_h, 1)
-                        _set_job(job["id"], {"estimatedMinutes": rem, "object_height_mm": actual_h})
-                        if min_min > 0 and rem < min_min:
-                            raise RuntimeError(
-                                f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
-                            )
-                        if unassigned:
-                            # Rack was full at planning time — find a real slot now
-                            await _assign_slot_for_height(job, actual_h)
+                    # ── Fortschritts-Watchdog (1.7) — kein mc_percent-Fortschritt während
+                    # RUNNING deutet auf Verstopfung/Extrusions-/Vorschubfehler hin. Greift
+                    # erst wenn der Druck wirklich läuft (pct > 0), nicht beim Aufheizen. ──
+                    progressed = pct > last_pct_seen or (rem > 0 and rem < last_rem_seen)
+                    if progressed:
+                        last_pct_seen = max(last_pct_seen, pct)
+                        last_rem_seen = rem if rem > 0 else last_rem_seen
+                        last_progress_t = loop.time()
+                        stall_notified = False
+                    elif stall_min > 0 and pct > 0 and not stall_notified \
+                            and (loop.time() - last_progress_t) >= stall_min * 60:
+                        stall_notified = True
+                        _record_event("error", job.get("fileName", ""), f"Stillstand {stall_min}min @ {pct}%")
+                        await _notify(f"🛑 *Printloom — Stillstand erkannt*\n`{job.get('fileName','')}`\n"
+                                      f"Kein Fortschritt seit {stall_min} min bei {pct}% — mögliche Verstopfung")
+                        action = _estrat("progress_stall")
+                        if action == "stop":
+                            _log(f"🛑 Watchdog: Stillstand bei {pct}% — Farm wird gestoppt (Strategie)")
+                            _farm["stopping"] = True
+                        elif action == "skip":
+                            _log(f"🛑 Watchdog: Stillstand bei {pct}% — Job übersprungen (Strategie)")
+                            raise RuntimeError(f"Stillstand seit {stall_min} min bei {pct}% — mögliche Verstopfung")
                         else:
-                            # Use pre-planned slot — just update height
-                            _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=actual_h)
-                            try:
-                                with open(SLOTS_PATH) as _f:
-                                    _sh = float(json.load(_f).get("slot_height_mm", 50))
-                            except Exception:
-                                _sh = 50.0
-                            boeden = max(1, math.ceil(actual_h / _sh))
-                            _log(f"📏 Fach {job['slot']}: {actual_h:.0f}mm ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
-                    elif total_layers == 0 and rem > 0:
-                        # total_layer_num not yet available — wait for next poll
-                        pass
-                    else:
-                        # No layer height data — use pre-planned height from queue analysis
-                        first_run = False
-                        _set_job(job["id"], {"estimatedMinutes": rem})
-                        if min_min > 0 and rem < min_min:
-                            raise RuntimeError(
-                                f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
-                            )
-                        pre_h = job.get("object_height_mm") or 1.0
-                        if unassigned:
-                            await _assign_slot_for_height(job, pre_h)
-                        elif job.get("object_height_mm"):
-                            _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=pre_h)
-                            _log(f"📏 Fach {job['slot']}: {pre_h:.0f}mm (aus Planung)")
-            else:
-                if state != "FAILED":
-                    fail_count = 0
+                            _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — pausiert")
+                            _farm["paused"] = True
+                            _farm["error"] = (f"Kein Druckfortschritt seit {stall_min} min ({pct}%) — "
+                                              "Düse/Filament prüfen (mögliche Verstopfung), dann fortsetzen")
+                    if first_run and rem > 0:
+                        total_layers = p.get("total_layer_num", 0)
+                        layer_h      = job.get("layerHeightMm", 0.0)
+                        unassigned   = job.get("slot", "1-1") == "1-0"
+                        if total_layers > 0 and layer_h > 0:
+                            first_run = False
+                            actual_h  = round(total_layers * layer_h, 1)
+                            _set_job(job["id"], {"estimatedMinutes": rem, "object_height_mm": actual_h})
+                            if min_min > 0 and rem < min_min:
+                                raise RuntimeError(
+                                    f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
+                                )
+                            if unassigned:
+                                # Rack was full at planning time — find a real slot now
+                                await _assign_slot_for_height(job, actual_h)
+                            else:
+                                # Use pre-planned slot — just update height
+                                _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=actual_h)
+                                try:
+                                    with open(SLOTS_PATH) as _f:
+                                        _sh = float(json.load(_f).get("slot_height_mm", 50))
+                                except Exception:
+                                    _sh = 50.0
+                                boeden = max(1, math.ceil(actual_h / _sh))
+                                _log(f"📏 Fach {job['slot']}: {actual_h:.0f}mm ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
+                        elif total_layers == 0 and rem > 0:
+                            # total_layer_num not yet available — wait for next poll
+                            pass
+                        else:
+                            # No layer height data — use pre-planned height from queue analysis
+                            first_run = False
+                            _set_job(job["id"], {"estimatedMinutes": rem})
+                            if min_min > 0 and rem < min_min:
+                                raise RuntimeError(
+                                    f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
+                                )
+                            pre_h = job.get("object_height_mm") or 1.0
+                            if unassigned:
+                                await _assign_slot_for_height(job, pre_h)
+                            elif job.get("object_height_mm"):
+                                _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=pre_h)
+                                _log(f"📏 Fach {job['slot']}: {pre_h:.0f}mm (aus Planung)")
+                else:
+                    if state != "FAILED":
+                        fail_count = 0
 
-            if not prep_started and state == "RUNNING" and rem > 0 and rem <= 1:
-                prep_started = True
-                _log("⚡ ~1 min — Vorstart-Sequenz…")
-                prep_task = asyncio.create_task(_run_prep(prep_steps, job["slot"], device))
+                if not prep_started and state == "RUNNING" and rem > 0 and rem <= 1:
+                    prep_started = True
+                    _log("⚡ ~1 min — Vorstart-Sequenz…")
+                    prep_task = asyncio.create_task(_run_prep(prep_steps, job["slot"], device))
 
-            idle_done = state == "IDLE" and was_running and (max_pct >= 90 or pct >= 99)
-            if state == "FINISH" or idle_done:
-                if state != "FINISH":
-                    _log(f"Druck fertig erkannt ({state} {pct}%, max {max_pct}%)")
-                snap = await capture_snapshot(device.id)
-                if snap:
-                    _set_job(job["id"], {"snapshot": snap})
-                    _log("📷 Snapshot gespeichert")
-                if prep_task and not prep_task.done():
-                    _log("Warte auf Vorstart-Sequenz…")
-                    try:
-                        await prep_task
-                    except Exception as e:
-                        _log(f"Warnung Vorstart: {e}")
-                return prep_started
+                idle_done = state == "IDLE" and was_running and (max_pct >= 90 or pct >= 99)
+                if state == "FINISH" or idle_done:
+                    if state != "FINISH":
+                        _log(f"Druck fertig erkannt ({state} {pct}%, max {max_pct}%)")
+                    snap = await capture_snapshot(device.id)
+                    if snap:
+                        _set_job(job["id"], {"snapshot": snap})
+                        _log("📷 Snapshot gespeichert")
+                    if prep_task and not prep_task.done():
+                        _log("Warte auf Vorstart-Sequenz…")
+                        try:
+                            await prep_task
+                        except Exception as e:
+                            _log(f"Warnung Vorstart: {e}")
+                    return prep_started
 
-            if state == "FAILED":
-                fail_count += 1
-                if fail_count < 2:
-                    _log(f"⚠ FAILED ({fail_count}/2) — warte…")
-                    continue
-                max_retries = int(_farm.get("failed_retries", 1) or 0)
-                if retries < max_retries:
-                    retries += 1
-                    _log(f"⚠ Retry {retries}/{max_retries}…")
-                    _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
-                    await _do_send_file(job, device, True)
-                    _set_job(job["id"], {"status": "printing"})
-                    fail_count = 0
-                    continue
-                action = _estrat("print_failed")
-                if action == "stop":
-                    _log("🔴 Druck fehlgeschlagen — Farm wird gestoppt (Strategie)")
-                    await _notify(f"🔴 *Printloom — Druck fehlgeschlagen, Farm gestoppt*\n`{job['fileName']}`")
-                    _farm["stopping"] = True
-                    raise RuntimeError("Gestoppt")
-                if action == "pause":
-                    _log("🔴 Druck fehlgeschlagen — pausiert (Strategie)")
-                    _farm["paused"] = True
-                    _farm["error"] = "Druck fehlgeschlagen — prüfen, dann fortsetzen (neuer Versuch)"
-                    await _notify(f"🔴 *Printloom — Druck fehlgeschlagen, pausiert*\n`{job['fileName']}`")
-                    while _farm["paused"] and not _farm["stopping"]:
-                        await asyncio.sleep(0.5)
-                    if _farm["stopping"]:
+                if state == "FAILED":
+                    fail_count += 1
+                    if fail_count < 2:
+                        _log(f"⚠ FAILED ({fail_count}/2) — warte…")
+                        continue
+                    max_retries = int(_farm.get("failed_retries", 1) or 0)
+                    if retries < max_retries:
+                        retries += 1
+                        _log(f"⚠ Retry {retries}/{max_retries}…")
+                        _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
+                        await _do_send_file(job, device, True)
+                        _set_job(job["id"], {"status": "printing"})
+                        fail_count = 0
+                        continue
+                    action = _estrat("print_failed")
+                    if action == "stop":
+                        _log("🔴 Druck fehlgeschlagen — Farm wird gestoppt (Strategie)")
+                        await _notify(f"🔴 *Printloom — Druck fehlgeschlagen, Farm gestoppt*\n`{job['fileName']}`")
+                        _farm["stopping"] = True
                         raise RuntimeError("Gestoppt")
-                    # Nach Fortsetzen erneut senden und weiter beobachten.
-                    _farm["error"] = None
-                    retries = 0
-                    fail_count = 0
-                    _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
-                    await _do_send_file(job, device, True)
-                    _set_job(job["id"], {"status": "printing"})
-                    continue
-                # skip (Default): optionale Fehler-Sequenz, dann Job als Fehler markieren
-                if fail_steps:
-                    _log("🔴 Druck fehlgeschlagen — Fehler-Sequenz läuft…")
-                    try:
-                        await _exec_sequence(fail_steps, job, device, False, poll_sec, min_min, [], [])
-                    except Exception as fe:
-                        _log(f"⚠ Fehler-Sequenz: {fe}")
-                raise RuntimeError("Druck fehlgeschlagen (FAILED)")
+                    if action == "pause":
+                        _log("🔴 Druck fehlgeschlagen — pausiert (Strategie)")
+                        _farm["paused"] = True
+                        _farm["error"] = "Druck fehlgeschlagen — prüfen, dann fortsetzen (neuer Versuch)"
+                        await _notify(f"🔴 *Printloom — Druck fehlgeschlagen, pausiert*\n`{job['fileName']}`")
+                        while _farm["paused"] and not _farm["stopping"]:
+                            await asyncio.sleep(0.5)
+                        if _farm["stopping"]:
+                            raise RuntimeError("Gestoppt")
+                        # Nach Fortsetzen erneut senden und weiter beobachten.
+                        _farm["error"] = None
+                        retries = 0
+                        fail_count = 0
+                        _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
+                        await _do_send_file(job, device, True)
+                        _set_job(job["id"], {"status": "printing"})
+                        continue
+                    # skip (Default): optionale Fehler-Sequenz, dann Job als Fehler markieren
+                    if fail_steps:
+                        _log("🔴 Druck fehlgeschlagen — Fehler-Sequenz läuft…")
+                        try:
+                            await _exec_sequence(fail_steps, job, device, False, poll_sec, min_min, [], [])
+                        except Exception as fe:
+                            _log(f"⚠ Fehler-Sequenz: {fe}")
+                    raise RuntimeError("Druck fehlgeschlagen (FAILED)")
 
-            if state == "IDLE" and pct == 0 and not was_running:
-                idle_grace += 1
-                if idle_grace >= 3:
-                    raise RuntimeError("Drucker dauerhaft IDLE — abgebrochen")
-                _log(f"⚠ Drucker noch IDLE — warte auf Druckstart ({idle_grace}/3)…")
+                if state == "IDLE" and pct == 0 and not was_running:
+                    idle_grace += 1
+                    if idle_grace >= 3:
+                        raise RuntimeError("Drucker dauerhaft IDLE — abgebrochen")
+                    _log(f"⚠ Drucker noch IDLE — warte auf Druckstart ({idle_grace}/3)…")
 
-        except RuntimeError:
-            raise
-        except Exception as e:
-            reconn_fails += 1
-            if reconn_fails >= 5:
-                action = _estrat("connection_lost")
-                if action == "stop":
-                    _log("⚠ Verbindung dauerhaft unterbrochen — Farm wird gestoppt (Strategie)")
-                    _farm["stopping"] = True
-                    raise RuntimeError("Gestoppt")
-                if action == "pause":
-                    _log("⚠ Verbindung dauerhaft unterbrochen — pausiert (Strategie)")
-                    _farm["paused"] = True
-                    _farm["error"] = "Verbindung zum Drucker verloren — prüfen, dann fortsetzen"
-                    while _farm["paused"] and not _farm["stopping"]:
-                        await asyncio.sleep(0.5)
-                    if _farm["stopping"]:
+            except RuntimeError:
+                raise
+            except Exception as e:
+                _wp_disconnect()  # abgerissene Verbindung verwerfen → nächster Poll baut neu auf
+                reconn_fails += 1
+                if reconn_fails >= 5:
+                    action = _estrat("connection_lost")
+                    if action == "stop":
+                        _log("⚠ Verbindung dauerhaft unterbrochen — Farm wird gestoppt (Strategie)")
+                        _farm["stopping"] = True
                         raise RuntimeError("Gestoppt")
-                    _farm["error"] = None
-                    reconn_fails = 0
-                    conn_alarmed = False
-                    continue
-                # skip (Default): Job als Fehler markieren, nächster Job
-                raise RuntimeError(f"Verbindung dauerhaft unterbrochen ({reconn_fails}×)")
-            # Verbindungs-Watchdog (1.1): einmaliger Alarm, sobald der Reconnect
-            # mehrfach scheitert — der Druck läuft am Gerät weiter, nur die Brücke fehlt.
-            if conn_alarm and reconn_fails >= 3 and not conn_alarmed:
-                conn_alarmed = True
-                await _notify("⚠ *Printloom — Verbindung zum Drucker verloren*\n"
-                              f"`{job.get('fileName','')}`\nReconnect läuft — Drucker/Netzwerk prüfen")
-            _log(f"⚠ Verbindung unterbrochen ({reconn_fails}/5) — retry…")
+                    if action == "pause":
+                        _log("⚠ Verbindung dauerhaft unterbrochen — pausiert (Strategie)")
+                        _farm["paused"] = True
+                        _farm["error"] = "Verbindung zum Drucker verloren — prüfen, dann fortsetzen"
+                        while _farm["paused"] and not _farm["stopping"]:
+                            await asyncio.sleep(0.5)
+                        if _farm["stopping"]:
+                            raise RuntimeError("Gestoppt")
+                        _farm["error"] = None
+                        reconn_fails = 0
+                        conn_alarmed = False
+                        continue
+                    # skip (Default): Job als Fehler markieren, nächster Job
+                    raise RuntimeError(f"Verbindung dauerhaft unterbrochen ({reconn_fails}×)")
+                # Verbindungs-Watchdog (1.1): einmaliger Alarm, sobald der Reconnect
+                # mehrfach scheitert — der Druck läuft am Gerät weiter, nur die Brücke fehlt.
+                if conn_alarm and reconn_fails >= 3 and not conn_alarmed:
+                    conn_alarmed = True
+                    await _notify("⚠ *Printloom — Verbindung zum Drucker verloren*\n"
+                                  f"`{job.get('fileName','')}`\nReconnect läuft — Drucker/Netzwerk prüfen")
+                _log(f"⚠ Verbindung unterbrochen ({reconn_fails}/5) — retry…")
 
-    raise RuntimeError("Gestoppt")
+        raise RuntimeError("Gestoppt")
+    finally:
+        _wp_disconnect()
 
 
 async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
