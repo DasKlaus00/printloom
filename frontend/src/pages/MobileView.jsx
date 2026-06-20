@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { rackManagerService, autofarmService } from '../services/api'
+import { rackManagerService } from '../services/api'
+import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { useLanguage } from '../services/i18n'
 
 const STATUS_META = {
@@ -53,14 +54,17 @@ export default function MobileView() {
   const [farmState, setFarmState] = useState(null)
   const [lastUpdate, setLastUpdate] = useState(null)
 
+  // Farm-Status live per WebSocket (mit HTTP-Poll-Fallback).
+  useFarmStatusStream((data) => {
+    setFarmState(data)
+    setLastUpdate(new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+  })
+
+  // Regal deckt der WS-Kanal nicht ab → weiterhin leichter Poll.
   const load = useCallback(async () => {
     try {
-      const [rr, fr] = await Promise.allSettled([
-        rackManagerService.getAll(),
-        autofarmService.getStatus(true),
-      ])
-      if (rr.status === 'fulfilled') setRackData(rr.value.data)
-      if (fr.status === 'fulfilled') setFarmState(fr.value.data)
+      const r = await rackManagerService.getAll()
+      setRackData(r.data)
       setLastUpdate(new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
     } catch {}
   }, [])
