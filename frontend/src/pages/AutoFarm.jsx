@@ -1507,29 +1507,28 @@ function AutoFarm() {
     }
   })
 
-  // Höhe eines Fachs (aus Regal-Status oder zugewiesenem Job) und Name dazu.
-  const slotHeightAt = (r, sNum) => {
-    const k = `${r}-${sNum}`
-    const sd = rackData?.slots?.[k]
-    const j  = (slotJobMap[k] ?? [])[0]
-    return (sd?.object_height_mm) || (j?.computedHeight ?? j?.objectHeight) || 0
-  }
-  const slotNameAt = (r, sNum) => {
-    const k = `${r}-${sNum}`
-    return rackData?.slots?.[k]?.file_name || (slotJobMap[k] ?? [])[0]?.fileName || ''
-  }
-  // Liefert das Basis-Fach (sNum eines tieferen Fachs), dessen Objekt in (r,sNum)
-  // hineinragt — sonst null. Belegt-Logik identisch zu rackUtils/Backend.
-  const ghostBaseSlot = (r, sNum) => {
-    for (let s = sNum - 1; s >= 1; s--) {
-      const h = slotHeightAt(r, s)
-      if (h <= 0) continue
-      let used = Math.ceil(h / slotH)
-      if (h % slotH === 0) used += 1
-      if (used > (sNum - s)) return s
+  // Ghost-Fächer: ein hohes Teil belegt sein Basis-Fach + die Fächer darüber.
+  // Wir markieren die ÜBERLIEGENDEN Fächer (k → Basis-Job), damit sie als
+  // reserviert (Ghost) statt leer angezeigt werden. Quelle: zugewiesene Jobs
+  // (Vorschau) UND eingelagerte Platten aus dem Regal-Status (Drucken/Fertig).
+  const ghostMap = {}   // "r-s" (überliegendes Fach) → { name, baseSlot }
+  const addGhost = (slotKey, height, name) => {
+    if (!slotKey || slotKey === '1-0' || !height || height <= 0) return
+    const [r, s] = parseSlotKey(slotKey)
+    let used = Math.ceil(height / slotH)
+    if (height % slotH === 0) used += 1          // exakte Passung → +1 Pufferfach
+    for (let i = 1; i < used; i++) {
+      const k = `${r}-${s + i}`
+      if (!ghostMap[k]) ghostMap[k] = { name: name || '', baseSlot: s }
     }
-    return null
   }
+  jobs.forEach(j => {
+    if (['pending', 'running', 'printing', 'sending'].includes(j.status))
+      addGhost(j.slot, j.computedHeight ?? j.objectHeight, j.fileName)
+  })
+  Object.entries(rackData?.slots ?? {}).forEach(([k, sd]) => {
+    if (sd?.object_height_mm > 0) addGhost(k, sd.object_height_mm, sd.file_name)
+  })
 
   /* ─────────────────────────────────────────────────────────── */
   return (
@@ -2084,9 +2083,10 @@ function AutoFarm() {
                         // Ghost-Fach: in dieses leere Fach ragt ein hohes Teil aus einem
                         // tieferen Fach hinein → als reserviert (Ghost) zeigen, nicht als leer.
                         const occupied     = isDone || isActive || isLocked || !!topJob
-                        const ghostBase    = !occupied ? ghostBaseSlot(ri+1, si2+1) : null
-                        const isGhost      = ghostBase != null
-                        const ghostName    = isGhost ? slotNameAt(ri+1, ghostBase) : ''
+                        const ghost        = !occupied ? ghostMap[key] : null
+                        const isGhost      = !!ghost
+                        const ghostName    = ghost?.name ?? ''
+                        const ghostBase    = ghost?.baseSlot ?? ''
 
                         return (
                           <div
