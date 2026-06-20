@@ -985,7 +985,7 @@ function FileLibrary() {
 
         {/* Spalten-Kopfzeile mit Filter/Sortier-Dropdowns (AutoFilter-Stil) */}
         {!loading && files.length > 0 && (
-          <div className="flex items-center gap-1 mb-3 px-2 py-1 rounded-lg bg-surface-800/70 border border-surface-700 overflow-x-auto">
+          <div className="flex items-center gap-1 flex-wrap mb-3 px-2 py-1 rounded-lg bg-surface-800/70 border border-surface-700">
             <ColHeader label={tr('Name')} width="14rem" sortable sortActive={sortBy === 'name'} sortDir={sortDir} onSort={sortByCol('name')} tr={tr} />
             <ColHeader label={tr('Typ')} width="7rem" sortable sortActive={sortBy === 'type'} sortDir={sortDir} onSort={sortByCol('type')}
               values={presentTypes} activeValue={filters.type} onPick={pickFilter('type')} tr={tr} />
