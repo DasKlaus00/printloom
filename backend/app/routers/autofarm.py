@@ -326,18 +326,26 @@ def _magazine_count() -> int:
     return 4
 
 
+# Spielraum nach oben: ein Objekt darf so viele mm über die Oberkante seines
+# obersten Fachs ragen, bevor ein weiteres Fach nötig ist. MUSS mit
+# frontend/src/services/rackUtils.js SLOT_TOLERANCE_MM übereinstimmen.
+SLOT_TOLERANCE_MM = 20.0
+
+
+def _slots_needed(height_mm: float, slot_h: float) -> int:
+    """Wie viele Regal-Fächer ein Objekt dieser Höhe belegt (inkl. Toleranz)."""
+    if not height_mm or height_mm <= 0:
+        return 1
+    return max(1, math.ceil((height_mm - SLOT_TOLERANCE_MM) / (slot_h or 50)))
+
+
 def _is_blocked_from_below(rack: int, slot_num: int, slots: dict, slot_h: float) -> bool:
-    # Exact fit (height % slot_h == 0) gets +1 buffer slot above.
-    # Non-exact fit already has headroom from ceil rounding — no extra buffer needed.
     for s in range(slot_num - 1, 0, -1):
         k = f"{rack}-{s}"
         obj_h = (slots.get(k) or {}).get("object_height_mm") or 0
         if obj_h <= 0:
             continue
-        slots_used = math.ceil(obj_h / slot_h)
-        if obj_h % slot_h == 0:
-            slots_used += 1
-        if slots_used > (slot_num - s):
+        if _slots_needed(obj_h, slot_h) > (slot_num - s):
             return True
     return False
 
@@ -352,7 +360,7 @@ def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optio
         nr     = int(data.get("num_racks", 3))
         spr    = int(data.get("slots_per_rack", 6))
         slot_h = float(data.get("slot_height_mm", 50))
-        needed = max(1, math.ceil(height_mm / slot_h))
+        needed = _slots_needed(height_mm, slot_h)
 
         # Exclude the current job so its placeholder slot isn't locked against itself
         taken = {j["slot"] for j in _farm.get("jobs", [])
@@ -389,7 +397,7 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
         nr      = int(data.get("num_racks", 3))
         max_h   = spr * slot_h * nr  # absolute max across all racks
 
-        if height_mm > spr * slot_h:
+        if _slots_needed(height_mm, slot_h) > spr:
             _log(f"⚠ Objekt {height_mm:.0f}mm zu hoch (max {spr * slot_h:.0f}mm/Rack) — Farm pausiert")
             _farm["paused"] = True
             _farm["error"]  = (f"Objekt {height_mm:.0f}mm zu hoch — im Drucker lassen, "
@@ -435,7 +443,7 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
         _rack_update(new_slot, "printing", job.get("fileName", ""), object_height_mm=height_mm)
         _set_job(job["id"], {"slot": new_slot, "object_height_mm": height_mm})
         slot_h = float(data.get("slot_height_mm", 50))
-        boeden = math.ceil(height_mm / slot_h)
+        boeden = _slots_needed(height_mm, slot_h)
         _log(f"📏 Objekt {height_mm:.0f}mm → Fach {new_slot} reserviert ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
         return
     raise RuntimeError("Gestoppt")
@@ -1070,7 +1078,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                                         _sh = float(json.load(_f).get("slot_height_mm", 50))
                                 except Exception:
                                     _sh = 50.0
-                                boeden = max(1, math.ceil(actual_h / _sh))
+                                boeden = _slots_needed(actual_h, _sh)
                                 _log(f"📏 Fach {job['slot']}: {actual_h:.0f}mm ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
                         elif total_layers == 0 and rem > 0:
                             # total_layer_num not yet available — wait for next poll

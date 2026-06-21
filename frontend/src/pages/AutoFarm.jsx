@@ -1579,8 +1579,7 @@ function AutoFarm() {
   const addGhost = (slotKey, height, name) => {
     if (!slotKey || slotKey === '1-0' || !height || height <= 0) return
     const [r, s] = parseSlotKey(slotKey)
-    let used = Math.ceil(height / slotH)
-    if (height % slotH === 0) used += 1          // exakte Passung → +1 Pufferfach
+    const used = slotsNeeded(height, slotH)   // einheitliche Fächer-Logik inkl. Toleranz
     for (let i = 1; i < used; i++) {
       const k = `${r}-${s + i}`
       if (!ghostMap[k]) ghostMap[k] = { name: name || '', baseSlot: s }

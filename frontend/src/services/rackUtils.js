@@ -5,24 +5,27 @@ export function parseSlotKey(key) {
   return parts.length === 2 ? [+parts[0], +parts[1]] : [1, +parts[0]]
 }
 
+// Spielraum nach oben: ein Objekt darf so viele mm über die Oberkante seines
+// obersten Fachs ragen, bevor ein weiteres Fach reserviert wird (Toleranz für
+// den kleinen Überstand zum nächsten Tray). Beispiel @50mm/Fach + 20mm:
+//   170mm → ceil((170-20)/50) = 3 Fächer · ≤70mm → 1 Fach.
+// MUSS mit backend/app/routers/autofarm.py SLOT_TOLERANCE_MM übereinstimmen.
+export const SLOT_TOLERANCE_MM = 20
+
 export function slotsNeeded(h, slotH) {
   if (!h || h <= 0) return 1
   const sh = slotH || 50
-  return Math.ceil(h / sh)
+  return Math.max(1, Math.ceil((h - SLOT_TOLERANCE_MM) / sh))
 }
 
 // Returns true if a stored object in a slot below extends into the given slot.
-// Exact fit (e.g. 100mm in 50mm slots = exactly 2 slots) gets +1 buffer slot above.
-// Non-exact fit (e.g. 115mm → ceil=3, 35mm headroom) needs no extra buffer.
 function isBlockedFromBelow(rackNum, slotNum, rSlots, slotH) {
   const sh = slotH || 50
   for (let s = slotNum - 1; s >= 1; s--) {
     const k    = `${rackNum}-${s}`
     const objH = rSlots[k]?.object_height_mm ?? 0
     if (objH <= 0) continue
-    let slotsUsed = Math.ceil(objH / sh)
-    if (objH % sh === 0) slotsUsed += 1
-    if (slotsUsed > (slotNum - s)) return true
+    if (slotsNeeded(objH, sh) > (slotNum - s)) return true
   }
   return false
 }
@@ -39,15 +42,13 @@ export function autoSlot(jobs, rackData, heightMm, slotH) {
   const needed = slotsNeeded(heightMm, sh)
 
   // Expand each queued job's base slot to ALL slots it will physically occupy.
-  // Exact fit gets +1 buffer slot (e.g. 100mm in 50mm slots → blocks 3 slots).
   const taken = new Set()
   jobs
     .filter(j => !['done', 'error'].includes(j.status) && j.slot)
     .forEach(j => {
       const [rn, sn] = parseSlotKey(j.slot)
       const h = j.computedHeight ?? j.objectHeight ?? j.object_height_mm ?? 0
-      let n = slotsNeeded(h, sh)
-      if (h > 0 && h % sh === 0) n += 1
+      const n = slotsNeeded(h, sh)
       for (let i = 0; i < n; i++) taken.add(`${rn}-${sn + i}`)
     })
 
