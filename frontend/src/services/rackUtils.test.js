@@ -42,6 +42,12 @@ describe('autoSlot', () => {
     expect(autoSlot([], rd, 30, 50)).toBe('1-2')
   })
 
+  it('treats a ready slot as available (matches backend)', () => {
+    const rd = rack()
+    rd.slots['1-1'].status = 'ready'
+    expect(autoSlot([], rd, 30, 50)).toBe('1-1')
+  })
+
   it('reserves contiguous slots for a tall object', () => {
     // 80mm with 50mm slots → needs 2 contiguous slots, starts at 1-1
     expect(autoSlot([], rack(), 80, 50)).toBe('1-1')

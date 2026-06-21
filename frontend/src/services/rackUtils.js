@@ -52,10 +52,14 @@ export function autoSlot(jobs, rackData, heightMm, slotH) {
       for (let i = 0; i < n; i++) taken.add(`${rn}-${sn + i}`)
     })
 
+  // 'free' und 'ready' (Bereit) gelten als belegbar — identisch zum Backend
+  // (_find_slot_for_height), damit Vorschau und realer Lauf dasselbe Fach wählen.
+  const available = (st) => st === 'free' || st === 'ready'
+
   const isFree = (r, s) => {
     const k = `${r}-${s}`
     if (!(k in rSlots)) return false
-    if (rSlots[k].status !== 'free') return false
+    if (!available(rSlots[k].status)) return false
     if (taken.has(k)) return false
     if (isBlockedFromBelow(r, s, rSlots, sh)) return false
     return true
@@ -71,7 +75,7 @@ export function autoSlot(jobs, rackData, heightMm, slotH) {
   for (let r = 1; r <= nr; r++) {
     for (let s = 1; s <= spr; s++) {
       const k = `${r}-${s}`
-      if (k in rSlots && rSlots[k].status === 'free' && !taken.has(k)) return k
+      if (k in rSlots && available(rSlots[k].status) && !taken.has(k)) return k
     }
   }
   return '1-0'  // sentinel: rack full, no slot available
@@ -96,7 +100,7 @@ export function checkClearance(slotKey, heightMm, rackData, slotH) {
     if (next > spr) { blocked.push(`Rack ${rackNum} hat nur ${spr} Fächer`); break }
     const k      = `${rackNum}-${next}`
     const status = rSlots[k]?.status ?? 'free'
-    if (status !== 'free') blocked.push(`Fach ${k} (${status})`)
+    if (status !== 'free' && status !== 'ready') blocked.push(`Fach ${k} (${status})`)
   }
   return { ok: blocked.length === 0, needed, blocked }
 }

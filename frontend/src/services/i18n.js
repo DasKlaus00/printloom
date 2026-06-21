@@ -1023,6 +1023,8 @@ const EN_STRINGS = {
   'Regal zurücksetzen': 'Reset rack',
   'Zurücksetzen': 'Reset',
   'NOTAUS': 'EMERGENCY STOP',
+  'Hängendes Fach (Status: {0}) — ✓ zum Leeren': 'Stuck slot (status: {0}) — ✓ to clear',
+  'belegt': 'occupied',
 
   // ── Language packs ──
   'Pack braucht code + strings': 'Pack needs code + strings',
