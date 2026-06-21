@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import UploadedFile, RackConfiguration
 from app.services import storage
+from app.services.rack_logic import DEFAULT_SLOT_TOLERANCE_MM
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ def _default_data(num_racks=DEFAULT_NUM_RACKS, slots_per_rack=DEFAULT_SLOTS_PER_
         "num_racks":        num_racks,
         "slots_per_rack":   slots_per_rack,
         "slot_height_mm":   DEFAULT_SLOT_H,
+        "slot_tolerance_mm": DEFAULT_SLOT_TOLERANCE_MM,
         "stack_rack":       1,
         "stack_slot":       DEFAULT_MAGAZINE_SLOT,
         "magazine_slot":    DEFAULT_MAGAZINE_SLOT,
@@ -386,6 +388,7 @@ def get_all(db: Session = Depends(get_db)):
         "slots_per_rack":     spr,
         "num_slots":          nr * spr,
         "slot_height_mm":     data["slot_height_mm"],
+        "slot_tolerance_mm":  data.get("slot_tolerance_mm", DEFAULT_SLOT_TOLERANCE_MM),
         "height_margin_pct":  data.get("height_margin_pct", 15.0),
         "stack_rack":         data.get("stack_rack", 1),
         "stack_slot":         data.get("stack_slot", DEFAULT_MAGAZINE_SLOT),
@@ -407,6 +410,8 @@ def update_config(body: dict, db: Session = Depends(get_db)):
         data["slots_per_rack"] = max(1, min(20, int(body["slots_per_rack"])))
     if "slot_height_mm" in body:
         data["slot_height_mm"] = float(body["slot_height_mm"])
+    if "slot_tolerance_mm" in body:
+        data["slot_tolerance_mm"] = max(0.0, min(100.0, float(body["slot_tolerance_mm"])))
     if "stack_rack" in body:
         data["stack_rack"]     = max(1, int(body["stack_rack"]))
     if "stack_slot" in body:

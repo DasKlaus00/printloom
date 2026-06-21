@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService, systemService } from '../services/api'
 import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout } from '../components/DashboardGrid'
-import { parseSlotKey, slotsNeeded, autoSlot, checkClearance } from '../services/rackUtils'
+import { parseSlotKey, slotsNeeded, autoSlot, checkClearance, slotTolerance } from '../services/rackUtils'
 import { amsMissing, colorDist } from '../services/amsUtils'
 import { useQueueEta, fmtDur, jobPrintSec, ensureMeta, getCachedMeta, CHANGEOVER_SEC } from '../services/useQueueEta'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
@@ -1546,6 +1546,7 @@ function AutoFarm() {
 
   /* ── Derived helpers ─────────────────────────────────────── */
   const slotH      = rackData?.slot_height_mm  ?? 50
+  const slotTol    = slotTolerance(rackData)
   const numRacks   = rackData?.num_racks        ?? 3
   const slotsPerRack = rackData?.slots_per_rack ?? 6
   const slots      = rackData
@@ -1579,7 +1580,7 @@ function AutoFarm() {
   const addGhost = (slotKey, height, name) => {
     if (!slotKey || slotKey === '1-0' || !height || height <= 0) return
     const [r, s] = parseSlotKey(slotKey)
-    const used = slotsNeeded(height, slotH)   // einheitliche Fächer-Logik inkl. Toleranz
+    const used = slotsNeeded(height, slotH, slotTol)   // einheitliche Fächer-Logik inkl. Toleranz
     for (let i = 1; i < used; i++) {
       const k = `${r}-${s + i}`
       if (!ghostMap[k]) ghostMap[k] = { name: name || '', baseSlot: s }
@@ -1908,7 +1909,7 @@ function AutoFarm() {
                 const sm      = S[job.status] ?? S.pending
                 const busy    = running && job.id === curJobId
                 const displayH = job.computedHeight ?? job.objectHeight
-                const slotsUsed = (displayH > 0) ? slotsNeeded(displayH, slotH) : 0
+                const slotsUsed = (displayH > 0) ? slotsNeeded(displayH, slotH, slotTol) : 0
                 const pending = job.status === 'pending'
 
                 // '1-0' has two meanings: a real "rack full" result from the

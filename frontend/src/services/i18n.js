@@ -1025,6 +1025,9 @@ const EN_STRINGS = {
   'NOTAUS': 'EMERGENCY STOP',
   'Hängendes Fach (Status: {0}) — ✓ zum Leeren': 'Stuck slot (status: {0}) — ✓ to clear',
   'belegt': 'occupied',
+  'Fächer-Toleranz (mm)': 'Slot tolerance (mm)',
+  '(Überstand nach oben)': '(overshoot at top)',
+  'Wie weit ein Objekt über sein oberstes Fach ragen darf, bevor ein weiteres reserviert wird. Höher = weniger Fächer, aber Kollisionsgefahr.': 'How far an object may extend above its top slot before another is reserved. Higher = fewer slots, but risk of collision.',
 
   // ── Language packs ──
   'Pack braucht code + strings': 'Pack needs code + strings',

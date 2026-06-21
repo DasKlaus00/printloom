@@ -24,6 +24,17 @@ describe('slotsNeeded', () => {
   it('just past tolerance needs two slots', () => expect(slotsNeeded(71, 50)).toBe(2))
   it('exact multiple stays two slots', () => expect(slotsNeeded(100, 50)).toBe(2))
   it('170mm needs three slots', () => expect(slotsNeeded(170, 50)).toBe(3))
+  it('custom tolerance 0 = strict ceil', () => expect(slotsNeeded(170, 50, 0)).toBe(4))
+  it('custom tolerance 0: 51mm needs two', () => expect(slotsNeeded(51, 50, 0)).toBe(2))
+})
+
+describe('autoSlot honors configured tolerance', () => {
+  it('slot_tolerance_mm=0 reserves more slots for a tall object', () => {
+    const rd = { num_racks: 1, slots_per_rack: 6, slot_height_mm: 50, slot_tolerance_mm: 0,
+      slots: Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`1-${i + 1}`, { status: 'free', object_height_mm: null }])) }
+    rd.slots['1-1'] = { status: 'done', object_height_mm: 170 }   // 0mm Toleranz → 4 Fächer (1-1..1-4)
+    expect(autoSlot([], rd, 30, 50)).toBe('1-5')
+  })
 })
 
 describe('autoSlot', () => {

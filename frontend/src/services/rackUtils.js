@@ -9,23 +9,30 @@ export function parseSlotKey(key) {
 // obersten Fachs ragen, bevor ein weiteres Fach reserviert wird (Toleranz für
 // den kleinen Überstand zum nächsten Tray). Beispiel @50mm/Fach + 20mm:
 //   170mm → ceil((170-20)/50) = 3 Fächer · ≤70mm → 1 Fach.
-// MUSS mit backend/app/routers/autofarm.py SLOT_TOLERANCE_MM übereinstimmen.
+// Default; pro Regal via rackData.slot_tolerance_mm überschreibbar (Backend:
+// app/services/rack_logic.py DEFAULT_SLOT_TOLERANCE_MM).
 export const SLOT_TOLERANCE_MM = 20
 
-export function slotsNeeded(h, slotH) {
+// Toleranz aus der Regal-Konfiguration (oder Default).
+export function slotTolerance(rackData) {
+  const t = rackData?.slot_tolerance_mm
+  return (typeof t === 'number' && t >= 0) ? t : SLOT_TOLERANCE_MM
+}
+
+export function slotsNeeded(h, slotH, tol = SLOT_TOLERANCE_MM) {
   if (!h || h <= 0) return 1
   const sh = slotH || 50
-  return Math.max(1, Math.ceil((h - SLOT_TOLERANCE_MM) / sh))
+  return Math.max(1, Math.ceil((h - tol) / sh))
 }
 
 // Returns true if a stored object in a slot below extends into the given slot.
-function isBlockedFromBelow(rackNum, slotNum, rSlots, slotH) {
+function isBlockedFromBelow(rackNum, slotNum, rSlots, slotH, tol = SLOT_TOLERANCE_MM) {
   const sh = slotH || 50
   for (let s = slotNum - 1; s >= 1; s--) {
     const k    = `${rackNum}-${s}`
     const objH = rSlots[k]?.object_height_mm ?? 0
     if (objH <= 0) continue
-    if (slotsNeeded(objH, sh) > (slotNum - s)) return true
+    if (slotsNeeded(objH, sh, tol) > (slotNum - s)) return true
   }
   return false
 }
@@ -39,7 +46,8 @@ export function autoSlot(jobs, rackData, heightMm, slotH) {
   const spr    = rackData?.slots_per_rack  ?? 6
   const rSlots = rackData?.slots          ?? {}
   const sh     = slotH || 50
-  const needed = slotsNeeded(heightMm, sh)
+  const tol    = slotTolerance(rackData)
+  const needed = slotsNeeded(heightMm, sh, tol)
 
   // Expand each queued job's base slot to ALL slots it will physically occupy.
   const taken = new Set()
@@ -48,7 +56,7 @@ export function autoSlot(jobs, rackData, heightMm, slotH) {
     .forEach(j => {
       const [rn, sn] = parseSlotKey(j.slot)
       const h = j.computedHeight ?? j.objectHeight ?? j.object_height_mm ?? 0
-      const n = slotsNeeded(h, sh)
+      const n = slotsNeeded(h, sh, tol)
       for (let i = 0; i < n; i++) taken.add(`${rn}-${sn + i}`)
     })
 
@@ -61,7 +69,7 @@ export function autoSlot(jobs, rackData, heightMm, slotH) {
     if (!(k in rSlots)) return false
     if (!available(rSlots[k].status)) return false
     if (taken.has(k)) return false
-    if (isBlockedFromBelow(r, s, rSlots, sh)) return false
+    if (isBlockedFromBelow(r, s, rSlots, sh, tol)) return false
     return true
   }
 
@@ -83,14 +91,15 @@ export function autoSlot(jobs, rackData, heightMm, slotH) {
 
 export function checkClearance(slotKey, heightMm, rackData, slotH) {
   const sh     = slotH || 50
-  const needed = slotsNeeded(heightMm, sh)
+  const tol    = slotTolerance(rackData)
+  const needed = slotsNeeded(heightMm, sh, tol)
   const spr    = rackData?.slots_per_rack ?? 6
   const rSlots = rackData?.slots ?? {}
   const [rackNum, slotNum] = parseSlotKey(slotKey)
   const blocked = []
 
   // Check if this slot is blocked by a tall object in a lower slot
-  if (isBlockedFromBelow(rackNum, slotNum, rSlots, sh)) {
+  if (isBlockedFromBelow(rackNum, slotNum, rSlots, sh, tol)) {
     blocked.push(`Fach ${rackNum}-${slotNum - 1} (Objekt zu hoch)`)
   }
 

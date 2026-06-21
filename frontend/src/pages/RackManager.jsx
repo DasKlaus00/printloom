@@ -148,6 +148,7 @@ function RackManager() {
   const [numRacks,    setNumRacks]    = useState(3)
   const [slotsPerRack, setSlotsPerRack] = useState(6)
   const [slotH, setSlotH]           = useState(50)
+  const [slotTol, setSlotTol]       = useState(20)   // Fächer-Toleranz (mm)
   const [saving, setSaving]         = useState(false)
   const [feedback, setFeedback]     = useState(null)
   const [showNewRack, setShowNewRack] = useState(false)
@@ -178,6 +179,7 @@ function RackManager() {
       setNumRacks(r.data.num_racks      ?? 3)
       setSlotsPerRack(r.data.slots_per_rack ?? 6)
       setSlotH(r.data.slot_height_mm ?? 50)
+      setSlotTol(r.data.slot_tolerance_mm ?? 20)
     } catch {
       showFeedback(tr('Laden fehlgeschlagen'), false)
     }
@@ -256,6 +258,7 @@ function RackManager() {
         num_racks:      Number(numRacks),
         slots_per_rack: Number(slotsPerRack),
         slot_height_mm: Number(slotH),
+        slot_tolerance_mm: Number(slotTol),
       })
       await load()
       showFeedback(tr('Gespeichert'))
@@ -295,7 +298,8 @@ function RackManager() {
   const hasChanges = data
     && (Number(numRacks)     !== data.num_racks
       || Number(slotsPerRack) !== data.slots_per_rack
-      || Number(slotH)        !== data.slot_height_mm)
+      || Number(slotH)        !== data.slot_height_mm
+      || Number(slotTol)      !== data.slot_tolerance_mm)
 
   return (
     <div className="space-y-6">
@@ -391,6 +395,20 @@ function RackManager() {
               onChange={e => setSlotH(e.target.value)}
               className="font-mono w-full"
             />
+          </div>
+          <div>
+            <label className="text-xs text-surface-500 block mb-1">
+              {tr('Fächer-Toleranz (mm)')}
+              <span className="text-surface-700 ml-1">{tr('(Überstand nach oben)')}</span>
+            </label>
+            <input
+              type="number" min="0" max="100" step="1" value={slotTol}
+              onChange={e => setSlotTol(e.target.value)}
+              className="font-mono w-full"
+            />
+            <p className="text-[10px] text-surface-600 mt-1">
+              {tr('Wie weit ein Objekt über sein oberstes Fach ragen darf, bevor ein weiteres reserviert wird. Höher = weniger Fächer, aber Kollisionsgefahr.')}
+            </p>
           </div>
         </div>
 

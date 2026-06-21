@@ -27,6 +27,11 @@ from app.services import storage
 from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _get_plate_gcode_param, _ams_match_confident, capture_snapshot
 from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _load as _rack_load
 from app.services import hms
+from app.services.rack_logic import (
+    slots_needed as _slots_needed_base,
+    is_blocked_from_below as _is_blocked_base,
+    DEFAULT_SLOT_TOLERANCE_MM,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -326,28 +331,33 @@ def _magazine_count() -> int:
     return 4
 
 
-# Spielraum nach oben: ein Objekt darf so viele mm über die Oberkante seines
-# obersten Fachs ragen, bevor ein weiteres Fach nötig ist. MUSS mit
-# frontend/src/services/rackUtils.js SLOT_TOLERANCE_MM übereinstimmen.
-SLOT_TOLERANCE_MM = 20.0
+def _slot_tolerance(data: dict = None) -> float:
+    """Konfigurierte Fächer-Toleranz (mm) aus der Regal-Config; Default 20.
+    Wird `data` (bereits geladene slots.json) übergeben, wird nicht neu gelesen."""
+    if data is None:
+        try:
+            with open(SLOTS_PATH) as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    try:
+        return float(data.get("slot_tolerance_mm", DEFAULT_SLOT_TOLERANCE_MM))
+    except (TypeError, ValueError):
+        return DEFAULT_SLOT_TOLERANCE_MM
 
 
-def _slots_needed(height_mm: float, slot_h: float) -> int:
-    """Wie viele Regal-Fächer ein Objekt dieser Höhe belegt (inkl. Toleranz)."""
-    if not height_mm or height_mm <= 0:
-        return 1
-    return max(1, math.ceil((height_mm - SLOT_TOLERANCE_MM) / (slot_h or 50)))
+# Dünne Wrapper um die reine Logik (app/services/rack_logic.py): ziehen die
+# konfigurierte Toleranz, sofern keine explizit übergeben wird.
+def _slots_needed(height_mm: float, slot_h: float, tol: float = None) -> int:
+    if tol is None:
+        tol = _slot_tolerance()
+    return _slots_needed_base(height_mm, slot_h, tol)
 
 
-def _is_blocked_from_below(rack: int, slot_num: int, slots: dict, slot_h: float) -> bool:
-    for s in range(slot_num - 1, 0, -1):
-        k = f"{rack}-{s}"
-        obj_h = (slots.get(k) or {}).get("object_height_mm") or 0
-        if obj_h <= 0:
-            continue
-        if _slots_needed(obj_h, slot_h) > (slot_num - s):
-            return True
-    return False
+def _is_blocked_from_below(rack: int, slot_num: int, slots: dict, slot_h: float, tol: float = None) -> bool:
+    if tol is None:
+        tol = _slot_tolerance()
+    return _is_blocked_base(rack, slot_num, slots, slot_h, tol)
 
 
 def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optional[str]:
@@ -360,7 +370,8 @@ def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optio
         nr     = int(data.get("num_racks", 3))
         spr    = int(data.get("slots_per_rack", 6))
         slot_h = float(data.get("slot_height_mm", 50))
-        needed = _slots_needed(height_mm, slot_h)
+        tol    = _slot_tolerance(data)
+        needed = _slots_needed(height_mm, slot_h, tol)
 
         # Exclude the current job so its placeholder slot isn't locked against itself
         taken = {j["slot"] for j in _farm.get("jobs", [])
@@ -375,7 +386,7 @@ def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optio
                 if all(
                     slots.get(f"{r}-{s+i}", {}).get("status", "free") in ("free", "ready")
                     and f"{r}-{s+i}" not in taken
-                    and not _is_blocked_from_below(r, s + i, slots, slot_h)
+                    and not _is_blocked_from_below(r, s + i, slots, slot_h, tol)
                     for i in range(needed)
                 ):
                     return f"{r}-{s}"
@@ -1765,26 +1776,32 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             except Exception as e:
                 _log(f"Warnung PARK_OTTOEJECT: {e}")
 
-        # Reset any slots still stuck on 'printing' — plate was grabbed, farm stopped before store
+        # Reset any slots still reserved as 'printing' — plate was grabbed, farm
+        # stopped before store. Diese Fächer haben normalerweise noch KEINE
+        # physische Platte (die liegt im Drucker). Wir loggen sie aber, damit der
+        # Nutzer prüfen kann, falls der Stopp ausnahmsweise mitten im Einlagern kam.
         try:
             if os.path.exists(SLOTS_PATH):
                 with open(SLOTS_PATH) as f:
                     data = json.load(f)
-                changed = False
-                for slot_data in data.get("slots", {}).values():
+                freed = []
+                for key, slot_data in data.get("slots", {}).items():
                     if slot_data.get("status") == "printing":
                         slot_data["status"] = "free"
-                        changed = True
-                if changed:
+                        slot_data["object_height_mm"] = None
+                        freed.append(key)
+                if freed:
                     storage.write_json(SLOTS_PATH, data)
-        except Exception:
-            pass
+                    _log(f"⚠ Reservierte Fächer beim Stopp freigegeben: {', '.join(freed)} "
+                         f"— falls dort doch eine Platte liegt, im Rack Manager prüfen")
+        except Exception as e:
+            logger.warning(f"slot cleanup on stop failed: {e}")
 
         remaining = [j for j in _farm["jobs"] if j["status"] in ("pending", "error")]
         try:
             _write_config(QUEUE_PATH, {"jobs": remaining})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"queue persist on stop failed: {e}")
         _farm["jobs"] = []   # clear so status endpoint doesn't leak stale job data
 
         _farm["running"] = False
@@ -2045,9 +2062,16 @@ _ws_task: Optional[asyncio.Task] = None
 _ws_last_payload: Optional[str] = None
 
 
+_WS_LOG_LIMIT = 80   # nur die jüngsten N Log-Zeilen über den WS pushen (Panel zeigt Aktuelles; das volle Log gibt es als Download)
+
+
 def _ws_snapshot() -> str:
-    """Farm-Status als JSON — interne Underscore-Felder (z. B. Sets) ausgeblendet."""
+    """Farm-Status als JSON — interne Underscore-Felder (z. B. Sets) ausgeblendet,
+    Log auf die jüngsten Zeilen gekappt (kleinere Push-Pakete)."""
     data = {k: v for k, v in _farm.items() if not k.startswith("_")}
+    log = data.get("log")
+    if isinstance(log, list) and len(log) > _WS_LOG_LIMIT:
+        data["log"] = log[:_WS_LOG_LIMIT]   # Log ist neueste-zuerst → erste N = aktuellste
     return json.dumps(data, default=str, ensure_ascii=False)
 
 
