@@ -15,10 +15,15 @@ describe('parseSlotKey', () => {
 })
 
 describe('slotsNeeded', () => {
+  // 20mm Toleranz (SLOT_TOLERANCE_MM): ein Objekt darf so weit über sein
+  // oberstes Fach ragen → slotsNeeded = max(1, ceil((h - 20) / slotH)).
   it('0/empty height needs 1 slot', () => expect(slotsNeeded(0, 50)).toBe(1))
   it('fits in one slot', () => expect(slotsNeeded(40, 50)).toBe(1))
-  it('rounds up to two slots', () => expect(slotsNeeded(60, 50)).toBe(2))
-  it('exact multiple', () => expect(slotsNeeded(100, 50)).toBe(2))
+  it('small overshoot still 1 slot (tolerance)', () => expect(slotsNeeded(60, 50)).toBe(1))
+  it('1-slot upper bound is slotH + tolerance', () => expect(slotsNeeded(70, 50)).toBe(1))
+  it('just past tolerance needs two slots', () => expect(slotsNeeded(71, 50)).toBe(2))
+  it('exact multiple stays two slots', () => expect(slotsNeeded(100, 50)).toBe(2))
+  it('170mm needs three slots', () => expect(slotsNeeded(170, 50)).toBe(3))
 })
 
 describe('autoSlot', () => {
@@ -44,9 +49,15 @@ describe('autoSlot', () => {
 
   it('respects clearance from a tall object stored below', () => {
     const rd = rack()
-    // A 100mm object in 1-1 (exact 2 slots) + 1 buffer → blocks 1-1,1-2,1-3
+    // 100mm object in 1-1 → 2 Fächer (20mm Toleranz) → blockiert 1-1,1-2
     rd.slots['1-1'] = { status: 'done', object_height_mm: 100 }
-    expect(autoSlot([], rd, 30, 50)).toBe('1-4')
+    expect(autoSlot([], rd, 30, 50)).toBe('1-3')
+  })
+
+  it('a 170mm object below blocks three slots', () => {
+    const rd = rack()
+    rd.slots['1-1'] = { status: 'done', object_height_mm: 170 }
+    expect(autoSlot([], rd, 30, 50)).toBe('1-4')   // 170mm belegt 1-1..1-3
   })
 
   it('returns sentinel 1-0 when the rack is full', () => {
