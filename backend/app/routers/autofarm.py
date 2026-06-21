@@ -1132,6 +1132,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         retries += 1
                         _log(f"⚠ Retry {retries}/{max_retries}…")
                         _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
+                        _wp_disconnect()  # persistente Verbindung schließen, bevor _do_send_file neu verbindet (kein Doppel-Connect)
                         await _do_send_file(job, device, True)
                         _set_job(job["id"], {"status": "printing"})
                         fail_count = 0
@@ -1156,6 +1157,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         retries = 0
                         fail_count = 0
                         _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
+                        _wp_disconnect()  # persistente Verbindung schließen, bevor _do_send_file neu verbindet (kein Doppel-Connect)
                         await _do_send_file(job, device, True)
                         _set_job(job["id"], {"status": "printing"})
                         continue

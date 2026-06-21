@@ -522,7 +522,7 @@ function PowerSettings() {
           <p className="text-[10px] text-surface-600">{tr('Eigene Home-Assistant-URL + Long-Lived-Token eintragen. Leer lassen funktioniert nur, wenn HA bereits für die Kamera eingerichtet ist (dann werden dessen URL + Token genutzt).')}</p>
           <label className="text-[10px] text-surface-500 block">{tr('Home-Assistant-URL')}
             <input value={cfg.plug_url} onChange={e => setCfg(c => ({ ...c, plug_url: e.target.value }))}
-              placeholder="http://10.10.30.40:8123" className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
+              placeholder="http://192.168.1.60:8123" className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
           <label className="text-[10px] text-surface-500 block">{tr('Long-Lived-Token')}
             <input type="password" value={cfg.plug_token} onChange={e => setCfg(c => ({ ...c, plug_token: e.target.value }))}
               placeholder={cfg.plug_token_set || cfg.cam_ha_token_set ? '•••••• ' + tr('(gesetzt)') : tr('Token aus HA → Profil → Sicherheit')}
@@ -548,7 +548,7 @@ function PowerSettings() {
         <div className="space-y-2">
           <label className="text-[10px] text-surface-500 block">{tr('Geräte-URL')}
             <input value={cfg.plug_url} onChange={e => setCfg(c => ({ ...c, plug_url: e.target.value }))}
-              placeholder="http://10.10.30.50" className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
+              placeholder="http://192.168.1.61" className="text-xs h-8 py-0 px-2 mt-0.5 font-mono w-full" /></label>
           {cfg.plug_type === 'tasmota' && (
             <label className="text-[10px] text-surface-500 block">{tr('Passwort (optional)')}
               <input type="password" value={cfg.plug_password} onChange={e => setCfg(c => ({ ...c, plug_password: e.target.value }))}
