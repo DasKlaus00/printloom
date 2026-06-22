@@ -2222,6 +2222,10 @@ async def pause_farm():
     if not _farm["running"]:
         raise HTTPException(400, "Auto Farm läuft nicht")
     _farm["paused"] = not _farm["paused"]
+    if not _farm["paused"]:
+        # Beim Fortsetzen den Fehler-Banner löschen — sonst bleibt z. B. eine
+        # HMS-Meldung hängen, obwohl der Nutzer sie behoben hat und weiterläuft.
+        _farm["error"] = None
     return {"success": True, "paused": _farm["paused"]}
 
 

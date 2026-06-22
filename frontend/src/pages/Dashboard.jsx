@@ -149,6 +149,15 @@ export default function Dashboard() {
     } catch { setPrinter(null) }
   }, [bambuId])
 
+  // Farm aus einer Pause (z. B. nach HMS-Fehler) direkt vom Dashboard fortsetzen.
+  const [resuming, setResuming] = useState(false)
+  const resumeFarm = async () => {
+    setResuming(true)
+    try { await autofarmService.pause() }   // toggelt Pause aus + Backend löscht den Fehler
+    catch {}
+    finally { setResuming(false) }
+  }
+
   useEffect(() => {
     refresh()
     const t = setInterval(refresh, 15000)
@@ -277,7 +286,13 @@ export default function Dashboard() {
         {farmError && (
           <div className="mt-3 flex items-start gap-2 text-xs text-amber-300 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2">
             <span className="shrink-0">⚠</span>
-            <span>{farmError}</span>
+            <span className="flex-1">{farmError}</span>
+            {farmPaused && (
+              <button onClick={resumeFarm} disabled={resuming}
+                className="shrink-0 btn btn-primary btn-sm whitespace-nowrap disabled:opacity-50">
+                {resuming ? tr('…') : tr('▶ Fortsetzen')}
+              </button>
+            )}
           </div>
         )}
 
