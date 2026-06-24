@@ -415,7 +415,7 @@ export default function Steuerung() {
     } catch (e) { showFeedback(e.message, false) }
   }
 
-  const slotBtns = (prefix) => [1,2,3,4,5,6].map(n => (
+  const slotBtns = (prefix, slots = [1,2,3,4,5,6]) => slots.map(n => (
     <button key={n} onClick={() => macro(`${prefix}_${n}`)} disabled={busy}
       className="btn btn-ghost btn-sm font-mono">{n}</button>
   ))
@@ -661,10 +661,13 @@ export default function Steuerung() {
               <button onClick={() => runMacro('TEST_STORAGE_RACK_CONFIGURATION', 'Test Rack')} disabled={busy} className="btn btn-ghost btn-sm text-xs">Test Rack</button>
             </div>
             <div>
-              <p className="text-[10px] text-surface-500 mb-1.5">{tr('Holen aus Fach')}</p>
-              <div className="flex gap-1.5 flex-wrap">{slotBtns('GRAB_FROM_SLOT')}</div>
+              {/* Holen NUR aus dem Magazin (Fach 7) — Vorrat an leeren Platten.
+                  Aus den Lager-Fächern (1–6) wird nie geholt, dort liegen fertige Drucke. */}
+              <p className="text-[10px] text-surface-500 mb-1.5">{tr('Holen aus Magazin (Fach 7)')}</p>
+              <div className="flex gap-1.5 flex-wrap">{slotBtns('GRAB_FROM_SLOT', [7])}</div>
             </div>
             <div>
+              {/* Einlagern NUR in die Lager-Fächer (1–6), nie ins Magazin. */}
               <p className="text-[10px] text-surface-500 mb-1.5">{tr('Einlagern in Fach')}</p>
               <div className="flex gap-1.5 flex-wrap">{slotBtns('STORE_TO_SLOT')}</div>
             </div>
@@ -715,10 +718,19 @@ export default function Steuerung() {
           <div className="card">
             <p className="section-label mb-2">{tr('Einzel-Fach')}</p>
             <div className="space-y-1.5">
+              {/* Magazin (Fach 7): nur Holen — Vorrat an leeren Platten. */}
+              <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-900 border border-blue-900/40">
+                <span className="text-xs text-surface-400 w-16 shrink-0">{tr('Magazin')}</span>
+                <button onClick={() => runMacro('GRAB_FROM_SLOT_7', tr('Aus Magazin holen'))} disabled={busy} className="btn btn-ghost btn-sm text-[10px]">{tr('Holen')}</button>
+                <div className="flex gap-1 ml-auto">
+                  <button onClick={() => runMacro(activePrinter.load,  tr('In Drucker'))}  disabled={busy} className="btn btn-ghost btn-sm text-[9px]">→ Dr.</button>
+                  <button onClick={() => runMacro(activePrinter.eject, tr('Aus Drucker'))} disabled={busy} className="btn btn-ghost btn-sm text-[9px]">← Dr.</button>
+                </div>
+              </div>
+              {/* Lager-Fächer 1–6: nur Einlagern (fertige Drucke), kein Holen. */}
               {[1,2,3,4,5,6].map(slot => (
                 <div key={slot} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-900 border border-surface-700/50">
-                  <span className="text-xs text-surface-400 w-10 shrink-0">{tr('Fach {0}', slot)}</span>
-                  <button onClick={() => runMacro(`GRAB_FROM_SLOT_${slot}`, tr('Fach {0} holen', slot))}    disabled={busy} className="btn btn-ghost btn-sm text-[10px]">{tr('Holen')}</button>
+                  <span className="text-xs text-surface-400 w-16 shrink-0">{tr('Fach {0}', slot)}</span>
                   <button onClick={() => runMacro(`STORE_TO_SLOT_${slot}`, tr('Fach {0} einlagern', slot))} disabled={busy} className="btn btn-ghost btn-sm text-[10px]">{tr('Einlagern')}</button>
                   <div className="flex gap-1 ml-auto">
                     <button onClick={() => runMacro(activePrinter.load,  tr('In Drucker'))}  disabled={busy} className="btn btn-ghost btn-sm text-[9px]">→ Dr.</button>

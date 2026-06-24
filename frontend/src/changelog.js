@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.58',
+    de: [
+      'Steuerung: Holen nur noch aus dem Magazin (Fach 7), Einlagern nur in die Lager-Fächer (1–6). Aus den Lager-Fächern wird nicht mehr geholt.',
+    ],
+    en: [
+      'Control page: grab only from the magazine (slot 7), store only into the storage slots (1–6). Storage slots are no longer grabbed from.',
+    ],
+  },
+  {
     version: '1.0.57',
     de: [
       'Auto-Farm-Layout: feineres, weiterhin einrastendes Raster zum Anordnen der Kacheln.',
