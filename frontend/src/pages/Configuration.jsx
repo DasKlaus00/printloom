@@ -131,6 +131,10 @@ function FarmSettings() {
   const [useAms,          setUseAms]          = useState(true)
   const [connAlarm,       setConnAlarm]       = useState(true)
   const [stallMin,        setStallMin]        = useState(0)
+  const [ophEnabled,      setOphEnabled]      = useState(false)         // 2.5 Betriebszeiten
+  const [ophStart,        setOphStart]        = useState('22:00')
+  const [ophEnd,          setOphEnd]          = useState('06:00')
+  const [ophDays,         setOphDays]         = useState([0, 1, 2, 3, 4, 5, 6])
   const [homingFile,      setHomingFile]      = useState(null)
   const [homingBusy,      setHomingBusy]      = useState(false)
   const [loaded,          setLoaded]          = useState(false)
@@ -146,6 +150,10 @@ function FarmSettings() {
         setUseAms(r.data.use_ams ?? true)
         setConnAlarm(r.data.conn_alarm ?? true)
         setStallMin(r.data.progress_stall_min ?? 0)
+        setOphEnabled(r.data.operating_hours_enabled ?? false)
+        setOphStart(r.data.operating_start ?? '22:00')
+        setOphEnd(r.data.operating_end ?? '06:00')
+        setOphDays(Array.isArray(r.data.operating_days) ? r.data.operating_days : [0, 1, 2, 3, 4, 5, 6])
       }).catch(() => {}).finally(() => setLoaded(true))
     autofarmService.getHomingFileInfo()
       .then(r => setHomingFile(r.data)).catch(() => {})
@@ -157,6 +165,8 @@ function FarmSettings() {
       await autofarmService.saveSettings({
         poll_interval: pollInterval, min_print_minutes: minPrintMinutes, use_ams: useAms,
         conn_alarm: connAlarm, progress_stall_min: Math.max(0, Math.round(Number(stallMin) || 0)),
+        operating_hours_enabled: ophEnabled, operating_start: ophStart, operating_end: ophEnd,
+        operating_days: [...ophDays].sort((a, b) => a - b),
       })
       setStatus({ ok: true, msg: tr('Einstellungen gespeichert.') })
     } catch (e) {
@@ -230,6 +240,40 @@ function FarmSettings() {
           </div>
         </div>
       </div>
+      {/* Betriebszeiten (Roadmap 2.5) */}
+      <div className="border-t border-surface-800/40 pt-3 space-y-2.5">
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-surface-400 select-none flex-1">{tr('Betriebszeiten')}
+            <span className="block text-[9px] text-surface-700">{tr('Neue Drucke nur im Zeitfenster starten (Ruhezeiten / Stromtarif). Laufende Drucke werden nicht unterbrochen.')}</span></label>
+          <button onClick={() => setOphEnabled(v => !v)}
+            className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${ophEnabled ? 'bg-blue-600' : 'bg-surface-700'}`}>
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${ophEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+          </button>
+        </div>
+        {ophEnabled && (
+          <>
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-[10px] text-surface-500">{tr('Von')}
+                <input type="time" value={ophStart} onChange={e => setOphStart(e.target.value)}
+                  className="ml-1 font-mono text-xs h-7 py-0 px-1.5 w-24" /></label>
+              <label className="text-[10px] text-surface-500">{tr('Bis')}
+                <input type="time" value={ophEnd} onChange={e => setOphEnd(e.target.value)}
+                  className="ml-1 font-mono text-xs h-7 py-0 px-1.5 w-24" /></label>
+              <span className="text-[9px] text-surface-700">{ophStart > ophEnd ? tr('(über Nacht)') : ''}</span>
+            </div>
+            <div className="flex items-center gap-1 flex-wrap">
+              {[tr('Mo'), tr('Di'), tr('Mi'), tr('Do'), tr('Fr'), tr('Sa'), tr('So')].map((d, i) => (
+                <button key={i}
+                  onClick={() => setOphDays(days => days.includes(i) ? days.filter(x => x !== i) : [...days, i])}
+                  className={`text-[10px] w-8 h-7 rounded border transition-colors ${ophDays.includes(i)
+                    ? 'bg-blue-900/40 border-blue-700/60 text-blue-300'
+                    : 'bg-surface-900 border-surface-700 text-surface-600'}`}>{d}</button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
       <div className="border-t border-surface-800/40 pt-3 space-y-2">
         <p className="text-[10px] text-surface-400 font-medium">{tr('Homing-Datei (G28 + Z200)')}</p>
         <div className="flex items-center gap-2">

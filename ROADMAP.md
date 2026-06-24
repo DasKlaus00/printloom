@@ -36,7 +36,7 @@ ohne Cloud.
 | 2.2 | **Echte Restzeit-Prognose** ✅ | ★★★ | M | ETA aus tatsächlicher Lauf-Historie statt Slicer-Schätzung (Live > Historie > Slicer). *(v1.0.27)* |
 | 2.3 | **Warteschlangen-Planer** ✅ | ★★ | M | Zeitleiste der Queue mit Fertig-Uhrzeiten; reagiert sofort auf Umsortieren. *(v1.0.27)* |
 | 2.4 | **Auto-Nesting auf Platte** | ★★ | L | Mehrere kleine Teile automatisch zu einer Platte bündeln → eine Druck-/Auswurf-Runde statt vieler. |
-| 2.5 | **Zeitfenster / Betriebszeiten** | ★★ | S | Nur in definierten Fenstern drucken (Ruhezeiten, Stromtarif); Farm startet bei Jobs selbst. |
+| 2.5 | **Zeitfenster / Betriebszeiten** ✅ | ★★ | S | Neue Jobs nur im definierten Zeitfenster (Von/Bis + Wochentage, über Nacht möglich) starten — Ruhezeiten/Stromtarif; laufende Drucke werden nicht unterbrochen. *(v1.0.55)* |
 | 2.6 | **Job-Prioritäten & Liefertermine** | ★★ | M | Hoch/Normal/Niedrig + Fälligkeitsdatum → automatische Reihenfolge nach Deadline. |
 | 2.7 | **Job-Abhängigkeiten** | ★ | M | „Erst nach Job X" erzwingen (z. B. Baugruppen-Teile in fester Reihenfolge). |
 | 2.8 | **Wiederkehrende Jobs** | ★ | S | Feste Queues per Zeitplan automatisch einreihen (täglich/wöchentlich). |

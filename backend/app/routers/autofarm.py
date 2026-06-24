@@ -63,7 +63,12 @@ _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": Tru
                      "progress_stall_min":    0,     # 0 = aus; sonst Pause bei N min ohne Fortschritt (1.7)
                      # Fehlerstrategie (Roadmap 1.3) — {error_key: action}; leer = Defaults
                      "error_strategy":        {},
-                     "failed_retries":        1}     # Wiederholungen bei FAILED vor der gewählten Aktion
+                     "failed_retries":        1,     # Wiederholungen bei FAILED vor der gewählten Aktion
+                     # Betriebszeiten (Roadmap 2.5) — neue Jobs nur im Zeitfenster starten
+                     "operating_hours_enabled": False,
+                     "operating_start":         "22:00",
+                     "operating_end":           "06:00",
+                     "operating_days":          [0, 1, 2, 3, 4, 5, 6]}  # 0=Mo … 6=So
 
 # ── Homing .3mf generator ────────────────────────────────────
 _HOMING_GCODE = """; Printloom Homing Sequence
@@ -895,6 +900,57 @@ def _estrat(key: str) -> str:
     return (_farm.get("error_strategy") or {}).get(key) or _ERROR_DEFAULTS.get(key, "pause")
 
 
+# ── Betriebszeiten (Roadmap 2.5) ─────────────────────────────
+def _parse_hhmm(s: str) -> int:
+    """'HH:MM' → Minuten seit Mitternacht; ungültig → 0."""
+    try:
+        h, m = str(s).split(":")
+        return (int(h) % 24) * 60 + (int(m) % 60)
+    except Exception:
+        return 0
+
+
+def _now_in_operating_window() -> bool:
+    """True, wenn Betriebszeiten aus sind ODER die aktuelle Zeit im Fenster liegt.
+    Über-Mitternacht-Fenster (Start > Ende, z. B. 22:00–06:00) werden unterstützt;
+    der gewählte Wochentag zählt dabei für den Abend (Start-Tag)."""
+    if not _farm.get("operating_hours_enabled"):
+        return True
+    start = _parse_hhmm(_farm.get("operating_start", "00:00"))
+    end   = _parse_hhmm(_farm.get("operating_end", "00:00"))
+    if start == end:
+        return True   # Null-Fenster → keine Einschränkung
+    days = _farm.get("operating_days") or [0, 1, 2, 3, 4, 5, 6]
+    now  = datetime.now()
+    mins = now.hour * 60 + now.minute
+    if start < end:
+        return now.weekday() in days and start <= mins < end
+    # Über-Mitternacht
+    if mins >= start:
+        return now.weekday() in days
+    if mins < end:
+        return ((now.weekday() - 1) % 7) in days
+    return False
+
+
+async def _wait_operating_window():
+    """Blockiert den START eines neuen Jobs bis zum Beginn des Zeitfensters.
+    Ein bereits laufender Druck wird NICHT unterbrochen — nur der Start gated."""
+    if _now_in_operating_window():
+        return
+    msg = f"Außerhalb der Betriebszeit ({_farm.get('operating_start')}–{_farm.get('operating_end')}) — Start im Zeitfenster"
+    _log(f"🕒 {msg}")
+    _farm["error"] = msg
+    try:
+        while not _farm["stopping"] and not _now_in_operating_window():
+            await asyncio.sleep(20)
+    finally:
+        if (_farm.get("error") or "").startswith("Außerhalb der Betriebszeit"):
+            _farm["error"] = None
+    if not _farm["stopping"]:
+        _log("🕒 Betriebszeit aktiv — fahre fort")
+
+
 async def _handle_hms(hms_list: list):
     """On new fatal/serious printer HMS codes (deduped per print): pause + notify,
     UNLESS the code is on the soft-list — then only log + notify, never stop the
@@ -1696,6 +1752,12 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 continue
 
             job = pending[0]
+            # 2.5 Betriebszeiten: einen NEUEN Job nur im Zeitfenster starten.
+            # Außerhalb wird gewartet; danach zurück an den Schleifenanfang, damit
+            # Pause/Stop/Queue erneut geprüft werden.
+            if not _now_in_operating_window():
+                await _wait_operating_window()
+                continue
             # Find the index in the full jobs list for UI compat
             for idx, j in enumerate(_farm["jobs"]):
                 if j["id"] == job["id"]:
@@ -1884,6 +1946,10 @@ class SettingsPayload(BaseModel):
     progress_stall_min:    int   = 0
     error_strategy:        dict  = {}
     failed_retries:        int   = 1
+    operating_hours_enabled: bool = False
+    operating_start:         str  = "22:00"
+    operating_end:           str  = "06:00"
+    operating_days:          List[int] = [0, 1, 2, 3, 4, 5, 6]
 
 class QueuePayload(BaseModel):
     jobs: List[dict] = []
@@ -1928,6 +1994,10 @@ async def start_farm(req: StartRequest):
         "progress_stall_min": int(_settings.get("progress_stall_min", 0) or 0),
         "error_strategy":     dict(_settings.get("error_strategy") or {}),
         "failed_retries":     max(0, int(_settings.get("failed_retries", 1) or 0)),
+        "operating_hours_enabled": bool(_settings.get("operating_hours_enabled", False)),
+        "operating_start":         str(_settings.get("operating_start", "22:00")),
+        "operating_end":           str(_settings.get("operating_end", "06:00")),
+        "operating_days":          list(_settings.get("operating_days") or [0, 1, 2, 3, 4, 5, 6]),
     })
 
     _record_event("farm_start", "", f"{len([j for j in req.jobs if j.status == 'pending'])} Jobs")
@@ -2250,7 +2320,13 @@ async def get_settings():
 
 @router.put("/settings")
 async def save_settings(payload: SettingsPayload):
-    _write_config(SETTINGS_PATH, payload.model_dump())
+    # Merge statt Überschreiben: nur die tatsächlich gesendeten Felder ändern,
+    # der Rest bleibt erhalten. Sonst setzt das Speichern eines Teilbereichs
+    # (z. B. Farm-Einstellungen) die anderen (Preise, Fehlerstrategie,
+    # Betriebszeiten) auf Default zurück.
+    current = _read_config(SETTINGS_PATH, dict(_DEFAULT_SETTINGS))
+    current.update(payload.model_dump(exclude_unset=True))
+    _write_config(SETTINGS_PATH, current)
     return {"success": True}
 
 @router.get("/queue")
