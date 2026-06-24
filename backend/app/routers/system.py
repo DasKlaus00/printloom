@@ -682,6 +682,7 @@ async def save_dashboard_layout(body: dict):
     payload = {
         "layout": body.get("layout") or [],
         "hidden": body.get("hidden") or [],
+        "grid_v": body.get("grid_v") or 1,   # Raster-Version (für Migration des feineren Grids)
     }
     storage.write_json(_dashboard_file(), payload)
     return {"success": True}

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import threading
+import time
 import zipfile
 import httpx
 from datetime import datetime
@@ -1018,43 +1019,28 @@ async def send_gcode(device_id: int, gcode: str, db: Session = Depends(get_db)):
     return {"success": True, "gcode": gcode, "printer_response": response}
 
 
-@router.get("/status/{device_id}")
-async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
-    """Druckerstatus per MQTT abfragen."""
-    device = _get_bambu_device(device_id, db)
+# ── Live-Status-Cache aus dem Auto-Farm ──────────────────────────────────────
+# Während die Farm druckt, hält sie EINE persistente MQTT-Verbindung und liest
+# den Druckerstatus ohnehin laufend (autofarm._wait_print). Diese Funktion füttert
+# das letzte Roh-Telegramm hier ein, sodass /status es ohne EIGENE (konkurrierende)
+# MQTT-Verbindung ausliefern kann. Der X1C erlaubt nur wenige Verbindungen — so
+# entfällt das 15-s-Poll-Connect der Steuerung, solange die Farm läuft.
+_LIVE: dict = {"t": 0.0, "raw": None, "dev": None}
+_LIVE_TTL = 35.0   # s — etwas über dem Standard-Poll (20 s) der Farm
 
-    loop = asyncio.get_event_loop()
-    mqtt_client = BambuLabMQTT(device)
 
-    connected = await loop.run_in_executor(None, lambda: mqtt_client.connect(wait_timeout=5.0))
-    if not connected:
-        return {"status": "offline", "message": "Keine Verbindung zum Drucker", "online": False}
+def publish_live_status(raw: dict, device_id=None):
+    """Vom Auto-Farm bei jedem Poll aufgerufen: letztes Drucker-Telegramm cachen."""
+    if raw:
+        _LIVE["t"] = time.monotonic()
+        _LIVE["raw"] = raw
+        _LIVE["dev"] = device_id
 
-    await loop.run_in_executor(None, mqtt_client.request_status)
-    await asyncio.sleep(1.5)
 
-    progress  = mqtt_client.get_progress()
-    is_printing = mqtt_client.is_printing()
-    raw = mqtt_client.get_last_message()
-    mqtt_client.disconnect()
-
+def _status_from_raw(raw: dict) -> dict:
+    """Baut die /status-Antwort aus einem Roh-Telegramm (ohne MQTT/History)."""
     p = raw.get("print", {}) if raw else {}
     gcode_state = p.get("gcode_state", "IDLE")
-
-    # Log FINISH/FAILED events to print history
-    if gcode_state in ("FINISH", "FAILED"):
-        _append_history({
-            "ts":         datetime.utcnow().isoformat(),
-            "device":     device.name,
-            "device_id":  device_id,
-            "state":      gcode_state,
-            "file":       p.get("subtask_name", ""),
-            "progress":   p.get("mc_percent", 0),
-            "layer":      p.get("layer_num", 0),
-            "total_layers": p.get("total_layer_num", 0),
-        })
-
-    # ── AMS data ────────────────────────────────────────────────
     ams_units = []
     ams_data  = p.get("ams", {})
     tray_now  = 255
@@ -1079,13 +1065,12 @@ async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
                 "humidity": unit.get("humidity", 0),
                 "slots":    slots,
             })
-
     return {
         "online":       True,
         "status":       gcode_state.lower(),
         "gcode_state":  gcode_state,
-        "is_printing":  is_printing,
-        "progress":     progress,
+        "is_printing":  gcode_state == "RUNNING",
+        "progress":     p.get("mc_percent", 0),
         "nozzle_temp":        p.get("nozzle_temper",        0),
         "nozzle_target_temp": p.get("nozzle_target_temper", 0),
         "bed_temp":           p.get("bed_temper",           0),
@@ -1096,6 +1081,52 @@ async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
         "tray_active":  tray_now,
         "raw": raw,
     }
+
+
+@router.get("/status/{device_id}")
+async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
+    """Druckerstatus. Solange die Farm druckt, aus deren persistenter Verbindung
+    (live, ohne eigene MQTT-Verbindung); sonst frisch per MQTT abfragen."""
+    device = _get_bambu_device(device_id, db)
+
+    # Live-Daten aus dem Auto-Farm verwenden, wenn frisch und für DIESEN Drucker
+    # (dev=None = unbekannt → akzeptieren) → keine zweite MQTT-Verbindung.
+    if (_LIVE["raw"] is not None and (time.monotonic() - _LIVE["t"]) < _LIVE_TTL
+            and _LIVE.get("dev") in (None, device_id)):
+        resp = _status_from_raw(_LIVE["raw"])
+        resp["source"] = "farm"
+        return resp
+
+    loop = asyncio.get_event_loop()
+    mqtt_client = BambuLabMQTT(device)
+
+    connected = await loop.run_in_executor(None, lambda: mqtt_client.connect(wait_timeout=5.0))
+    if not connected:
+        return {"status": "offline", "message": "Keine Verbindung zum Drucker", "online": False}
+
+    await loop.run_in_executor(None, mqtt_client.request_status)
+    await asyncio.sleep(1.5)
+
+    raw = mqtt_client.get_last_message()
+    mqtt_client.disconnect()
+
+    p = raw.get("print", {}) if raw else {}
+    gcode_state = p.get("gcode_state", "IDLE")
+
+    # Log FINISH/FAILED events to print history
+    if gcode_state in ("FINISH", "FAILED"):
+        _append_history({
+            "ts":         datetime.utcnow().isoformat(),
+            "device":     device.name,
+            "device_id":  device_id,
+            "state":      gcode_state,
+            "file":       p.get("subtask_name", ""),
+            "progress":   p.get("mc_percent", 0),
+            "layer":      p.get("layer_num", 0),
+            "total_layers": p.get("total_layer_num", 0),
+        })
+
+    return _status_from_raw(raw)
 
 
 @router.get("/send-diagnostics")

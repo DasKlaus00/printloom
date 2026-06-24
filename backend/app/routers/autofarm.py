@@ -24,7 +24,7 @@ from app.models.models import Device, PrinterType, UploadedFile
 from app.services.bambu_mqtt import BambuLabMQTT
 from app.services.bambu_ftp import BambuFTP
 from app.services import storage
-from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _get_plate_gcode_param, _ams_match_confident, capture_snapshot
+from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _get_plate_gcode_param, _ams_match_confident, capture_snapshot, publish_live_status
 from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _load as _rack_load
 from app.services import hms
 from app.services.rack_logic import (
@@ -1119,6 +1119,10 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
 
                 if not raw:
                     raise ConnectionError("Keine MQTT-Antwort")
+
+                # Live-Status für die Steuerung/Dashboard cachen → die teilen sich die
+                # persistente Verbindung der Farm, statt eine eigene aufzubauen.
+                publish_live_status(raw, getattr(device, "id", None))
 
                 p = raw.get("print", {})
                 state = p.get("gcode_state", "IDLE")

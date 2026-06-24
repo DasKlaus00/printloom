@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { controlService, printerService, deviceService, deviceSettingsService, klipperConfigService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
+import { useFarmStatusStream } from '../services/useFarmStatusStream'
 
 /* ── Drucker-Profile ───────────────────────────────────────── */
 const PRINTER_PROFILES = [
@@ -226,6 +227,10 @@ export default function Steuerung() {
   )
   const prevStateRef  = useRef(null)
   const intervalRef   = useRef(null)
+  // Läuft die Farm, liefert das Backend den Druckerstatus live aus deren
+  // persistenter Verbindung (kein eigener 15-s-Connect, keine zweite Verbindung).
+  const [farmRunning, setFarmRunning] = useState(false)
+  useFarmStatusStream(s => setFarmRunning(!!s?.running))
 
   /* OTTOeject / Makros */
   const [executing,    setExecuting]    = useState(null)
@@ -300,9 +305,12 @@ export default function Steuerung() {
   useEffect(() => {
     if (!autoRefresh || !bambuDevice) { clearInterval(intervalRef.current); return }
     clearInterval(intervalRef.current)
-    intervalRef.current = setInterval(() => fetchStatus(bambuDevice.id), 15000)
+    // Während die Farm druckt, sind die Daten serverseitig live (aus deren
+    // Verbindung) — häufiger holen ist billig (kein Drucker-Connect). Sonst 15 s.
+    const ms = farmRunning ? 4000 : 15000
+    intervalRef.current = setInterval(() => fetchStatus(bambuDevice.id), ms)
     return () => clearInterval(intervalRef.current)
-  }, [autoRefresh, bambuDevice, fetchStatus])
+  }, [autoRefresh, bambuDevice, fetchStatus, farmRunning])
 
   /* ── Webcam speichern ─────────────────────────────── */
   const saveWebcam = async () => {
@@ -495,8 +503,10 @@ export default function Steuerung() {
                   <span className="text-[10px] text-surface-600">°C</span>
                 </div>
                 {lastUpdated && <p className="text-[10px] text-surface-600 font-mono">{lastUpdated.toLocaleTimeString()}</p>}
-                <button onClick={() => setAutoRefresh(v => !v)} className={`btn btn-sm ${autoRefresh ? 'btn-primary' : 'btn-ghost'}`}>
-                  {autoRefresh ? '⟳ 15s' : tr('⟳ Man.')}
+                <button onClick={() => setAutoRefresh(v => !v)}
+                  title={farmRunning ? tr('Live über die Verbindung der laufenden Farm') : tr('Auto-Aktualisierung alle 15 s')}
+                  className={`btn btn-sm ${autoRefresh ? 'btn-primary' : 'btn-ghost'}`}>
+                  {autoRefresh ? (farmRunning ? tr('● Live') : '⟳ 15s') : tr('⟳ Man.')}
                 </button>
                 <button onClick={() => bambuDevice && fetchStatus(bambuDevice.id)} disabled={polling} className="btn btn-ghost btn-sm">
                   {polling ? '…' : tr('Jetzt')}

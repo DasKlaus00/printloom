@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService, systemService } from '../services/api'
-import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout } from '../components/DashboardGrid'
+import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout, GRID_VERSION } from '../components/DashboardGrid'
 import { parseSlotKey, slotsNeeded, autoSlot, checkClearance, slotTolerance } from '../services/rackUtils'
 import { amsMissing, colorDist } from '../services/amsUtils'
 import { useQueueEta, fmtDur, jobPrintSec, ensureMeta, getCachedMeta, CHANGEOVER_SEC } from '../services/useQueueEta'
@@ -315,6 +315,7 @@ function WhepVideo({ src, onError, className }) {
    (MJPEG oder HLS/MediaMTX) hochkant, deren URL & Typ anpassbar sind. */
 const CAM_PORTRAIT_KEY = 'printloom_cam_ext_portrait'
 const CAM_TYPE_KEY     = 'printloom_cam_ext_type'   // 'webrtc' | 'hls' | 'mjpeg'
+const HIDE_CAM2_KEY    = 'printloom_autofarm_hide_cam2'  // untere (hochkant) Kamera ausblenden
 
 const CAM_TYPE_ORDER = ['webrtc', 'hls', 'mjpeg']
 const CAM_TYPE_LABEL = { webrtc: 'WebRTC', hls: 'HLS', mjpeg: 'MJPEG' }
@@ -478,7 +479,7 @@ function HaPollView({ deviceId, label, portrait = false }) {
 
 /* Beide Kameras fest übereinander: oben Bambu (quer) bzw. X1C, unten hochkant.
    URLs kommen aus der Konfiguration (Konfiguration → Kameras). */
-function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, onToggle }) {
+function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, onToggle, hideCam2, onToggleCam2 }) {
   const { tr } = useLanguage()
   return (
     <div className="card p-2.5 space-y-2.5">
@@ -486,6 +487,15 @@ function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, o
         <p className="section-label mb-0">{tr('Kameras')}</p>
         <div className="flex items-center gap-2">
           <span className="text-[9px] text-surface-600 hidden sm:inline">{tr('Konfiguration → Kameras')}</span>
+          {cameraOn && (
+            <button
+              onClick={onToggleCam2}
+              title={hideCam2 ? tr('Zweite Kamera (unten) einblenden') : tr('Zweite Kamera (unten) ausblenden')}
+              className={`btn btn-sm px-2 ${hideCam2 ? 'btn-ghost' : 'btn-primary'}`}
+            >
+              {hideCam2 ? tr('Cam 2 ⨯') : tr('Cam 2')}
+            </button>
+          )}
           <button
             onClick={onToggle}
             disabled={!bambuId}
@@ -504,8 +514,8 @@ function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, o
             : webcamUrlTop
               ? <StreamView url={webcamUrlTop} portrait={false} label={tr('Bambu (oben)')} />
               : <X1CView bambuId={bambuId} />}
-          {/* Unten: Hochkant */}
-          <StreamView url={webcamUrl} portrait={true} label={tr('Hochkant (unten)')} />
+          {/* Unten: Hochkant — optional ausblendbar */}
+          {!hideCam2 && <StreamView url={webcamUrl} portrait={true} label={tr('Hochkant (unten)')} />}
         </>
       ) : (
         <div className="flex flex-col items-center justify-center text-surface-600 gap-1 py-8 text-center">
@@ -611,6 +621,10 @@ function AutoFarm() {
   const [webcamUrlTop,    setWebcamUrlTop]    = useState('')        // obere (Bambu / quer) Kamera
   const [haCamReady,      setHaCamReady]      = useState(false)     // X1C-Cam via Home Assistant
   const [cameraOn,        setCameraOn]        = useState(true)      // Kamera-Toggle (Anzeige + Snapshots)
+  const [hideCam2,        setHideCam2]        = useState(() => localStorage.getItem(HIDE_CAM2_KEY) === '1')  // untere Kamera aus
+  const toggleCam2 = useCallback(() => {
+    setHideCam2(v => { const next = !v; localStorage.setItem(HIDE_CAM2_KEY, next ? '1' : '0'); return next })
+  }, [])
   const [jobs,            setJobs]            = useState([])
   const [farmStatus,      setFarmStatus]      = useState(null)
   const [feedback,        setFeedback]        = useState(null)
@@ -700,7 +714,13 @@ function AutoFarm() {
     systemService.getDashboardLayout()
       .then(r => {
         const d = r.data || {}
-        if (Array.isArray(d.layout) && d.layout.length) setDashLayout(mergeLayout(d.layout))
+        let layout = d.layout
+        // Migration auf das feinere Raster (GRID_VERSION 2): alte Layouts (12
+        // Spalten / 30 px) einmalig ×2 skalieren, damit sie gleich aussehen.
+        if (Array.isArray(layout) && layout.length && (d.grid_v ?? 1) < GRID_VERSION) {
+          layout = layout.map(l => ({ ...l, x: l.x * 2, y: l.y * 2, w: l.w * 2, h: l.h * 2 }))
+        }
+        if (Array.isArray(layout) && layout.length) setDashLayout(mergeLayout(layout))
         if (Array.isArray(d.hidden)) setDashHidden(d.hidden)
       })
       .catch(() => {})
@@ -711,7 +731,7 @@ function AutoFarm() {
     if (!dashLoadedRef.current) return          // nicht während des Erst-Ladens speichern
     clearTimeout(dashSaveRef.current)
     dashSaveRef.current = setTimeout(() => {
-      systemService.saveDashboardLayout({ layout, hidden }).catch(() => {})
+      systemService.saveDashboardLayout({ layout, hidden, grid_v: GRID_VERSION }).catch(() => {})
     }, 600)
   }, [])
 
@@ -739,7 +759,7 @@ function AutoFarm() {
     setDashLayout(DEFAULT_LAYOUT)
     setDashHidden([])
     dashLoadedRef.current = true
-    systemService.saveDashboardLayout({ layout: DEFAULT_LAYOUT, hidden: [] }).catch(() => {})
+    systemService.saveDashboardLayout({ layout: DEFAULT_LAYOUT, hidden: [], grid_v: GRID_VERSION }).catch(() => {})
     showFeedback(tr('Dashboard auf Standard zurückgesetzt'))
   }, [])
 
@@ -1730,7 +1750,7 @@ function AutoFarm() {
         {[
           !dashHidden.includes('camera') && (
             <div key="camera" className="panel-fill">
-              <CameraPanel bambuId={bambuId} webcamUrl={webcamUrl} webcamUrlTop={webcamUrlTop} haCamReady={haCamReady} cameraOn={cameraOn} onToggle={toggleCamera} />
+              <CameraPanel bambuId={bambuId} webcamUrl={webcamUrl} webcamUrlTop={webcamUrlTop} haCamReady={haCamReady} cameraOn={cameraOn} onToggle={toggleCamera} hideCam2={hideCam2} onToggleCam2={toggleCam2} />
             </div>
           ),
           !dashHidden.includes('phases') && (

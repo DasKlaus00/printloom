@@ -4,6 +4,7 @@ import { pushSupported, pushUnsupportedReason, isSubscribed, syncSubscription, s
 import { VERSION } from '../version'
 import { THEMES, getTheme, applyTheme } from '../services/theme'
 import { useLanguage } from '../services/i18n'
+import { CHANGELOG } from '../changelog'
 
 function ThemePicker() {
   const { tr } = useLanguage()
@@ -143,7 +144,7 @@ function waitForRestart() {
 }
 
 export default function System({ onUpdateAvailable, onUpdatePhase }) {
-  const { tr } = useLanguage()
+  const { tr, lang } = useLanguage()
   const [info, setInfo]               = useState(null)
   const [checking, setChecking]       = useState(false)
   const [updating, setUpdating]       = useState(false)
@@ -421,6 +422,25 @@ docker compose up -d`}
             </button>
           )}
         </div>
+
+        {/* Patchnotes der letzten Updates (Sprache folgt der Auswahl unten links) */}
+        {CHANGELOG.length > 0 && (
+          <div className="pt-2 border-t border-surface-800/60 space-y-3">
+            <p className="text-xs text-surface-500 uppercase tracking-wider">{tr('Was ist neu')}</p>
+            <div className="space-y-3">
+              {CHANGELOG.slice(0, 5).map(entry => (
+                <div key={entry.version} className="space-y-1">
+                  <p className="text-sm font-mono font-semibold text-surface-300">v{entry.version}</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {(lang === 'en' ? entry.en : entry.de).map((line, i) => (
+                      <li key={i} className="text-xs text-surface-400 leading-snug">{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Backup-Disclaimer vor dem Update */}
         {confirmUpdate && !['done', 'running'].includes(phase) && (

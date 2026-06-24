@@ -8,8 +8,12 @@ import 'react-resizable/css/styles.css'
 
 const Grid = WidthProvider(GridLayout)
 
-export const COLS = 12
-export const ROW_HEIGHT = 30
+// Feineres Raster (doppelte Auflösung) → kleinere, aber weiterhin rastende
+// Schritte beim Ziehen/Größe-Ändern. Beim Versionswechsel werden alte Layouts
+// (GRID_VERSION 1: 12 Spalten / 30 px) einmalig ×2 skaliert (siehe AutoFarm).
+export const COLS = 24
+export const ROW_HEIGHT = 15
+export const GRID_VERSION = 2
 
 /* Alle Panels in Standard-Reihenfolge (für die Bearbeiten-Leiste). */
 export const PANELS = [
@@ -24,12 +28,12 @@ export const PANELS = [
 /* Standard-Layout (12 Spalten) — bildet die bisherige 3-Spalten-Ansicht nach.
    minW/minH verhindern, dass ein Panel unbrauchbar klein gezogen wird. */
 export const DEFAULT_LAYOUT = [
-  { i: 'camera',   x: 0, y: 0,  w: 3, h: 15, minW: 2, minH: 6 },
-  { i: 'phases',   x: 0, y: 15, w: 3, h: 8,  minW: 2, minH: 4 },
-  { i: 'queue',    x: 3, y: 0,  w: 6, h: 23, minW: 3, minH: 6 },
-  { i: 'step',     x: 9, y: 0,  w: 3, h: 3,  minW: 2, minH: 2 },
-  { i: 'rack',     x: 9, y: 3,  w: 3, h: 12, minW: 2, minH: 5 },
-  { i: 'activity', x: 9, y: 15, w: 3, h: 8,  minW: 2, minH: 4 },
+  { i: 'camera',   x: 0,  y: 0,  w: 6,  h: 30, minW: 4, minH: 12 },
+  { i: 'phases',   x: 0,  y: 30, w: 6,  h: 16, minW: 4, minH: 8  },
+  { i: 'queue',    x: 6,  y: 0,  w: 12, h: 46, minW: 6, minH: 12 },
+  { i: 'step',     x: 18, y: 0,  w: 6,  h: 6,  minW: 4, minH: 4  },
+  { i: 'rack',     x: 18, y: 6,  w: 6,  h: 24, minW: 4, minH: 10 },
+  { i: 'activity', x: 18, y: 30, w: 6,  h: 16, minW: 4, minH: 8  },
 ]
 
 /* Ein vollständiges Layout aus (evtl. unvollständigen) gespeicherten Daten bauen:
