@@ -125,6 +125,8 @@ _farm: dict = {
     "running":          False,
     "stopping":         False,
     "paused":           False,
+    "idle":             False,  # Warteschlange leer → wartet auf neue Jobs (kein Auto-Stop)
+    "start_countdown":  0,      # Sekunden bis zum Start des nächsten Jobs (Header-Anzeige)
     "current_job_id":   None,
     "current_job_idx":  -1,
     "seq_step_idx":     0,
@@ -435,14 +437,22 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
             if action == "skip":
                 _log(f"⚠ Kein freies Fach für {height_mm:.0f}mm — Job übersprungen (Strategie)")
                 raise RuntimeError(f"Kein freies Fach für {height_mm:.0f}mm")
-            _log(f"⚠ Kein freies Fach für {height_mm:.0f}mm — Farm pausiert")
-            _farm["paused"] = True
-            _farm["error"]  = f"Kein freies Fach für {height_mm:.0f}mm — Regal leeren, dann fortsetzen"
+            # Standard: Regal voll → die fertige Platte WARTET IM DRUCKER, bis genug
+            # zusammenhängende Fächer übereinander frei sind. Sobald Platz da ist,
+            # geht es automatisch weiter — KEIN manuelles Fortsetzen nötig.
+            boeden = _slots_needed(height_mm, slot_h)
+            if not _farm.get("_no_slot_logged"):
+                _log(f"📦 Regal voll — {height_mm:.0f}mm braucht {boeden} freie Fächer übereinander. "
+                     f"Druck wartet im Drucker, bis Platz frei ist…")
+                _farm["_no_slot_logged"] = True
+            _farm["error"] = (f"Regal voll — {boeden} freie Fächer übereinander nötig "
+                              f"({height_mm:.0f}mm). Platz schaffen — der Druck wartet im Drucker.")
+            # Pause respektieren, aber NICHT selbst pausieren (auto-weiter sobald Platz).
             while _farm["paused"] and not _farm["stopping"]:
                 await asyncio.sleep(0.5)
             if _farm["stopping"]:
                 raise RuntimeError("Gestoppt")
-            _farm["error"] = None
+            await asyncio.sleep(5)
             continue
 
         # Reset old placeholder slot if GRAB_FROM_RACK wrongly set it to 'printing'
@@ -454,6 +464,13 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
                     _log(f"♻ Platzhalter-Fach {old_slot} freigegeben")
             except Exception:
                 pass
+
+        # Platz gefunden → falls zuvor „Regal voll" gewartet wurde, Banner aufräumen.
+        if _farm.get("_no_slot_logged"):
+            _farm.pop("_no_slot_logged", None)
+            if (_farm.get("error") or "").startswith("Regal voll"):
+                _farm["error"] = None
+            _log("✓ Platz im Regal frei geworden — fahre fort")
 
         # Reserve actual slot as 'printing' + store height for clearance blocking
         _rack_update(new_slot, "printing", job.get("fileName", ""), object_height_mm=height_mm)
@@ -949,6 +966,32 @@ async def _wait_operating_window():
             _farm["error"] = None
     if not _farm["stopping"]:
         _log("🕒 Betriebszeit aktiv — fahre fort")
+
+
+# ── Start-Countdown nach Leerlauf ────────────────────────────
+PRESTART_COUNTDOWN_SEC = 15
+
+async def _prestart_countdown(seconds: int = PRESTART_COUNTDOWN_SEC) -> bool:
+    """Kurzer Countdown vor dem Start des nächsten Jobs NACH einer Leerlaufphase
+    (im Header sichtbar via _farm['start_countdown']). Pause friert den Countdown
+    ein. Rückgabe True = abgelaufen → starten; False = abgebrochen (gestoppt oder
+    letzter Job aus der Warteschlange entfernt)."""
+    _log(f"⏳ Nächster Job startet in {seconds}s…")
+    remaining = seconds
+    while remaining > 0 and not _farm["stopping"]:
+        while _farm["paused"] and not _farm["stopping"]:
+            _farm["start_countdown"] = remaining
+            await asyncio.sleep(0.5)
+        if _farm["stopping"]:
+            break
+        if not any(j["status"] == "pending" for j in _farm["jobs"]):
+            _log("⏳ Countdown abgebrochen — kein Job mehr in der Warteschlange")
+            break
+        _farm["start_countdown"] = remaining
+        await asyncio.sleep(1.0)
+        remaining -= 1
+    _farm["start_countdown"] = 0
+    return remaining <= 0 and not _farm["stopping"]
 
 
 async def _handle_hms(hms_list: list):
@@ -1741,14 +1784,14 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             # Find next pending job
             pending = [j for j in _farm["jobs"] if j["status"] == "pending"]
             if not pending:
-                # Auto-stop when all jobs are done/error
-                if _farm["jobs"] and all(j["status"] in ("done", "error") for j in _farm["jobs"]):
-                    _log("✓ Alle Jobs abgearbeitet — Auto Farm beendet")
-                    _farm["stop_reason"] = "completed"
-                    break
+                # KEIN Auto-Stop mehr: leere Warteschlange → Leerlauf, bis ein neuer
+                # Job kommt (oder manuell gestoppt / per Update neugestartet wird).
+                if not _farm["idle"]:
+                    _farm["idle"] = True
+                    _log("⏸ Warteschlange leer — warte auf neue Jobs…")
                 _farm["current_job_id"] = None
                 _farm["current_job_idx"] = -1
-                await asyncio.sleep(5)
+                await asyncio.sleep(2)
                 continue
 
             job = pending[0]
@@ -1758,6 +1801,13 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             if not _now_in_operating_window():
                 await _wait_operating_window()
                 continue
+            # Aus dem Leerlauf heraus: 15-Sekunden-Countdown vor dem nächsten Job
+            # (im Header sichtbar). Direkt aufeinanderfolgende Jobs (idle == False)
+            # starten ohne Extra-Countdown — der Auswurf-Zyklus liegt dazwischen.
+            if _farm["idle"]:
+                if not await _prestart_countdown():
+                    continue   # gestoppt oder Job entfernt → Schleife neu bewerten
+                _farm["idle"] = False
             # Find the index in the full jobs list for UI compat
             for idx, j in enumerate(_farm["jobs"]):
                 if j["id"] == job["id"]:
@@ -1869,6 +1919,8 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
         _farm["running"] = False
         _farm["stopping"] = False
         _farm["paused"] = False
+        _farm["idle"] = False
+        _farm["start_countdown"] = 0
         _farm["current_job_id"] = None
         _farm["current_job_idx"] = -1
         _farm["seq_step_idx"] = 0
@@ -1979,6 +2031,8 @@ async def start_farm(req: StartRequest):
         "running":         True,
         "stopping":        False,
         "paused":          False,
+        "idle":            False,
+        "start_countdown": 0,
         "error":           None,
         "stop_reason":     None,
         "current_job_id":  None,
@@ -2000,6 +2054,7 @@ async def start_farm(req: StartRequest):
         "operating_days":          list(_settings.get("operating_days") or [0, 1, 2, 3, 4, 5, 6]),
     })
 
+    _farm.pop("_no_slot_logged", None)   # „Regal voll"-Log-Dedup nicht über Läufe schleppen
     _record_event("farm_start", "", f"{len([j for j in req.jobs if j.status == 'pending'])} Jobs")
 
     _task = asyncio.create_task(_run_farm(
@@ -2201,6 +2256,8 @@ async def force_reset():
         "running":          False,
         "stopping":         False,
         "paused":           False,
+        "idle":             False,
+        "start_countdown":  0,
         "error":            None,
         "stop_reason":      None,
         "current_job_id":   None,

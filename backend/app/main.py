@@ -8,8 +8,14 @@ from app.routers import config, queue, files, devices, control, printer, calibra
 from app.db.database import init_db
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
-logging.getLogger("app").setLevel(logging.DEBUG)
+# INFO statt DEBUG: DEBUG ließ uvicorn + alle Bibliotheken (MQTT/HTTP/FTP) sehr
+# viel protokollieren — unnötige CPU-/IO-Last und ein endlos wachsendes Log. Die
+# App-eigenen Meldungen laufen über logger.info und bleiben damit sichtbar.
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("app").setLevel(logging.INFO)
+# Gesprächige Drittanbieter-Logger zusätzlich dämpfen (Zugriffslog, HTTP, MQTT).
+for _noisy in ("uvicorn.access", "httpx", "httpcore", "paho", "paho.mqtt", "watchfiles"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 # Initialize database
 init_db()

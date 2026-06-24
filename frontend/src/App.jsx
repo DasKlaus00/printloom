@@ -45,6 +45,7 @@ const MobileView      = React.lazy(() => import('./pages/MobileView'))
 const Projekt         = React.lazy(() => import('./pages/Projekt'))
 import { healthService, systemService, deviceService } from './services/api'
 import { loadLangPacks, useLanguage } from './services/i18n'
+import { useFarmStatusStream } from './services/useFarmStatusStream'
 import { VERSION } from './version'
 
 /* ── URL ↔ page-id mapping ──────────────────────────────────── */
@@ -132,6 +133,11 @@ function App() {
   const [targets, setTargets]               = useState(null)
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [updateOverlay,   setUpdateOverlay]   = useState(null)  // null | 'running' | 'done'
+  const [farmStatus,      setFarmStatus]      = useState(null)  // für den Start-Countdown im Header
+
+  /* ── Geteilter Farm-Status (Singleton-WS) — nur für den Header-Countdown ── */
+  useFarmStatusStream(setFarmStatus)
+  const startCountdown = farmStatus?.running ? (farmStatus?.start_countdown ?? 0) : 0
 
   /* ── URL-aware page setter ────────────────────────────────── */
   const setCurrentPage = useCallback((page) => {
@@ -290,6 +296,15 @@ function App() {
           <span className="text-sm text-surface-400">{tr(pageTitle[currentPage] ?? '')}</span>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
+          {startCountdown > 0 && (
+            <div
+              title={tr('Nächster Job startet automatisch')}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono border bg-blue-950/60 text-blue-300 border-blue-800/50 animate-pulse"
+            >
+              <span>⏳</span>
+              <span>{tr('Start in {0}s', startCountdown)}</span>
+            </div>
+          )}
           <span className="hidden md:inline text-xs font-mono text-surface-700 select-none">v{VERSION}</span>
           <StatusPill label={tr('Drucker')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.printer} />
           <StatusPill label={tr('Klipper')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.klipper} />

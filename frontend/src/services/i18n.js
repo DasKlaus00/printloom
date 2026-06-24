@@ -932,6 +932,10 @@ const EN_STRINGS = {
     'Manual AMS assignment needed for {0} job(s) — assign filament, then start',
   '⚠ Nur Platz für {0}/{1} Jobs — Farm pausiert bei vollem Regal':
     '⚠ Only room for {0}/{1} jobs — farm pauses when the rack is full',
+  'ℹ Regal evtl. zu klein für {0}/{1} Jobs — übrige warten dann im Drucker, bis Platz frei wird':
+    'ℹ Rack may be too small for {0}/{1} jobs — the rest then wait in the printer until space frees up',
+  'Start in {0}s': 'Starting in {0}s',
+  'Nächster Job startet automatisch': 'Next job starts automatically',
   'Auto Farm gestartet': 'Auto Farm started',
   'Farm-State zurückgesetzt': 'Farm state reset',
   'Kein Bambu Lab Gerät konfiguriert — bitte erst unter Configuration einrichten':

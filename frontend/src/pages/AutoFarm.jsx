@@ -824,30 +824,11 @@ function AutoFarm() {
     })
   }, [farmStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── Preview target slots while the farm runs ────────────────
-     Pending jobs (incl. ones added mid-run from the file library) carry the
-     backend's '1-0' placeholder until they actually start printing. Give them a
-     previewed free slot so the rack viz shows where each queued job will land.
-     This is purely visual and never persisted — the backend picks the real slot
-     at print start based on the live rack state. */
-  useEffect(() => {
-    if (!running || !rackData) return
-    const slotH = rackData.slot_height_mm ?? 50
-    setJobs(prev => {
-      let changed = false
-      const result = []
-      for (const j of prev) {
-        // Once a job is actually printing/done the backend owns its slot — leave it.
-        const backendOwned = ['printing', 'running', 'sending', 'done', 'error'].includes(j.status)
-        if (j.status !== 'pending' || backendOwned || !j.computedHeight) { result.push(j); continue }
-        const priorPending = result.filter(p => p.status === 'pending')
-        const preview = autoSlot(priorPending, rackData, j.computedHeight, slotH)
-        if (preview !== j.slot) changed = true
-        result.push(preview !== j.slot ? { ...j, slot: preview } : j)
-      }
-      return changed ? result : prev
-    })
-  }, [running, jobs, rackData]) // eslint-disable-line react-hooks/exhaustive-deps
+  /* ── Fächer werden NICHT vorab angezeigt ─────────────────────
+     Wartende Jobs behalten den Platzhalter '1-0' (Anzeige „Auto"). Wo eine
+     Platte hinkommt, berechnet der Server LIVE erst beim Druckstart anhand des
+     aktuellen Regalzustands — nur der startende/druckende Job erscheint dann im
+     Regal, die wartenden bewusst nicht. (Früher gab es hier eine Vorschau.) */
 
   /* ── Browser tab title ───────────────────────────────────── */
   useEffect(() => {
@@ -1087,8 +1068,10 @@ function AutoFarm() {
       .then(r => {
         const computed = r.data.computed_height_mm ?? null
         setJobs(prev => {
-          // First apply this job's analysis result
-          const updated = prev.map(j => j.id === jobId ? {
+          // Nur das Analyse-Ergebnis übernehmen — KEINE Vorschau, wohin die Platte
+          // kommt. Wartende Jobs bleiben '1-0'/„Auto"; der Server wählt das Fach
+          // live beim Druckstart.
+          return prev.map(j => j.id === jobId ? {
             ...j,
             objectHeight:   r.data.max_z_mm,
             layerCount:     r.data.layer_count    ?? 0,
@@ -1097,17 +1080,6 @@ function AutoFarm() {
             computedHeight: computed,
             heightLoading:  false,
           } : j)
-          // Recompute slots for ALL pending jobs in order to fix race conditions
-          // when multiple jobs are analyzed in parallel (each sees others' stale state)
-          if (!rackDataRef.current || runningRef.current) return updated
-          const slotH = rackDataRef.current?.slot_height_mm ?? 50
-          const result = []
-          for (const j of updated) {
-            if (j.status !== 'pending' || !j.computedHeight) { result.push(j); continue }
-            const priorPending = result.filter(p => p.status === 'pending')
-            result.push({ ...j, slot: autoSlot(priorPending, rackDataRef.current, j.computedHeight, slotH) })
-          }
-          return result
         })
       })
       .catch(() => setJobField(jobId, { heightLoading: false }))
@@ -1448,8 +1420,9 @@ function AutoFarm() {
       )
     }
 
-    // Queue preflight (soft warning): simulate the slot plan; the farm pauses
-    // safely if it runs out mid-run, so this only warns.
+    // Kapazitäts-Hinweis (weich): grobe Simulation des Fächer-Plans. Bei vollem
+    // Regal wird NICHT pausiert — die fertige Platte wartet im Drucker, bis Platz
+    // frei ist, und es geht automatisch weiter. Reiner Hinweis, kein Vorzeigen.
     if (rackData) {
       const slotH = rackData.slot_height_mm ?? 50
       const assigned = []
@@ -1461,7 +1434,7 @@ function AutoFarm() {
         else assigned.push({ slot: s, computedHeight: h, status: 'pending' })
       }
       if (noSlot > 0) {
-        showFeedback(tr('⚠ Nur Platz für {0}/{1} Jobs — Farm pausiert bei vollem Regal', pending.length - noSlot, pending.length), false)
+        showFeedback(tr('ℹ Regal evtl. zu klein für {0}/{1} Jobs — übrige warten dann im Drucker, bis Platz frei wird', noSlot, pending.length), false)
       }
     }
 
@@ -1472,7 +1445,7 @@ function AutoFarm() {
         poll_interval:     pollInterval,
         min_print_minutes: minPrintMinutes,
         jobs: pending.map(j => ({
-          id: j.id, fileId: j.fileId, fileName: j.fileName, slot: j.slot ?? '1-0',
+          id: j.id, fileId: j.fileId, fileName: j.fileName, slot: '1-0',
           status: 'pending', amsMap: j.amsMap ?? '',
           layerHeightMm: j.layerHeightMm ?? 0,
           object_height_mm: j.computedHeight ?? j.objectHeight ?? null,
@@ -1563,10 +1536,11 @@ function AutoFarm() {
   const activeJobs    = jobs.filter(j => ['pending', 'printing'].includes(j.status))
   const eta = useQueueEta()   // echte Rest-Druckzeit der Warteschlange (Dashboard nutzt denselben Hook)
 
-  // Build slot → assigned job map (for rack preview)
+  // Slot → Job-Map für die Regal-Anzeige. NUR aktiv laufende Jobs (Server hat ihr
+  // Fach live zugewiesen) — wartende Jobs werden bewusst NICHT im Regal vorgezeigt.
   const slotJobMap = {}
   jobs.forEach(j => {
-    if (['pending', 'running', 'printing', 'sending'].includes(j.status)) {
+    if (['running', 'printing', 'sending'].includes(j.status) && j.slot && j.slot !== '1-0') {
       if (!slotJobMap[j.slot]) slotJobMap[j.slot] = []
       slotJobMap[j.slot].push(j)
     }
@@ -1586,13 +1560,12 @@ function AutoFarm() {
       if (!ghostMap[k]) ghostMap[k] = { name: name || '', baseSlot: s }
     }
   }
-  jobs.forEach(j => {
-    if (['pending', 'running', 'printing', 'sending'].includes(j.status))
-      addGhost(j.slot, j.computedHeight ?? j.objectHeight, j.fileName)
-  })
+  // Ghosts NUR aus tatsächlich belegten Regal-Fächern (Drucken/Fertig) — wartende
+  // Jobs erzeugen keine Vorschau. Der startende Job ist im Regal bereits als
+  // „printing" mit Höhe hinterlegt, ragt also korrekt in die Fächer darüber.
   Object.entries(rackData?.slots ?? {}).forEach(([k, sd]) => {
-    // Nur für wirklich belegte Fächer — ein entnommenes (Status „empty") Fach darf
-    // keinen Ghost mehr erzeugen, auch wenn die alte Höhe noch im Datensatz steht.
+    // Ein entnommenes (Status „free") Fach darf keinen Ghost mehr erzeugen, auch
+    // wenn die alte Höhe noch im Datensatz steht.
     if (sd?.object_height_mm > 0 && ['printing', 'done'].includes(sd.status))
       addGhost(k, sd.object_height_mm, sd.file_name)
   })

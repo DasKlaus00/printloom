@@ -37,6 +37,15 @@ RUN mkdir -p /app/uploads /app/db
 # Copy frontend build
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
+# Speicherverbrauch zähmen: Diese App nutzt viele kurzlebige Worker-Threads
+# (MQTT/FTP/Kamera über run_in_executor). glibc legt pro Thread eine eigene
+# malloc-Arena an → der belegte Speicher (RSS) bläht sich auf und wird kaum an
+# das OS zurückgegeben. Arenen begrenzen und freigegebenen Speicher früher
+# zurückgeben senkt den Verbrauch deutlich, ohne Funktionsverlust.
+ENV MALLOC_ARENA_MAX=2 \
+    MALLOC_TRIM_THRESHOLD_=131072 \
+    PYTHONUNBUFFERED=1
+
 # Expose ports
 EXPOSE 8000 3000
 

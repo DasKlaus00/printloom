@@ -1,4 +1,6 @@
 """Safety-critical slot-assignment logic (the Python half of the rack planner)."""
+import asyncio
+
 import pytest
 
 pytest.importorskip("httpx")
@@ -41,3 +43,24 @@ def test_find_slot_returns_none_when_full(tmp_path, monkeypatch):
     monkeypatch.setattr(autofarm, "SLOTS_PATH", p)
     monkeypatch.setitem(autofarm._farm, "jobs", [])
     assert autofarm._find_slot_for_height(30) is None
+
+
+# ── Start-Countdown nach Leerlauf ────────────────────────────
+def test_prestart_countdown_aborts_when_stopping(monkeypatch):
+    """Stopp während des Countdowns → kein Start (False), Anzeige zurückgesetzt."""
+    monkeypatch.setitem(autofarm._farm, "stopping", True)
+    monkeypatch.setitem(autofarm._farm, "paused", False)
+    monkeypatch.setitem(autofarm._farm, "jobs", [{"id": 1, "status": "pending"}])
+    monkeypatch.setitem(autofarm._farm, "start_countdown", 0)
+    assert asyncio.run(autofarm._prestart_countdown(15)) is False
+    assert autofarm._farm["start_countdown"] == 0
+
+
+def test_prestart_countdown_aborts_when_queue_empty(monkeypatch):
+    """Letzter Job während des Countdowns entfernt → kein Start (False)."""
+    monkeypatch.setitem(autofarm._farm, "stopping", False)
+    monkeypatch.setitem(autofarm._farm, "paused", False)
+    monkeypatch.setitem(autofarm._farm, "jobs", [])
+    monkeypatch.setitem(autofarm._farm, "start_countdown", 0)
+    assert asyncio.run(autofarm._prestart_countdown(15)) is False
+    assert autofarm._farm["start_countdown"] == 0
