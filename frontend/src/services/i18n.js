@@ -1081,6 +1081,10 @@ const EN_STRINGS = {
   'voraussichtlich fertig': 'projected finish',
   '{0} Jobs': '{0} jobs',
   '~{0} · fertig ~{1} Uhr': '~{0} · done ~{1}',
+  '~{0} · fertig {1} ~{2} Uhr': '~{0} · done {1} ~{2}',
+  'heute': 'today',
+  'morgen': 'tomorrow',
+  '+{0} Tage': '+{0} days',
 
   // ── Datei-Bibliothek: Sortieren & Filtern ──
   'Keine Datei passt zum Filter': 'No file matches the filter',

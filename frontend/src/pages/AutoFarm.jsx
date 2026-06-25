@@ -590,6 +590,17 @@ function QueuePlanner({ jobs, tr }) {
   const finishAt  = rows.length ? rows[rows.length - 1].end : new Date(now)
   const waiting   = ophOn && finishAt.getTime() > now + workMs + 1000   // Fenster-Wartezeit dabei?
   const clk = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  // Kalendertage-Abstand zum Jetzt — für „heute / morgen / +N Tage", weil ein
+  // Job durch Betriebszeiten erst an einem späteren Tag fertig werden kann.
+  const dayOffset = (d) => {
+    const a = new Date(now); a.setHours(0, 0, 0, 0)
+    const b = new Date(d);   b.setHours(0, 0, 0, 0)
+    return Math.round((b.getTime() - a.getTime()) / 86400000)
+  }
+  const relDay = (d) => {
+    const n = dayOffset(d)
+    return n <= 0 ? tr('heute') : n === 1 ? tr('morgen') : tr('+{0} Tage', n)
+  }
   const srcMeta = {
     live:   { sym: '●', cls: 'text-blue-400',    title: tr('Live-Restzeit') },
     hist:   { sym: '📊', cls: 'text-emerald-400', title: tr('aus echter Historie') },
@@ -609,7 +620,10 @@ function QueuePlanner({ jobs, tr }) {
               <span className={`shrink-0 ${m.cls}`} title={m.title}>{m.sym}</span>
               <span className="font-mono text-surface-400 w-16 text-right shrink-0">{fmtDur(sec) ?? '—'}</span>
               {costOn && <span className="font-mono text-amber-400/80 w-14 text-right shrink-0" title={tr('Kosten: Strom + Maschine + Filament')}>{c > 0 ? `${c.toFixed(2)} €` : '—'}</span>}
-              <span className="font-mono text-surface-600 w-12 text-right shrink-0" title={tr('voraussichtlich fertig')}>{clk(end)}</span>
+              <span className="font-mono w-24 text-right shrink-0" title={tr('voraussichtlich fertig')}>
+                <span className={dayOffset(end) > 0 ? 'text-blue-400/80' : 'text-surface-700'}>{relDay(end)}</span>
+                <span className="text-surface-500 ml-1">{clk(end)}</span>
+              </span>
             </div>
           )
         })}
@@ -618,7 +632,7 @@ function QueuePlanner({ jobs, tr }) {
         <span className="text-surface-500">{tr('{0} Jobs', rows.length)}</span>
         <span className="font-mono text-surface-300">
           {costOn && totalCost > 0 && <span className="text-amber-400/80 mr-2">{totalCost.toFixed(2)} €</span>}
-          {fmtDur(totalSec) ? tr('~{0} · fertig ~{1} Uhr', fmtDur(totalSec), clk(finishAt)) : tr('Gesamtzeit unbekannt')}
+          {fmtDur(totalSec) ? tr('~{0} · fertig {1} ~{2} Uhr', fmtDur(totalSec), relDay(finishAt), clk(finishAt)) : tr('Gesamtzeit unbekannt')}
         </span>
       </div>
       {waiting && (

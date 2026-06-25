@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.60',
+    de: [
+      'Auto-Farm-Planer zeigt jetzt zusätzlich den Tag an (heute / morgen / +N Tage), da ein Job durch Betriebszeiten erst an einem späteren Tag fertig werden kann.',
+    ],
+    en: [
+      'Auto Farm planner now also shows the day (today / tomorrow / +N days), since operating hours can push a job’s finish to a later day.',
+    ],
+  },
+  {
     version: '1.0.59',
     de: [
       'Betriebszeiten jetzt pro Wochentag einzeln einstellbar (eigenes Von–Bis je Tag, Tag ganz abschaltbar, „auf alle Tage übernehmen").',
