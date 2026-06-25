@@ -1941,7 +1941,6 @@ function AutoFarm() {
                 // the farm is running. Only the former is a genuine overflow —
                 // otherwise the badge falsely cries "Regal voll" mid-run.
                 const isOverflow = !running && job.slot === '1-0'
-                const hasRealSlot = job.slot && job.slot !== '1-0'
                 return (
                   <div
                     key={job.id}
@@ -1972,6 +1971,26 @@ function AutoFarm() {
                         <span className="text-[10px] text-surface-700 font-mono shrink-0">~{job.estimatedMinutes} min</span>
                       )}
                       <div className="flex-1" />
+                      {/* oben rechts: Höhe + Fächer-Bedarf */}
+                      {job.plate != null && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300 shrink-0"
+                          title={tr('Platte {0} aus Multi-Plate-.3mf', job.plate)}>{tr('Platte {0}', job.plate)}</span>
+                      )}
+                      {job.heightLoading ? (
+                        <span className="text-[10px] text-surface-700 font-mono animate-pulse shrink-0">{tr('Höhe…')}</span>
+                      ) : displayH != null && displayH > 0 ? (
+                        <span
+                          className="text-[10px] font-mono px-1.5 py-0.5 rounded border text-emerald-400 border-emerald-900/60 bg-emerald-950/20 shrink-0"
+                          title={job.layerCount > 0 && job.layerHeightMm > 0
+                            ? tr('Roh: {0} mm · {1} Schichten × {2} mm · +{3}% = {4} mm', job.objectHeight, job.layerCount, job.layerHeightMm, heightMarginPct, job.computedHeight)
+                            : `${job.objectHeight} mm (${job.heightSource ?? ''})`}
+                        >
+                          {displayH} mm
+                          {slotsUsed > 0 && (
+                            <span className="opacity-70 ml-1 text-[9px]">· {tr(slotsUsed === 1 ? '{0} Fach' : '{0} Fächer', slotsUsed)}</span>
+                          )}
+                        </span>
+                      ) : null}
                       {pending && (
                         <>
                           <button onClick={() => moveJobUp(job.id)} disabled={idx === 0}
@@ -2012,92 +2031,23 @@ function AutoFarm() {
                       {gcodeFiles.map(f => <option key={f.id} value={f.id}>{f.original_filename}</option>)}
                     </select>
 
-                    {/* ── Info row: height + slot ── */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {job.plate != null && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300"
-                          title={tr('Platte {0} aus Multi-Plate-.3mf', job.plate)}>
-                          {tr('Platte {0}', job.plate)}
-                        </span>
-                      )}
-                      {job.heightLoading ? (
-                        <span className="text-[10px] text-surface-700 font-mono animate-pulse">{tr('Höhe…')}</span>
-                      ) : displayH != null && displayH > 0 ? (
+                    {/* ── Manuelle AMS-Festlegung — nur wenn die Farm wirklich darauf
+                           wartet (sonst kein AMS-Block, hält die Karte kompakt) ── */}
+                    {jobNeedsAms(job) && (
+                      <div className="space-y-1">
                         <span
-                          className="text-[10px] font-mono px-1.5 py-0.5 rounded border text-emerald-400 border-emerald-900/60 bg-emerald-950/20"
-                          title={job.layerCount > 0 && job.layerHeightMm > 0
-                            ? tr('Roh: {0} mm · {1} Schichten × {2} mm · +{3}% = {4} mm', job.objectHeight, job.layerCount, job.layerHeightMm, heightMarginPct, job.computedHeight)
-                            : `${job.objectHeight} mm (${job.heightSource ?? ''})`}
-                        >
-                          {displayH} mm
-                          {slotsUsed > 0 && (
-                            <span className="opacity-70 ml-1 text-[9px]">· {tr(slotsUsed === 1 ? '{0} Fach' : '{0} Fächer', slotsUsed)}</span>
-                          )}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-surface-700 font-mono">{tr('Höhe unbekannt')}</span>
-                      )}
-                      <div className="flex-1" />
-                      <div className="flex items-center gap-1 text-[10px] text-surface-600">
-                        <span>{tr('Fach')}</span>
-                        {isOverflow ? (
-                          <span className="font-mono text-[10px] text-amber-500 px-1 rounded border border-amber-800/60" title={tr('Regal voll — kein freies Fach in der Vorschau')}>{tr('Regal voll')}</span>
-                        ) : hasRealSlot ? (
-                          <span className="font-mono text-[10px] text-surface-400">{job.slot}</span>
-                        ) : (
-                          <span className="font-mono text-[10px] text-surface-600 px-1 rounded border border-surface-800/50" title={tr('Fach wird bei Ausführung automatisch zugewiesen')}>{tr('Auto')}</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* ── Filaments + AMS compact ── */}
-                    {(job.filaments?.length > 0 || job.amsMap) && (
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {(job.filaments ?? []).map((f, fi) => (
-                          <span key={fi} className="flex items-center gap-0.5" title={`${f.type ?? '?'}${f.color ? ` #${f.color}` : ''}`}>
-                            <span className="w-2.5 h-2.5 rounded-full border border-white/10 shrink-0"
-                              style={{ backgroundColor: f.color ? (f.color.startsWith('#') ? f.color : `#${f.color}`) : '#555' }} />
-                            <span className="text-[9px] text-surface-600 font-mono">{f.type?.slice(0, 4) ?? '?'}</span>
-                          </span>
-                        ))}
-                        {jobNeedsAms(job) && (
-                          <span
-                            className="text-[9px] font-mono px-1 rounded border border-red-800/60 bg-red-950/30 text-red-400"
-                            title={jobAmsMissing(job).map(m => `${m.type ?? '?'} ${m.color ?? ''} (${m.reason})`).join(', ')}
-                          >{tr('⚠ Manuelle AMS-Festlegung')}</span>
-                        )}
-                        <button
-                          onClick={() => {
-                            setAmsOpenIds(prev => {
-                              const next = new Set(prev)
-                              if (next.has(job.id)) { next.delete(job.id) }
-                              else { next.add(job.id); fetchAmsSlots() }
-                              return next
-                            })
+                          className="inline-block text-[9px] font-mono px-1 rounded border border-red-800/60 bg-red-950/30 text-red-400"
+                          title={jobAmsMissing(job).map(m => `${m.type ?? '?'} ${m.color ?? ''} (${m.reason})`).join(', ')}
+                        >{tr('⚠ Manuelle AMS-Festlegung')}</span>
+                        <AmsMapper
+                          filaments={job.filaments ?? []}
+                          amsSlots={amsSlots}
+                          value={job.amsMap}
+                          onChange={map => {
+                            setJobField(job.id, { amsMap: map })
+                            if (running) autofarmService.setJobAms(job.id, map).catch(() => {})
                           }}
-                          className={`ml-auto text-[9px] font-mono px-1 rounded border transition-colors ${
-                            amsOpenIds.has(job.id)
-                              ? 'text-blue-400 border-blue-800/60 bg-blue-900/20'
-                              : 'text-surface-700 border-surface-700/30 hover:text-surface-400'
-                          }`}
-                        >AMS {amsOpenIds.has(job.id) ? '▲' : '▼'}</button>
-                        {(amsOpenIds.has(job.id) || jobNeedsAms(job)) && (
-                          <div className="w-full">
-                            {amsLoading ? (
-                              <p className="text-[10px] text-surface-700 animate-pulse">{tr('AMS laden…')}</p>
-                            ) : (
-                              <AmsMapper
-                                filaments={job.filaments ?? []}
-                                amsSlots={amsSlots}
-                                value={job.amsMap}
-                                onChange={map => {
-                                  setJobField(job.id, { amsMap: map })
-                                  if (running) autofarmService.setJobAms(job.id, map).catch(() => {})
-                                }}
-                              />
-                            )}
-                          </div>
-                        )}
+                        />
                       </div>
                     )}
 
