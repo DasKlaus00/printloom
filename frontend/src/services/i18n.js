@@ -1045,6 +1045,13 @@ const EN_STRINGS = {
   'Von': 'From',
   'Bis': 'To',
   '(über Nacht)': '(overnight)',
+  'über Nacht': 'overnight',
+  'kein Druck an diesem Tag': 'no printing on this day',
+  'Diese Zeiten auf alle Tage übernehmen': 'Apply these times to all days',
+  'auf alle': 'to all',
+  'Über-Nacht-Fenster (z. B. 22:00–06:00) erlaubt. Gilt nur für den Start neuer Drucke.':
+    'Overnight windows (e.g. 22:00–06:00) are allowed. Applies only to starting new prints.',
+  '🕒 inkl. Wartezeit bis zur nächsten Betriebszeit': '🕒 incl. wait until the next operating window',
   'Mo': 'Mon', 'Di': 'Tue', 'Mi': 'Wed', 'Do': 'Thu', 'Fr': 'Fri', 'Sa': 'Sat', 'So': 'Sun',
   'Fächer-Toleranz (mm)': 'Slot tolerance (mm)',
   '(Überstand nach oben)': '(overshoot at top)',

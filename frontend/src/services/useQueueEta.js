@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { autofarmService, fileService } from './api'
+import { gateStart } from './operatingHours'
 
 /* Gemeinsame ETA-Berechnung für Dashboard, AutoFarm & Planer.
    Pro Job zählt die beste verfügbare Druckzeit:
@@ -54,9 +55,10 @@ export function useQueueEta(pollMs = 15000) {
       // Kein eigener /status-Poll mehr: `running` lässt sich aus der Queue ableiten
       // (ein druckender Job ⇒ Farm läuft). Spart auf Dashboard & AutoFarm je einen
       // doppelten Status-Request pro Intervall.
-      const [q, hi] = await Promise.all([
+      const [q, hi, st] = await Promise.all([
         autofarmService.getQueue().catch(() => ({ data: [] })),
         autofarmService.getHistory().catch(() => ({ data: {} })),
+        autofarmService.getSettings().catch(() => ({ data: {} })),
       ])
       const hist = hi.data || {}
       const raw = q.data
@@ -67,19 +69,29 @@ export function useQueueEta(pollMs = 15000) {
       const need = [...new Set(jobs.map(j => j.fileId).filter(id => id != null && _metaCache[id] === undefined))]
       await Promise.all(need.map(id => ensureMeta(id)))
 
+      // Betriebszeiten: ein wartender Job startet nur im Zeitfenster → die
+      // Fertig-Uhrzeit verschiebt sich um die Wartelücken (totalSec bleibt reine Arbeit).
+      const ophOn    = !!st.data?.operating_hours_enabled
+      const ophSched = st.data?.operating_schedule
       let printSec = 0, overheadSec = 0, known = 0, histCount = 0
+      let clock = Date.now()
       for (const j of jobs) {
         const { sec, src } = jobPrintSec(j, _metaCache[j.fileId], hist)
+        if (!PRINTING.has(j.status)) {
+          overheadSec += CHANGEOVER_SEC
+          clock += CHANGEOVER_SEC * 1000
+          clock = gateStart(clock, ophSched, ophOn)
+        }
         printSec += sec
+        clock += sec * 1000
         if (src === 'hist') histCount++
         if (sec > 0) known++
-        if (!PRINTING.has(j.status)) overheadSec += CHANGEOVER_SEC
       }
       const totalSec = printSec + overheadSec
       setEta({
         ready: true, running, jobs: jobs.length,
         printSec, overheadSec, totalSec, known, histCount,
-        finishAt: totalSec > 0 ? new Date(Date.now() + totalSec * 1000) : null,
+        finishAt: totalSec > 0 ? new Date(clock) : null,
       })
     } catch {
       setEta(e => ({ ...e, ready: true }))

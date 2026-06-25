@@ -4,6 +4,7 @@ import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout, GRID_VERSION } from
 import { parseSlotKey, slotsNeeded, autoSlot, checkClearance, slotTolerance } from '../services/rackUtils'
 import { amsMissing, colorDist } from '../services/amsUtils'
 import { useQueueEta, fmtDur, jobPrintSec, ensureMeta, getCachedMeta, CHANGEOVER_SEC } from '../services/useQueueEta'
+import { gateStart } from '../services/operatingHours'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { useLanguage } from '../services/i18n'
 
@@ -566,16 +567,28 @@ function QueuePlanner({ jobs, tr }) {
   }
   const costOn = pPrice > 0 || mRate > 0 || fPrice > 0
 
+  // Betriebszeiten berücksichtigen: ein wartender Job startet nur im Zeitfenster.
+  const ophOn    = !!cost?.operating_hours_enabled
+  const ophSched = cost?.operating_schedule
   const now = Date.now()
-  let acc = 0, totalCost = 0
+  let clock = now, workMs = 0, totalCost = 0
   const rows = active.map((j, i) => {
-    if (i > 0) acc += CHANGEOVER_SEC
+    const printing = ['running', 'printing', 'sending'].includes(j.status)
+    let over = 0
+    if (!printing) {
+      if (i > 0) over = CHANGEOVER_SEC * 1000
+      clock += over
+      clock = gateStart(clock, ophSched, ophOn)   // Start auf nächstes Fenster verschieben
+    }
     const { sec, src } = jobPrintSec(j, getCachedMeta(j.fileId), hist)
-    acc += sec
+    clock += sec * 1000
+    workMs += over + sec * 1000
     const c = jobCost(j, sec); totalCost += c
-    return { j, sec, src, cost: c, end: new Date(now + acc * 1000) }
+    return { j, sec, src, cost: c, end: new Date(clock) }
   })
-  const totalSec = acc
+  const totalSec  = Math.round(workMs / 1000)            // reine Arbeitszeit (ohne Wartelücken)
+  const finishAt  = rows.length ? rows[rows.length - 1].end : new Date(now)
+  const waiting   = ophOn && finishAt.getTime() > now + workMs + 1000   // Fenster-Wartezeit dabei?
   const clk = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   const srcMeta = {
     live:   { sym: '●', cls: 'text-blue-400',    title: tr('Live-Restzeit') },
@@ -605,9 +618,12 @@ function QueuePlanner({ jobs, tr }) {
         <span className="text-surface-500">{tr('{0} Jobs', rows.length)}</span>
         <span className="font-mono text-surface-300">
           {costOn && totalCost > 0 && <span className="text-amber-400/80 mr-2">{totalCost.toFixed(2)} €</span>}
-          {fmtDur(totalSec) ? tr('~{0} · fertig ~{1} Uhr', fmtDur(totalSec), clk(new Date(now + totalSec * 1000))) : tr('Gesamtzeit unbekannt')}
+          {fmtDur(totalSec) ? tr('~{0} · fertig ~{1} Uhr', fmtDur(totalSec), clk(finishAt)) : tr('Gesamtzeit unbekannt')}
         </span>
       </div>
+      {waiting && (
+        <p className="text-[10px] text-blue-400/80 text-right">{tr('🕒 inkl. Wartezeit bis zur nächsten Betriebszeit')}</p>
+      )}
     </div>
   )
 }

@@ -132,9 +132,10 @@ function FarmSettings() {
   const [connAlarm,       setConnAlarm]       = useState(true)
   const [stallMin,        setStallMin]        = useState(0)
   const [ophEnabled,      setOphEnabled]      = useState(false)         // 2.5 Betriebszeiten
-  const [ophStart,        setOphStart]        = useState('22:00')
-  const [ophEnd,          setOphEnd]          = useState('06:00')
-  const [ophDays,         setOphDays]         = useState([0, 1, 2, 3, 4, 5, 6])
+  // Pro Wochentag (Index 0=Mo … 6=So) ein eigenes Fenster.
+  const [ophSchedule,     setOphSchedule]     = useState(
+    () => Array.from({ length: 7 }, () => ({ enabled: true, start: '22:00', end: '06:00' }))
+  )
   const [homingFile,      setHomingFile]      = useState(null)
   const [homingBusy,      setHomingBusy]      = useState(false)
   const [loaded,          setLoaded]          = useState(false)
@@ -151,9 +152,11 @@ function FarmSettings() {
         setConnAlarm(r.data.conn_alarm ?? true)
         setStallMin(r.data.progress_stall_min ?? 0)
         setOphEnabled(r.data.operating_hours_enabled ?? false)
-        setOphStart(r.data.operating_start ?? '22:00')
-        setOphEnd(r.data.operating_end ?? '06:00')
-        setOphDays(Array.isArray(r.data.operating_days) ? r.data.operating_days : [0, 1, 2, 3, 4, 5, 6])
+        if (Array.isArray(r.data.operating_schedule) && r.data.operating_schedule.length === 7) {
+          setOphSchedule(r.data.operating_schedule.map(d => ({
+            enabled: d?.enabled ?? true, start: d?.start ?? '22:00', end: d?.end ?? '06:00',
+          })))
+        }
       }).catch(() => {}).finally(() => setLoaded(true))
     autofarmService.getHomingFileInfo()
       .then(r => setHomingFile(r.data)).catch(() => {})
@@ -165,8 +168,7 @@ function FarmSettings() {
       await autofarmService.saveSettings({
         poll_interval: pollInterval, min_print_minutes: minPrintMinutes, use_ams: useAms,
         conn_alarm: connAlarm, progress_stall_min: Math.max(0, Math.round(Number(stallMin) || 0)),
-        operating_hours_enabled: ophEnabled, operating_start: ophStart, operating_end: ophEnd,
-        operating_days: [...ophDays].sort((a, b) => a - b),
+        operating_hours_enabled: ophEnabled, operating_schedule: ophSchedule,
       })
       setStatus({ ok: true, msg: tr('Einstellungen gespeichert.') })
     } catch (e) {
@@ -251,26 +253,36 @@ function FarmSettings() {
           </button>
         </div>
         {ophEnabled && (
-          <>
-            <div className="flex items-center gap-2 flex-wrap">
-              <label className="text-[10px] text-surface-500">{tr('Von')}
-                <input type="time" value={ophStart} onChange={e => setOphStart(e.target.value)}
-                  className="ml-1 font-mono text-xs h-7 py-0 px-1.5 w-24" /></label>
-              <label className="text-[10px] text-surface-500">{tr('Bis')}
-                <input type="time" value={ophEnd} onChange={e => setOphEnd(e.target.value)}
-                  className="ml-1 font-mono text-xs h-7 py-0 px-1.5 w-24" /></label>
-              <span className="text-[9px] text-surface-700">{ophStart > ophEnd ? tr('(über Nacht)') : ''}</span>
-            </div>
-            <div className="flex items-center gap-1 flex-wrap">
-              {[tr('Mo'), tr('Di'), tr('Mi'), tr('Do'), tr('Fr'), tr('Sa'), tr('So')].map((d, i) => (
-                <button key={i}
-                  onClick={() => setOphDays(days => days.includes(i) ? days.filter(x => x !== i) : [...days, i])}
-                  className={`text-[10px] w-8 h-7 rounded border transition-colors ${ophDays.includes(i)
-                    ? 'bg-blue-900/40 border-blue-700/60 text-blue-300'
-                    : 'bg-surface-900 border-surface-700 text-surface-600'}`}>{d}</button>
-              ))}
-            </div>
-          </>
+          <div className="space-y-1">
+            {[tr('Mo'), tr('Di'), tr('Mi'), tr('Do'), tr('Fr'), tr('Sa'), tr('So')].map((label, i) => {
+              const day = ophSchedule[i] ?? { enabled: false, start: '22:00', end: '06:00' }
+              const setDay = (patch) => setOphSchedule(s => s.map((d, j) => j === i ? { ...d, ...patch } : d))
+              return (
+                <div key={i} className="flex items-center gap-2">
+                  <button onClick={() => setDay({ enabled: !day.enabled })}
+                    className={`text-[10px] w-8 h-7 rounded border transition-colors shrink-0 ${day.enabled
+                      ? 'bg-blue-900/40 border-blue-700/60 text-blue-300'
+                      : 'bg-surface-900 border-surface-700 text-surface-600'}`}>{label}</button>
+                  {day.enabled ? (
+                    <>
+                      <input type="time" value={day.start} onChange={e => setDay({ start: e.target.value })}
+                        className="font-mono text-xs h-7 py-0 px-1.5 w-[88px]" />
+                      <span className="text-surface-600 text-xs">–</span>
+                      <input type="time" value={day.end} onChange={e => setDay({ end: e.target.value })}
+                        className="font-mono text-xs h-7 py-0 px-1.5 w-[88px]" />
+                      <span className="text-[9px] text-surface-700 w-14">{day.start > day.end ? tr('über Nacht') : ''}</span>
+                      <button onClick={() => setOphSchedule(s => s.map(() => ({ ...day })))}
+                        title={tr('Diese Zeiten auf alle Tage übernehmen')}
+                        className="ml-auto text-[10px] text-surface-600 hover:text-surface-300 shrink-0">⎘ {tr('auf alle')}</button>
+                    </>
+                  ) : (
+                    <span className="text-[10px] text-surface-600">{tr('kein Druck an diesem Tag')}</span>
+                  )}
+                </div>
+              )
+            })}
+            <p className="text-[9px] text-surface-700 pt-0.5">{tr('Über-Nacht-Fenster (z. B. 22:00–06:00) erlaubt. Gilt nur für den Start neuer Drucke.')}</p>
+          </div>
         )}
       </div>
 

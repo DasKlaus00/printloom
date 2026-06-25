@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.59',
+    de: [
+      'Betriebszeiten jetzt pro Wochentag einzeln einstellbar (eigenes Von–Bis je Tag, Tag ganz abschaltbar, „auf alle Tage übernehmen").',
+      'Auto-Farm-Planer berücksichtigt die Betriebszeiten: die Fertig-Uhrzeit enthält jetzt die Wartezeit bis zum nächsten Zeitfenster.',
+    ],
+    en: [
+      'Operating hours can now be set per weekday (own from–to per day, a day can be turned off entirely, “apply to all days”).',
+      'Auto Farm planner now accounts for operating hours: the finish time includes the wait until the next window.',
+    ],
+  },
+  {
     version: '1.0.58',
     de: [
       'Steuerung: Holen nur noch aus dem Magazin (Fach 7), Einlagern nur in die Lager-Fächer (1–6). Aus den Lager-Fächern wird nicht mehr geholt.',

@@ -66,6 +66,11 @@ _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": Tru
                      "failed_retries":        1,     # Wiederholungen bei FAILED vor der gewählten Aktion
                      # Betriebszeiten (Roadmap 2.5) — neue Jobs nur im Zeitfenster starten
                      "operating_hours_enabled": False,
+                     # Pro Wochentag (Index 0=Mo … 6=So) ein eigenes Fenster.
+                     "operating_schedule": [
+                         {"enabled": True, "start": "22:00", "end": "06:00"} for _ in range(7)
+                     ],
+                     # Legacy-Felder (vor v1.0.59) — nur noch für Migration alter Configs:
                      "operating_start":         "22:00",
                      "operating_end":           "06:00",
                      "operating_days":          [0, 1, 2, 3, 4, 5, 6]}  # 0=Mo … 6=So
@@ -927,27 +932,81 @@ def _parse_hhmm(s: str) -> int:
         return 0
 
 
-def _now_in_operating_window() -> bool:
-    """True, wenn Betriebszeiten aus sind ODER die aktuelle Zeit im Fenster liegt.
-    Über-Mitternacht-Fenster (Start > Ende, z. B. 22:00–06:00) werden unterstützt;
-    der gewählte Wochentag zählt dabei für den Abend (Start-Tag)."""
+def _norm_day(d) -> dict:
+    """Einen Wochentag-Eintrag normalisieren: {enabled, start, end}."""
+    d = d or {}
+    return {
+        "enabled": bool(d.get("enabled", True)),
+        "start":   str(d.get("start", "22:00")),
+        "end":     str(d.get("end", "06:00")),
+    }
+
+
+def _operating_schedule(settings: dict) -> list:
+    """7-Tage-Plan (Index 0=Mo … 6=So) aus den Settings ziehen. Fehlt der neue
+    `operating_schedule`, wird er aus den Legacy-Feldern (operating_days +
+    operating_start/end) migriert."""
+    sched = settings.get("operating_schedule")
+    if isinstance(sched, list) and len(sched) == 7:
+        return [_norm_day(d) for d in sched]
+    days  = settings.get("operating_days") or [0, 1, 2, 3, 4, 5, 6]
+    start = str(settings.get("operating_start", "22:00"))
+    end   = str(settings.get("operating_end", "06:00"))
+    return [{"enabled": (i in days), "start": start, "end": end} for i in range(7)]
+
+
+def _now_in_operating_window(now: datetime = None) -> bool:
+    """True, wenn Betriebszeiten aus sind ODER die aktuelle Zeit im Fenster des
+    jeweiligen Wochentags liegt. Über-Nacht-Fenster (Start > Ende, z. B. 22:00–
+    06:00) gehören abends zum Start-Tag; der Morgenteil zum Vortag.
+    `now` ist optional (für Tests); sonst die aktuelle Zeit."""
     if not _farm.get("operating_hours_enabled"):
         return True
-    start = _parse_hhmm(_farm.get("operating_start", "00:00"))
-    end   = _parse_hhmm(_farm.get("operating_end", "00:00"))
-    if start == end:
-        return True   # Null-Fenster → keine Einschränkung
-    days = _farm.get("operating_days") or [0, 1, 2, 3, 4, 5, 6]
-    now  = datetime.now()
+    sched = _farm.get("operating_schedule")
+    if not (isinstance(sched, list) and len(sched) == 7):
+        return True
+    if now is None:
+        now = datetime.now()
+    wd   = now.weekday()           # 0=Mo … 6=So
     mins = now.hour * 60 + now.minute
-    if start < end:
-        return now.weekday() in days and start <= mins < end
-    # Über-Mitternacht
-    if mins >= start:
-        return now.weekday() in days
-    if mins < end:
-        return ((now.weekday() - 1) % 7) in days
+    # Heutiges Fenster
+    d = sched[wd]
+    if d.get("enabled"):
+        s, e = _parse_hhmm(d.get("start", "0:0")), _parse_hhmm(d.get("end", "0:0"))
+        if s == e:
+            return True                       # Null-Fenster → ganzer Tag frei
+        if s < e:
+            if s <= mins < e:
+                return True
+        elif mins >= s:                       # Über Nacht: Abendteil = heute
+            return True
+    # Morgenteil eines Über-Nacht-Fensters vom Vortag
+    dy = sched[(wd - 1) % 7]
+    if dy.get("enabled"):
+        sy, ey = _parse_hhmm(dy.get("start", "0:0")), _parse_hhmm(dy.get("end", "0:0"))
+        if sy > ey and mins < ey:
+            return True
     return False
+
+
+_WD_ABBR = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+
+def _next_operating_start() -> Optional[datetime]:
+    """Nächster Zeitpunkt, an dem ein Fenster beginnt (oder None)."""
+    sched = _farm.get("operating_schedule")
+    if not (isinstance(sched, list) and len(sched) == 7):
+        return None
+    now = datetime.now()
+    for ahead in range(0, 8):
+        wd = (now.weekday() + ahead) % 7
+        d  = sched[wd]
+        if not d.get("enabled"):
+            continue
+        s    = _parse_hhmm(d.get("start", "0:0"))
+        cand = datetime.combine((now + timedelta(days=ahead)).date(), datetime.min.time()) + timedelta(minutes=s)
+        if cand > now:
+            return cand
+    return None
 
 
 async def _wait_operating_window():
@@ -955,7 +1014,9 @@ async def _wait_operating_window():
     Ein bereits laufender Druck wird NICHT unterbrochen — nur der Start gated."""
     if _now_in_operating_window():
         return
-    msg = f"Außerhalb der Betriebszeit ({_farm.get('operating_start')}–{_farm.get('operating_end')}) — Start im Zeitfenster"
+    nxt = _next_operating_start()
+    when = f"{_WD_ABBR[nxt.weekday()]} {nxt:%H:%M}" if nxt else "nächstem Zeitfenster"
+    msg = f"Außerhalb der Betriebszeit — Start ab {when}"
     _log(f"🕒 {msg}")
     _farm["error"] = msg
     try:
@@ -2003,6 +2064,8 @@ class SettingsPayload(BaseModel):
     error_strategy:        dict  = {}
     failed_retries:        int   = 1
     operating_hours_enabled: bool = False
+    operating_schedule:      List[dict] = []   # 7 Einträge [{enabled,start,end}], Index 0=Mo
+    # Legacy (vor v1.0.59) — weiterhin akzeptiert für alte Clients/Backups:
     operating_start:         str  = "22:00"
     operating_end:           str  = "06:00"
     operating_days:          List[int] = [0, 1, 2, 3, 4, 5, 6]
@@ -2053,9 +2116,7 @@ async def start_farm(req: StartRequest):
         "error_strategy":     dict(_settings.get("error_strategy") or {}),
         "failed_retries":     max(0, int(_settings.get("failed_retries", 1) or 0)),
         "operating_hours_enabled": bool(_settings.get("operating_hours_enabled", False)),
-        "operating_start":         str(_settings.get("operating_start", "22:00")),
-        "operating_end":           str(_settings.get("operating_end", "06:00")),
-        "operating_days":          list(_settings.get("operating_days") or [0, 1, 2, 3, 4, 5, 6]),
+        "operating_schedule":      _operating_schedule(_settings),
     })
 
     _farm.pop("_no_slot_logged", None)   # „Regal voll"-Log-Dedup nicht über Läufe schleppen
@@ -2377,7 +2438,11 @@ async def save_sequences(payload: SequencesPayload):
 
 @router.get("/settings")
 async def get_settings():
-    return _read_config(SETTINGS_PATH, _DEFAULT_SETTINGS)
+    s = _read_config(SETTINGS_PATH, _DEFAULT_SETTINGS)
+    # Immer einen normalisierten 7-Tage-Plan mitliefern (migriert alte Configs),
+    # damit das Frontend nicht selbst migrieren muss.
+    s["operating_schedule"] = _operating_schedule(s)
+    return s
 
 @router.put("/settings")
 async def save_settings(payload: SettingsPayload):
