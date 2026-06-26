@@ -134,10 +134,17 @@ function App() {
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [updateOverlay,   setUpdateOverlay]   = useState(null)  // null | 'running' | 'done'
   const [farmStatus,      setFarmStatus]      = useState(null)  // für den Start-Countdown im Header
+  const [clock,           setClock]           = useState(() => new Date())
 
   /* ── Geteilter Farm-Status (Singleton-WS) — nur für den Header-Countdown ── */
   useFarmStatusStream(setFarmStatus)
   const startCountdown = farmStatus?.running ? (farmStatus?.start_countdown ?? 0) : 0
+
+  /* ── Uhr in der Kopfleiste (lokale Zeit, minütlich) ───────── */
+  useEffect(() => {
+    const t = setInterval(() => setClock(new Date()), 10000)
+    return () => clearInterval(t)
+  }, [])
 
   /* ── URL-aware page setter ────────────────────────────────── */
   const setCurrentPage = useCallback((page) => {
@@ -308,6 +315,9 @@ function App() {
           <span className="hidden md:inline text-xs font-mono text-surface-700 select-none">v{VERSION}</span>
           <StatusPill label={tr('Drucker')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.printer} />
           <StatusPill label={tr('Klipper')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.klipper} />
+          <span className="text-xs font-mono text-surface-300 tabular-nums select-none pl-0.5" title={tr('Uhrzeit')}>
+            {clock.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
         </div>
       </header>
 

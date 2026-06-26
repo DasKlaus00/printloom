@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.64',
+    de: [
+      'Uhrzeit (lokale Zeit) oben rechts in der Kopfleiste neben den Status-Anzeigen.',
+    ],
+    en: [
+      'Local time shown at the top right of the header bar next to the status pills.',
+    ],
+  },
+  {
     version: '1.0.63',
     de: [
       'Drucker-Fehler (HMS) verständlicher: Meldung zeigt Schweregrad + Kurzbeschreibung, und der Fehlercode ist ein Direktlink auf die Bambu-Wiki-Seite mit der genauen Erklärung.',
