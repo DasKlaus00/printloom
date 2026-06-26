@@ -3,6 +3,7 @@ import { deviceService, printerService, rackManagerService, autofarmService } fr
 import { useQueueEta, fmtDur } from '../services/useQueueEta'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { useLanguage } from '../services/i18n'
+import HmsErrorText from '../components/HmsErrorText'
 
 function fmtMin(min) {
   if (!min || min <= 0) return '—'
@@ -286,7 +287,7 @@ export default function Dashboard() {
         {farmError && (
           <div className="mt-3 flex items-start gap-2 text-xs text-amber-300 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2">
             <span className="shrink-0">⚠</span>
-            <span className="flex-1">{farmError}</span>
+            <span className="flex-1"><HmsErrorText text={farmError} /></span>
             {farmPaused && (
               <button onClick={resumeFarm} disabled={resuming}
                 className="shrink-0 btn btn-primary btn-sm whitespace-nowrap disabled:opacity-50">

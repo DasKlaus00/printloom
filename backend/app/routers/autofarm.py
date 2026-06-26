@@ -513,6 +513,38 @@ async def _notify(msg: str):
         pass
 
 
+async def _send_print_cmd(cmd: str):
+    """Pause/Resume/Stop an den X1C senden (best effort), damit die Farm-Bedienung
+    den Drucker direkt mitsteuert. Nutzt eine kurze eigene MQTT-Verbindung."""
+    bid = _farm.get("bambu_id")
+    if not bid:
+        return
+    db = SessionLocal()
+    try:
+        device = db.query(Device).filter(
+            Device.id == bid, Device.device_type == PrinterType.BAMBU_LAB).first()
+    finally:
+        db.close()
+    if not device:
+        return
+    loop = asyncio.get_event_loop()
+    mqtt = BambuLabMQTT(device)
+    try:
+        if not await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0)):
+            _log(f"⚠ Drucker-{cmd}: keine MQTT-Verbindung")
+            return
+        fn = {"pause": mqtt.pause, "resume": mqtt.resume, "stop": mqtt.stop}.get(cmd)
+        if fn and await loop.run_in_executor(None, fn):
+            _log(f"⏯ Drucker: {cmd} gesendet")
+    except Exception as e:
+        _log(f"⚠ Drucker-{cmd} fehlgeschlagen: {e}")
+    finally:
+        try:
+            await loop.run_in_executor(None, mqtt.disconnect)
+        except Exception:
+            pass
+
+
 # ── Step implementations ─────────────────────────────────────
 async def _do_macro(name: str):
     db = SessionLocal()
@@ -1103,10 +1135,14 @@ async def _handle_hms(hms_list: list):
             _log(f"🛑 HMS {sev}: {cs} — Job wird übersprungen (Strategie)")
             await _notify(f"🛑 *Printloom — Drucker-Fehler, Job übersprungen*\nHMS {cs} ({sev})\n{text}")
             raise RuntimeError(f"HMS {cs}: {text}")
-        _log(f"🛑 HMS {sev}: {cs} — {text}")
+        sev_de = hms.HMS_SEVERITY_DE.get(sev, sev)
+        _log(f"🛑 HMS {sev}: {cs} — {text} ({hms.wiki_url(cs)})")
         _farm["paused"] = True
-        _farm["error"] = f"Drucker-Fehler (HMS {cs}): {text} — beheben, dann fortsetzen"
-        await _notify(f"🛑 *Printloom — Drucker-Fehler*\nHMS {cs} ({sev})\n{text}")
+        # Code im Unterstrich-Format lassen → das Frontend macht daraus einen
+        # klickbaren Bambu-Wiki-Link mit der genauen Beschreibung.
+        _farm["error"] = (f"Drucker-Fehler HMS {cs} ({sev_de}) — {text} "
+                          f"Code antippen für die Bambu-Wiki-Seite, beheben, dann fortsetzen.")
+        await _notify(f"🛑 *Printloom — Drucker-Fehler*\nHMS {cs} ({sev_de})\n{text}\n{hms.wiki_url(cs)}")
 
 
 async def _run_prep(steps: list, slot: str, device: Device):
@@ -2129,6 +2165,7 @@ async def start_farm(req: StartRequest):
         "paused":          False,
         "idle":            False,
         "start_countdown": 0,
+        "bambu_id":        req.bambu_id,   # für Pause/Resume/Stop-Befehle an den X1C
         "error":           None,
         "stop_reason":     None,
         "current_job_id":  None,
@@ -2339,6 +2376,7 @@ async def stop_farm():
     _farm["stopping"] = True
     _farm["paused"] = False
     _farm["stop_reason"] = "manual"
+    await _send_print_cmd("stop")   # X1C-Druck ebenfalls abbrechen
     return {"success": True}
 
 
@@ -2445,10 +2483,13 @@ async def pause_farm():
     if not _farm["running"]:
         raise HTTPException(400, "Auto Farm läuft nicht")
     _farm["paused"] = not _farm["paused"]
-    if not _farm["paused"]:
+    if _farm["paused"]:
+        await _send_print_cmd("pause")     # X1C-Druck pausieren
+    else:
         # Beim Fortsetzen den Fehler-Banner löschen — sonst bleibt z. B. eine
         # HMS-Meldung hängen, obwohl der Nutzer sie behoben hat und weiterläuft.
         _farm["error"] = None
+        await _send_print_cmd("resume")    # X1C-Druck fortsetzen
     return {"success": True, "paused": _farm["paused"]}
 
 

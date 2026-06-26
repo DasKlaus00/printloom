@@ -10,10 +10,25 @@ Severity decode follows the widely used community convention
 """
 
 HMS_SEVERITY = {1: "fatal", 2: "serious", 3: "common", 4: "info"}
+HMS_SEVERITY_DE = {"fatal": "schwerwiegend", "serious": "ernst", "common": "normal", "info": "Info", "unknown": "unbekannt"}
 
-# Optional human-readable text for specific codes. Left small on purpose —
-# unknown codes fall back to a generic, honest message rather than guessing.
-HMS_KNOWN: dict[str, str] = {}
+# Bambu-Wiki-Seite je HMS-Code. Format bestätigt:
+# https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/0700_7000_0002_0004
+HMS_WIKI_BASE = "https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/"
+
+
+def wiki_url(code_str: str) -> str:
+    """Direktlink zur Bambu-Wiki-Seite des Codes (Unterstrich-Format)."""
+    return HMS_WIKI_BASE + (code_str or "")
+
+
+# Kuratierte deutsche Kurzbeschreibungen für häufige Codes (Quelle: Bambu-HMS-Wiki).
+# Bewusst klein gehalten und nur verifizierte Codes — unbekannte fallen auf einen
+# ehrlichen Hinweis + Wiki-Link zurück statt zu raten.
+HMS_KNOWN: dict[str, str] = {
+    "0700_7000_0002_0004": "Filament konnte nicht aus dem Hotend ins AMS zurückgezogen werden — Filament/Spule auf Verklemmung prüfen.",
+    "0300_0D00_0001_0003": "Druckplatte evtl. nicht korrekt aufgelegt — Platte prüfen und neu auflegen.",
+}
 
 # Codes that carry a fatal/serious bit but are harmless for unattended printing
 # (typically AMS-side notices). These only notify, never pause the farm. The user
@@ -38,10 +53,12 @@ def severity(code: int) -> str:
 
 
 def describe(attr: int, code: int) -> tuple:
-    """Return (code_str, severity, text)."""
+    """Return (code_str, severity, text). `text` ist die kuratierte Beschreibung
+    oder ein ehrlicher Fallback — die genaue offizielle Beschreibung steht hinter
+    wiki_url(code_str)."""
     cs = code_str(attr, code)
     sev = severity(code)
-    text = HMS_KNOWN.get(cs) or "Drucker-Meldung — Details am Druckerdisplay / Bambu HMS-Wiki"
+    text = HMS_KNOWN.get(cs) or "unbekannte Meldung — Details im Bambu-Wiki (Code antippen)"
     return cs, sev, text
 
 

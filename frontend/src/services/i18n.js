@@ -1060,6 +1060,8 @@ const EN_STRINGS = {
   'NOTAUS': 'EMERGENCY STOP',
   'Hängendes Fach (Status: {0}) — ✓ zum Leeren': 'Stuck slot (status: {0}) — ✓ to clear',
   'belegt': 'occupied',
+  'Zeitzone': 'Time zone',
+  'Maßgeblich für Betriebszeiten & Uhrzeiten.': 'Determines operating hours & clock times.',
   'Betriebszeiten': 'Operating hours',
   'Neue Drucke nur im Zeitfenster starten (Ruhezeiten / Stromtarif). Laufende Drucke werden nicht unterbrochen.': 'Only start new prints within the time window (quiet hours / electricity tariff). Running prints are not interrupted.',
   'Von': 'From',

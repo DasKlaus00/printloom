@@ -3,6 +3,16 @@ import { deviceService, configService, deviceSettingsService, systemService, aut
 import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 
+/* Häufige Zeitzonen für die Auswahl (IANA). Die erkannte Browser-Zone wird bei
+   Bedarf vorangestellt, damit sie immer wählbar ist. */
+const TIMEZONES = [
+  'Europe/Berlin', 'Europe/Vienna', 'Europe/Zurich', 'Europe/London', 'Europe/Paris',
+  'Europe/Amsterdam', 'Europe/Madrid', 'Europe/Rome', 'Europe/Warsaw', 'Europe/Prague',
+  'Europe/Stockholm', 'Europe/Helsinki', 'Europe/Athens', 'Europe/Istanbul', 'Europe/Moscow',
+  'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+  'America/Sao_Paulo', 'Asia/Dubai', 'Asia/Kolkata', 'Asia/Shanghai', 'Asia/Tokyo', 'Australia/Sydney',
+]
+
 /* ─── Language & downloadable language packs ─────────────────────── */
 function LanguagePacks() {
   const { lang, tr } = useLanguage()
@@ -132,6 +142,7 @@ function FarmSettings() {
   const [connAlarm,       setConnAlarm]       = useState(true)
   const [stallMin,        setStallMin]        = useState(0)
   const [ophEnabled,      setOphEnabled]      = useState(false)         // 2.5 Betriebszeiten
+  const [tz,              setTz]              = useState('')             // Zeitzone (IANA)
   // Pro Wochentag (Index 0=Mo … 6=So) ein eigenes Fenster.
   const [ophSchedule,     setOphSchedule]     = useState(
     () => Array.from({ length: 7 }, () => ({ enabled: true, start: '22:00', end: '06:00' }))
@@ -161,8 +172,11 @@ function FarmSettings() {
             enabled: d?.enabled ?? true, start: d?.start ?? '22:00', end: d?.end ?? '06:00',
           })))
         }
-        // TZ automatisch hinterlegen/aktualisieren, falls sie fehlt oder abweicht.
-        if (browserTz && r.data.timezone !== browserTz) {
+        // Gespeicherte TZ übernehmen, sonst die Browser-Zone als Vorschlag.
+        const storedTz = r.data.timezone || ''
+        setTz(storedTz || browserTz)
+        // Beim ersten Mal (noch keine TZ gespeichert) die Browser-Zone hinterlegen.
+        if (browserTz && !storedTz) {
           autofarmService.saveSettings({ timezone: browserTz }).catch(() => {})
         }
       }).catch(() => {}).finally(() => setLoaded(true))
@@ -177,7 +191,7 @@ function FarmSettings() {
         poll_interval: pollInterval, min_print_minutes: minPrintMinutes, use_ams: useAms,
         conn_alarm: connAlarm, progress_stall_min: Math.max(0, Math.round(Number(stallMin) || 0)),
         operating_hours_enabled: ophEnabled, operating_schedule: ophSchedule,
-        timezone: browserTz,
+        timezone: tz || browserTz,
       })
       setStatus({ ok: true, msg: tr('Einstellungen gespeichert.') })
     } catch (e) {
@@ -253,7 +267,18 @@ function FarmSettings() {
       </div>
       {/* Betriebszeiten (Roadmap 2.5) */}
       <div className="border-t border-surface-800/40 pt-3 space-y-2.5">
-        <div className="flex items-center gap-3">
+        {/* Zeitzone — Basis für die Betriebszeiten. Der Server-Container läuft in UTC;
+            ohne korrekte Zone startet die Farm zur falschen Uhrzeit. */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="text-xs text-surface-400 flex-1 min-w-[140px]">{tr('Zeitzone')}
+            <span className="block text-[9px] text-surface-700">{tr('Maßgeblich für Betriebszeiten & Uhrzeiten.')}</span></label>
+          <select value={tz} onChange={e => setTz(e.target.value)} className="text-xs font-mono w-48">
+            {(TIMEZONES.includes(tz) || !tz ? TIMEZONES : [tz, ...TIMEZONES]).map(z => (
+              <option key={z} value={z}>{z}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-3 border-t border-surface-800/30 pt-2.5">
           <label className="text-xs text-surface-400 select-none flex-1">{tr('Betriebszeiten')}
             <span className="block text-[9px] text-surface-700">{tr('Neue Drucke nur im Zeitfenster starten (Ruhezeiten / Stromtarif). Laufende Drucke werden nicht unterbrochen.')}</span></label>
           <button onClick={() => setOphEnabled(v => !v)}

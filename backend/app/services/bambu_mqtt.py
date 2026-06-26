@@ -179,15 +179,27 @@ class BambuLabMQTT:
             logger.error(f"run_gcode_file failed: {e}")
             return False
 
+    def _print_cmd(self, cmd: str) -> bool:
+        """Sende einen einfachen Druck-Steuerbefehl (pause/resume/stop)."""
+        return self.publish_command({
+            "print": {"sequence_id": str(int(time.time())), "command": cmd}
+        })
+
+    def pause(self) -> bool:
+        """Laufenden Druck pausieren (X1C fährt in die Pause-Position)."""
+        return self._print_cmd("pause")
+
+    def resume(self) -> bool:
+        """Pausierten Druck fortsetzen."""
+        return self._print_cmd("resume")
+
+    def stop(self) -> bool:
+        """Laufenden Druck abbrechen."""
+        return self._print_cmd("stop")
+
     def clear_error(self) -> bool:
         """Send stop command to reset FAILED state back to IDLE."""
-        command = {
-            "print": {
-                "sequence_id": str(int(time.time())),
-                "command": "stop"
-            }
-        }
-        return self.publish_command(command)
+        return self._print_cmd("stop")
 
     def request_status(self) -> bool:
         """Request a full status push from the printer."""
