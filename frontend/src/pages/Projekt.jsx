@@ -1,314 +1,306 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { fileService, projectService, autofarmService, rackManagerService } from '../services/api'
-import { autoSlot } from '../services/rackUtils'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { fileService, projectService, autofarmService, deviceService } from '../services/api'
 import { useLanguage } from '../services/i18n'
+import { useFarmStatusStream } from '../services/useFarmStatusStream'
+
+const ACTIVE_KEY = 'printloom_active_project'
+const IN_FLIGHT  = ['pending', 'sending', 'running', 'printing']
+const newItemId  = () => `it_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
 function Projekt() {
   const { tr } = useLanguage()
-  const [files,       setFiles]       = useState([])
-  const [items,       setItems]       = useState([])
-  const [projName,    setProjName]    = useState('Mein Projekt')
-  const [loaded,      setLoaded]      = useState(false)
-  const [uploading,   setUploading]   = useState(false)
-  const [feedback,    setFeedback]    = useState(null)
-  const [search,      setSearch]      = useState('')
+  const [files,     setFiles]     = useState([])
+  const [projects,  setProjects]  = useState([])
+  const [activePid, setActivePid] = useState(() => localStorage.getItem(ACTIVE_KEY) || '')
+  const [farmJobs,  setFarmJobs]  = useState([])
+  const [search,    setSearch]    = useState('')
+  const [feedback,  setFeedback]  = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [loaded,    setLoaded]    = useState(false)
   const uploadRef = useRef()
   const saveRef   = useRef(null)
 
   const showFeedback = (msg, ok = true) => {
-    setFeedback({ msg, ok })
-    setTimeout(() => setFeedback(null), 4500)
+    setFeedback({ msg, ok }); setTimeout(() => setFeedback(null), 4500)
   }
 
-  /* ── Load ─────────────────────────────────────────────────── */
+  /* ── Load files + projects ────────────────────────────────── */
+  const reloadProjects = () =>
+    projectService.list()
+      .then(r => setProjects(Array.isArray(r.data?.projects) ? r.data.projects : []))
+      .catch(() => {})
+
   useEffect(() => {
-    Promise.all([fileService.listFiles(), projectService.get()])
+    Promise.all([fileService.listFiles(), projectService.list()])
       .then(([fr, pr]) => {
         setFiles((fr.data.files ?? []).filter(f => ['.3mf', '.gcode'].includes(f.file_type)))
-        setProjName(pr.data.name ?? 'Mein Projekt')
-        setItems(pr.data.items ?? [])
+        setProjects(Array.isArray(pr.data?.projects) ? pr.data.projects : [])
       })
       .catch(() => {})
       .finally(() => setLoaded(true))
   }, [])
 
-  /* ── Auto-save (debounced) ────────────────────────────────── */
+  /* ── Live farm status (für „in Arbeit" + Abhaken) ─────────── */
+  useFarmStatusStream(s => setFarmJobs(Array.isArray(s?.jobs) ? s.jobs : []))
+
+  // Sobald sich die fertigen Projekt-Jobs ändern → Projekte neu laden (done kommt vom Backend).
+  const doneSig = useMemo(
+    () => farmJobs.filter(j => (j.tag || '').startsWith('proj:') && j.status === 'done')
+                  .map(j => j.id).sort().join(','),
+    [farmJobs])
+  useEffect(() => { if (loaded) reloadProjects() }, [doneSig]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── Active project ───────────────────────────────────────── */
+  const active = projects.find(p => p.id === activePid) || projects[0] || null
   useEffect(() => {
-    if (!loaded) return
+    if (active && active.id !== activePid) { setActivePid(active.id); localStorage.setItem(ACTIVE_KEY, active.id) }
+  }, [active, activePid])
+
+  /* ── Debounced save of the active project ─────────────────── */
+  const scheduleSave = (proj) => {
     clearTimeout(saveRef.current)
-    saveRef.current = setTimeout(() => {
-      projectService.save({ name: projName, items }).catch(() => {})
-    }, 800)
-    return () => clearTimeout(saveRef.current)
-  }, [projName, items, loaded])
+    const pid = proj.id, body = { name: proj.name, items: proj.items }
+    saveRef.current = setTimeout(() => projectService.update(pid, body).catch(() => {}), 700)
+  }
+  // Lokale Bearbeitung des aktiven Projekts + Speichern.
+  const patchActive = (updater) => setProjects(prev => {
+    const next = prev.map(p => p.id === active?.id ? updater(p) : p)
+    const ap = next.find(p => p.id === active?.id)
+    if (ap) scheduleSave(ap)
+    return next
+  })
+
+  /* ── Item-Helfer ──────────────────────────────────────────── */
+  const addFile = (f) => {
+    if (!active) return
+    patchActive(p => {
+      const ex = p.items.find(i => i.file_id === f.id)
+      if (ex) return { ...p, items: p.items.map(i => i.file_id === f.id ? { ...i, quantity: Math.min(999, i.quantity + 1) } : i) }
+      return { ...p, items: [...p.items, { id: newItemId(), file_id: f.id, file_name: f.original_filename, quantity: 1, done: 0 }] }
+    })
+  }
+  const setQty     = (id, q) => patchActive(p => ({ ...p, items: p.items.map(i => i.id === id ? { ...i, quantity: Math.max(1, Math.min(999, +q || 1)) } : i) }))
+  const removeItem = (id)    => patchActive(p => ({ ...p, items: p.items.filter(i => i.id !== id) }))
+  const renameActive = (name) => patchActive(p => ({ ...p, name }))
+
+  /* ── Projekt-Verwaltung ───────────────────────────────────── */
+  const createProject = async () => {
+    try {
+      const r = await projectService.create(tr('Neues Projekt'))
+      await reloadProjects()
+      if (r.data?.id) { setActivePid(r.data.id); localStorage.setItem(ACTIVE_KEY, r.data.id) }
+    } catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+  }
+  const deleteProject = async () => {
+    if (!active) return
+    if (!window.confirm(tr('Projekt „{0}" löschen?', active.name))) return
+    try { await projectService.remove(active.id); localStorage.removeItem(ACTIVE_KEY); setActivePid(''); await reloadProjects() }
+    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+  }
+  const resetProgress = async () => {
+    if (!active) return
+    try { await projectService.resetProgress(active.id); await reloadProjects(); showFeedback(tr('Fortschritt zurückgesetzt')) }
+    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+  }
 
   /* ── Upload ───────────────────────────────────────────────── */
   const handleUpload = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ''
-    setUploading(true)
-    const fd = new FormData()
-    fd.append('file', file)
+    const file = e.target.files?.[0]; if (!file) return
+    e.target.value = ''; setUploading(true)
+    const fd = new FormData(); fd.append('file', file)
     try {
       await fileService.upload(fd)
       const fr = await fileService.listFiles()
       setFiles((fr.data.files ?? []).filter(f => ['.3mf', '.gcode'].includes(f.file_type)))
       showFeedback(tr('{0} hochgeladen', file.name))
-    } catch (err) {
-      showFeedback(err.response?.data?.detail ?? err.message, false)
-    } finally {
-      setUploading(false)
-    }
+    } catch (err) { showFeedback(err.response?.data?.detail ?? err.message, false) }
+    finally { setUploading(false) }
   }
 
-  /* ── Item helpers ─────────────────────────────────────────── */
-  const addItem = (f) => {
-    const existing = items.find(i => i.file_id === f.id)
-    if (existing) {
-      setItems(prev => prev.map(i => i.file_id === f.id ? { ...i, quantity: i.quantity + 1 } : i))
-    } else {
-      setItems(prev => [...prev, {
-        id: `${f.id}-${Date.now()}`,
-        file_id:   f.id,
-        file_name: f.original_filename,
-        quantity:  1,
-        status:    'printable',
-      }])
-    }
-  }
+  /* ── Fortschritt / in Arbeit ──────────────────────────────── */
+  const inFlight = (itemId) => farmJobs.filter(j => j.tag === `proj:${itemId}` && IN_FLIGHT.includes(j.status)).length
+  const outstanding = (it) => Math.max(0, (it.quantity || 0) - (it.done || 0) - inFlight(it.id))
 
-  const removeItem   = (id) => setItems(prev => prev.filter(i => i.id !== id))
-  const setQty       = (id, q) => setItems(prev => prev.map(i => i.id === id ? { ...i, quantity: Math.max(1, Math.min(999, +q || 1)) } : i))
-  const toggleStatus = (id) => setItems(prev => prev.map(i => i.id === id ? { ...i, status: i.status === 'printable' ? 'draft' : 'printable' } : i))
-  const moveUp       = (idx) => setItems(prev => { const n = [...prev]; if (idx > 0) [n[idx-1], n[idx]] = [n[idx], n[idx-1]]; return n })
-  const moveDown     = (idx) => setItems(prev => { const n = [...prev]; if (idx < n.length-1) [n[idx], n[idx+1]] = [n[idx+1], n[idx]]; return n })
+  const items   = active?.items ?? []
+  const totalQ  = items.reduce((s, i) => s + (i.quantity || 0), 0)
+  const totalD  = items.reduce((s, i) => s + Math.min(i.done || 0, i.quantity || 0), 0)
+  const totalOpen = items.reduce((s, i) => s + outstanding(i), 0)
 
-  /* ── Push to AutoFarm queue ───────────────────────────────── */
-  const printable  = items.filter(i => i.status === 'printable')
-  const totalJobs  = printable.reduce((s, i) => s + i.quantity, 0)
-
-  const pushToQueue = async () => {
-    if (!printable.length) return
+  /* ── Drucken: offene Stücke einreihen (Farm starten falls nötig) ── */
+  const pushToPrint = async () => {
+    if (!active || totalOpen <= 0) return
+    const units = []
+    for (const it of items) for (let k = 0; k < outstanding(it); k++)
+      units.push({ fileId: it.file_id, fileName: it.file_name, tag: `proj:${it.id}` })
+    const baseId = Date.now() * 1000
+    const jobs = units.map((u, i) => ({ id: baseId + i, fileId: u.fileId, fileName: u.fileName, slot: '1-0', status: 'pending', amsMap: '', tag: u.tag }))
     try {
-      const [qr, rr] = await Promise.all([autofarmService.getQueue(), rackManagerService.getAll()])
-      const existing  = qr.data ?? []
-      const rackData  = rr.data
-      const slotH     = rackData?.slot_height_mm ?? 50
-      let nextId      = Math.max(0, ...existing.map(j => j.id ?? 0)) + 1
-
-      // Simulate growing job list to distribute across different slots
-      const simJobs = [...existing]
-      const newJobs = []
-
-      for (const item of printable) {
-        for (let i = 0; i < item.quantity; i++) {
-          const slot = autoSlot(simJobs, rackData, 0, slotH)
-          const job  = {
-            id:               nextId++,
-            fileId:           item.file_id,
-            fileName:         item.file_name,
-            slot,
-            amsMap:           '',
-            status:           'pending',
-            progress:         0,
-            remaining:        0,
-            estimatedMinutes: null,
-          }
-          newJobs.push(job)
-          simJobs.push(job)
+      const st = await autofarmService.getStatus(1)
+      if (st.data?.running) {
+        for (const j of jobs) {
+          await autofarmService.enqueue({ id: j.id, fileId: j.fileId, fileName: j.fileName, slot: '1-0', amsMap: '', tag: j.tag })
         }
+        showFeedback(tr('{0} Objekt(e) zur Warteschlange hinzugefügt', jobs.length))
+      } else {
+        const [devs, settings] = await Promise.all([deviceService.listDevices(), autofarmService.getSettings()])
+        const bambu = (devs.data ?? []).find(d => d.device_type === 'bambu_lab')
+        if (!bambu) { showFeedback(tr('Kein Bambu Lab Gerät konfiguriert — bitte erst unter Configuration einrichten'), false); return }
+        await autofarmService.start({
+          bambu_id:          bambu.id,
+          use_ams:           settings.data?.use_ams ?? true,
+          poll_interval:     settings.data?.poll_interval ?? 20,
+          min_print_minutes: settings.data?.min_print_minutes ?? 0,
+          jobs,
+        })
+        showFeedback(tr('Auto Farm gestartet — {0} Objekt(e) eingereiht', jobs.length))
       }
-
-      await autofarmService.saveQueue([...existing, ...newJobs])
-      const slots = [...new Set(newJobs.map(j => j.slot))].join(', ')
-      showFeedback(tr('{0} Jobs in Warteschlange (Fächer: {1}) — Auto Farm öffnen', newJobs.length, slots))
-    } catch (err) {
-      showFeedback(err.response?.data?.detail ?? err.message, false)
-    }
+    } catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
   }
 
-  const filtered = files.filter(f =>
-    !search || f.original_filename.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = files.filter(f => !search || f.original_filename.toLowerCase().includes(search.toLowerCase()))
 
+  /* ─────────────────────────────────────────────────────────── */
   return (
-    <div className="space-y-5">
-
-      {/* Header */}
+    <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('Projekt')}</h2>
+        <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('Projekte')}</h2>
         <p className="text-sm text-surface-500">
-          {tr('Dateien mit Stückzahlen kombinieren und als Warteschlange an Auto Farm übergeben.')}
+          {tr('Dateien mit Stückzahl sammeln, drucken lassen und fertige Objekte automatisch abhaken.')}
         </p>
       </div>
 
       {feedback && (
         <div className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm border ${
           feedback.ok ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300'
-                      : 'bg-red-950/40 border-red-800 text-red-300'
-        }`}>
-          <span className={`dot ${feedback.ok ? 'dot-green' : 'dot-red'}`} />
-          {feedback.msg}
+                      : 'bg-red-950/40 border-red-800 text-red-300'}`}>
+          <span className={`dot ${feedback.ok ? 'dot-green' : 'dot-red'}`} /> {feedback.msg}
         </div>
       )}
 
-      <div className="grid grid-cols-[1fr_380px] gap-5 items-start">
+      {/* Projekt-Auswahl */}
+      <div className="card flex items-center gap-2 flex-wrap">
+        <select value={active?.id ?? ''} onChange={e => { setActivePid(e.target.value); localStorage.setItem(ACTIVE_KEY, e.target.value) }}
+          disabled={!projects.length} className="text-sm w-48">
+          {!projects.length && <option value="">{tr('— kein Projekt —')}</option>}
+          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        {active && (
+          <input value={active.name} onChange={e => renameActive(e.target.value)}
+            className="text-sm flex-1 min-w-[140px]" placeholder={tr('Projektname')} />
+        )}
+        <button onClick={createProject} className="btn btn-ghost btn-sm shrink-0">{tr('+ Neues Projekt')}</button>
+        {active && <button onClick={deleteProject} className="btn btn-ghost btn-sm shrink-0 text-surface-600 hover:text-red-400">{tr('Löschen')}</button>}
+      </div>
 
-        {/* ── Datei-Browser ──────────────────────────────────── */}
-        <div className="card space-y-3">
-          <div className="flex items-center gap-3">
-            <p className="section-label flex-1">{tr('Datei-Bibliothek')}</p>
-            <input ref={uploadRef} type="file" accept=".3mf,.gcode" className="hidden" onChange={handleUpload} />
-            <button
-              onClick={() => uploadRef.current?.click()}
-              disabled={uploading}
-              className="btn btn-ghost btn-sm shrink-0"
-            >
-              {uploading ? '…' : tr('↑ Hochladen')}
-            </button>
-          </div>
-
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder={tr('Suchen…')}
-            className="w-full text-sm"
-          />
-
-          {!filtered.length ? (
-            <p className="text-sm text-surface-600 text-center py-8">
-              {files.length ? tr('Keine Treffer') : tr('Noch keine Dateien — erst hochladen')}
-            </p>
-          ) : (
-            <div className="space-y-1 max-h-[65vh] overflow-y-auto -mx-1 px-1">
-              {filtered.map(f => {
-                const inProject = items.some(i => i.file_id === f.id)
-                return (
-                  <div
-                    key={f.id}
-                    className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-800/50 transition-colors group"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-surface-200 truncate">{f.original_filename}</p>
-                      <p className="text-[10px] text-surface-600 font-mono mt-0.5">
-                        {f.file_type.replace('.', '').toUpperCase()}
-                        {f.file_size_kb && ` · ${f.file_size_kb < 1024 ? `${f.file_size_kb} KB` : `${(f.file_size_kb/1024).toFixed(1)} MB`}`}
-                      </p>
-                    </div>
-                    {inProject && (
-                      <span className="text-[9px] text-emerald-500 font-mono shrink-0">{tr('✓ im Projekt')}</span>
-                    )}
-                    <button
-                      onClick={() => addItem(f)}
-                      className="btn btn-ghost btn-sm opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-[11px]"
-                    >
-                      {tr('+ Hinzufügen')}
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+      {!active ? (
+        <div className="card text-center py-10 text-surface-600 text-sm space-y-3">
+          <p>{tr('Noch kein Projekt — leg eines an.')}</p>
+          <button onClick={createProject} className="btn btn-primary btn-sm">{tr('+ Neues Projekt')}</button>
         </div>
+      ) : (
+        <div className="grid grid-cols-[1fr_400px] gap-4 items-start">
 
-        {/* ── Projekt-Panel ──────────────────────────────────── */}
-        <div className="space-y-3">
-
-          {/* Name */}
-          <div className="card">
-            <input
-              value={projName}
-              onChange={e => setProjName(e.target.value)}
-              className="w-full text-sm font-semibold bg-transparent border-0 border-b border-surface-700 focus:border-blue-500 outline-none text-surface-100 pb-1"
-              placeholder={tr('Projektname')}
-            />
-          </div>
-
-          {/* Items */}
-          <div className="card space-y-2 min-h-[120px]">
-            <p className="section-label">{tr('Druckliste')}</p>
-
-            {!items.length ? (
-              <p className="text-xs text-surface-600 text-center py-6">
-                {tr('Dateien aus der Bibliothek hinzufügen')}
+          {/* ── Datei-Browser ──────────────────────────────── */}
+          <div className="card space-y-3">
+            <div className="flex items-center gap-3">
+              <p className="section-label flex-1">{tr('Datei-Bibliothek')}</p>
+              <input ref={uploadRef} type="file" accept=".3mf,.gcode" className="hidden" onChange={handleUpload} />
+              <button onClick={() => uploadRef.current?.click()} disabled={uploading} className="btn btn-ghost btn-sm shrink-0">
+                {uploading ? '…' : tr('↑ Hochladen')}
+              </button>
+            </div>
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder={tr('Suchen…')} className="w-full text-sm" />
+            {!filtered.length ? (
+              <p className="text-sm text-surface-600 text-center py-8">
+                {files.length ? tr('Keine Treffer') : tr('Noch keine Dateien — erst hochladen')}
               </p>
             ) : (
-              <div className="space-y-1.5">
-                {items.map((item, idx) => (
-                  <div
-                    key={item.id}
-                    className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 transition-colors ${
-                      item.status === 'printable'
-                        ? 'border-emerald-800/50 bg-emerald-950/10'
-                        : 'border-surface-700/40 bg-surface-900/60 opacity-55'
-                    }`}
-                  >
-                    {/* Status toggle */}
-                    <button
-                      onClick={() => toggleStatus(item.id)}
-                      title={item.status === 'printable' ? tr('Als Entwurf') : tr('Als druckbar')}
-                      className={`w-4 h-4 rounded-full border-2 shrink-0 transition-colors ${
-                        item.status === 'printable'
-                          ? 'border-emerald-500 bg-emerald-500'
-                          : 'border-surface-600'
-                      }`}
-                    />
-
-                    {/* Filename */}
-                    <p className="flex-1 text-xs text-surface-300 truncate min-w-0" title={item.file_name}>
-                      {item.file_name.replace(/\.[^.]+$/, '')}
-                    </p>
-
-                    {/* Qty controls */}
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      <button onClick={() => setQty(item.id, item.quantity - 1)} className="w-5 h-5 flex items-center justify-center text-surface-500 hover:text-surface-200 select-none">−</button>
-                      <span className="w-7 text-center text-xs font-mono text-surface-300 select-none">{item.quantity}</span>
-                      <button onClick={() => setQty(item.id, item.quantity + 1)} className="w-5 h-5 flex items-center justify-center text-surface-500 hover:text-surface-200 select-none">+</button>
+              <div className="space-y-1 max-h-[62vh] overflow-y-auto -mx-1 px-1">
+                {filtered.map(f => {
+                  const inProj = items.find(i => i.file_id === f.id)
+                  return (
+                    <div key={f.id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-800/50 transition-colors group">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-surface-200 truncate">{f.original_filename}</p>
+                        <p className="text-[10px] text-surface-600 font-mono mt-0.5">
+                          {f.file_type.replace('.', '').toUpperCase()}
+                          {f.file_size_kb ? ` · ${f.file_size_kb < 1024 ? `${f.file_size_kb} KB` : `${(f.file_size_kb/1024).toFixed(1)} MB`}` : ''}
+                        </p>
+                      </div>
+                      {inProj && <span className="text-[9px] text-emerald-500 font-mono shrink-0">×{inProj.quantity}</span>}
+                      <button onClick={() => addFile(f)} className="btn btn-ghost btn-sm opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-[11px]">
+                        {tr('+ Hinzufügen')}
+                      </button>
                     </div>
-
-                    {/* Move up/down */}
-                    <button onClick={() => moveUp(idx)} disabled={idx === 0} className="w-4 h-4 flex items-center justify-center text-[10px] text-surface-700 hover:text-surface-400 disabled:opacity-20">▲</button>
-                    <button onClick={() => moveDown(idx)} disabled={idx === items.length - 1} className="w-4 h-4 flex items-center justify-center text-[10px] text-surface-700 hover:text-surface-400 disabled:opacity-20">▼</button>
-
-                    {/* Delete */}
-                    <button onClick={() => removeItem(item.id)} className="w-4 h-4 flex items-center justify-center text-surface-700 hover:text-red-400">×</button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
 
-          {/* Summary + action */}
-          <div className="card space-y-3">
-            <div className="flex items-center justify-between text-xs text-surface-500">
-              <span><span className="text-surface-200 font-semibold text-sm">{totalJobs}</span> {tr('Jobs gesamt')}</span>
-              <span className="font-mono">
-                {tr('{0} druckbar · {1} Entwurf', printable.length, items.filter(i => i.status === 'draft').length)}
-              </span>
-            </div>
-            <button
-              onClick={pushToQueue}
-              disabled={!printable.length}
-              className="btn btn-primary w-full"
-            >
-              {tr('▶ In Warteschlange ({0})', totalJobs)}
-            </button>
-            {!printable.length && items.length > 0 && (
-              <p className="text-[10px] text-surface-600 text-center">
-                {tr('Alle Einträge sind Entwürfe — Status auf "druckbar" setzen')}
-              </p>
-            )}
-          </div>
+          {/* ── Druckliste ─────────────────────────────────── */}
+          <div className="space-y-3">
+            <div className="card space-y-2 min-h-[120px]">
+              <div className="flex items-center justify-between">
+                <p className="section-label mb-0">{tr('Druckliste')}</p>
+                <span className="text-[10px] font-mono text-surface-600">{totalD}/{totalQ} {tr('gedruckt')}</span>
+              </div>
 
-          {/* Legend */}
-          <div className="text-[10px] text-surface-700 space-y-1 px-1">
-            <p><span className="inline-block w-3 h-3 rounded-full bg-emerald-500 mr-1.5 align-middle" />{tr('Druckbar — wird in Warteschlange eingeplant')}</p>
-            <p><span className="inline-block w-3 h-3 rounded-full border-2 border-surface-600 mr-1.5 align-middle" />{tr('Entwurf — wird übersprungen')}</p>
+              {!items.length ? (
+                <p className="text-xs text-surface-600 text-center py-6">{tr('Dateien aus der Bibliothek hinzufügen')}</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {items.map(item => {
+                    const flight = inFlight(item.id)
+                    const fullDone = (item.done || 0) >= (item.quantity || 0)
+                    return (
+                      <div key={item.id} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors ${
+                        fullDone ? 'border-emerald-800/50 bg-emerald-950/15' : 'border-surface-700/50 bg-surface-900'}`}>
+                        <span className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
+                          fullDone ? 'border-emerald-500 bg-emerald-500' : 'border-surface-600'}`}>
+                          {fullDone && (
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          )}
+                        </span>
+                        <p className={`flex-1 text-xs truncate min-w-0 ${fullDone ? 'text-surface-500 line-through' : 'text-surface-300'}`} title={item.file_name}>
+                          {item.file_name.replace(/\.[^.]+$/, '')}
+                        </p>
+                        <span className="text-[10px] font-mono shrink-0 text-surface-500">
+                          <span className={fullDone ? 'text-emerald-400' : 'text-surface-300'}>{Math.min(item.done || 0, item.quantity)}</span>/{item.quantity}
+                          {flight > 0 && <span className="text-blue-400 ml-1">· {tr('läuft {0}', flight)}</span>}
+                        </span>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button onClick={() => setQty(item.id, item.quantity - 1)} className="w-5 h-5 flex items-center justify-center text-surface-500 hover:text-surface-200 select-none">−</button>
+                          <span className="w-6 text-center text-xs font-mono text-surface-300 select-none">{item.quantity}</span>
+                          <button onClick={() => setQty(item.id, item.quantity + 1)} className="w-5 h-5 flex items-center justify-center text-surface-500 hover:text-surface-200 select-none">+</button>
+                        </div>
+                        <button onClick={() => removeItem(item.id)} className="w-4 h-4 flex items-center justify-center text-surface-700 hover:text-red-400 shrink-0">×</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Aktionen */}
+            <div className="card space-y-3">
+              <div className="flex items-center justify-between text-xs text-surface-500">
+                <span><span className="text-surface-200 font-semibold text-sm">{totalOpen}</span> {tr('offen')}</span>
+                <span className="font-mono">{tr('{0} gesamt · {1} fertig', totalQ, totalD)}</span>
+              </div>
+              <button onClick={pushToPrint} disabled={totalOpen <= 0} className="btn btn-primary w-full">
+                {tr('▶ Drucken ({0} offen)', totalOpen)}
+              </button>
+              {totalD > 0 && (
+                <button onClick={resetProgress} className="btn btn-ghost btn-sm w-full text-surface-500">{tr('↺ Fortschritt zurücksetzen')}</button>
+              )}
+              <p className="text-[10px] text-surface-700 text-center">
+                {tr('Startet die Farm automatisch bzw. reiht in die laufende ein. Fertige Objekte werden abgehakt.')}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

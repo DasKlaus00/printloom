@@ -423,25 +423,6 @@ docker compose up -d`}
           )}
         </div>
 
-        {/* Patchnotes der letzten Updates (Sprache folgt der Auswahl unten links) */}
-        {CHANGELOG.length > 0 && (
-          <div className="pt-2 border-t border-surface-800/60 space-y-3">
-            <p className="text-xs text-surface-500 uppercase tracking-wider">{tr('Was ist neu')}</p>
-            <div className="space-y-3">
-              {CHANGELOG.slice(0, 5).map(entry => (
-                <div key={entry.version} className="space-y-1">
-                  <p className="text-sm font-mono font-semibold text-surface-300">v{entry.version}</p>
-                  <ul className="list-disc list-inside space-y-0.5">
-                    {(lang === 'en' ? entry.en : entry.de).map((line, i) => (
-                      <li key={i} className="text-xs text-surface-400 leading-snug">{line}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Backup-Disclaimer vor dem Update */}
         {confirmUpdate && !['done', 'running'].includes(phase) && (
           <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg px-4 py-4 space-y-3">
@@ -467,6 +448,26 @@ docker compose up -d`}
           {tr('Updates laufen')} <span className="text-surface-400">{tr('nur auf Knopfdruck')}</span> {tr('— kein automatisches Update im Hintergrund. Ein Klick zieht das gewählte Kanal-Image (')}<span className="font-mono">:latest</span>{tr(' bzw.')}
           <span className="font-mono"> :beta</span>{tr(') und startet die App neu (auch der Kanalwechsel). Voraussetzung: Docker-Socket gemountet (siehe Compose).')}
         </p>
+
+        {/* Patchnotes der letzten Updates — ganz unten, damit die Backup-Warnung
+            direkt am Installieren-Knopf bleibt (Sprache folgt der Auswahl unten links) */}
+        {CHANGELOG.length > 0 && (
+          <div className="pt-3 border-t border-surface-800/60 space-y-3">
+            <p className="text-xs text-surface-500 uppercase tracking-wider">{tr('Was ist neu')}</p>
+            <div className="space-y-3">
+              {CHANGELOG.slice(0, 5).map(entry => (
+                <div key={entry.version} className="space-y-1">
+                  <p className="text-sm font-mono font-semibold text-surface-300">v{entry.version}</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {(lang === 'en' ? entry.en : entry.de).map((line, i) => (
+                      <li key={i} className="text-xs text-surface-400 leading-snug">{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Backup & Restore */}

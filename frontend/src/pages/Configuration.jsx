@@ -143,6 +143,10 @@ function FarmSettings() {
   const [status,          setStatus]          = useState(null)
   const saveRef = useRef(null)
 
+  // Zeitzone des Browsers (IANA). Der Backend-Container läuft meist in UTC; ohne diese
+  // Angabe würden die Betriebszeiten gegen UTC geprüft → Farm startet Stunden zu spät.
+  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+
   useEffect(() => {
     autofarmService.getSettings()
       .then(r => {
@@ -157,6 +161,10 @@ function FarmSettings() {
             enabled: d?.enabled ?? true, start: d?.start ?? '22:00', end: d?.end ?? '06:00',
           })))
         }
+        // TZ automatisch hinterlegen/aktualisieren, falls sie fehlt oder abweicht.
+        if (browserTz && r.data.timezone !== browserTz) {
+          autofarmService.saveSettings({ timezone: browserTz }).catch(() => {})
+        }
       }).catch(() => {}).finally(() => setLoaded(true))
     autofarmService.getHomingFileInfo()
       .then(r => setHomingFile(r.data)).catch(() => {})
@@ -169,6 +177,7 @@ function FarmSettings() {
         poll_interval: pollInterval, min_print_minutes: minPrintMinutes, use_ams: useAms,
         conn_alarm: connAlarm, progress_stall_min: Math.max(0, Math.round(Number(stallMin) || 0)),
         operating_hours_enabled: ophEnabled, operating_schedule: ophSchedule,
+        timezone: browserTz,
       })
       setStatus({ ok: true, msg: tr('Einstellungen gespeichert.') })
     } catch (e) {

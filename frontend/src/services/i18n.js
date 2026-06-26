@@ -315,6 +315,26 @@ const EN_STRINGS = {
   'Alle Einträge sind Entwürfe — Status auf "druckbar" setzen': 'All entries are drafts — set status to “printable”',
   'Druckbar — wird in Warteschlange eingeplant': 'Printable — scheduled into the queue',
   'Entwurf — wird übersprungen': 'Draft — skipped',
+  // ── Projekte (Neuaufbau) ──
+  'Projekte': 'Projects',
+  'Dateien mit Stückzahl sammeln, drucken lassen und fertige Objekte automatisch abhaken.':
+    'Collect files with quantities, print them, and tick off finished objects automatically.',
+  '— kein Projekt —': '— no project —',
+  '+ Neues Projekt': '+ New project',
+  'Neues Projekt': 'New project',
+  'Noch kein Projekt — leg eines an.': 'No project yet — create one.',
+  'Projekt „{0}" löschen?': 'Delete project “{0}”?',
+  'Fortschritt zurückgesetzt': 'Progress reset',
+  'gedruckt': 'printed',
+  'läuft {0}': 'running {0}',
+  'offen': 'open',
+  '{0} gesamt · {1} fertig': '{0} total · {1} done',
+  '▶ Drucken ({0} offen)': '▶ Print ({0} open)',
+  '↺ Fortschritt zurücksetzen': '↺ Reset progress',
+  'Startet die Farm automatisch bzw. reiht in die laufende ein. Fertige Objekte werden abgehakt.':
+    'Starts the farm automatically or adds to the running one. Finished objects are ticked off.',
+  '{0} Objekt(e) zur Warteschlange hinzugefügt': '{0} object(s) added to the queue',
+  'Auto Farm gestartet — {0} Objekt(e) eingereiht': 'Auto Farm started — {0} object(s) queued',
 
   // ── Profile ──
   'Kalibrierung': 'Calibration',

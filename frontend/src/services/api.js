@@ -152,8 +152,11 @@ export const autofarmService = {
 }
 
 export const projectService = {
-  get:  ()      => api.get('/project'),
-  save: (data)  => api.put('/project', data),
+  list:          ()          => api.get('/project/'),
+  create:        (name)      => api.post('/project/', { name }),
+  update:        (pid, data) => api.put(`/project/${pid}`, data),
+  remove:        (pid)       => api.delete(`/project/${pid}`),
+  resetProgress: (pid)       => api.post(`/project/${pid}/reset`),
 }
 
 export const profileService = {

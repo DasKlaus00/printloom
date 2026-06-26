@@ -553,25 +553,11 @@ function QueuePlanner({ jobs, tr }) {
     return <p className="text-[11px] text-surface-600 py-3 text-center">{tr('Keine wartenden Jobs zum Planen')}</p>
   }
 
-  // Kosten je Job: Strom (Historie-kWh) + Maschinenzeit + Filament (Gramm aus Meta).
-  const pPrice = cost?.power_price_eur_kwh ?? 0
-  const mRate  = cost?.machine_rate_eur_h ?? 0
-  const fPrice = cost?.filament_price_eur_kg ?? 0
-  const jobCost = (j, sec) => {
-    const h = hist[j.fileId] ?? hist[String(j.fileId)]
-    const grams = getCachedMeta(j.fileId)?.filament_g || 0
-    const e = (h?.avg_kwh || 0) * pPrice
-    const m = (sec / 3600) * mRate
-    const f = (grams / 1000) * fPrice
-    return e + m + f
-  }
-  const costOn = pPrice > 0 || mRate > 0 || fPrice > 0
-
   // Betriebszeiten berücksichtigen: ein wartender Job startet nur im Zeitfenster.
   const ophOn    = !!cost?.operating_hours_enabled
   const ophSched = cost?.operating_schedule
   const now = Date.now()
-  let clock = now, workMs = 0, totalCost = 0
+  let clock = now, workMs = 0
   const rows = active.map((j, i) => {
     const printing = ['running', 'printing', 'sending'].includes(j.status)
     let over = 0
@@ -583,8 +569,7 @@ function QueuePlanner({ jobs, tr }) {
     const { sec, src } = jobPrintSec(j, getCachedMeta(j.fileId), hist)
     clock += sec * 1000
     workMs += over + sec * 1000
-    const c = jobCost(j, sec); totalCost += c
-    return { j, sec, src, cost: c, end: new Date(clock) }
+    return { j, sec, src, end: new Date(clock) }
   })
   const totalSec  = Math.round(workMs / 1000)            // reine Arbeitszeit (ohne Wartelücken)
   const finishAt  = rows.length ? rows[rows.length - 1].end : new Date(now)
@@ -611,7 +596,7 @@ function QueuePlanner({ jobs, tr }) {
   return (
     <div className="space-y-1.5">
       <div className="space-y-1">
-        {rows.map(({ j, sec, src, cost: c, end }, i) => {
+        {rows.map(({ j, sec, src, end }, i) => {
           const m = srcMeta[src] ?? srcMeta.none
           return (
             <div key={j.id} className="flex items-center gap-2 text-[11px]">
@@ -619,7 +604,6 @@ function QueuePlanner({ jobs, tr }) {
               <span className="text-surface-300 flex-1 min-w-0 truncate">{j.fileName?.replace(/\.[^.]+$/, '')}</span>
               <span className={`shrink-0 ${m.cls}`} title={m.title}>{m.sym}</span>
               <span className="font-mono text-surface-400 w-16 text-right shrink-0">{fmtDur(sec) ?? '—'}</span>
-              {costOn && <span className="font-mono text-amber-400/80 w-14 text-right shrink-0" title={tr('Kosten: Strom + Maschine + Filament')}>{c > 0 ? `${c.toFixed(2)} €` : '—'}</span>}
               <span className="font-mono w-24 text-right shrink-0" title={tr('voraussichtlich fertig')}>
                 <span className={dayOffset(end) > 0 ? 'text-blue-400/80' : 'text-surface-700'}>{relDay(end)}</span>
                 <span className="text-surface-500 ml-1">{clk(end)}</span>
@@ -631,7 +615,6 @@ function QueuePlanner({ jobs, tr }) {
       <div className="flex items-center justify-between border-t border-surface-800/50 pt-1.5 text-[11px]">
         <span className="text-surface-500">{tr('{0} Jobs', rows.length)}</span>
         <span className="font-mono text-surface-300">
-          {costOn && totalCost > 0 && <span className="text-amber-400/80 mr-2">{totalCost.toFixed(2)} €</span>}
           {fmtDur(totalSec) ? tr('~{0} · fertig {1} ~{2} Uhr', fmtDur(totalSec), relDay(finishAt), clk(finishAt)) : tr('Gesamtzeit unbekannt')}
         </span>
       </div>

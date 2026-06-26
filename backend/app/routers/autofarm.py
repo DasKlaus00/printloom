@@ -64,6 +64,10 @@ _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": Tru
                      # Fehlerstrategie (Roadmap 1.3) — {error_key: action}; leer = Defaults
                      "error_strategy":        {},
                      "failed_retries":        1,     # Wiederholungen bei FAILED vor der gewählten Aktion
+                     # Zeitzone des Nutzers (IANA, z. B. "Europe/Berlin") — der Container
+                     # läuft i. d. R. in UTC; die Betriebszeiten müssen aber in der lokalen
+                     # Zeit des Nutzers ausgewertet werden. Frontend liefert sie automatisch.
+                     "timezone": "",
                      # Betriebszeiten (Roadmap 2.5) — neue Jobs nur im Zeitfenster starten
                      "operating_hours_enabled": False,
                      # Pro Wochentag (Index 0=Mo … 6=So) ein eigenes Fenster.
@@ -923,6 +927,20 @@ def _estrat(key: str) -> str:
 
 
 # ── Betriebszeiten (Roadmap 2.5) ─────────────────────────────
+def _local_now() -> datetime:
+    """Aktuelle Zeit in der Zeitzone des Nutzers. Der Container läuft meist in UTC;
+    ohne diese Korrektur würden die Betriebszeiten gegen UTC geprüft (Bug: Farm
+    startet erst Stunden später). Fällt ohne/ungültige TZ auf die Containerzeit zurück."""
+    tz = _farm.get("operating_tz")
+    if tz:
+        try:
+            from zoneinfo import ZoneInfo
+            return datetime.now(ZoneInfo(tz)).replace(tzinfo=None)
+        except Exception:
+            pass
+    return datetime.now()
+
+
 def _parse_hhmm(s: str) -> int:
     """'HH:MM' → Minuten seit Mitternacht; ungültig → 0."""
     try:
@@ -966,7 +984,7 @@ def _now_in_operating_window(now: datetime = None) -> bool:
     if not (isinstance(sched, list) and len(sched) == 7):
         return True
     if now is None:
-        now = datetime.now()
+        now = _local_now()
     wd   = now.weekday()           # 0=Mo … 6=So
     mins = now.hour * 60 + now.minute
     # Heutiges Fenster
@@ -996,7 +1014,7 @@ def _next_operating_start() -> Optional[datetime]:
     sched = _farm.get("operating_schedule")
     if not (isinstance(sched, list) and len(sched) == 7):
         return None
-    now = datetime.now()
+    now = _local_now()
     for ahead in range(0, 8):
         wd = (now.weekday() + ahead) % 7
         d  = sched[wd]
@@ -1909,6 +1927,14 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                     used_kwh = round(end_kwh - job_start_kwh, 4)
                 _set_job(job["id"], {"status": "done"})
                 _rack_update(job["slot"], "done")
+                # Projekt-Fortschritt abhaken (Job trägt tag "proj:<itemId>").
+                tag = job.get("tag") or ""
+                if tag.startswith("proj:"):
+                    try:
+                        from app.routers.project import mark_item_printed
+                        mark_item_printed(tag[5:])
+                    except Exception as e:
+                        logger.warning(f"project mark done failed: {e}")
                 _record_success(round(actual_min) or job.get("estimatedMinutes") or 0, used_kwh)
                 _record_duration(job.get("fileId"), actual_min, used_kwh)
                 _record_event("print_done", job.get("fileName", ""), f"Fach {job['slot']}")
@@ -2021,6 +2047,7 @@ class JobIn(BaseModel):
     layerHeightMm: float = 0.0
     object_height_mm: Optional[float] = None
     plate: Optional[int] = None
+    tag: Optional[str] = None   # z. B. "proj:<itemId>" → Projekt-Fortschritt (Abhaken)
 
 
 class EnqueueRequest(BaseModel):
@@ -2032,6 +2059,7 @@ class EnqueueRequest(BaseModel):
     layerHeightMm: float = 0.0
     object_height_mm: Optional[float] = None
     plate: Optional[int] = None
+    tag: Optional[str] = None   # z. B. "proj:<itemId>"
 
 
 class StartRequest(BaseModel):
@@ -2063,6 +2091,7 @@ class SettingsPayload(BaseModel):
     progress_stall_min:    int   = 0
     error_strategy:        dict  = {}
     failed_retries:        int   = 1
+    timezone:                str  = ""         # IANA-TZ des Nutzers (z. B. "Europe/Berlin")
     operating_hours_enabled: bool = False
     operating_schedule:      List[dict] = []   # 7 Einträge [{enabled,start,end}], Index 0=Mo
     # Legacy (vor v1.0.59) — weiterhin akzeptiert für alte Clients/Backups:
@@ -2117,6 +2146,7 @@ async def start_farm(req: StartRequest):
         "failed_retries":     max(0, int(_settings.get("failed_retries", 1) or 0)),
         "operating_hours_enabled": bool(_settings.get("operating_hours_enabled", False)),
         "operating_schedule":      _operating_schedule(_settings),
+        "operating_tz":            str(_settings.get("timezone", "") or ""),
     })
 
     _farm.pop("_no_slot_logged", None)   # „Regal voll"-Log-Dedup nicht über Läufe schleppen
@@ -2180,6 +2210,7 @@ async def enqueue_job(job: EnqueueRequest):
         "layerHeightMm":    layer_h,
         "object_height_mm": obj_h,
         "plate":            job.plate,
+        "tag":              job.tag or "",
     })
     _log(f"[+] {job.fileName}{f' (Platte {job.plate})' if job.plate else ''} → Fach wird bei Ausführung zugewiesen")
     return {"success": True}

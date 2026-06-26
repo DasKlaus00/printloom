@@ -13,3 +13,4 @@ httpx==0.25.2
 pywebpush==1.14.1
 cryptography>=41.0.0
 docker==7.1.0
+tzdata>=2024.1   # Zeitzonen-DB für zoneinfo (slim-Image hat keine System-tzdata) — Betriebszeiten
