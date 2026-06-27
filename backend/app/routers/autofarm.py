@@ -2099,6 +2099,7 @@ class JobIn(BaseModel):
     layerHeightMm: float = 0.0
     object_height_mm: Optional[float] = None
     plate: Optional[int] = None
+    plateTotal: Optional[int] = None   # Gesamt-Plattenzahl der Multi-Plate-.3mf (für „Platte 3/13")
     tag: Optional[str] = None   # z. B. "proj:<itemId>" → Projekt-Fortschritt (Abhaken)
 
 
@@ -2111,6 +2112,7 @@ class EnqueueRequest(BaseModel):
     layerHeightMm: float = 0.0
     object_height_mm: Optional[float] = None
     plate: Optional[int] = None
+    plateTotal: Optional[int] = None   # Gesamt-Plattenzahl der Multi-Plate-.3mf (für „Platte 3/13")
     tag: Optional[str] = None   # z. B. "proj:<itemId>"
 
 
@@ -2263,6 +2265,7 @@ async def enqueue_job(job: EnqueueRequest):
         "layerHeightMm":    layer_h,
         "object_height_mm": obj_h,
         "plate":            job.plate,
+        "plateTotal":       job.plateTotal,
         "tag":              job.tag or "",
     })
     _log(f"[+] {job.fileName}{f' (Platte {job.plate})' if job.plate else ''} → Fach wird bei Ausführung zugewiesen")

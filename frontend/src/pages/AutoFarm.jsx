@@ -655,8 +655,7 @@ function AutoFarm() {
   const [tplOpen,         setTplOpen]         = useState(false)
   const [tplName,         setTplName]         = useState('')
   const [plannerOpen,     setPlannerOpen]     = useState(false)
-  const [filePlates,      setFilePlates]      = useState([])     // plate numbers in selected file (multi-plate .3mf)
-  const [selPlates,       setSelPlates]       = useState([])     // which plates to enqueue
+  const [filePlates,      setFilePlates]      = useState([])     // plate numbers in selected file (multi-plate .3mf) → ALL get added as jobs
   const [amsSlots,        setAmsSlots]        = useState([])
   const [amsLoading,      setAmsLoading]      = useState(false)
   const [amsOpenIds,      setAmsOpenIds]      = useState(() => new Set())
@@ -1050,16 +1049,15 @@ function AutoFarm() {
   useEffect(() => {
     const fid = addFileId ?? gcodeFiles[0]?.id
     const f   = gcodeFiles.find(x => x.id === fid)
-    if (!fid || f?.file_type !== '.3mf') { setFilePlates([]); setSelPlates([]); return }
+    if (!fid || f?.file_type !== '.3mf') { setFilePlates([]); return }
     let cancelled = false
     printerService.getPlates(fid)
       .then(r => {
         if (cancelled) return
         const plates = r.data?.plates ?? []
-        setFilePlates(plates.length > 1 ? plates : [])
-        setSelPlates(plates.length > 1 ? plates : [])  // default: all plates selected
+        setFilePlates(plates.length > 1 ? plates : [])   // >1 → beim Hinzufügen wird je Platte ein Job angelegt
       })
-      .catch(() => { if (!cancelled) { setFilePlates([]); setSelPlates([]) } })
+      .catch(() => { if (!cancelled) setFilePlates([]) })
     return () => { cancelled = true }
   }, [addFileId, gcodeFiles])
 
@@ -1122,14 +1120,14 @@ function AutoFarm() {
       .catch(() => setJobField(jobId, { filaments: [] }))
   }
 
-  const _doAddJobs = (file, amsMap, count, plate = null) => {
+  const _doAddJobs = (file, amsMap, count, plate = null, plateTotal = null) => {
     const newJobs = Array.from({ length: count }, () => {
       const jobId = _id++
       return {
         id: jobId, fileId: file.id, fileName: file.original_filename,
         slot: null, amsMap: amsMap ?? '', objectHeight: null, heightLoading: true,
         progress: 0, remaining: 0, status: 'pending', note: '', estimatedMinutes: null,
-        filaments: [], plate: plate ?? null,
+        filaments: [], plate: plate ?? null, plateTotal: plateTotal ?? null,
       }
     })
     setJobs(prev => [...prev, ...newJobs])
@@ -1138,7 +1136,7 @@ function AutoFarm() {
       newJobs.forEach(j =>
         autofarmService.enqueue({
           id: j.id, fileId: file.id, fileName: file.original_filename,
-          slot: '1-0', amsMap: j.amsMap ?? '', plate: j.plate ?? null,
+          slot: '1-0', amsMap: j.amsMap ?? '', plate: j.plate ?? null, plateTotal: j.plateTotal ?? null,
         }).catch(e => showFeedback(e.response?.data?.detail ?? e.message, false))
       )
     }
@@ -1166,16 +1164,14 @@ function AutoFarm() {
         amsMap = mapped.join(',')
       }
     } catch {}
-    // Multi-plate: one job per selected plate (× repeat count); else a single job.
-    if (filePlates.length > 1 && selPlates.length > 0) {
-      selPlates.forEach(p => _doAddJobs(file, amsMap, count, p))
+    // Mehr-Platten-.3mf: automatisch JE Platte ein Job (× Wiederholungen) — keine
+    // Auswahl, einfach alle. Sonst ein einzelner Job.
+    if (filePlates.length > 1) {
+      filePlates.forEach(p => _doAddJobs(file, amsMap, count, p, filePlates.length))
     } else {
       _doAddJobs(file, amsMap, count)
     }
   }
-
-  const toggleSelPlate = (p) =>
-    setSelPlates(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p].sort((a, b) => a - b))
 
   /* ── Queue-Vorlagen (Templates) ─── */
   const saveTemplate = () => {
@@ -1482,7 +1478,7 @@ function AutoFarm() {
           status: 'pending', amsMap: j.amsMap ?? '',
           layerHeightMm: j.layerHeightMm ?? 0,
           object_height_mm: j.computedHeight ?? j.objectHeight ?? null,
-          plate: j.plate ?? null,
+          plate: j.plate ?? null, plateTotal: j.plateTotal ?? null,
         })),
       })
       await fetchStatus()
@@ -1872,31 +1868,6 @@ function AutoFarm() {
             </div>
           )}
 
-          {/* Multi-plate selector — pick which plates of the .3mf to enqueue */}
-          {filePlates.length > 1 && (
-            <div className="flex items-center gap-1.5 flex-wrap mb-4 -mt-2">
-              <span className="text-[10px] text-surface-500 font-mono">{tr('Platten:')}</span>
-              {filePlates.map(p => {
-                const on = selPlates.includes(p)
-                return (
-                  <button
-                    key={p}
-                    onClick={() => toggleSelPlate(p)}
-                    className={`text-[10px] font-mono px-1.5 h-6 rounded border transition-colors ${
-                      on ? 'border-blue-700 bg-blue-950/40 text-blue-300'
-                         : 'border-surface-700 text-surface-500 hover:text-surface-300'
-                    }`}
-                    title={on ? tr('Platte {0} — ausgewählt', p) : tr('Platte {0}', p)}
-                  >P{p}</button>
-                )
-              })}
-              <span className="text-[9px] text-surface-600">
-                {tr('{0} ausgewählt → je {1} Job', selPlates.length, addCount > 1 ? `${addCount}×` : '1')}
-              </span>
-            </div>
-          )}
-
-
           {!jobs.length ? (
             <div className="flex flex-col items-center justify-center py-12 text-surface-600 text-center">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" className="mb-3 opacity-40">
@@ -1957,7 +1928,9 @@ function AutoFarm() {
                       {/* oben rechts: Höhe + Fächer-Bedarf */}
                       {job.plate != null && (
                         <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300 shrink-0"
-                          title={tr('Platte {0} aus Multi-Plate-.3mf', job.plate)}>{tr('Platte {0}', job.plate)}</span>
+                          title={tr('Platte {0} aus Multi-Plate-.3mf', job.plate)}>
+                          {job.plateTotal > 1 ? tr('Platte {0}/{1}', job.plate, job.plateTotal) : tr('Platte {0}', job.plate)}
+                        </span>
                       )}
                       {job.heightLoading ? (
                         <span className="text-[10px] text-surface-700 font-mono animate-pulse shrink-0">{tr('Höhe…')}</span>

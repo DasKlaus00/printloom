@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.67',
+    de: [
+      'Mehr-Platten-.3mf: beim Hinzufügen werden jetzt automatisch ALLE Platten als eigene Jobs angelegt — kein Platten-Auswahlbalken mehr. Jeder Job zeigt „Platte 3/13".',
+      'Behoben: der Platten-Auswahlbalken blieb oben hängen, obwohl die Jobs längst aus der Warteschlange entfernt waren.',
+    ],
+    en: [
+      'Multi-plate .3mf: adding now creates a job for EVERY plate automatically — no more plate selection bar. Each job shows “Plate 3/13”.',
+      'Fixed: the plate selection bar stayed at the top even after the jobs had been removed from the queue.',
+    ],
+  },
+  {
     version: '1.0.66',
     de: [
       'Datei-Browser: mehrere markierte Dateien lassen sich jetzt auf einmal löschen (Knopf „Löschen (N)" in der Auswahl-Leiste, eine Sicherheitsabfrage).',
