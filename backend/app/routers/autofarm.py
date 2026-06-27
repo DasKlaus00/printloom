@@ -546,19 +546,35 @@ async def _send_print_cmd(cmd: str):
 
 
 # ── Step implementations ─────────────────────────────────────
-async def _do_macro(name: str):
+async def _do_macro(name: str, _recover: bool = True):
     db = SessionLocal()
     try:
         klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
         if not klipper:
             raise RuntimeError("Klipper nicht konfiguriert")
         url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            r = await client.post(url, json={"script": name})
-        if r.status_code != 200:
-            raise RuntimeError(f"{name} fehlgeschlagen: {r.text[:120]}")
     finally:
         db.close()
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        r = await client.post(url, json={"script": name})
+    if r.status_code == 200:
+        return
+
+    body = r.text or ""
+    # OTTOeject-Steppermotoren schalten nach Leerlauf (Klipper idle_timeout, Standard
+    # 10 Min) ab und verlieren dabei das Homing. Der nächste Bewegungsbefehl — z. B.
+    # GRAB_FROM_RACK beim ersten Job nach einer Wartephase (leere Warteschlange,
+    # Magazin-Auffüllen, Regal voll) — wird dann mit „Must home axis first" abgelehnt.
+    # In dem Fall einmal automatisch homen und den Befehl wiederholen → selbstheilend,
+    # kein abgebrochener Job. (OTTOEJECT_HOME selbst niemals rekursiv wiederholen.)
+    if (_recover and "must home axis first" in body.lower()
+            and "OTTOEJECT_HOME" not in name.upper()):
+        _log("⚠ OTTOeject war nicht referenziert (Motoren nach Leerlauf aus) — homen und erneut versuchen…")
+        await _do_macro("OTTOEJECT_HOME", _recover=False)
+        await _do_macro(name, _recover=False)
+        return
+    raise RuntimeError(f"{name} fehlgeschlagen: {body[:120]}")
 
 
 async def _do_bambu_gcode(gcode: str, device: Device):
