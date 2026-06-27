@@ -862,6 +862,21 @@ function AutoFarm() {
     })
   }, [farmStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Filamente für Jobs nachladen, die noch keine haben (z. B. aus der Datei-
+  // Bibliothek in die laufende Farm gelegt) — plattengenau, damit der AMS-Mapper
+  // die richtige Farbe zeigt statt „Keine Filament-Info". Pro Job nur einmal.
+  const filReqRef = useRef(new Set())
+  useEffect(() => {
+    jobs.forEach(j => {
+      if (j.fileId && j.filaments === undefined && !filReqRef.current.has(j.id)) {
+        filReqRef.current.add(j.id)
+        autofarmService.getFileFilaments(j.fileId, j.plate)
+          .then(r => setJobField(j.id, { filaments: r.data.filaments ?? [] }))
+          .catch(() => setJobField(j.id, { filaments: [] }))
+      }
+    })
+  }, [jobs]) // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ── Fächer werden NICHT vorab angezeigt ─────────────────────
      Wartende Jobs behalten den Platzhalter '1-0' (Anzeige „Auto"). Wo eine
      Platte hinkommt, berechnet der Server LIVE erst beim Druckstart anhand des
@@ -958,7 +973,7 @@ function AutoFarm() {
           const loaded = (r.data ?? []).map(j => ({ ...j, heightLoading: false, progress: j.progress ?? 0, remaining: j.remaining ?? 0 }))
           _id = loaded.length ? Math.max(...loaded.map(j => j.id)) + 1 : _id
           setJobs(loaded)
-          loaded.forEach(j => { if (!j.computedHeight && j.fileId) analyzeFile(j.id, j.fileId) })
+          loaded.forEach(j => { if (!j.computedHeight && j.fileId) analyzeFile(j.id, j.fileId, j.plate) })
         })
         .catch(() => {})
     }
@@ -1100,7 +1115,7 @@ function AutoFarm() {
   const setJobField = (id, updates) =>
     setJobs(prev => prev.map(j => j.id === id ? { ...j, ...updates } : j))
 
-  const analyzeFile = (jobId, fileId) => {
+  const analyzeFile = (jobId, fileId, plate = null) => {
     rackManagerService.analyzeFile(fileId)
       .then(r => {
         const computed = r.data.computed_height_mm ?? null
@@ -1121,7 +1136,7 @@ function AutoFarm() {
       })
       .catch(() => setJobField(jobId, { heightLoading: false }))
 
-    autofarmService.getFileFilaments(fileId)
+    autofarmService.getFileFilaments(fileId, plate)
       .then(r => setJobField(jobId, { filaments: r.data.filaments ?? [] }))
       .catch(() => setJobField(jobId, { filaments: [] }))
   }
@@ -1137,7 +1152,7 @@ function AutoFarm() {
       }
     })
     setJobs(prev => [...prev, ...newJobs])
-    newJobs.forEach(j => analyzeFile(j.id, file.id))
+    newJobs.forEach(j => analyzeFile(j.id, file.id, j.plate))
     if (running) {
       newJobs.forEach(j =>
         autofarmService.enqueue({

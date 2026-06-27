@@ -638,7 +638,7 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
                     ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
 
                 fil_types, fil_colors = await loop.run_in_executor(
-                    None, _read_filament_info, file.file_path, file.file_type
+                    None, _read_filament_info, file.file_path, file.file_type, job.get("plate")
                 )
                 _log(f"Filamente in Datei: {list(zip(fil_types, fil_colors))}")
 
@@ -911,7 +911,7 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
         db.close()
     if not fpath:
         return
-    types, colors = await loop.run_in_executor(None, _read_filament_info, fpath, ftype)
+    types, colors = await loop.run_in_executor(None, _read_filament_info, fpath, ftype, job.get("plate"))
     if not types or all(not t for t in types):
         return  # no filament info in file (older format) → cannot validate
 
@@ -2611,8 +2611,9 @@ async def clear_log_file():
 
 
 @router.get("/file_filaments/{file_id}")
-async def get_file_filaments(file_id: int):
-    """Return filament types and colors extracted from a .3mf or .gcode file."""
+async def get_file_filaments(file_id: int, plate: Optional[int] = None):
+    """Return the filament types and colors a print USES. Bei Multi-Plate-.3mf
+    optional die Platte angeben → nur deren tatsächlich benutzte Filamente."""
     db = SessionLocal()
     try:
         f = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
@@ -2620,7 +2621,7 @@ async def get_file_filaments(file_id: int):
             raise HTTPException(404, "Datei nicht gefunden")
         if not os.path.exists(f.file_path):
             raise HTTPException(404, "Datei nicht auf Disk")
-        types, colors = _read_filament_info(f.file_path, f.file_type)
+        types, colors = _read_filament_info(f.file_path, f.file_type, plate)
         return {"filaments": [{"type": t, "color": c} for t, c in zip(types, colors)]}
     finally:
         db.close()

@@ -140,11 +140,16 @@ def _match_ams_slot(ams_raw: dict, required_type: str) -> Optional[int]:
     return None
 
 
-def _read_filament_info(filepath: str, file_type: str) -> tuple:
+def _read_filament_info(filepath: str, file_type: str, plate: int | None = None) -> tuple:
     """
-    Read filament types and colors from the file's gcode header comments.
-    Bambu Studio writes:  ; filament_type = PLA;PLA;PETG
-                          ; filament_colour = #000000;#808080;#FF0000
+    Read the filament types and colors a print actually USES.
+
+    Wichtig bei Multi-Material-Projekten: der G-Code-Header listet ALLE im Projekt
+    angelegten Filamente (z. B. PLA;PETG;PLA;PLA), auch wenn eine Platte nur eines
+    davon druckt. Würden wir alle erzwingen, verlangt das AMS-Matching Filamente,
+    die gar nicht gebraucht werden → falsches „Manuelle AMS-Zuordnung".
+    Deshalb zuerst slice_info.config lesen: dort stehen PRO PLATTE nur die wirklich
+    benutzten Filamente mit type+color. Erst als Fallback der G-Code-Header.
     Returns (types: list[str], colors: list[str]), same length.
     """
     types, colors = [], []
@@ -162,13 +167,49 @@ def _read_filament_info(filepath: str, file_type: str) -> tuple:
             if m:
                 colors = [c.strip() for c in m.group(1).split(';') if c.strip()]
 
+    def _from_slice_info(z):
+        """Pro-Platte tatsächlich benutzte Filamente aus slice_info.config → (types, colors) oder None."""
+        try:
+            name = next((n for n in z.namelist() if n.lower().endswith('slice_info.config')), None)
+            if not name:
+                return None
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(z.read(name).decode('utf-8', errors='ignore'))
+            plates = list(root.iter('plate'))
+            if not plates:
+                return None
+            chosen = None
+            if plate is not None:
+                for pl in plates:
+                    idx = next((m.get('value') for m in pl.findall('metadata') if m.get('key') == 'index'), None)
+                    if idx and str(idx).strip() == str(plate).strip():
+                        chosen = pl
+                        break
+            if chosen is None:
+                chosen = plates[0]
+            ts, cs = [], []
+            for fil in chosen.findall('filament'):
+                t = (fil.get('type') or '').strip()
+                c = (fil.get('color') or '').strip()
+                if t or c:
+                    ts.append(t)
+                    cs.append(c)
+            return (ts, cs) if (ts or cs) else None
+        except Exception as e:
+            logger.warning(f"slice_info filament parse failed: {e}")
+            return None
+
     try:
         if file_type == '.3mf':
             with zipfile.ZipFile(filepath, 'r') as z:
-                gp = next((n for n in z.namelist() if n.endswith('.gcode')), None)
-                if gp:
-                    with z.open(gp) as f:
-                        _scan(f.readlines()[:400])
+                si = _from_slice_info(z)
+                if si:
+                    types, colors = si
+                else:
+                    gp = next((n for n in z.namelist() if n.endswith('.gcode')), None)
+                    if gp:
+                        with z.open(gp) as f:
+                            _scan(f.readlines()[:400])
         else:
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 _scan(f.readlines()[:400])
@@ -178,7 +219,7 @@ def _read_filament_info(filepath: str, file_type: str) -> tuple:
     n = max(len(types), len(colors), 1)
     types  += [''] * (n - len(types))
     colors += [''] * (n - len(colors))
-    logger.info(f"Filament info: types={types} colors={colors}")
+    logger.info(f"Filament info (plate={plate}): types={types} colors={colors}")
     return types, colors
 
 
