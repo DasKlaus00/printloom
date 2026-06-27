@@ -835,24 +835,40 @@ function FileLibrary() {
     return next
   })
 
+  // Mehr-Platten-.3mf → je Platte eine Druck-Einheit. Eine Einzel-Platte / .gcode
+  // bleibt eine Einheit (plate=null). So entsteht pro Platte ein eigener Job.
+  const expandToPlateUnits = async (printable) => {
+    const units = []
+    for (const f of printable) {
+      let plates = []
+      if (f.file_type === '.3mf') {
+        try { plates = (await printerService.getPlates(f.id)).data?.plates ?? [] } catch { plates = [] }
+      }
+      if (plates.length > 1) plates.forEach(p => units.push({ file: f, plate: p, plateTotal: plates.length }))
+      else units.push({ file: f, plate: null, plateTotal: null })
+    }
+    return units
+  }
+
   const enqueueFiles = async (fileList, count = 1) => {
     const printable = fileList.filter(f => f.file_type === '.3mf' || f.file_type === '.gcode')
     if (!printable.length) return showFeedback(tr('Nur .3mf / .gcode können in die Queue'), false)
     setEnqueuing(true)
     try {
-      const [statusRes, queueRes] = await Promise.all([
+      const [statusRes, queueRes, units] = await Promise.all([
         autofarmService.getStatus(true).catch(() => ({ data: {} })),
         autofarmService.getQueue().catch(() => ({ data: [] })),
+        expandToPlateUnits(printable),
       ])
       const running = !!statusRes.data?.running
       const cur = queueRes.data ?? []
       let nextId = cur.length ? Math.max(...cur.map(j => j.id ?? 0)) + 1 : 1
       const additions = []
       for (let c = 0; c < count; c++) {
-        for (const f of printable) {
+        for (const u of units) {
           additions.push({
-            id: nextId++, fileId: f.id, fileName: f.original_filename,
-            slot: null, amsMap: '', status: 'pending', plate: null,
+            id: nextId++, fileId: u.file.id, fileName: u.file.original_filename,
+            slot: null, amsMap: '', status: 'pending', plate: u.plate, plateTotal: u.plateTotal,
             objectHeight: null, progress: 0, remaining: 0,
           })
         }
@@ -862,7 +878,7 @@ function FileLibrary() {
         for (const j of additions) {
           await autofarmService.enqueue({
             id: j.id, fileId: j.fileId, fileName: j.fileName,
-            slot: '1-0', amsMap: '', plate: null,
+            slot: '1-0', amsMap: '', plate: j.plate, plateTotal: j.plateTotal,
           })
         }
       } else {
