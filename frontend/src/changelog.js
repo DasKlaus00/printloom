@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.70',
+    de: [
+      'Behoben: Umsortieren WÄHREND des Start-Countdowns wirkt jetzt — der oberste wartende Job wird erst nach Ablauf des Countdowns bestimmt. Vorher startete trotz Tausch der zuvor oberste Job (z. B. Platte 1 statt der nach vorn gezogenen Platte 2).',
+      'Auto-Start-Schalter wieder entfernt — die Farm läuft dauerhaft automatisch (kein „Jetzt starten" nötig).',
+      'Planer zeigt jetzt auch die Platte je Job an (z. B. „P2/4").',
+    ],
+    en: [
+      'Fixed: reordering DURING the start countdown now takes effect — the top waiting job is picked only after the countdown ends. Before, the previously-top job started despite the swap (e.g. plate 1 instead of the plate 2 you moved up).',
+      'Removed the auto-start toggle again — the farm runs continuously and automatically (no “Start now” needed).',
+      'Planner now also shows the plate per job (e.g. “P2/4”).',
+    ],
+  },
+  {
     version: '1.0.69',
     de: [
       'Neuer „Auto-Start"-Schalter in der Warteschlange: standardmäßig EIN (voll automatisch wie bisher). Schaltest du ihn AUS, starten neu in den Leerlauf gekommene Jobs nicht von selbst — du legst die Reihenfolge in Ruhe fest und drückst dann „▶ Jetzt starten". Praktisch z. B. wenn du bei einer Mehr-Platten-Datei erst eine bestimmte Platte drucken willst.',

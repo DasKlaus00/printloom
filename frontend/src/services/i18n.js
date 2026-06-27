@@ -1018,12 +1018,9 @@ const EN_STRINGS = {
   'hinzufügen →': '→',
   'Platte {0}': 'Plate {0}',
   'Platte {0}/{1}': 'Plate {0}/{1}',
-  'Auto-Start': 'Auto-start',
-  'Auto-Start: aus = neue Jobs warten auf „Jetzt starten", damit du die Reihenfolge festlegen kannst':
-    'Auto-start: off = new jobs wait for “Start now” so you can set the order',
-  'Auto-Start ist aus — Reihenfolge festlegen, dann starten.':
-    'Auto-start is off — set the order, then start.',
-  '▶ Jetzt starten': '▶ Start now',
+  'Platte {0} von {1}': 'Plate {0} of {1}',
+  'P{0}/{1}': 'P{0}/{1}',
+  'P{0}': 'P{0}',
   'Keine Jobs': 'No jobs',
   '+ Datei klicken um zu beginnen': 'Click + File to start',
   'Regal-Fächer werden automatisch vergeben': 'Rack slots are assigned automatically',

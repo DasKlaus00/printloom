@@ -77,10 +77,7 @@ _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": Tru
                      # Legacy-Felder (vor v1.0.59) — nur noch für Migration alter Configs:
                      "operating_start":         "22:00",
                      "operating_end":           "06:00",
-                     "operating_days":          [0, 1, 2, 3, 4, 5, 6],  # 0=Mo … 6=So
-                     # Auto-Start-Halt: True → neu in den Leerlauf gekommene Jobs starten
-                     # NICHT von selbst, sondern warten auf „Jetzt starten" (zum Umsortieren).
-                     "autostart_hold":          False}
+                     "operating_days":          [0, 1, 2, 3, 4, 5, 6]}  # 0=Mo … 6=So
 
 # ── Homing .3mf generator ────────────────────────────────────
 _HOMING_GCODE = """; Printloom Homing Sequence
@@ -138,8 +135,6 @@ _farm: dict = {
     "stopping":         False,
     "paused":           False,
     "idle":             False,  # Warteschlange leer → wartet auf neue Jobs (kein Auto-Stop)
-    "hold_start":       False,  # Auto-Start aus → wartet im Leerlauf auf „Jetzt starten"
-    "start_now":        False,  # Einmal-Signal: jetzt sofort starten (verbraucht den Halt)
     "start_countdown":  0,      # Sekunden bis zum Start des nächsten Jobs (Header-Anzeige)
     "current_job_id":   None,
     "current_job_idx":  -1,
@@ -1945,17 +1940,17 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             # (im Header sichtbar). Direkt aufeinanderfolgende Jobs (idle == False)
             # starten ohne Extra-Countdown — der Auswurf-Zyklus liegt dazwischen.
             if _farm["idle"]:
-                # Auto-Start-Halt: Jobs warten im Leerlauf, bis der Nutzer „Jetzt
-                # starten" drückt — so kann er die Reihenfolge in Ruhe festlegen.
-                if _farm.get("hold_start") and not _farm.get("start_now"):
-                    _farm["start_countdown"] = 0
-                    await asyncio.sleep(1)
-                    continue   # weiter warten (Reihenfolge bleibt änderbar)
-                if _farm.get("start_now"):
-                    _farm["start_now"] = False        # manueller Start → sofort, ohne Countdown
-                elif not await _prestart_countdown():
+                if not await _prestart_countdown():
                     continue   # gestoppt oder Job entfernt → Schleife neu bewerten
                 _farm["idle"] = False
+                # WICHTIG: Während des Countdowns kann der Nutzer die Reihenfolge
+                # ändern (Drag/↑↓ → /jobs/reorder). Deshalb den jetzt obersten
+                # wartenden Job NEU bestimmen — sonst startet trotz Umsortieren der
+                # vor dem Countdown gemerkte Job.
+                pending = [j for j in _farm["jobs"] if j["status"] == "pending"]
+                if not pending:
+                    continue
+                job = pending[0]
             # Find the index in the full jobs list for UI compat
             for idx, j in enumerate(_farm["jobs"]):
                 if j["id"] == job["id"]:
@@ -2170,10 +2165,6 @@ class QueuePayload(BaseModel):
     jobs: List[dict] = []
 
 
-class AutostartPayload(BaseModel):
-    enabled: bool = True   # True = automatisch (wie bisher); False = im Leerlauf halten
-
-
 # ── Endpoints ────────────────────────────────────────────────
 @router.post("/start")
 async def start_farm(req: StartRequest):
@@ -2199,8 +2190,6 @@ async def start_farm(req: StartRequest):
         "stopping":        False,
         "paused":          False,
         "idle":            False,
-        "hold_start":      bool(_settings.get("autostart_hold", False)),
-        "start_now":       False,
         "start_countdown": 0,
         "bambu_id":        req.bambu_id,   # für Pause/Resume/Stop-Befehle an den X1C
         "error":           None,
@@ -2529,33 +2518,6 @@ async def pause_farm():
         _farm["error"] = None
         await _send_print_cmd("resume")    # X1C-Druck fortsetzen
     return {"success": True, "paused": _farm["paused"]}
-
-
-@router.post("/autostart")
-async def set_autostart(payload: AutostartPayload):
-    """Auto-Start (Halt-Schalter). enabled=True → Jobs starten automatisch (wie bisher);
-    enabled=False → neu in den Leerlauf gekommene Jobs warten auf „Jetzt starten"."""
-    _farm["hold_start"] = not payload.enabled
-    if payload.enabled:
-        _farm["start_now"] = False
-    # Präferenz persistent ablegen, damit sie einen Farm-Neustart übersteht.
-    try:
-        cur = _read_config(SETTINGS_PATH, dict(_DEFAULT_SETTINGS))
-        cur["autostart_hold"] = not payload.enabled
-        _write_config(SETTINGS_PATH, cur)
-    except Exception as e:
-        logger.warning(f"autostart_hold speichern fehlgeschlagen: {e}")
-    return {"success": True, "hold_start": _farm["hold_start"]}
-
-
-@router.post("/start_now")
-async def start_now():
-    """Den gehaltenen Leerlauf-Start sofort auslösen (überspringt den Countdown).
-    Startet den obersten wartenden Job; danach läuft die Queue normal weiter."""
-    if not _farm["running"]:
-        raise HTTPException(400, "Auto Farm läuft nicht")
-    _farm["start_now"] = True
-    return {"success": True}
 
 
 @router.get("/sequences")
