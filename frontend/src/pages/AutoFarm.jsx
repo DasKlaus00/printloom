@@ -685,8 +685,10 @@ function AutoFarm() {
   const runningRef  = useRef(false)
   const rackDataRef = useRef(null)
 
-  const running  = farmStatus?.running  ?? false
-  const paused   = farmStatus?.paused   ?? false
+  const running   = farmStatus?.running    ?? false
+  const paused    = farmStatus?.paused     ?? false
+  const holdStart = farmStatus?.hold_start ?? false   // Auto-Start aus
+  const idle      = farmStatus?.idle       ?? false   // Leerlauf (wartet auf Jobs/Start)
   const farmLog  = farmStatus?.log      ?? []
   // Use current_job_id from backend; fall back to finding any active job
   const curJobId = farmStatus?.current_job_id
@@ -1493,6 +1495,16 @@ function AutoFarm() {
     catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
   }
 
+  // Auto-Start umschalten: holdStart→true heißt aktuell „aus"; enabled = neuer Auto-Zustand.
+  const toggleAutostart = async () => {
+    try { await autofarmService.setAutostart(holdStart); await fetchStatus() }
+    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+  }
+  const doStartNow = async () => {
+    try { await autofarmService.startNow(); await fetchStatus() }
+    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+  }
+
   const saveRackConfig = async () => {
     try {
       await rackManagerService.updateConfig({
@@ -1785,6 +1797,17 @@ function AutoFarm() {
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* Auto-Start-Halt: aus = neue Jobs warten auf „Jetzt starten" (Reihenfolge festlegen) */}
+              {running && (
+                <label className="flex items-center gap-1.5 cursor-pointer select-none mr-1"
+                  title={tr('Auto-Start: aus = neue Jobs warten auf „Jetzt starten", damit du die Reihenfolge festlegen kannst')}>
+                  <span className="text-[11px] text-surface-400">{tr('Auto-Start')}</span>
+                  <button type="button" onClick={toggleAutostart}
+                    className={`relative w-9 h-5 rounded-full transition-colors ${!holdStart ? 'bg-blue-600' : 'bg-surface-700'}`}>
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${!holdStart ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </button>
+                </label>
+              )}
               {/* B.1 Smart-Sortierung */}
               {pendingJobs.length > 1 && (
                 <button
@@ -1865,6 +1888,14 @@ function AutoFarm() {
           {plannerOpen && (
             <div className="mb-4 -mt-1 p-2.5 rounded-xl bg-surface-900/60 border border-surface-700/60">
               <QueuePlanner jobs={jobs} tr={tr} />
+            </div>
+          )}
+
+          {/* Auto-Start aus & Leerlauf: warten, bis der Nutzer die Reihenfolge gesetzt hat */}
+          {running && holdStart && idle && pendingJobs.length > 0 && (
+            <div className="flex items-center gap-3 flex-wrap mb-4 px-3 py-2.5 rounded-xl bg-blue-950/30 border border-blue-800/50">
+              <span className="text-sm text-blue-200">{tr('Auto-Start ist aus — Reihenfolge festlegen, dann starten.')}</span>
+              <button onClick={doStartNow} className="btn btn-primary btn-sm ml-auto">{tr('▶ Jetzt starten')}</button>
             </div>
           )}
 
