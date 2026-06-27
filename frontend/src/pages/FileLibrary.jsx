@@ -797,6 +797,24 @@ function FileLibrary() {
     catch { showFeedback(tr('Löschen fehlgeschlagen'), false); loadFiles() }
   }
 
+  // Mehrere markierte Dateien auf einmal löschen — ein Confirm, dann parallel.
+  const handleBulkDelete = async () => {
+    const ids = [...selected]
+    if (!ids.length) return
+    if (!(await confirmDialog({
+      title: tr('Dateien löschen'),
+      message: tr('{0} ausgewählte Datei(en) löschen? Das kann nicht rückgängig gemacht werden.', ids.length),
+      confirmLabel: tr('Löschen'),
+    }))) return
+    setFiles(prev => prev.filter(f => !selected.has(f.id)))   // optimistic — kein Reload-Sprung
+    setSelected(new Set())
+    const results = await Promise.allSettled(ids.map(id => fileService.deleteFile(id)))
+    const failed = results.filter(r => r.status === 'rejected').length
+    if (failed) { showFeedback(tr('{0} Datei(en) konnten nicht gelöscht werden', failed), false); loadFiles() }
+    else showFeedback(tr('{0} Datei(en) gelöscht', ids.length))
+    loadFolders()
+  }
+
   const handleSend = async (file) => {
     if (!bambuId) return showFeedback(tr('Kein Bambu Lab Gerät konfiguriert'), false)
     setSending(file.id)
@@ -982,6 +1000,10 @@ function FileLibrary() {
             </div>
             <button onClick={() => enqueueFiles(selectedFiles, qty)} disabled={enqueuing}
               className="btn btn-primary btn-sm">{enqueuing ? tr('Füge hinzu…') : tr('In Queue ({0})', selectedFiles.length * qty)}</button>
+            <button onClick={handleBulkDelete} disabled={enqueuing}
+              className="btn btn-danger btn-sm" title={tr('Ausgewählte Dateien löschen')}>
+              {tr('Löschen ({0})', selectedFiles.length)}
+            </button>
             <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm">{tr('Auswahl aufheben')}</button>
             {/* Gesamtkalkulation der Auswahl */}
             <div className="flex items-center gap-3 ml-auto text-[12px]">

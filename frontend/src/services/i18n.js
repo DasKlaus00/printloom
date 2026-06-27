@@ -719,6 +719,13 @@ const EN_STRINGS = {
   'Nach oben': 'Move up',
   'Nach unten': 'Move down',
   'Löschen': 'Delete',
+  'Löschen ({0})': 'Delete ({0})',
+  'Dateien löschen': 'Delete files',
+  'Ausgewählte Dateien löschen': 'Delete selected files',
+  '{0} ausgewählte Datei(en) löschen? Das kann nicht rückgängig gemacht werden.':
+    'Delete {0} selected file(s)? This cannot be undone.',
+  '{0} Datei(en) gelöscht': '{0} file(s) deleted',
+  '{0} Datei(en) konnten nicht gelöscht werden': '{0} file(s) could not be deleted',
   'Schritt verschieben': 'Move step',
   'Bezeichnung': 'Label',
   'Verwendet die Homing-Datei aus Auto Farm → Einstellungen. Bambu meldet FINISH wenn G28+Z200 abgeschlossen → danach wait_print.':
