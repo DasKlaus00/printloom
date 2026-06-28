@@ -187,10 +187,17 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
   const preset    = presets[fileId] ?? { filaments: [] }
   const hasPreset = preset.filaments.length > 0
 
+  // 1.1: zusätzlich server-seitig „festnageln" — dann nutzt der Druck IMMER genau
+  // dieses Material/diese Farbe (kein Auto-Raten), geräteübergreifend & dauerhaft.
+  const pinToServer = (filaments) => {
+    const mapped = (filaments || []).map(f => ({ type: f.material || f.type || '', color: f.color || '' }))
+    autofarmService.setFileFilaments(fileId, mapped).catch(() => {})
+  }
   const save = (next) => {
     const all = { ...loadPresets(), [fileId]: next }
     localStorage.setItem(PRESETS_KEY, JSON.stringify(all))
     setPresets(all)
+    pinToServer(next.filaments)
   }
   const removeEntry = (i) => save({ ...preset, filaments: preset.filaments.filter((_, j) => j !== i) })
   const clearPreset = () => {
@@ -198,6 +205,7 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
     delete all[fileId]
     localStorage.setItem(PRESETS_KEY, JSON.stringify(all))
     setPresets(all)
+    pinToServer([])   // Fixierung auf dem Server aufheben → wieder Auto
   }
 
   const pickFilament = (fil) => {
@@ -246,13 +254,13 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
         className={`flex items-center gap-1.5 text-[11px] transition-colors ${
           hasPreset ? 'text-blue-400 hover:text-blue-300' : 'text-surface-500 hover:text-blue-400'
         }`}
-        title={tr('Filament-Preset für AutoFarm')}
+        title={tr('Filament für diese Datei fixieren — wird beim Druck immer so verwendet')}
       >
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
           <circle cx="12" cy="12" r="4"/>
           <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
         </svg>
-        {tr('Filament-Preset')}{hasPreset ? ` (${preset.filaments.length})` : ''}
+        {hasPreset ? `📌 ${tr('Filament fixiert')} (${preset.filaments.length})` : tr('Filament fixieren')}
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
           className={`transition-transform ${open ? 'rotate-180' : ''}`}>
           <polyline points="6 9 12 15 18 9"/>
@@ -262,9 +270,7 @@ function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
       {open && (
         <div className="mt-2 pl-2 border-l border-surface-700 space-y-1.5">
           <p className="text-[9px] text-surface-600">
-            {amsSlots?.length
-              ? tr('AMS: {0} Slots — beim Hinzufügen wird exakte Farbe gesucht, sonst nächstes gleiches Material', amsSlots.length)
-              : tr('Einmal festlegen — wird beim Hinzufügen zur Queue automatisch auf den passenden AMS-Slot gemappt')}
+            {tr('Festgelegtes Filament wird beim Drucken IMMER verwendet (kein Auto-Raten aus der Datei) und im AMS exakt gesucht. Dauerhaft gespeichert.')}
           </p>
 
           {/* Existing entries */}

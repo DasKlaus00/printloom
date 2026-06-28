@@ -146,6 +146,7 @@ export const autofarmService = {
   getHistory:        ()      => api.get('/autofarm/history'),
   getTimeline:       (hours = 24) => api.get('/autofarm/timeline', { params: { hours } }),
   getFileFilaments:  (id, plate) => api.get(`/autofarm/file_filaments/${id}`, plate != null ? { params: { plate } } : undefined),
+  setFileFilaments:  (id, filaments) => api.put(`/autofarm/file_filaments/${id}`, { filaments }),
   testCycle:         ()      => api.post('/autofarm/test-cycle'),
   testCycleStop:     ()      => api.post('/autofarm/test-cycle/stop'),
   testCycleStatus:   ()      => api.get('/autofarm/test-cycle/status'),

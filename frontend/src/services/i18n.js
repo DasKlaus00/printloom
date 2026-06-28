@@ -834,6 +834,12 @@ const EN_STRINGS = {
   'Keine Filament-Info gefunden': 'No filament info found',
   'Filament-Preset für AutoFarm': 'Filament preset for AutoFarm',
   'Filament-Preset': 'Filament preset',
+  'Filament für diese Datei fixieren — wird beim Druck immer so verwendet':
+    'Pin the filament for this file — always used when printing',
+  'Filament fixieren': 'Pin filament',
+  'Filament fixiert': 'Filament pinned',
+  'Festgelegtes Filament wird beim Drucken IMMER verwendet (kein Auto-Raten aus der Datei) und im AMS exakt gesucht. Dauerhaft gespeichert.':
+    'The chosen filament is ALWAYS used when printing (no auto-guessing from the file) and matched exactly in the AMS. Saved permanently.',
   'AMS: {0} Slots — beim Hinzufügen wird exakte Farbe gesucht, sonst nächstes gleiches Material':
     'AMS: {0} slots — on adding, the exact color is searched, otherwise the nearest same material',
   'Einmal festlegen — wird beim Hinzufügen zur Queue automatisch auf den passenden AMS-Slot gemappt':
