@@ -1,124 +1,134 @@
 # Printloom — Roadmap
 
-> **Leitprinzipien:** Alles läuft lokal & offline-fähig — keine Cloud-Pflicht, keine
-> externe KI-Abhängigkeit. Diese Roadmap enthält **ausschließlich funktionale Features**
-> für den **sicheren, unbeaufsichtigten Dauerbetrieb** und die Wirtschaftlichkeit einer
-> Druckfarm. Keine Spielereien, kein Deko-Kram — jeder Punkt löst ein konkretes Problem.
+10 Phasen × 10 Features. Grob nach Wert/Reihenfolge sortiert: Phase 1 ist der
+aktuelle Schmerz (Filament/AMS-Zuverlässigkeit), danach Onboarding, dann Ausbau
+Richtung Druckfarm-Plattform. „(teils da)" = existiert in Grundzügen und wird
+ausgebaut.
 
-Legende: **Wert** ★ (1–3, Nutzen im Farm-Betrieb) · **Aufwand** S/M/L · ✅ = umgesetzt
-
----
-
-## Säule 1 — Sicherheit & Ausfallschutz  *(höchste Priorität)*
-
-Ohne diese Punkte ist „unbeaufsichtigt" nicht verantwortbar. Ein abgerissener Druck,
-der stundenlang weiterläuft, kostet Material, Zeit und im schlimmsten Fall die Düse.
-
-| Nr. | Feature | ★ | Aufwand | Beschreibung |
-|-----|---------|---|---------|--------------|
-| 1.1 | **Watchdog & Auto-Reconnect** ✅ | ★★★ | M | Reconnect je Poll; bei wiederholtem Verbindungsverlust Push-Alarm, der Druck läuft am Gerät weiter. *(v1.0.30)* |
-| 1.2 | ~~Filament-Runout-Erkennung~~ | — | — | Übernimmt der X1C bereits selbst (eigene Runout-Pause) — nicht nötig. |
-| 1.3 | **Konfigurierbare Fehlerstrategie** ✅ | ★★★ | M | Pro Fehlertyp (HMS, FAILED, Verbindung, Stillstand, Fach, AMS) wählbar: Pausieren / Job überspringen / Farm stoppen / Ignorieren; FAILED mit konfigurierbaren Wiederholungen. *(v1.0.34)* |
-| 1.4 | **Erste-Schicht-Kamera-Check** | ★★ | M | Snapshot nach Layer 1 → bei erkanntem Fehlstart (keine Haftung/Spaghetti) pausieren + Push mit Bild. |
-| 1.5 | **Fehldruck-Erkennung im Lauf** | ★★ | L | Periodische Snapshot-Prüfung auf Spaghetti/Ablösung. Erst regelbasiert, optional lokales Modell — rein lokal. |
-| 1.6 | **Temperatur-Überwachung & Alarm** | ★★ | S | Hotend/Bett/Kammer gegen Grenzwerte prüfen → Übertemperatur sofort pausieren + alarmieren. |
-| 1.7 | **Extrusions-/Verstopfungs-Erkennung** ✅ | ★★ | M | Fortschritts-Watchdog: kein mc_percent-Fortschritt während RUNNING (konfigurierbares Zeitfenster) → Pause + Push-Alarm. *(v1.0.30)* |
-| 1.8 | **Stromausfall-Wiederaufnahme** | ★ | M | Power-Loss-Recovery-Status sichtbar machen und kontrolliert fortsetzen statt blind neu zu starten. |
-
-## Säule 2 — Intelligente Planung
-
-Aus „Liste abarbeiten" wird „effizient planen" — regelbasiert, aus eigener Historie,
-ohne Cloud.
-
-| Nr. | Feature | ★ | Aufwand | Beschreibung |
-|-----|---------|---|---------|--------------|
-| 2.1 | **Smart-Sortierung** ✅ | ★★★ | M | Wartende Jobs nach Filament gruppieren → weniger AMS-/Spulenwechsel. *(v1.0.27)* |
-| 2.2 | **Echte Restzeit-Prognose** ✅ | ★★★ | M | ETA aus tatsächlicher Lauf-Historie statt Slicer-Schätzung (Live > Historie > Slicer). *(v1.0.27)* |
-| 2.3 | **Warteschlangen-Planer** ✅ | ★★ | M | Zeitleiste der Queue mit Fertig-Uhrzeiten; reagiert sofort auf Umsortieren. *(v1.0.27)* |
-| 2.4 | **Auto-Nesting auf Platte** | ★★ | L | Mehrere kleine Teile automatisch zu einer Platte bündeln → eine Druck-/Auswurf-Runde statt vieler. |
-| 2.5 | **Zeitfenster / Betriebszeiten** ✅ | ★★ | S | Neue Jobs nur im definierten Zeitfenster (Von/Bis + Wochentage, über Nacht möglich) starten — Ruhezeiten/Stromtarif; laufende Drucke werden nicht unterbrochen. *(v1.0.55)* |
-| 2.6 | **Job-Prioritäten & Liefertermine** | ★★ | M | Hoch/Normal/Niedrig + Fälligkeitsdatum → automatische Reihenfolge nach Deadline. |
-| 2.7 | **Job-Abhängigkeiten** | ★ | M | „Erst nach Job X" erzwingen (z. B. Baugruppen-Teile in fester Reihenfolge). |
-| 2.8 | **Wiederkehrende Jobs** | ★ | S | Feste Queues per Zeitplan automatisch einreihen (täglich/wöchentlich). |
-
-## Säule 3 — Energie & Betriebskosten
-
-Dauerbetrieb kostet Strom. Sichtbar machen, automatisch abschalten, planbar machen.
-
-| Nr. | Feature | ★ | Aufwand | Beschreibung |
-|-----|---------|---|---------|--------------|
-| 3.1 | **Smart-Plug-Verbrauch** ✅ | ★★★ | M | Tasmota/Shelly/HA-Steckdose auslesen → echter Stromverbrauch je Job statt Schätzung. *(v1.0.29)* |
-| 3.2 | **Auto-Abschaltung im Leerlauf** ✅ | ★★★ | M | Drucker/Kammerlicht/Lüftung nach X Minuten ohne Job stromlos schalten (über 3.1). *(v1.0.29)* |
-| 3.3 | **Off-Peak-Planung** | ★★ | S | Druckstart an günstige Stromtarif-Fenster koppeln. |
-| 3.4 | **Kosten-Tracking & Kalkulation** ✅ | ★★ | S | Filament + Strom + Maschinenzeit → Kosten je Druck/Auftrag, exportierbar. *(v1.0.29)* |
-| 3.5 | **Intelligenter Vorlauf** | ★ | S | Bett/Düse erst rechtzeitig vor Job-Start vorheizen statt dauerhaft warm halten. |
-| 3.6 | **Trockner-Steckdosen-Steuerung** | ★ | S | Filament-Trockner über denselben Plug-Adapter zeit-/feuchtigkeitsgesteuert schalten. |
-| 3.7 | **Lastspitzen-Vermeidung** | ★ | M | Mehrere Aufheizvorgänge zeitlich versetzen, um die Anschlussleistung nicht zu überlasten. |
-
-## Säule 4 — Material & Kalibrierung
-
-Weniger Fehldrucke durch gepflegtes Material-Know-how und Bestandsführung.
-
-| Nr. | Feature | ★ | Aufwand | Beschreibung |
-|-----|---------|---|---------|--------------|
-| 4.1 | **Filamentverbrauch-Tracking** | ★★★ | M | Gramm/Länge je Job aus Druckerdaten, summiert pro Filament/Auftrag. |
-| 4.2 | **Materialbestand & Nachbestell-Warnung** | ★★★ | M | Spulen-Inventar mit Restmenge; Warnung unter Schwelle (optional Spoolman-Anbindung). |
-| 4.3 | **Geführter Kalibrier-Assistent** | ★★ | L | Flow, Pressure Advance, Temp-Tower Schritt für Schritt; Ergebnisse speichern. |
-| 4.4 | **Kalibrierwerte je Spule/Marke** | ★★ | M | Werte pro Filament hinterlegen und beim Druck automatisch anwenden. |
-| 4.5 | **Trocknungs-Tracking** | ★ | S | Pro Spule „zuletzt getrocknet"-Datum + Warnung bei feuchtem Material. |
-| 4.6 | **Spulen-Restgewicht-Kalibrierung** | ★★ | S | Leergewicht je Spulentyp hinterlegen → echtes Restgewicht statt nur Prozent. |
-| 4.7 | **Filament-Lagerzeit-Warnung** | ★ | S | Anbruch-/Ablaufdatum je Spule; Warnung bei zu langer Lagerung. |
-
-## Säule 5 — Steuerung & Hardware
-
-Die Farm werkstatttauglich bedienen — aus der Ferne und mit echter Hardware.
-
-| Nr. | Feature | ★ | Aufwand | Beschreibung |
-|-----|---------|---|---------|--------------|
-| 5.1 | **Kiosk-/Wand-Display** | ★★★ | S | Vollbild-Statusansicht (Queue + Regal + Kamera) für einen Werkstatt-Monitor. |
-| 5.2 | **Physischer NOT-AUS** | ★★★ | M | GPIO-/USB-Taster, der die Farm hart pausiert und alle Geräte deaktiviert. |
-| 5.3 | **NFC/RFID-Spulen-Tags** | ★★ | M | Spule antippen → Filament sofort einem AMS-Fach zuordnen. |
-| 5.4 | **Makro-Pad / Hardware-Buttons** | ★ | M | Physische Tasten (GPIO/Stream-Deck) für Start/Pause/NOT-AUS/Snapshot. |
-
-## Säule 6 — Integration & Auswertung
-
-Daten rein und raus — Anbindung an Werkzeuge, die schon im Einsatz sind.
-
-| Nr. | Feature | ★ | Aufwand | Beschreibung |
-|-----|---------|---|---------|--------------|
-| 6.1 | **Offene REST-/Webhook-API** | ★★★ | M | Farm steuern & Status abrufen von außen; Events als Webhook (z. B. an ERP/Lager). |
-| 6.2 | **Home Assistant / MQTT-Bridge** | ★★ | M | Farm-Status publizieren, in bestehende Dashboards/Automationen einbinden. |
-| 6.3 | **Report-Export (CSV/PDF)** | ★★ | S | Job-Historie, Verbrauch, Kosten, Auslastung exportieren. |
-| 6.4 | **Status-Report (Push/E-Mail)** | ★★ | S | Periodische Zusammenfassung: Jobs, Erfolgsrate, Verbrauch, Kosten, anstehende Wartung. |
-| 6.5 | **Sequenz-/Profil-Sharing-Pakete** | ★ | S | Sequenzen, Filament-Presets & Regal-Layouts als importierbare Datei exportieren (wie die Sprachpakete). |
-| 6.6 | **Wartungsintervall-Tracking** | ★ | S | Erinnerung nach X Druckstunden/Jobs (Düse, Riemen, Reinigung). |
-| 6.7 | **Prometheus-/Metriken-Endpoint** | ★ | S | Farm-Kennzahlen als Prometheus-Format → Grafana-Dashboards ohne Cloud. |
-| 6.8 | **Automatische Backups** | ★★ | S | Zeitgesteuertes Backup der kompletten Konfiguration (lokal), mit Aufbewahrung der letzten N. |
-
-## Säule 7 — Bedienung & Auswertung
-
-Qualitätsmerkmale, die den Alltag spürbar erleichtern.
-
-| Nr. | Feature | ★ | Aufwand | Beschreibung |
-|-----|---------|---|---------|--------------|
-| 7.1 | **3MF-Thumbnails in Queue & Job** | ★★ | M | Eingebettetes Vorschaubild in Warteschlange, Planer und Fach-Belegung. |
-| 7.2 | **Ausschuss-Quote pro Datei** | ★★ | S | Welche Dateien scheitern überdurchschnittlich oft → gezielt nachbessern. |
-| 7.3 | **Auslastungs-Heatmap** | ★ | S | Drucklast nach Wochentag/Stunde → Planung von Wartung & Betrieb. |
-| 7.4 | **Job-Notizen & Kommentare** | ★ | S | Freitext je Job/Auftrag (Kundenhinweis, Sonderbehandlung). |
+> **Zwei sofort gemeldete Probleme** (in Phase 1/2 oben eingeordnet):
+> - AMS nahm beim Druck ein **falsches Filament** („Latte Brown"), obwohl mit
+>   *PLA Dark Red* gesliced wurde **und** Slot 3 *PLA Dark Red* (`#BB3D43`) geladen
+>   war → **exakter Treffer muss immer gewinnen** (Phase 1.1–1.3).
+> - **Zeitzone im Setup-Wizard** verpflichtend abfragen (Phase 2.1).
 
 ---
 
-## Technisches Fundament
+## Phase 1 — Filament & AMS-Zuverlässigkeit *(höchste Priorität)*
+1. **Pro-Datei Filament „festnageln"** beim Upload (Material + Farbe je Extruder verbindlich, wie Printago „Configure") — kein Auto-Raten mehr.
+2. **Exakter-Treffer-Vorrang:** ist die exakte Farbe/Material-Kombi im AMS, wird IMMER dieser Slot genommen, nie eine farbähnliche Alternative.
+3. **AMS-Mapping-Vorschau vor dem Druck:** je Slicer-Filament → gewählter AMS-Slot mit Ampel (exakt / ähnlich / fehlt), bestätigbar.
+4. **„Nur exakt"-Modus** pro Datei/Projekt: lieber pausieren als Ersatzfarbe drucken.
+5. **Manuelles AMS-Override persistent** pro Datei (Server statt localStorage) — übersteht Reload/Gerätewechsel.
+6. **Farbnamen-Auflösung:** AMS-Farbcodes ↔ Klartext (Firebrick, Charcoal, Dark Red …) inkl. Bambu-Katalog.
+7. **Rest­mengen-Tracking** je AMS-Slot + Warnung „reicht nicht für den Job" (Gramm-Abgleich).
+8. **Slot-Belegung manuell pflegen**, wenn das AMS nichts meldet (Generic-Spulen ohne RFID).
+9. **Auswahl-Protokoll:** bei jedem Start loggen, welches Filament warum gewählt wurde (Audit gegen genau diesen Bug).
+10. **Material-Profile** (Marke/Typ/Düsentemp/Trockenstatus) zentral verwalten und an Dateien hängen.
 
-- **WebSocket-Live-Kanal** statt 5-s-Polling — geringere Latenz, weniger Last, Grundlage
-  für Watchdog (1.1) und Kiosk-Display (5.1).
-- **Snapshot-Pipeline** sauber kapseln (einmal greifen, mehrfach nutzen: 1.4, 1.5, 6.4).
-- **Geräte-Adapter-Schicht** für Steckdosen/Sensoren/Tags (3.1, 5.3) — ein Interface,
-  mehrere Backends (HA, Tasmota, Shelly, GPIO).
-- **Verbrauchs-/Historien-Datenmodell** vereinheitlichen (speist 2.2, 3.4, 4.1, 6.3).
+## Phase 2 — Onboarding & Setup-Wizard
+1. **Zeitzone im Wizard** (Pflichtschritt, aus Browser vorbelegt, speicherbar).
+2. **Geführtes Erst-Setup:** Drucker → OTTOeject → Regal kalibrieren → Testlauf, Schritt für Schritt.
+3. **Verbindungs-Selbsttest** (X1C MQTT/FTP, Klipper/Moonraker) mit Klartext-Fehlern + Lösungsvorschlägen.
+4. **Regal-Kalibrier-Assistent** mit Live-Vorschau (Fachhöhe, Toleranz, Magazin).
+5. **AMS-Erkennungs-Check** im Wizard (geladene Slots zur Kontrolle anzeigen).
+6. **Demo-/Beispieldaten** laden (Beispiel-Teil + Sequenz) zum Ausprobieren ohne echten Druck.
+7. **Backup/Restore** der gesamten Konfiguration als eine Datei.
+8. **Sprachwahl** ganz am Anfang (DE/EN).
+9. **Health-Check nach Setup:** Checkliste, was konfiguriert ist / was fehlt.
+10. **„Was ist neu"** beim ersten Start nach Update + Update-Hinweis.
 
----
+## Phase 3 — Warteschlange & Planung
+1. Drag-&-Drop stabiler + **Mehrfachauswahl** verschieben.
+2. **„Als nächstes drucken" / Pinnen** ohne komplettes Umsortieren.
+3. **Wiederkehrende Jobs / geplante Läufe** (z. B. jeden Abend X).
+4. **Endzeit-Prognose** je Job inkl. Betriebszeiten (teils da → ausbauen).
+5. **„Was-wäre-wenn"-Planer:** Reihenfolge testen, bevor man speichert.
+6. **Smart-Sort ausbauen:** Filament-Gruppierung → weniger Spulenwechsel.
+7. **Wartungsfenster** einplanen (z. B. Düsenreinigung nach N Stunden).
+8. **Queue-Richtlinien** als Vorabprüfung (max. Höhe, nur passende Materialien).
+9. **Job-Abhängigkeiten / Sets** (erst A, dann B; zusammen drucken).
+10. **Warteschlange exportieren/importieren** + teilen.
 
-*Priorisierungs-Empfehlung:* **Säule 1 zuerst** — ohne Ausfallschutz ist der unbeaufsichtigte
-Betrieb das größte Risiko. Danach **Säule 3 (Energie)**, sobald die Steckdosen-Adapterschicht
-steht — sie zahlt sich im Dauerbetrieb direkt aus. Säule 2 ist bereits zu großen Teilen live.
+## Phase 4 — Teile-Bibliothek, SKUs & Organisation
+1. **Mehrere Plates/Varianten je Teil** verwalten (Printago „Plates").
+2. **SKUs = Stückliste:** ein Produkt aus mehreren Teilen, ein Klick reiht alle ein.
+3. **Tags / Print-Tags** + gespeicherte Filter / Smart-Ordner.
+4. **Datei-Versionierung** (Replace mit Historie, Rückrollen).
+5. **„Reprocess Metadata"**: Slicer-Daten neu auslesen (Zeit, Gramm, Farben, Kompatibilität).
+6. **Kompatibilität anzeigen** (Druckermodell, Düse, Platte) + Warnung bei Inkompatibilität.
+7. **Bulk-Aktionen** ausbauen (verschieben, taggen, löschen).
+8. **Thumbnails je Plate** + 3D-Vorschau.
+9. **Duplikate-Erkennung** beim Upload (Hash).
+10. **Such-Index** über Name/SKU/Tag/Material/Farbe mit Schnellfiltern.
+
+## Phase 5 — Drucker-, OTTOeject- & Hardware-Steuerung
+1. **Mehrere Sequenz-Profile** je Drucker/Workflow.
+2. **Sequenz-Editor mit Einzel-Schritt-Test** (Makro testen) — ausbauen.
+3. **Kalibrier-Routinen** (Bett, Flow, Platten-Offset) per Knopf.
+4. **OTTOeject-Jog-Steuerung** (manuelles Verfahren) mit Sicherheits-Limits.
+5. **Druckplatten-/Magazin-Verwaltung** (welche Platte liegt wo, Typ je Platte).
+6. **Multi-Schrank-Vorbereitung** (mehrere Regale, X1C-Position links/rechts).
+7. **Notaus / sicheres Parken** zentral.
+8. **Klipper-/Firmware-Status** + Neustart-Buttons.
+9. **Steckdosen-/Energiesteuerung** (Smart-Plug, Auto-Aus nach Leerlauf — teils da).
+10. **Hardware-Profil je Drucker** (Düse, max. Höhe, Bauraum) für die Kompatibilitätsprüfung.
+
+## Phase 6 — Überwachung, Kamera & Fehlererkennung
+1. **Mehrere Kameras** (X1C intern + extern) + Aufnahme/Zeitraffer je Job.
+2. **Fehlschlag-/Spaghetti-Erkennung** → Auto-Pause.
+3. **HMS-Historie** mit Lösungen (aufbauend auf v1.0.63).
+4. **Live-Overlay** im Bild (Schicht, %, Restzeit, Temperaturen).
+5. **Benachrichtigungen ausbauen** (Telegram/Push/E-Mail bei Start/Ende/Fehler/Filament leer).
+6. **Verbindungs-Watchdog** + Alarm bei Abriss (teils da).
+7. **Stillstands-Erkennung** (kein Fortschritt) → Pause/Alarm (teils da).
+8. **Schnappschuss-Galerie** je Job (vorher/nachher — teils da).
+9. **Handy-Fernsteuerung** (PWA) inkl. Pause/Stop/Fortsetzen.
+10. **Ereignis-Zeitleiste** je Drucker mit Filter.
+
+## Phase 7 — Multi-Drucker & Skalierung
+1. **Mehrere Drucker** verwalten (echte Druckfarm).
+2. **Job-Verteilung** auf passenden Drucker (Material/Größe/Auslastung).
+3. **Pro-Drucker-Queue** + globale Übersicht.
+4. **Lastausgleich** / „nächster freier Drucker".
+5. **Drucker-Gruppen / Standorte.**
+6. **Gemeinsamer Spulen-/Material-Pool** über Drucker hinweg.
+7. **Mehrbenutzer & Rollen** (wer darf was).
+8. **Pro-Drucker-Sequenzen & -Kalibrierung.**
+9. **Reservierung/Sperren** eines Druckers (Wartung).
+10. **Skalierung absichern** (viele Jobs/Dateien performant).
+
+## Phase 8 — Analytics, Kosten & Reporting
+1. **Kosten je Job/Teil** (Material + Strom + Maschinenstunde — teils da → ausbauen).
+2. **Material-Verbrauch** je Farbe/Marke über Zeit.
+3. **Auslastung/Erfolgsquote/Fehlerstatistik** je Drucker.
+4. **Durchsatz-Report** (Teile/Tag, Druckstunden).
+5. **Energie-Report** (kWh, Kosten — teils da).
+6. **Export** als CSV/PDF.
+7. **Preis-/Angebotskalkulation** je Teil (Marge).
+8. **Verbrauchsprognose** + Nachbestell-Hinweis für Filament.
+9. **Echte-Druckzeiten-Historie** → bessere Schätzungen (teils da).
+10. **Frei anordbare Dashboards/Widgets** (teils da → ausbauen).
+
+## Phase 9 — Aufträge, SKUs & Fulfillment
+1. **Orders:** Kunde + Positionen (SKUs/Mengen) → automatisch in die Queue.
+2. **Auftragsstatus** (offen/druckt/fertig/versendet) + Fortschritt.
+3. **Shop-Anbindung** (Etsy/Shopify/WooCommerce) → Bestellung = Druckauftrag.
+4. **Label-/Lieferschein-Druck.**
+5. **Lagerbestand fertiger Teile** (auf Lager/verkauft).
+6. **Chargen-/Serien-Druck** (N Stück eines SKU) mit Abhaken (Projekt-Tab → ausbauen).
+7. **Kunden-/Projekt-Zuordnung** je Druck.
+8. **Priorisierung nach Liefertermin.**
+9. **Wiederholbestellung** mit einem Klick.
+10. **Rechnungs-/Kostenübersicht** je Auftrag.
+
+## Phase 10 — Integration, API & Erweiterbarkeit
+1. **Öffentliche REST-API** + API-Keys.
+2. **Webhooks** (Job-Start/-Ende/-Fehler) für eigene Automatisierungen.
+3. **Home Assistant / MQTT**-Integration (Status, Steuerung).
+4. **Slicer-Hotfolder/-Plugin:** direkt aus OrcaSlicer/Bambu Studio nach Printloom.
+5. **Drag-&-Drop-Upload aus dem Slicer** („Hot Drop"-Stil).
+6. **PWA/Mobile** verbessern (Offline, Push, Home-Screen).
+7. **Plugin-/Addon-System** (eigene Schritte/Integrationen).
+8. **Weitere Sprachen** ausbauen.
+9. **SSO / Reverse-Proxy / HTTPS-Anleitung** + Auth.
+10. **Sicherer Remote-Zugriff / Cloud-Sync** für unterwegs.
