@@ -71,6 +71,21 @@ def test_color_beats_emptier_spool():
     assert mapping == [0]
 
 
+def test_exact_color_beats_emptier_similar():
+    """Regression: Dark Red (#BB3D43) wurde durch ein leereres, nur farbnahes
+    Latte Brown ersetzt. Eine EXAKTE Farbe muss eine nur ähnliche immer schlagen,
+    auch wenn die ähnliche Spule leerer ist — sowohl im Live-Mapping (Druck) als
+    auch in der Confident-Prüfung."""
+    from app.routers.printer import _match_ams_live
+    ams = {"ams": [{"id": 0, "tray": [
+        {"id": 0, "tray_type": "PLA", "tray_color": "A06840FF", "remain": 10},   # Latte Brown, fast leer, farbnah (~51)
+        {"id": 2, "tray_type": "PLA", "tray_color": "BB3D43FF", "remain": 90},   # exaktes Dark Red, fast voll
+    ]}]}
+    assert _match_ams_live(["PLA"], ["#BB3D43"], ams) == [2]
+    mapping, missing = _ams_match_confident(["PLA"], ["#BB3D43"], ams)
+    assert missing == [] and mapping == [2]
+
+
 def test_missing_material_flagged():
     _, missing = _ams_match_confident(["TPU"], ["#FFFFFF"], _ams("PETG", "FFFFFFFF"))
     assert len(missing) == 1 and missing[0]["reason"] == "kein passendes Material im AMS"

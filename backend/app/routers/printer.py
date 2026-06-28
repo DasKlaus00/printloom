@@ -234,7 +234,8 @@ def _color_dist(hex1: str, hex2: str) -> float:
     return ((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2) ** 0.5
 
 
-AMS_COLOR_THRESHOLD = 80  # keep in sync with frontend amsUtils.js
+AMS_COLOR_THRESHOLD   = 80  # keep in sync with frontend amsUtils.js — Grenze „noch akzeptabel"
+EXACT_COLOR_THRESHOLD = 40  # darunter gilt die Farbe als „exakt dieselbe"
 
 
 def _tray_remain(tray: dict) -> int:
@@ -245,22 +246,36 @@ def _tray_remain(tray: dict) -> int:
         return -1
 
 
+def _color_tier(d: float) -> int:
+    """0 = exakte Farbe, 1 = ähnlich (Ersatz), 2 = weit weg (Notnagel)."""
+    if d <= EXACT_COLOR_THRESHOLD:
+        return 0
+    if d <= AMS_COLOR_THRESHOLD:
+        return 1
+    return 2
+
+
 def _pick_slot(candidates: list, fcolor_clean: str) -> dict:
     """Pick the best tray among same-material candidates.
 
-    Priority: 1) colour match (trays within AMS_COLOR_THRESHOLD count as equally good),
-    2) least filament left, so near-empty spools get used up first. `remain` is a
-    percentage; -1 (unknown) is treated as 'full' so known-low spools are consumed first.
-    Colour always wins over 'emptier' — a full matching-colour spool beats an empty
-    wrong-colour one.
+    Drei Farbstufen mit klarer Priorität:
+      0) EXAKTE Farbe (RGB-Distanz ≤ EXACT_COLOR_THRESHOLD),
+      1) ähnliche Farbe (≤ AMS_COLOR_THRESHOLD) — nur als Ersatz,
+      2) weit entfernt — Notnagel.
+    Eine **exakte** Farbe schlägt IMMER eine nur ähnliche, selbst wenn die ähnliche
+    Spule leerer ist. Erst INNERHALB derselben Stufe wird die leerste passende Spule
+    zuerst aufgebraucht (`remain`; -1/unbekannt = „voll" → zuletzt). Bei Stufe 2 zählt
+    die nächste Farbe. Damit gewinnt z. B. „Dark Red" nicht mehr gegen ein ebenfalls
+    geladenes „Dark Red", nur weil „Latte Brown" zufällig farbnah und leerer ist.
     """
     def _rem(s):
         r = s.get('remain', -1)
         return r if isinstance(r, int) and r >= 0 else 101  # unknown → last
     def _key(s):
         d = _color_dist(fcolor_clean, s['color']) if (fcolor_clean and s['color']) else 0.0
-        tier = 0 if d <= AMS_COLOR_THRESHOLD else 1
-        return (tier, d if tier else 0.0, _rem(s), s['gid'])
+        tier = _color_tier(d)
+        # exakt/ähnlich: leerste Spule zuerst; weit weg: nächste Farbe zuerst
+        return (tier, _rem(s) if tier < 2 else 0, d, s['gid'])
     return min(candidates, key=_key)
 
 
