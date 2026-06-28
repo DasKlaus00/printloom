@@ -22,7 +22,7 @@ const norm = c => (c || '').replace('#', '').toUpperCase().slice(0, 6)
  * close colour). Empty array → safe to print automatically.
  * filaments: [{type, color}], amsSlots: [{gid, type, color}]
  */
-export function amsMissing(filaments, amsSlots) {
+export function amsMissing(filaments, amsSlots, exactOnly = false) {
   const slots = (amsSlots || []).map(s => {
     const type = (s.type || '').toUpperCase().trim()
     return { gid: s.gid, type, base: type.split(/\s+/)[0], color: norm(s.color) }
@@ -46,8 +46,11 @@ export function amsMissing(filaments, amsSlots) {
     }
     if (fcolor && cands.some(s => s.color)) {
       const best = cands.reduce((a, b) => (colorDist(fcolor, a.color) <= colorDist(fcolor, b.color) ? a : b))
-      if (colorDist(fcolor, best.color) > AMS_COLOR_THRESHOLD) {
+      const d = colorDist(fcolor, best.color)
+      if (d > AMS_COLOR_THRESHOLD) {
         missing.push({ index: i, type: f.type, color: f.color, reason: 'Farbe weicht ab' })
+      } else if (exactOnly && d > EXACT_COLOR_THRESHOLD) {
+        missing.push({ index: i, type: f.type, color: f.color, reason: 'keine exakte Farbe' })
       }
     }
   })

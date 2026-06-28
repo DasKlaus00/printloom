@@ -341,7 +341,7 @@ def _ams_slots_from_raw(ams_raw: dict) -> list:
     return slots
 
 
-def _ams_match_confident(types: list, colors: list, ams_raw: dict) -> tuple:
+def _ams_match_confident(types: list, colors: list, ams_raw: dict, exact_only: bool = False) -> tuple:
     """Check whether every required filament has a usable AMS match.
 
     A filament is matched as long as a loaded tray with the same material exists;
@@ -350,6 +350,10 @@ def _ams_match_confident(types: list, colors: list, ams_raw: dict) -> tuple:
     blocks. Returns (mapping, missing) where `missing` only contains filaments with
     NO matching material at all, or where the AMS could not be read — those still
     require manual AMS assignment.
+
+    `exact_only` (1.4): wenn True, gilt ein nur farbähnlicher Treffer (Distanz >
+    EXACT_COLOR_THRESHOLD) NICHT als ausreichend → kommt in `missing` („keine exakte
+    Farbe"), damit die Farm pausiert statt eine Ersatzfarbe zu drucken.
     """
     slots = _ams_slots_from_raw(ams_raw)
     mapping, missing = [], []
@@ -374,6 +378,10 @@ def _ams_match_confident(types: list, colors: list, ams_raw: dict) -> tuple:
             continue
 
         best = _pick_slot(candidates, fcolor_clean)
+        if exact_only and fcolor_clean and best.get('color') and \
+                _color_dist(fcolor_clean, best['color']) > EXACT_COLOR_THRESHOLD:
+            missing.append({"index": i, "type": ftype, "color": fcolor,
+                            "reason": "keine exakte Farbe geladen"})
         mapping.append(best['gid'])
     return mapping, missing
 

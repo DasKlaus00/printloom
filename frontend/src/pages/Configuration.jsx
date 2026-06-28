@@ -139,6 +139,7 @@ function FarmSettings() {
   const [pollInterval,    setPollInterval]    = useState(20)
   const [minPrintMinutes, setMinPrintMinutes] = useState(0)
   const [useAms,          setUseAms]          = useState(true)
+  const [exactColorOnly,  setExactColorOnly]  = useState(false)   // 1.4
   const [connAlarm,       setConnAlarm]       = useState(true)
   const [stallMin,        setStallMin]        = useState(0)
   const [ophEnabled,      setOphEnabled]      = useState(false)         // 2.5 Betriebszeiten
@@ -164,6 +165,7 @@ function FarmSettings() {
         setPollInterval(r.data.poll_interval ?? 20)
         setMinPrintMinutes(r.data.min_print_minutes ?? 0)
         setUseAms(r.data.use_ams ?? true)
+        setExactColorOnly(!!r.data.exact_color_only)
         setConnAlarm(r.data.conn_alarm ?? true)
         setStallMin(r.data.progress_stall_min ?? 0)
         setOphEnabled(r.data.operating_hours_enabled ?? false)
@@ -189,6 +191,7 @@ function FarmSettings() {
     try {
       await autofarmService.saveSettings({
         poll_interval: pollInterval, min_print_minutes: minPrintMinutes, use_ams: useAms,
+        exact_color_only: exactColorOnly,
         conn_alarm: connAlarm, progress_stall_min: Math.max(0, Math.round(Number(stallMin) || 0)),
         operating_hours_enabled: ophEnabled, operating_schedule: ophSchedule,
         timezone: tz || browserTz,
@@ -243,6 +246,16 @@ function FarmSettings() {
           <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${useAms ? 'translate-x-4' : 'translate-x-0'}`} />
         </button>
       </div>
+      {useAms && (
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-surface-400 select-none flex-1">{tr('Nur exakte Farbe drucken')}
+            <span className="block text-[9px] text-surface-700">{tr('Keine ähnliche Ersatzfarbe — ohne exakten Treffer pausiert die Farm zur manuellen Zuordnung')}</span></label>
+          <button onClick={() => setExactColorOnly(v => !v)}
+            className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${exactColorOnly ? 'bg-blue-600' : 'bg-surface-700'}`}>
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${exactColorOnly ? 'translate-x-4' : 'translate-x-0'}`} />
+          </button>
+        </div>
+      )}
 
       {/* Watchdog (Roadmap 1.1 / 1.7) */}
       <div className="border-t border-surface-800/40 pt-3 space-y-2.5">

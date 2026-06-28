@@ -77,7 +77,11 @@ _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": Tru
                      # Legacy-Felder (vor v1.0.59) — nur noch für Migration alter Configs:
                      "operating_start":         "22:00",
                      "operating_end":           "06:00",
-                     "operating_days":          [0, 1, 2, 3, 4, 5, 6]}  # 0=Mo … 6=So
+                     "operating_days":          [0, 1, 2, 3, 4, 5, 6],  # 0=Mo … 6=So
+                     # „Nur exakte Farbe" (1.4): True → es wird NICHT auf eine nur
+                     # ähnliche Ersatzfarbe ausgewichen. Ohne exakten Treffer pausiert
+                     # die Farm (manuelle AMS-Zuordnung), statt falsch zu drucken.
+                     "exact_color_only":        False}
 
 # ── Homing .3mf generator ────────────────────────────────────
 _HOMING_GCODE = """; Printloom Homing Sequence
@@ -918,7 +922,7 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
     notified = False
     while not _farm["stopping"]:
         ams_raw = await _read_live_ams(device)
-        _, missing = _ams_match_confident(types, colors, ams_raw)
+        _, missing = _ams_match_confident(types, colors, ams_raw, _farm.get("exact_color_only", False))
         if not missing:
             _set_job(job["id"], {"needs_ams": False, "ams_missing": []})
             _farm["error"] = None
@@ -2156,6 +2160,7 @@ class SettingsPayload(BaseModel):
     timezone:                str  = ""         # IANA-TZ des Nutzers (z. B. "Europe/Berlin")
     operating_hours_enabled: bool = False
     operating_schedule:      List[dict] = []   # 7 Einträge [{enabled,start,end}], Index 0=Mo
+    exact_color_only:        bool = False      # nur exakte Farbe drucken, sonst pausieren
     # Legacy (vor v1.0.59) — weiterhin akzeptiert für alte Clients/Backups:
     operating_start:         str  = "22:00"
     operating_end:           str  = "06:00"
@@ -2210,6 +2215,7 @@ async def start_farm(req: StartRequest):
         "operating_hours_enabled": bool(_settings.get("operating_hours_enabled", False)),
         "operating_schedule":      _operating_schedule(_settings),
         "operating_tz":            str(_settings.get("timezone", "") or ""),
+        "exact_color_only":        bool(_settings.get("exact_color_only", False)),
     })
 
     _farm.pop("_no_slot_logged", None)   # „Regal voll"-Log-Dedup nicht über Läufe schleppen

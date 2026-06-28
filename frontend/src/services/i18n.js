@@ -904,6 +904,10 @@ const EN_STRINGS = {
   'Keine Filament-Info in Datei (älteres Format)': 'No filament info in file (older format)',
   'Kein AMS erkannt — Drucker offline?': 'No AMS detected — printer offline?',
   'Farbe unterschiedlich': 'Color differs',
+  'Nur exakte Farbe drucken': 'Print exact color only',
+  'Keine ähnliche Ersatzfarbe — ohne exakten Treffer pausiert die Farm zur manuellen Zuordnung':
+    'No similar substitute color — without an exact match the farm pauses for manual assignment',
+  'keine exakte Farbe': 'no exact color',
   'AMS-Zuordnung (Vorschau)': 'AMS mapping (preview)',
   'Trefferqualität': 'Match quality',
   'exakt': 'exact',

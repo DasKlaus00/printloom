@@ -700,6 +700,7 @@ function AutoFarm() {
   const [pollInterval,    setPollInterval]    = useState(20)
   const [minPrintMinutes, setMinPrintMinutes] = useState(0)
   const [useAms,          setUseAms]          = useState(true)
+  const [exactColorOnly,  setExactColorOnly]  = useState(false)   // 1.4: nur exakte Farbe (read-only; gesetzt in Configuration)
   const [settingsLoaded,  setSettingsLoaded]  = useState(false)
   const [queueLoaded,     setQueueLoaded]     = useState(false)
   const [homingFile,      setHomingFile]      = useState(null)   // {configured, file_id, filename}
@@ -988,6 +989,7 @@ function AutoFarm() {
         setPollInterval(Math.max(1, r.data.poll_interval ?? 20))
         setMinPrintMinutes(r.data.min_print_minutes ?? 0)
         setUseAms(r.data.use_ams ?? true)
+        setExactColorOnly(!!r.data.exact_color_only)
       })
       .catch(() => {})
       .finally(() => setSettingsLoaded(true))
@@ -1157,7 +1159,7 @@ function AutoFarm() {
   // Filaments of a job that have no confident match in the live AMS.
   const jobAmsMissing = (job) =>
     (useAms && amsSlots.length > 0 && !(job.amsMap || '').trim() && job.filaments?.length > 0)
-      ? amsMissing(job.filaments, amsSlots) : []
+      ? amsMissing(job.filaments, amsSlots, exactColorOnly) : []
   const jobNeedsAms = (job) => job.needs_ams === true || jobAmsMissing(job).length > 0
 
   /* ── Job helpers ─────────────────────────────────────────── */
