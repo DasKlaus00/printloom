@@ -5,7 +5,7 @@ import { confirmDialog } from '../services/confirm'
 
 /* Häufige Zeitzonen für die Auswahl (IANA). Die erkannte Browser-Zone wird bei
    Bedarf vorangestellt, damit sie immer wählbar ist. */
-const TIMEZONES = [
+export const TIMEZONES = [
   'Europe/Berlin', 'Europe/Vienna', 'Europe/Zurich', 'Europe/London', 'Europe/Paris',
   'Europe/Amsterdam', 'Europe/Madrid', 'Europe/Rome', 'Europe/Warsaw', 'Europe/Prague',
   'Europe/Stockholm', 'Europe/Helsinki', 'Europe/Athens', 'Europe/Istanbul', 'Europe/Moscow',

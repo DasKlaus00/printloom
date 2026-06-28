@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { deviceService, rackManagerService, autofarmService } from '../services/api'
 import { useLanguage } from '../services/i18n'
+import { TIMEZONES } from './Configuration'
 
 export const SETUP_DONE_KEY = 'ottomat3d_setup_done'
 
@@ -30,6 +31,11 @@ function StepDots({ step }) {
 export default function Setup({ setCurrentPage }) {
   const { tr } = useLanguage()
   const [step, setStep] = useState(0)
+
+  // Step 0 — Zeitzone (2.1): Basis für Betriebszeiten/Uhrzeiten. Container läuft i. d. R.
+  // in UTC → ohne Zeitzone würde die Farm zur falschen Uhrzeit starten.
+  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  const [tz, setTz] = useState(browserTz)
 
   // Step 1 — printer
   const [devices, setDevices]   = useState([])
@@ -61,7 +67,18 @@ export default function Setup({ setCurrentPage }) {
 
   useEffect(() => {
     deviceService.listDevices().then(r => setDevices(r.data ?? [])).catch(() => {})
-  }, [])
+    // Gespeicherte Zeitzone laden; sonst die Browser-Zone vorbelegen und gleich sichern.
+    autofarmService.getSettings().then(r => {
+      const stored = r.data?.timezone || ''
+      setTz(stored || browserTz)
+      if (!stored && browserTz) autofarmService.saveSettings({ timezone: browserTz }).catch(() => {})
+    }).catch(() => {})
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveTz = (z) => {
+    setTz(z)
+    autofarmService.saveSettings({ timezone: z }).catch(() => {})
+  }
 
   // Load rack config + homing info lazily when reaching those steps
   useEffect(() => {
@@ -190,6 +207,18 @@ export default function Setup({ setCurrentPage }) {
               <li>{tr('Regal konfigurieren (Anzahl, Fächer, Fachhöhe)')}</li>
               <li>{tr('Homing-Datei für den Auswurf erstellen')}</li>
             </ul>
+
+            {/* 2.1: Zeitzone gleich am Anfang — Basis für Betriebszeiten & Uhrzeiten */}
+            <div className="border border-surface-700 rounded-lg p-3 bg-surface-900/50">
+              <label className="text-xs font-medium text-surface-300 block mb-1">🕒 {tr('Zeitzone')}</label>
+              <p className="text-[10px] text-surface-600 mb-2">{tr('Maßgeblich für Betriebszeiten & angezeigte Uhrzeiten. Der Server läuft sonst in UTC — die Farm würde zur falschen Uhrzeit starten.')}</p>
+              <select value={tz} onChange={e => saveTz(e.target.value)} className="w-full text-sm">
+                {(TIMEZONES.includes(tz) ? TIMEZONES : [tz, ...TIMEZONES]).map(z => (
+                  <option key={z} value={z}>{z}{z === browserTz ? tr(' (erkannt)') : ''}</option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex justify-end pt-2">
               <button onClick={next} className="btn-primary text-sm">{tr("Los geht's →")}</button>
             </div>

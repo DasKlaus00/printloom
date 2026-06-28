@@ -1087,6 +1087,9 @@ const EN_STRINGS = {
   'belegt': 'occupied',
   'Uhrzeit': 'Time',
   'Zeitzone': 'Time zone',
+  'Maßgeblich für Betriebszeiten & angezeigte Uhrzeiten. Der Server läuft sonst in UTC — die Farm würde zur falschen Uhrzeit starten.':
+    'Determines operating hours & displayed times. Otherwise the server runs in UTC — the farm would start at the wrong time.',
+  ' (erkannt)': ' (detected)',
   'Maßgeblich für Betriebszeiten & Uhrzeiten.': 'Determines operating hours & clock times.',
   'Betriebszeiten': 'Operating hours',
   'Neue Drucke nur im Zeitfenster starten (Ruhezeiten / Stromtarif). Laufende Drucke werden nicht unterbrochen.': 'Only start new prints within the time window (quiet hours / electricity tariff). Running prints are not interrupted.',
