@@ -2,7 +2,8 @@
 // UI can flag "manuelle AMS-Festlegung notwendig" and block the start before the
 // farm even runs. Keep the logic in sync with backend/app/routers/printer.py.
 
-export const AMS_COLOR_THRESHOLD = 80
+export const AMS_COLOR_THRESHOLD   = 80   // „noch akzeptabel" — sync mit backend printer.py
+export const EXACT_COLOR_THRESHOLD = 40   // „exakt dieselbe Farbe" — sync mit backend printer.py
 
 export function colorDist(hex1, hex2) {
   const p = h => {
@@ -51,4 +52,32 @@ export function amsMissing(filaments, amsSlots) {
     }
   })
   return missing
+}
+
+/**
+ * Read-only AMS-Mapping-Vorschau (1.3): zeigt je Datei-Filament den voraussichtlich
+ * gewählten AMS-Slot und die Trefferqualität. Spiegelt die 3-Stufen-Logik des
+ * Backends (_pick_slot): exact ≤ EXACT, similar ≤ AMS_COLOR_THRESHOLD, sonst far.
+ * Rückgabe je Filament: {index, type, color, slot|null, quality}.
+ * quality ∈ 'exact' | 'similar' | 'far' | 'missing' | 'unreadable'.
+ */
+export function amsAutoMap(filaments, amsSlots) {
+  const slots = (amsSlots || []).map(s => {
+    const type = (s.type || '').toUpperCase().trim()
+    return { gid: s.gid, type, base: type.split(/\s+/)[0], color: norm(s.color) }
+  })
+  return (filaments || []).map((f, i) => {
+    const ftype = (f.type || '').toUpperCase().trim()
+    const fbase = ftype.split(/\s+/)[0]
+    const fcolor = norm(f.color)
+    if (!slots.length) return { index: i, type: f.type, color: f.color, slot: null, quality: 'unreadable' }
+    const cands = slots.filter(s => fbase && (
+      fbase === s.base || s.type.includes(fbase) || (s.base && ftype.includes(s.base))
+    ))
+    if (!cands.length) return { index: i, type: f.type, color: f.color, slot: null, quality: 'missing' }
+    const best = cands.reduce((a, b) => (colorDist(fcolor, a.color) <= colorDist(fcolor, b.color) ? a : b))
+    const d = (fcolor && best.color) ? colorDist(fcolor, best.color) : 0
+    const quality = d <= EXACT_COLOR_THRESHOLD ? 'exact' : (d <= AMS_COLOR_THRESHOLD ? 'similar' : 'far')
+    return { index: i, type: f.type, color: f.color, slot: best, quality }
+  })
 }

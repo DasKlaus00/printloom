@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService, systemService } from '../services/api'
 import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout, GRID_VERSION } from '../components/DashboardGrid'
 import { parseSlotKey, slotsNeeded, autoSlot, checkClearance, slotTolerance } from '../services/rackUtils'
-import { amsMissing, colorDist } from '../services/amsUtils'
+import { amsMissing, colorDist, amsAutoMap, EXACT_COLOR_THRESHOLD, AMS_COLOR_THRESHOLD } from '../services/amsUtils'
+import { colorLabel } from '../services/colorNames'
 import { useQueueEta, fmtDur, jobPrintSec, ensureMeta, getCachedMeta, CHANGEOVER_SEC } from '../services/useQueueEta'
 import { gateStart } from '../services/operatingHours'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
@@ -57,6 +58,52 @@ const loadTemplates = () => {
   try { return JSON.parse(localStorage.getItem(TEMPLATES_KEY) || '{}') } catch { return {} }
 }
 
+// Trefferqualität → Ampel-Farbe + Label (geteilt von Vorschau & Mapper).
+const AMS_Q = {
+  exact:      { dot: 'bg-emerald-500', text: 'text-emerald-400', label: 'exakt' },
+  similar:    { dot: 'bg-amber-500',   text: 'text-amber-400',   label: 'ähnlich' },
+  far:        { dot: 'bg-red-500',     text: 'text-red-400',     label: 'Farbe weicht ab' },
+  missing:    { dot: 'bg-red-500',     text: 'text-red-400',     label: 'kein Material' },
+  unreadable: { dot: 'bg-surface-600', text: 'text-surface-500', label: 'AMS offline' },
+}
+const colorQuality = (d) => d <= EXACT_COLOR_THRESHOLD ? 'exact' : (d <= AMS_COLOR_THRESHOLD ? 'similar' : 'far')
+
+function AmsDot({ hex }) {
+  const c = hex ? (hex.startsWith('#') ? hex : `#${hex}`) : '#555'
+  return <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0" style={{ backgroundColor: c }} />
+}
+
+// Read-only AMS-Mapping-Vorschau (1.3) mit Ampel + Klartext-Farbnamen (1.6).
+function AmsPreview({ filaments, amsSlots }) {
+  const { tr } = useLanguage()
+  if (!filaments?.length || !amsSlots?.length) return null
+  const rows = amsAutoMap(filaments, amsSlots)
+  return (
+    <div className="space-y-1 mt-1.5">
+      <p className="text-[9px] uppercase tracking-wide text-surface-600">{tr('AMS-Zuordnung (Vorschau)')}</p>
+      {rows.map((r, i) => {
+        const q = AMS_Q[r.quality] ?? AMS_Q.unreadable
+        return (
+          <div key={i} className="flex items-center gap-1.5 text-[10px]">
+            <AmsDot hex={r.color} />
+            <span className="text-surface-400 truncate max-w-[7rem]">{(r.type || '?')}{r.color ? ` · ${colorLabel(r.color)}` : ''}</span>
+            <span className="text-surface-700">→</span>
+            {r.slot ? (
+              <>
+                <AmsDot hex={r.slot.color} />
+                <span className="text-surface-400 truncate max-w-[7rem]">{colorLabel(r.slot.color)}<span className="text-surface-600 font-mono"> [{r.slot.gid}]</span></span>
+              </>
+            ) : <span className="text-surface-500">{tr('—')}</span>}
+            <span className={`ml-auto flex items-center gap-1 ${q.text}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${q.dot}`} />{tr(q.label)}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function AmsMapper({ filaments, amsSlots, value, onChange }) {
   const { tr } = useLanguage()
   const norm = c => (c||'').replace('#','').toUpperCase().slice(0,6)
@@ -89,12 +136,13 @@ function AmsMapper({ filaments, amsSlots, value, onChange }) {
         const slot    = amsSlots.find(s => s.gid === mapArr[fi]) ?? amsSlots[0]
         const fColor  = norm(f.color)
         const sColor  = norm(slot?.color)
-        const matches = fColor && sColor && fColor === sColor
+        const q       = AMS_Q[colorQuality((fColor && sColor) ? colorDist(fColor, sColor) : 0)]
         return (
           <div key={fi} className="flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0"
-                  style={{ backgroundColor: f.color ? (f.color.startsWith('#') ? f.color : `#${f.color}`) : '#555' }} />
-            <span className="text-[10px] text-surface-400 w-16 truncate shrink-0">{f.type||'?'}</span>
+            <AmsDot hex={f.color} />
+            <span className="text-[10px] text-surface-400 w-20 truncate shrink-0" title={f.color ? colorLabel(f.color) : ''}>
+              {f.type||'?'}{f.color ? ` · ${colorLabel(f.color)}` : ''}
+            </span>
             <span className="text-surface-700 text-[10px]">→</span>
             <select
               value={mapArr[fi] ?? ''}
@@ -102,12 +150,13 @@ function AmsMapper({ filaments, amsSlots, value, onChange }) {
               className="flex-1 text-[10px] font-mono h-6 py-0"
             >
               {amsSlots.map(s => (
-                <option key={s.gid} value={s.gid}>[{s.gid}] {s.type}{s.color ? ` #${s.color.slice(0,6)}` : ''}</option>
+                <option key={s.gid} value={s.gid}>[{s.gid}] {s.type}{s.color ? ` · ${colorLabel(s.color)}` : ''}</option>
               ))}
             </select>
-            <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0"
-                  style={{ backgroundColor: slot?.color ? `#${slot.color.slice(0,6)}` : '#555' }} />
-            {!matches && <span className="text-amber-500 text-[9px]" title={tr('Farbe unterschiedlich')}>⚠</span>}
+            <AmsDot hex={slot?.color} />
+            <span className={`flex items-center gap-0.5 text-[9px] shrink-0 ${q.text}`} title={tr('Trefferqualität')}>
+              <span className={`w-1.5 h-1.5 rounded-full ${q.dot}`} />{tr(q.label)}
+            </span>
           </div>
         )
       })}
@@ -2026,6 +2075,12 @@ function AutoFarm() {
                           }}
                         />
                       </div>
+                    )}
+
+                    {/* ── AMS-Mapping-Vorschau (1.3): wenn alles passt, zeigt sie nur,
+                           welcher Slot je Filament genommen wird (exakt/ähnlich) ── */}
+                    {!jobNeedsAms(job) && !(job.amsMap || '').trim() && useAms && (job.filaments?.length > 0) && amsSlots.length > 0 && (
+                      <AmsPreview filaments={job.filaments} amsSlots={amsSlots} />
                     )}
 
                     {/* ── Snapshot (best-effort; blendet sich aus, wenn kein Bild da ist) ── */}
