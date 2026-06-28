@@ -3,6 +3,7 @@ import { rackManagerService } from '../services/api'
 import { useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
+import RackPreview from '../components/RackPreview'
 
 const STATUS_META = {
   free:     { label: 'Leer',     dot: 'dot-gray',  bg: 'bg-surface-800',    border: 'border-surface-700' },
@@ -411,6 +412,9 @@ function RackManager() {
             </p>
           </div>
         </div>
+
+        {/* 2.4 — Live-Vorschau: aktualisiert sich beim Tippen */}
+        <RackPreview numRacks={numRacks} slotsPerRack={slotsPerRack} slotHeightMm={slotH} />
 
         <div className="flex items-center gap-4">
           <button onClick={handleSave} disabled={saving || !hasChanges} className="btn btn-primary">

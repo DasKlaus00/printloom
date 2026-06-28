@@ -27,6 +27,7 @@ export const fileService = {
   queryFiles:   (params = {}) => api.get('/files/', { params: { limit: 500, ...params } }),
   updateFile:   (id, data) => api.patch(`/files/${id}`, data),
   deleteFile:   (id)       => api.delete(`/files/${id}`),
+  createDemo:   ()         => api.post('/files/demo'),
   getAmsInfo:   (id)       => api.get(`/files/${id}/ams-info`),
   deepAnalyze:  (id)       => api.get(`/files/${id}/deep-analyze`),
   getQuickMeta: (id)       => api.get(`/files/${id}/quick-meta`),

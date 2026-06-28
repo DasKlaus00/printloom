@@ -796,6 +796,13 @@ function FileLibrary() {
 
   const handleInput  = (e) => doUpload(e.target.files)
   const handleDrop   = (e) => { e.preventDefault(); setDrag(false); doUpload(e.dataTransfer.files) }
+  const loadDemo = async () => {
+    try {
+      const r = await fileService.createDemo()
+      await Promise.all([loadFiles(), loadFolders()])
+      showFeedback(r.data.created ? tr('Beispiel-Teil geladen') : tr('Beispiel-Teil ist bereits vorhanden'))
+    } catch { showFeedback(tr('Beispiel-Teil konnte nicht geladen werden'), false) }
+  }
   const handleDelete = async (id, name) => {
     if (!(await confirmDialog({ title: tr('Datei löschen'), message: tr('"{0}" löschen?', name), confirmLabel: tr('Löschen') }))) return
     setFiles(prev => prev.filter(f => f.id !== id))   // optimistic — no reload jump
@@ -960,6 +967,12 @@ function FileLibrary() {
               <p className="text-xs text-surface-600 mt-1">{tr('.3mf · .gcode · .stl · landet im aktuellen Ordner')}</p>
             </>
           )}
+        </div>
+        {/* 2.6 — Beispiel-Teil zum Ausprobieren (ohne echten Druck) */}
+        <div className="mt-2 text-right">
+          <button onClick={loadDemo} className="text-[11px] text-surface-500 hover:text-blue-400 transition-colors">
+            {tr('+ Beispiel-Teil laden')}
+          </button>
         </div>
       </div>
 

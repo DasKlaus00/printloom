@@ -66,6 +66,64 @@ async def upload_file(file: UploadFile = File(...), folder_id: Optional[int] = N
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
 
+
+DEMO_FILENAME = "Printloom Demo Part.gcode.3mf"
+
+
+def _build_demo_3mf() -> bytes:
+    """Minimal, aber gültige .3mf-Demo: ein kleiner Druck (PLA blau, ~25 min, 20 mm),
+    den die Datei-Analyse korrekt liest (Zeit/Höhe/Filament/Platte). Reines Anschauen
+    ohne echten Druck — zum Ausprobieren von Bibliothek/Queue/Vorschau."""
+    gcode = (
+        "; Printloom Demo Part\n"
+        "; filament_type = PLA\n"
+        "; filament_colour = #1565C0\n"
+        "; layer_height = 0.2\n"
+        "; total layer number: 100\n"
+        "; max_z_height: 20.00\n"
+        "; model printing time: 0h 25m 00s; total estimated time: 0h 27m 00s\n"
+        "; filament used [g] = 12.30\n"
+        "M104 S210\nM140 S60\nG28\nG90\nG1 Z0.2 F600\n"
+        "G1 X10 Y10 F3000\nG1 X90 Y10 E2 F1200\nG1 X90 Y90 E4\nG1 X10 Y90 E6\nG1 X10 Y10 E8\n"
+        "G1 Z20 F600\nM104 S0\nM140 S0\nM84\n"
+    )
+    slice_info = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n'
+        '  <plate>\n    <metadata key="index" value="1"/>\n'
+        '    <filament id="1" type="PLA" color="#1565C0" used_m="4.12" used_g="12.30"/>\n'
+        '  </plate>\n</config>\n'
+    )
+    project_settings = json.dumps({"filament_type": ["PLA"], "filament_colour": ["#1565C0"]})
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("Metadata/plate_1.gcode", gcode)
+        z.writestr("Metadata/slice_info.config", slice_info)
+        z.writestr("Metadata/project_settings.config", project_settings)
+    return buf.getvalue()
+
+
+@router.post("/demo")
+async def create_demo_file(db: Session = Depends(get_db)):
+    """2.6 — Beispiel-Teil in die Bibliothek laden (idempotent: wird nur einmal angelegt)."""
+    existing = db.query(UploadedFile).filter(UploadedFile.original_filename == DEMO_FILENAME).first()
+    if existing:
+        return {"success": True, "created": False, "file_id": existing.id}
+    data = _build_demo_3mf()
+    unique_filename = f"{uuid.uuid4()}.3mf"
+    file_path = UPLOAD_DIR / unique_filename
+    with open(file_path, "wb") as f:
+        f.write(data)
+    db_file = UploadedFile(
+        filename=unique_filename, original_filename=DEMO_FILENAME,
+        file_type=".3mf", file_path=str(file_path), file_size=len(data),
+        folder_id=None, material="PLA", color="#1565C0",
+    )
+    db.add(db_file)
+    db.commit()
+    db.refresh(db_file)
+    return {"success": True, "created": True, "file_id": db_file.id}
+
+
 @router.get("/", response_model=FileListResponse)
 async def list_files(skip: int = 0, limit: int = 100,
                      folder_id: Optional[int] = None, root: bool = False,

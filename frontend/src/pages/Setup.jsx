@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { deviceService, rackManagerService, autofarmService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 import { TIMEZONES } from './Configuration'
+import SetupHealth from '../components/SetupHealth'
+import RackPreview from '../components/RackPreview'
 
 export const SETUP_DONE_KEY = 'ottomat3d_setup_done'
 
@@ -341,7 +343,7 @@ export default function Setup({ setCurrentPage }) {
                 <input type="number" min="10" max="300" className="w-full text-sm" value={h} onChange={e => setH(e.target.value)} />
               </label>
             </div>
-            <p className="text-[10px] text-surface-600">{tr('Gesamt: {0} Fächer · bis {1} mm Objekthöhe je Fach', (+nr) * (+spr), h)}</p>
+            <RackPreview numRacks={nr} slotsPerRack={spr} slotHeightMm={h} />
             <div className="flex justify-between pt-2">
               <button onClick={prev} className="btn-secondary text-sm">{tr('← Zurück')}</button>
               <button onClick={saveRack} disabled={rSaving} className="btn-primary text-sm disabled:opacity-50">
@@ -367,6 +369,13 @@ export default function Setup({ setCurrentPage }) {
               </button>
             )}
             {homing?.error && <p className="text-xs text-red-400">{homing.error}</p>}
+
+            {/* 2.9 — Einrichtungs-Checkliste: was ist bereit, was fehlt noch */}
+            <div className="border-t border-surface-800 pt-3">
+              <p className="text-xs font-medium text-surface-300 mb-2">{tr('Einrichtungs-Status')}</p>
+              <SetupHealth />
+            </div>
+
             <p className="text-[10px] text-surface-600">
               {tr('Feinkalibrierung (Greifer-Offsets, Sequenzen) machst du danach unter')} <span className="text-surface-400">{tr('Steuerung')}</span> {tr('und im')} <span className="text-surface-400">{tr('Sequenz-Editor')}</span>.
             </p>

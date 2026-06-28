@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { systemService, healthService, pushService } from '../services/api'
+import SetupHealth from '../components/SetupHealth'
 import { pushSupported, pushUnsupportedReason, isSubscribed, syncSubscription, subscribe as pushSubscribe, unsubscribe as pushUnsubscribe } from '../services/push'
 import { VERSION } from '../version'
 import { THEMES, getTheme, applyTheme } from '../services/theme'
@@ -468,6 +469,12 @@ docker compose up -d`}
             </div>
           </div>
         )}
+      </div>
+
+      {/* 2.9 — Einrichtungs-Status / Health-Checkliste */}
+      <div className="card p-6 space-y-3">
+        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Einrichtungs-Status')}</h2>
+        <SetupHealth />
       </div>
 
       {/* Backup & Restore */}
