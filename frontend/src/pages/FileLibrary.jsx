@@ -3,6 +3,7 @@ import { fileService, folderService, printerService, deviceService, filamentServ
 import { useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
+import { colorLabel } from '../services/colorNames'
 
 function ColorDot({ hex }) {
   if (!hex) return <span className="w-3 h-3 rounded-full bg-surface-700 inline-block" />
@@ -168,206 +169,42 @@ function AmsInfoPanel({ fileId, fileType }) {
 }
 
 
-const PRESETS_KEY = 'ottomat3d_file_presets'
-
-function loadPresets() {
-  try { return JSON.parse(localStorage.getItem(PRESETS_KEY) ?? '{}') } catch { return {} }
-}
-
-/* Per-file filament assignment. Stored once in localStorage; AutoFarm reads it on
-   "add to queue" and maps each filament to the AMS slot with the same material and
-   the closest colour (exact colour wins, else nearest same material — never blocks). */
-function FilamentPresetPanel({ fileId, amsSlots, catalog }) {
+/* Zeigt die im Druck verwendeten Filamente (Material + Farbe) — direkt aus der
+   Datei gelesen. Read-only: die Zuordnung zum AMS passiert beim Drucken automatisch
+   material- UND farbgenau (nie materialübergreifend), bzw. manuell in der Queue. */
+function FileFilaments({ fileId }) {
   const { tr } = useLanguage()
-  const [open,       setOpen]       = useState(false)
-  const [presets,    setPresets]    = useState(loadPresets)
-  const [search,     setSearch]     = useState('')
-  const [pickingIdx, setPickingIdx] = useState(null) // null=closed, 'new'=adding, number=replacing
-
-  const preset    = presets[fileId] ?? { filaments: [] }
-  const hasPreset = preset.filaments.length > 0
-
-  // 1.1: zusätzlich server-seitig „festnageln" — dann nutzt der Druck IMMER genau
-  // dieses Material/diese Farbe (kein Auto-Raten), geräteübergreifend & dauerhaft.
-  const pinToServer = (filaments) => {
-    const mapped = (filaments || []).map(f => ({ type: f.material || f.type || '', color: f.color || '' }))
-    autofarmService.setFileFilaments(fileId, mapped).catch(() => {})
-  }
-  const save = (next) => {
-    const all = { ...loadPresets(), [fileId]: next }
-    localStorage.setItem(PRESETS_KEY, JSON.stringify(all))
-    setPresets(all)
-    pinToServer(next.filaments)
-  }
-  const removeEntry = (i) => save({ ...preset, filaments: preset.filaments.filter((_, j) => j !== i) })
-  const clearPreset = () => {
-    const all = loadPresets()
-    delete all[fileId]
-    localStorage.setItem(PRESETS_KEY, JSON.stringify(all))
-    setPresets(all)
-    pinToServer([])   // Fixierung auf dem Server aufheben → wieder Auto
-  }
-
-  const pickFilament = (fil) => {
-    const entry = {
-      material: fil.material,
-      name:     fil.name,
-      color:    fil.color_hex,
-      article:  fil.article,
-      brand:    fil.brand,
-      type:     fil.material, // backward compat for AutoFarm AMS matching
-    }
-    if (pickingIdx === 'new') {
-      save({ ...preset, filaments: [...preset.filaments, entry] })
-    } else {
-      save({ ...preset, filaments: preset.filaments.map((f, j) => j === pickingIdx ? entry : f) })
-    }
-    setPickingIdx(null)
-    setSearch('')
-  }
-
-  const getAmsMatch = (f) => {
-    if (!amsSlots?.length) return null
-    const fBase = (f.material || f.type || '').toUpperCase().trim()
-    if (!fBase) return null
-    const fWord = fBase.split(' ')[0]
-    const pool  = amsSlots.filter(s => {
-      const sType = (s.type || '').toUpperCase()
-      return sType.includes(fWord) || fBase.includes((sType.split(' ')[0]) || '')
-    })
-    if (!pool.length) return { slot: null }
-    const fColor = (f.color || '').replace('#', '').toLowerCase()
-    const exact  = pool.find(s => (s.color || '').toLowerCase() === fColor)
-    return { slot: exact || pool[0], exact: !!exact }
-  }
-
-  const filtered = search
-    ? (catalog ?? []).filter(f =>
-        `${f.brand} ${f.material} ${f.name}`.toLowerCase().includes(search.toLowerCase())
-      )
-    : (catalog ?? [])
-
+  const [fils, setFils] = useState(null)
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open || fils !== null) return
+    autofarmService.getFileFilaments(fileId)
+      .then(r => setFils(r.data.filaments ?? []))
+      .catch(() => setFils([]))
+  }, [open, fileId, fils])
   return (
     <div className="mt-1.5">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-1.5 text-[11px] transition-colors ${
-          hasPreset ? 'text-blue-400 hover:text-blue-300' : 'text-surface-500 hover:text-blue-400'
-        }`}
-        title={tr('Filament für diese Datei fixieren — wird beim Druck immer so verwendet')}
-      >
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-          <circle cx="12" cy="12" r="4"/>
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-        </svg>
-        {hasPreset ? `📌 ${tr('Filament fixiert')} (${preset.filaments.length})` : tr('Filament fixieren')}
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 text-[11px] text-surface-500 hover:text-blue-400 transition-colors">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="9"/></svg>
+        {tr('Filamente im Druck')}
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-          className={`transition-transform ${open ? 'rotate-180' : ''}`}>
-          <polyline points="6 9 12 15 18 9"/>
-        </svg>
+          className={`transition-transform ${open ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"/></svg>
       </button>
-
       {open && (
-        <div className="mt-2 pl-2 border-l border-surface-700 space-y-1.5">
-          <p className="text-[9px] text-surface-600">
-            {tr('Festgelegtes Filament wird beim Drucken IMMER verwendet (kein Auto-Raten aus der Datei) und im AMS exakt gesucht. Dauerhaft gespeichert.')}
-          </p>
-
-          {/* Existing entries */}
-          {preset.filaments.map((f, i) => {
-            const match    = getAmsMatch(f)
-            const dispName = f.name || f.type || '?'
-            const dispMat  = f.material || f.type || ''
-            return (
-              <div key={i} className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-full border border-white/10 shrink-0"
-                  style={{ backgroundColor: f.color?.startsWith('#') ? f.color : `#${f.color || 'FFFFFF'}` }} />
-                <span
-                  className="text-[10px] text-surface-400 flex-1 min-w-0 truncate"
-                  title={dispName !== dispMat ? `${dispName} (${dispMat})` : dispMat}
-                >
-                  {dispName}
-                  {dispMat && dispMat !== dispName && (
-                    <span className="text-surface-600 ml-0.5 text-[8px]">{dispMat}</span>
-                  )}
-                </span>
-                {match?.slot ? (
-                  <span
-                    className="flex items-center gap-0.5 shrink-0"
-                    title={match.exact ? tr('Exakte Farbe im AMS') : tr('Material passt, andere Farbe (Slot {0})', match.slot.gid)}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full border border-white/10"
-                      style={{ backgroundColor: `#${match.slot.color || 'FFFFFF'}` }} />
-                    <span className={`text-[8px] font-mono ${match.exact ? 'text-emerald-500' : 'text-amber-500'}`}>
-                      →{match.slot.gid ?? '?'}
-                    </span>
-                  </span>
-                ) : match?.slot === null ? (
-                  <span className="text-[8px] text-red-500 shrink-0" title={tr('Kein passender AMS-Slot')}>✗</span>
-                ) : null}
-                <button
-                  onClick={() => { setPickingIdx(i); setSearch('') }}
-                  className="text-[9px] text-surface-700 hover:text-blue-400 transition-colors shrink-0"
-                  title={tr('Filament ändern')}
-                >✎</button>
-                <button
-                  onClick={() => removeEntry(i)}
-                  className="text-[9px] text-surface-700 hover:text-red-400 transition-colors shrink-0"
-                >×</button>
-              </div>
-            )
-          })}
-
-          {/* Inline catalog picker */}
-          {pickingIdx !== null && (
-            <div className="border border-surface-700 rounded-lg bg-surface-900/90 p-1.5 space-y-1">
-              <input
-                autoFocus
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="PLA, Silk, PETG, …"
-                className="w-full text-[10px] font-mono h-6 py-0 px-1.5"
-              />
-              <div className="max-h-32 overflow-y-auto">
-                {filtered.slice(0, 80).map((fil, fi) => (
-                  <button
-                    key={fi}
-                    onClick={() => pickFilament(fil)}
-                    className="w-full flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-surface-700/60 text-left transition-colors"
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full border border-white/10 shrink-0"
-                      style={{ backgroundColor: fil.color_hex?.startsWith('#') ? fil.color_hex : `#${fil.color_hex}` }} />
-                    <span className="text-[9px] text-surface-300 min-w-0 truncate">
-                      {fil.name}
-                      <span className="text-surface-600 ml-1">{fil.material}</span>
-                    </span>
-                  </button>
-                ))}
-                {filtered.length === 0 && (
-                  <p className="text-[9px] text-surface-600 text-center py-1">{tr('Keine Ergebnisse')}</p>
-                )}
-              </div>
-              <button
-                onClick={() => { setPickingIdx(null); setSearch('') }}
-                className="text-[9px] text-surface-600 hover:text-surface-400 transition-colors"
-              >{tr('Abbrechen')}</button>
+        <div className="mt-2 pl-2 border-l border-surface-700 space-y-1">
+          {fils === null && <p className="text-[10px] text-surface-600 animate-pulse">{tr('Lese…')}</p>}
+          {fils && fils.length === 0 && <p className="text-[10px] text-surface-600">{tr('Keine Filament-Info in der Datei')}</p>}
+          {(fils ?? []).map((f, i) => (
+            <div key={i} className="flex items-center gap-2 text-[10px]">
+              <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0"
+                style={{ backgroundColor: f.color ? (f.color.startsWith('#') ? f.color : `#${f.color}`) : '#555' }} />
+              <span className="text-surface-300 w-16 truncate">{f.type || '?'}</span>
+              {f.color && <span className="text-surface-500 font-mono">{colorLabel(f.color)}</span>}
             </div>
-          )}
-
-          {/* Add / clear buttons */}
-          {pickingIdx === null && (
-            <div className="flex items-center gap-3 pt-0.5">
-              <button
-                onClick={() => { setPickingIdx('new'); setSearch('') }}
-                className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
-              >{tr('+ Filament')}</button>
-              {hasPreset && (
-                <button onClick={clearPreset} className="text-[10px] text-surface-600 hover:text-red-400 transition-colors">
-                  {tr('Preset löschen')}
-                </button>
-              )}
-            </div>
+          ))}
+          {fils && fils.length > 0 && (
+            <p className="text-[9px] text-surface-600 pt-0.5">{tr('Wird beim Druck material- und farbgenau dem AMS zugeordnet (nie materialübergreifend).')}</p>
           )}
         </div>
       )}
@@ -491,7 +328,7 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
               <span className="text-[10px] text-surface-600">📁 {folderById[file.folder_id].name}</span>
             )}
           </div>
-          {isPrintable && <FilamentPresetPanel fileId={file.id} amsSlots={amsSlots} catalog={catalog} />}
+          {isPrintable && <FileFilaments fileId={file.id} />}
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">

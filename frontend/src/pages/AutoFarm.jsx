@@ -1219,23 +1219,9 @@ function AutoFarm() {
     if (!gcodeFiles.length) return
     const file  = gcodeFiles.find(f => f.id === addFileId) ?? gcodeFiles[0]
     const count = Math.max(1, addCount)
-    // Auto-match stored filament preset (from FileLibrary) to current AMS slots
-    let amsMap = ''
-    try {
-      const presets = JSON.parse(localStorage.getItem('ottomat3d_file_presets') || '{}')
-      const preset  = presets[file.id]
-      if (preset?.filaments?.length && amsSlots.length > 0) {
-        const norm = c => (c || '').replace('#', '').toUpperCase().slice(0, 6)
-        const mapped = preset.filaments.map(f => {
-          const fBase  = (f.type || '').toUpperCase().trim().split(/\s+/)[0]
-          const fColor = norm(f.color)
-          const pool   = amsSlots.filter(s => s.type.toUpperCase().includes(fBase) || fBase.includes(s.type.toUpperCase().split(/\s+/)[0]))
-          const src    = pool.length ? pool : amsSlots
-          return [...src].sort((a, b) => colorDist(fColor, norm(a.color)) - colorDist(fColor, norm(b.color)))[0]?.gid ?? 0
-        })
-        amsMap = mapped.join(',')
-      }
-    } catch {}
+    // Kein Datei-Preset mehr (entfernt): amsMap bleibt leer → die Farm matcht beim
+    // Druck material- UND farbgenau (nie materialübergreifend) oder pausiert.
+    const amsMap = ''
     // Mehr-Platten-.3mf: automatisch JE Platte ein Job (× Wiederholungen) — keine
     // Auswahl, einfach alle. Sonst ein einzelner Job.
     if (filePlates.length > 1) {

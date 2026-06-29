@@ -844,6 +844,10 @@ const EN_STRINGS = {
     'Pin the filament for this file — always used when printing',
   'Filament fixieren': 'Pin filament',
   'Filament fixiert': 'Filament pinned',
+  'Filamente im Druck': 'Filaments in the print',
+  'Keine Filament-Info in der Datei': 'No filament info in the file',
+  'Wird beim Druck material- und farbgenau dem AMS zugeordnet (nie materialübergreifend).':
+    'Mapped to the AMS by exact material and color when printing (never across materials).',
   'Festgelegtes Filament wird beim Drucken IMMER verwendet (kein Auto-Raten aus der Datei) und im AMS exakt gesucht. Dauerhaft gespeichert.':
     'The chosen filament is ALWAYS used when printing (no auto-guessing from the file) and matched exactly in the AMS. Saved permanently.',
   'AMS: {0} Slots — beim Hinzufügen wird exakte Farbe gesucht, sonst nächstes gleiches Material':

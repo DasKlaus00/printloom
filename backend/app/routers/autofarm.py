@@ -50,7 +50,6 @@ HISTORY_KEEP  = 8     # rolling samples per file for the duration average
 SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
 
 HOMING_3MF_PATH = "/app/db/printloom_homing.3mf"
-FILAMENT_OVERRIDES_PATH = "/app/db/filament_overrides.json"   # 1.1: pro Datei „festgenageltes" Filament {file_id: [{type,color}]}
 
 _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": True,
                      "hms_ignore": ["0C00-0100-0001-0004"],
@@ -597,35 +596,10 @@ async def _do_bambu_gcode(gcode: str, device: Device):
         raise RuntimeError(f"GCode fehlgeschlagen: {gcode[:40]}")
 
 
-# ── 1.1: Pro-Datei „festgenageltes" Filament ────────────────
-def _filament_override(file_id) -> Optional[list]:
-    """Liste [{type,color}] für diese Datei, oder None wenn nicht fixiert."""
-    try:
-        ov = storage.read_json(FILAMENT_OVERRIDES_PATH, {}).get(str(file_id))
-        return ov if ov else None
-    except Exception:
-        return None
-
-
-def _save_filament_override(file_id, filaments: Optional[list]):
-    data = storage.read_json(FILAMENT_OVERRIDES_PATH, {})
-    if filaments:
-        data[str(file_id)] = [
-            {"type": str(f.get("type", "")).strip(), "color": str(f.get("color", "")).strip()}
-            for f in filaments
-        ]
-    else:
-        data.pop(str(file_id), None)   # leere Liste = Fixierung aufheben → wieder Auto
-    storage.write_json(FILAMENT_OVERRIDES_PATH, data)
-
-
 def _effective_filaments(file_id, fpath: str, ftype: str, plate=None) -> tuple:
-    """Fixierte Filamente (1.1) falls vorhanden, sonst aus der Datei gelesen
-    (plattengenau). So nutzt der Druck IMMER das festgenagelte Material/Farbe und
-    rät nicht aus den Slicer-Metadaten."""
-    ov = _filament_override(file_id)
-    if ov:
-        return ([f.get("type", "") for f in ov], [f.get("color", "") for f in ov])
+    """Die im Druck WIRKLICH verwendeten Filamente (Material+Farbe) — immer aus der
+    Datei selbst, plattengenau. KEIN „festnageln"/Override mehr: das echte Material
+    der Datei zählt, sonst druckt z. B. PETG mit PLA."""
     return _read_filament_info(fpath, ftype, plate)
 
 
@@ -677,7 +651,7 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
                 fil_types, fil_colors = await loop.run_in_executor(
                     None, _effective_filaments, file.id, file.file_path, file.file_type, job.get("plate")
                 )
-                _log(f"Filamente in Datei{' (fixiert)' if _filament_override(file.id) else ''}: {list(zip(fil_types, fil_colors))}")
+                _log(f"Filamente in Datei: {list(zip(fil_types, fil_colors))}")
 
                 if ams_raw and ams_raw.get("ams"):
                     ams_mapping = await loop.run_in_executor(
@@ -2651,9 +2625,8 @@ async def clear_log_file():
 
 @router.get("/file_filaments/{file_id}")
 async def get_file_filaments(file_id: int, plate: Optional[int] = None):
-    """Return the filament types and colors a print USES. Bei Multi-Plate-.3mf
-    optional die Platte angeben → nur deren tatsächlich benutzte Filamente.
-    `pinned` = Filament wurde für diese Datei fixiert (1.1) und wird so verwendet."""
+    """Return the filament types and colors a print USES — immer aus der Datei
+    gelesen (Material+Farbe), plattengenau bei Multi-Plate-.3mf."""
     db = SessionLocal()
     try:
         f = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
@@ -2661,27 +2634,10 @@ async def get_file_filaments(file_id: int, plate: Optional[int] = None):
             raise HTTPException(404, "Datei nicht gefunden")
         if not os.path.exists(f.file_path):
             raise HTTPException(404, "Datei nicht auf Disk")
-        ov = _filament_override(file_id)
-        if ov:
-            return {"filaments": ov, "pinned": True,
-                    "auto": [{"type": t, "color": c}
-                             for t, c in zip(*_read_filament_info(f.file_path, f.file_type, plate))]}
         types, colors = _read_filament_info(f.file_path, f.file_type, plate)
-        return {"filaments": [{"type": t, "color": c} for t, c in zip(types, colors)], "pinned": False}
+        return {"filaments": [{"type": t, "color": c} for t, c in zip(types, colors)]}
     finally:
         db.close()
-
-
-class FilamentOverridePayload(BaseModel):
-    filaments: List[dict] = []   # [{type,color}]; leere Liste = Fixierung aufheben
-
-
-@router.put("/file_filaments/{file_id}")
-async def set_file_filaments(file_id: int, payload: FilamentOverridePayload):
-    """Filament(e) einer Datei „festnageln" (1.1): wird beim Druck/Matching IMMER so
-    verwendet, kein Auto-Raten aus den Slicer-Metadaten. Leere Liste = wieder Auto."""
-    _save_filament_override(file_id, payload.filaments)
-    return {"success": True, "pinned": bool(payload.filaments)}
 
 
 @router.get("/stats")

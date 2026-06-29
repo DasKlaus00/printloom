@@ -310,12 +310,18 @@ def _match_ams_live(types: list, colors: list, ams_raw: dict) -> list:
         fbase  = ftype.upper().strip().split()[0] if ftype else ''
         fcolor_clean = fcolor.lstrip('#').upper()
 
-        # Filter by type, fall back to all slots if no match
+        # NUR gleiches Material — NIEMALS materialübergreifend ausweichen.
+        # (PETG darf nie mit PLA gedruckt werden → ruinierter Druck/Düse.)
         candidates = [s for s in slots if fbase and (
             fbase == s['type_base'] or fbase in s['type'] or
             (s['type_base'] and s['type_base'] in ftype.upper())
-        )] or slots
-
+        )]
+        if not candidates:
+            # Kein passendes Material geladen → NICHT raten. Sequenzieller Default;
+            # die Farm pausiert ohnehin via _ams_match_confident ("kein passendes Material").
+            logger.warning(f"  Filament {i}: {ftype} #{fcolor_clean[:6]} → KEIN passendes Material im AMS — kein Cross-Material-Mapping")
+            mapping.append(i)
+            continue
         best = _pick_slot(candidates, fcolor_clean)
         logger.info(f"  Filament {i}: {ftype} #{fcolor_clean[:6]} → slot {best['gid']} ({best['type']} #{best['color'][:6]} remain={best.get('remain')})")
         mapping.append(best['gid'])
