@@ -161,13 +161,57 @@ def _save_custom(data: list):
     storage.write_json(CUSTOM_PATH, data)
 
 
+def _key(material, color) -> tuple:
+    """Eindeutigkeit pro Material + Farbe (Hex, 6-stellig, Groß)."""
+    return (str(material or "").strip().upper(),
+            str(color or "").replace("#", "").upper()[:6])
+
+
 @router.get("/")
 def list_filaments():
-    custom = _load_custom()
+    # Kein eingebauter Katalog mehr — die Bibliothek besteht NUR aus dem, was aus dem
+    # aktiven AMS gelernt oder manuell hinzugefügt wurde.
     return {
-        "builtin": BUILTIN_CATALOG,
-        "custom": custom,
+        "builtin": [],
+        "custom": _load_custom(),
     }
+
+
+class LearnPayload(BaseModel):
+    slots: list = []   # [{type, color}] aus dem aktiven AMS
+
+
+@router.post("/learn")
+def learn_filaments(payload: LearnPayload):
+    """Aus dem aktiven AMS lernen: jede neue Material+Farbe-Kombination der Bibliothek
+    hinzufügen. Gibt die NEU hinzugefügten zurück (für die Notification „… hinzugefügt")."""
+    custom = _load_custom()
+    seen = {_key(c.get("material"), c.get("color_hex")) for c in custom}
+    added = []
+    for s in (payload.slots or []):
+        mat = (s.get("type") or "").strip()
+        col = (s.get("color") or "").strip()
+        if not mat:
+            continue
+        k = _key(mat, col)
+        if k in seen:
+            continue
+        seen.add(k)
+        hexv = col if col.startswith("#") else (f"#{col}" if col else "")
+        entry = {"brand": "AMS", "material": mat, "name": "", "color_hex": hexv[:7],
+                 "article": "", "source": "ams"}
+        custom.append(entry)
+        added.append(entry)
+    if added:
+        _save_custom(custom)
+    return {"added": added, "count": len(custom)}
+
+
+@router.delete("/custom")
+def clear_custom():
+    """Alle Filamente löschen (Bibliothek leeren) — wird danach neu aus dem AMS gelernt."""
+    _save_custom([])
+    return {"success": True}
 
 
 @router.post("/custom")

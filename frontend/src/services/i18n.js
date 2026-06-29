@@ -845,6 +845,19 @@ const EN_STRINGS = {
   'Filament fixieren': 'Pin filament',
   'Filament fixiert': 'Filament pinned',
   'Filamente im Druck': 'Filaments in the print',
+  'Automatisch aus dem aktiven AMS gelernt + manuell · {0} Filament(e)':
+    'Learned automatically from the active AMS + manual · {0} filament(s)',
+  'Filamente (AMS + manuell)': 'Filaments (AMS + manual)',
+  'Alle löschen': 'Clear all',
+  '+ Manuell hinzufügen': '+ Add manually',
+  'Neu geladene Spulen im AMS werden automatisch erkannt und hier ergänzt (mit Hinweis unten).':
+    'Newly loaded AMS spools are detected automatically and added here (with a toast at the bottom).',
+  'Alle Filamente löschen': 'Clear all filaments',
+  'Die gesamte Filament-Bibliothek leeren? Sie wird danach automatisch wieder aus dem aktiven AMS gelernt.':
+    'Clear the entire filament library? It will be re-learned automatically from the active AMS afterwards.',
+  'Bibliothek geleert.': 'Library cleared.',
+  'Noch keine Filamente. Lade Spulen ins AMS (werden automatisch erkannt) oder füge manuell hinzu.':
+    'No filaments yet. Load spools into the AMS (auto-detected) or add manually.',
   'Keine Filament-Info in der Datei': 'No filament info in the file',
   'Wird beim Druck material- und farbgenau dem AMS zugeordnet (nie materialübergreifend).':
     'Mapped to the AMS by exact material and color when printing (never across materials).',

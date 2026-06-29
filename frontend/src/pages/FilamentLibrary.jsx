@@ -170,6 +170,26 @@ export default function FilamentLibrary() {
     }
   }
 
+  const handleClearAll = async () => {
+    if (!(await confirmDialog({ title: tr('Alle Filamente löschen'),
+      message: tr('Die gesamte Filament-Bibliothek leeren? Sie wird danach automatisch wieder aus dem aktiven AMS gelernt.'),
+      confirmLabel: tr('Alle löschen') }))) return
+    try {
+      await filamentService.clearCustom()
+      await load()
+      setFeedback({ ok: true, msg: tr('Bibliothek geleert.') })
+    } catch {
+      setFeedback({ ok: false, msg: tr('Fehler beim Löschen') })
+    }
+  }
+
+  // Bibliothek neu laden, sobald global etwas aus dem AMS gelernt wurde (App-Hook).
+  useEffect(() => {
+    const h = () => load()
+    window.addEventListener('printloom:filamentsLearned', h)
+    return () => window.removeEventListener('printloom:filamentsLearned', h)
+  }, [load])
+
   const filteredBuiltin = filter(builtin)
   const filteredCustom  = filter(custom)
 
@@ -184,7 +204,7 @@ export default function FilamentLibrary() {
       <div>
         <h1 className="text-2xl font-bold text-surface-100">{tr('Filamente')}</h1>
         <p className="text-sm text-surface-500 mt-0.5">
-          {tr('Bambu Lab Katalog · {0} eingebaut · {1} eigene', builtin.length, custom.length)}
+          {tr('Automatisch aus dem aktiven AMS gelernt + manuell · {0} Filament(e)', custom.length)}
         </p>
       </div>
 
@@ -222,13 +242,23 @@ export default function FilamentLibrary() {
 
       {/* Custom filaments */}
       <div className="card space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="section-label">{tr('Eigene Filamente')}</p>
-          <button
-            onClick={() => { setShowForm(true); setEditEntry(null); setEditIdx(null) }}
-            className="btn btn-ghost btn-sm text-xs"
-          >{tr('+ Hinzufügen')}</button>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <p className="section-label">{tr('Filamente (AMS + manuell)')}</p>
+          <div className="flex items-center gap-2">
+            {custom.length > 0 && (
+              <button onClick={handleClearAll} className="btn btn-ghost btn-sm text-xs text-red-400 hover:text-red-300">
+                {tr('Alle löschen')}
+              </button>
+            )}
+            <button
+              onClick={() => { setShowForm(true); setEditEntry(null); setEditIdx(null) }}
+              className="btn btn-ghost btn-sm text-xs"
+            >{tr('+ Manuell hinzufügen')}</button>
+          </div>
         </div>
+        <p className="text-[10px] text-surface-600 -mt-1">
+          {tr('Neu geladene Spulen im AMS werden automatisch erkannt und hier ergänzt (mit Hinweis unten).')}
+        </p>
 
         {(showForm && !editEntry) && (
           <CustomForm
@@ -246,7 +276,7 @@ export default function FilamentLibrary() {
         )}
 
         {filteredCustom.length === 0 && !showForm && !editEntry ? (
-          <p className="text-[11px] text-surface-600 py-2">{tr('Noch keine eigenen Filamente. Klicke „+ Hinzufügen".')}</p>
+          <p className="text-[11px] text-surface-600 py-2">{tr('Noch keine Filamente. Lade Spulen ins AMS (werden automatisch erkannt) oder füge manuell hinzu.')}</p>
         ) : (
           <div className="grid gap-1.5 sm:grid-cols-2">
             {filteredCustom.map((f, i) => (
@@ -257,24 +287,6 @@ export default function FilamentLibrary() {
               />
             ))}
           </div>
-        )}
-      </div>
-
-      {/* Built-in catalog by material group */}
-      <div className="space-y-4">
-        <p className="section-label">{tr('Bambu Lab Katalog')}</p>
-        {Object.entries(builtinMaterialGroups).map(([mat, items]) => (
-          <div key={mat} className="card space-y-2">
-            <p className="text-[11px] font-semibold text-surface-400 mb-1">{mat}</p>
-            <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-              {items.map((f, i) => (
-                <FilamentCard key={i} f={f} isCustom={false} />
-              ))}
-            </div>
-          </div>
-        ))}
-        {Object.keys(builtinMaterialGroups).length === 0 && !loading && (
-          <p className="text-[11px] text-surface-600">{tr('Keine Ergebnisse.')}</p>
         )}
       </div>
     </div>

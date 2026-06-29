@@ -191,6 +191,8 @@ export const filamentService = {
   addCustom:     (data)       => api.post('/filaments/custom', data),
   updateCustom:  (idx, data)  => api.put(`/filaments/custom/${idx}`, data),
   deleteCustom:  (idx)        => api.delete(`/filaments/custom/${idx}`),
+  clearCustom:   ()           => api.delete('/filaments/custom'),
+  learn:         (slots)      => api.post('/filaments/learn', { slots }),
 }
 
 export default api

@@ -43,7 +43,9 @@ const FileAnalyzer    = React.lazy(() => import('./pages/FileAnalyzer'))
 const AmsDiagnostics  = React.lazy(() => import('./pages/AmsDiagnostics'))
 const MobileView      = React.lazy(() => import('./pages/MobileView'))
 const Projekt         = React.lazy(() => import('./pages/Projekt'))
-import { healthService, systemService, deviceService } from './services/api'
+import { healthService, systemService, deviceService, printerService } from './services/api'
+import Toaster from './components/Toaster'
+import { learnFromAms } from './services/amsLearn'
 import { loadLangPacks, useLanguage } from './services/i18n'
 import { useFarmStatusStream } from './services/useFarmStatusStream'
 import { VERSION } from './version'
@@ -144,6 +146,34 @@ function App() {
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 10000)
     return () => clearInterval(t)
+  }, [])
+
+  /* ── Aus dem aktiven AMS lernen (global): neue Material+Farbe-Kombis zur
+        Filament-Bibliothek hinzufügen + unten toasten. Läuft, solange offen. ── */
+  useEffect(() => {
+    let cancelled = false
+    let bambuId = null
+    const readAndLearn = async () => {
+      try {
+        if (bambuId == null) {
+          const d = await deviceService.listDevices()
+          bambuId = (d.data ?? []).find(x => x.device_type === 'bambu_lab')?.id ?? null
+        }
+        if (bambuId == null || cancelled) return
+        const r = await printerService.getStatus(bambuId)
+        const slots = []
+        for (const unit of (r.data?.ams?.ams ?? [])) {
+          for (const tray of (unit.tray ?? [])) {
+            const type = tray.tray_type || tray.tray_sub_brands || ''
+            if (type) slots.push({ type, color: (tray.tray_color || '').replace('#', '').slice(0, 6) })
+          }
+        }
+        if (!cancelled) learnFromAms(slots)
+      } catch { /* offline → später wieder */ }
+    }
+    readAndLearn()
+    const t = setInterval(readAndLearn, 60000)
+    return () => { cancelled = true; clearInterval(t) }
   }, [])
 
   /* ── URL-aware page setter ────────────────────────────────── */
@@ -376,6 +406,7 @@ function App() {
         </div>
       )}
       <ConfirmHost />
+      <Toaster />
     </div>
   )
 }

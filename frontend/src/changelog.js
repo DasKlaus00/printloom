@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.80',
+    de: [
+      'Filament-Bibliothek lernt aus dem AMS: kein fester Bambu-Katalog mehr — die Liste füllt sich automatisch aus den aktiven AMS-Spulen. Jede neu erkannte Material+Farbe-Kombination wird ergänzt und unten als „Material · Farbe hinzugefügt" gemeldet.',
+      '„Alle löschen" leert die Bibliothek (wird danach neu aus dem AMS gelernt); manuelles Hinzufügen/Bearbeiten bleibt erhalten.',
+    ],
+    en: [
+      'Filament library learns from the AMS: no fixed Bambu catalog anymore — the list fills automatically from the active AMS spools. Each newly detected material+color combination is added and announced at the bottom as “material · color added”.',
+      '“Clear all” empties the library (then re-learns from the AMS); manual add/edit stays.',
+    ],
+  },
+  {
     version: '1.0.79',
     de: [
       'WICHTIGER Sicherheits-Fix: Es wird NIE mehr materialübergreifend zugeordnet. Bisher konnte die Farm ohne passendes Material auf ein falsches ausweichen (z. B. PETG-Druck mit PLA). Jetzt nur exakt gleiches Material — fehlt es, pausiert die Farm zur manuellen Zuordnung, statt falsch zu drucken.',
