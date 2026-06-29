@@ -776,6 +776,7 @@ function Configuration() {
   const { tr } = useLanguage()
   const [devices, setDevices]     = useState([])
   const [showForm, setShowForm]   = useState(false)
+  const [editId, setEditId]       = useState(null)   // null = neues Gerät; sonst Gerät bearbeiten
   const [form, setForm]           = useState(INITIAL_FORM)
   const [testing, setTesting]       = useState(null)
   const [testResults, setTestResults] = useState({})
@@ -833,17 +834,43 @@ function Configuration() {
     })
   }
 
+  // Gerät zum Bearbeiten in das Formular laden. Access-Code wird NICHT vorbefüllt
+  // (Geheimnis) — leer lassen heißt „unverändert".
+  const startEdit = (device) => {
+    setEditId(device.id)
+    setForm({
+      name: device.name ?? '', device_type: device.device_type ?? 'bambu_lab',
+      ip_address: device.ip_address ?? '', port: device.port ?? 8883,
+      serial_number: device.serial_number ?? '', access_code: '',
+      mqtt_port: device.mqtt_port ?? 8883, use_tls: device.use_tls ?? true,
+    })
+    setShowForm(true)
+    setError(null)
+  }
+
+  const closeForm = () => { setShowForm(false); setEditId(null); setForm(INITIAL_FORM); setError(null) }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
     setError(null)
     try {
-      await deviceService.createDevice({ ...form, port: +form.port, mqtt_port: +form.mqtt_port })
-      setForm(INITIAL_FORM)
-      setShowForm(false)
+      if (editId != null) {
+        // Partielles Update: leeren Access-Code weglassen, damit er erhalten bleibt.
+        const payload = {
+          name: form.name, device_type: form.device_type, ip_address: form.ip_address,
+          port: +form.port, mqtt_port: +form.mqtt_port, use_tls: form.use_tls,
+          serial_number: form.serial_number,
+        }
+        if (form.access_code) payload.access_code = form.access_code
+        await deviceService.updateDevice(editId, payload)
+      } else {
+        await deviceService.createDevice({ ...form, port: +form.port, mqtt_port: +form.mqtt_port })
+      }
+      closeForm()
       await load()
     } catch (e) {
-      setError(e.response?.data?.detail ?? 'Failed to add device')
+      setError(e.response?.data?.detail ?? (editId != null ? 'Failed to update device' : 'Failed to add device'))
     } finally {
       setSaving(false)
     }
@@ -894,14 +921,15 @@ function Configuration() {
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <p className="section-label mb-0">Devices</p>
-          <button onClick={() => setShowForm(v => !v)} className="btn btn-primary btn-sm">
-            {showForm ? 'Cancel' : '+ Add Device'}
+          <button onClick={() => (showForm ? closeForm() : setShowForm(true))} className="btn btn-primary btn-sm">
+            {showForm ? tr('Abbrechen') : '+ Add Device'}
           </button>
         </div>
 
         {/* Add form */}
         {showForm && (
           <form onSubmit={handleSubmit} className="bg-surface-900 rounded-xl border border-surface-700 p-5 mb-4 space-y-4">
+            <p className="text-sm font-medium text-surface-200">{editId != null ? tr('Gerät bearbeiten') : tr('Neues Gerät')}</p>
             {error && (
               <div className="px-3 py-2 rounded-lg bg-red-950/40 border border-red-800 text-red-300 text-sm">{error}</div>
             )}
@@ -912,8 +940,9 @@ function Configuration() {
                 <input name="name" value={form.name} onChange={handleChange} placeholder="e.g. Bambu Lab X1C" required />
               </div>
               <div>
-                <label className="text-xs text-surface-500 block mb-1">Device Type</label>
-                <select name="device_type" value={form.device_type} onChange={handleChange}>
+                <label className="text-xs text-surface-500 block mb-1">Device Type{editId != null ? ` (${tr('nicht änderbar')})` : ''}</label>
+                <select name="device_type" value={form.device_type} onChange={handleChange} disabled={editId != null}
+                  className={editId != null ? 'opacity-60 cursor-not-allowed' : ''}>
                   <option value="bambu_lab">Bambu Lab X1C</option>
                   <option value="klipper">Klipper / OTTOeject</option>
                 </select>
@@ -936,7 +965,9 @@ function Configuration() {
                 </div>
                 <div>
                   <label className="text-xs text-surface-500 block mb-1">Access Code</label>
-                  <input name="access_code" type="password" value={form.access_code} onChange={handleChange} required />
+                  <input name="access_code" type="password" value={form.access_code} onChange={handleChange}
+                    required={editId == null}
+                    placeholder={editId != null ? tr('leer lassen = unverändert') : ''} />
                 </div>
                 <div className="col-span-2 flex items-center gap-2">
                   <input type="checkbox" name="use_tls" id="use_tls" checked={form.use_tls} onChange={handleChange} className="w-auto" />
@@ -947,7 +978,7 @@ function Configuration() {
 
             <div className="flex justify-end">
               <button type="submit" disabled={saving} className="btn btn-primary">
-                {saving ? 'Saving...' : 'Add Device'}
+                {saving ? tr('Speichert…') : (editId != null ? tr('Änderungen speichern') : 'Add Device')}
               </button>
             </div>
           </form>
@@ -983,7 +1014,12 @@ function Configuration() {
                     >
                       {testing === device.id ? 'Testing...' : 'Test'}
                     </button>
-                    <button onClick={() => handleDelete(device.id)} className="btn-icon" title="Delete device">
+                    <button onClick={() => startEdit(device)} className={`btn-icon ${editId === device.id ? 'text-blue-400' : ''}`} title={tr('Gerät bearbeiten')}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                      </svg>
+                    </button>
+                    <button onClick={() => handleDelete(device.id)} className="btn-icon" title={tr('Gerät löschen')}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
