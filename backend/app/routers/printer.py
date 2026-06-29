@@ -1175,9 +1175,14 @@ async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
         return {"status": "offline", "message": "Keine Verbindung zum Drucker", "online": False}
 
     await loop.run_in_executor(None, mqtt_client.request_status)
-    await asyncio.sleep(1.5)
-
-    raw = mqtt_client.get_last_message()
+    # Bis ~4 s auf den Vollreport warten — der enthält erst das AMS (sonst „No AMS
+    # detected"). Dank Delta-Merge im MQTT-Client bleibt das AMS dann erhalten.
+    raw = None
+    for _ in range(8):
+        await asyncio.sleep(0.5)
+        raw = mqtt_client.get_last_message()
+        if raw and ((raw.get("print", {}) or {}).get("ams", {}) or {}).get("ams"):
+            break
     mqtt_client.disconnect()
 
     p = raw.get("print", {}) if raw else {}

@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.82',
+    de: [
+      'Fix „No AMS detected" trotz Online-Drucker: Bambu schickt das AMS nur im ersten Vollreport, danach nur Teil-Updates — die haben den Zustand bisher überschrieben, so ging das AMS verloren. Jetzt werden die Updates zusammengeführt (AMS bleibt erhalten), die Status-Abfrage wartet aktiv auf den Vollreport, und der Datei-Browser frischt die AMS-Slots alle 30 s auf.',
+    ],
+    en: [
+      'Fix “No AMS detected” with an online printer: Bambu only sends the AMS in the first full report, then partial updates — these overwrote the state, losing the AMS. Updates are now merged (AMS is kept), the status query actively waits for the full report, and the file browser refreshes the AMS slots every 30 s.',
+    ],
+  },
+  {
     version: '1.0.81',
     de: [
       'Manuelle AMS-Zuordnung pro Datei (Datei-Browser → „Filamente & AMS-Zuordnung"): je Filament der Datei einen AKTIVEN AMS-Slot wählen; wird pro Datei gespeichert und beim Druck verwendet. „↺ Automatisch" stellt die automatische Zuordnung (Material + Farbe) wieder her.',

@@ -523,26 +523,34 @@ function FileLibrary() {
 
   useEffect(() => {
     if (!bambuId) return
-    printerService.getStatus(bambuId)
-      .then(r => {
-        const raw   = r.data?.ams?.ams ?? []
-        const slots = []
-        for (const unit of raw) {
-          const uid = +unit.id
-          for (const tray of (unit.tray ?? [])) {
-            // Loaded = has a material type; remain (-1 = unknown) does NOT mean empty.
-            const type = tray.tray_type || tray.tray_sub_brands || ''
-            if (!type) continue
-            slots.push({
-              gid:   uid * 4 + +tray.id,
-              type,
-              color: (tray.tray_color || '').replace('#', '').slice(0, 6),
-            })
+    let cancelled = false
+    const loadAms = () => {
+      printerService.getStatus(bambuId)
+        .then(r => {
+          const raw   = r.data?.ams?.ams ?? []
+          const slots = []
+          for (const unit of raw) {
+            const uid = +unit.id
+            for (const tray of (unit.tray ?? [])) {
+              // Loaded = has a material type; remain (-1 = unknown) does NOT mean empty.
+              const type = tray.tray_type || tray.tray_sub_brands || ''
+              if (!type) continue
+              slots.push({
+                gid:   uid * 4 + +tray.id,
+                type,
+                color: (tray.tray_color || '').replace('#', '').slice(0, 6),
+              })
+            }
           }
-        }
-        setAmsSlots(slots.filter(s => s.type))
-      })
-      .catch(() => {})
+          // Leere Antwort (z. B. Drucker gerade nicht erreichbar) NICHT übernehmen,
+          // sonst überschreibt ein Fehlschlag zuvor geladene Slots mit „kein AMS".
+          if (!cancelled && slots.length) setAmsSlots(slots.filter(s => s.type))
+        })
+        .catch(() => {})
+    }
+    loadAms()
+    const t = setInterval(loadAms, 30000)   // periodisch auffrischen (erholt sich nach Offline)
+    return () => { cancelled = true; clearInterval(t) }
   }, [bambuId])
 
   useAutoRefresh(loadFiles, 0)

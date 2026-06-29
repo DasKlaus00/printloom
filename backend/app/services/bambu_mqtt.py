@@ -9,6 +9,21 @@ from app.models.models import Device
 logger = logging.getLogger(__name__)
 
 
+def _deep_merge(a: dict, b: dict) -> dict:
+    """Rekursives Merge: b überschreibt a, verschachtelte Dicts werden zusammengeführt.
+    Bambu sendet nach 'pushall' einen Vollreport (inkl. 'ams'), danach nur Deltas, die
+    'ams'/Temperaturen u. Ä. weglassen. Ohne Merge ginge das AMS verloren → 'No AMS
+    detected'. Listen (z. B. ams.ams) werden ersetzt, wenn b sie sendet (Vollblock),
+    sonst behalten."""
+    out = dict(a)
+    for k, v in b.items():
+        if k in out and isinstance(out[k], dict) and isinstance(v, dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
 class BambuLabMQTT:
     def __init__(self, device: Device):
         self.device = device
@@ -229,9 +244,14 @@ class BambuLabMQTT:
     def _on_message(self, client, userdata, msg):
         try:
             payload = json.loads(msg.payload.decode())
-            self.last_message = payload
+            # Deltas in einen persistenten Vollzustand mergen (sonst geht z. B. 'ams'
+            # verloren, wenn ein Folge-Delta es weglässt → "No AMS detected").
+            if isinstance(self.last_message, dict) and isinstance(payload, dict):
+                self.last_message = _deep_merge(self.last_message, payload)
+            else:
+                self.last_message = payload
             if "print_progress" in self.callbacks:
-                self.callbacks["print_progress"](payload)
+                self.callbacks["print_progress"](self.last_message)   # gemergter Vollzustand
             logger.debug(f"Received from Bambu Lab: {payload}")
         except Exception as e:
             logger.error(f"Error processing Bambu Lab message: {e}")
