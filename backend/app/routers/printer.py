@@ -1148,6 +1148,10 @@ def _status_from_raw(raw: dict) -> dict:
         "remaining_min":      p.get("mc_remaining_time",    0),
         "subtask_name":       p.get("subtask_name",         ""),
         "ams_units":    ams_units,
+        # Roh-AMS-Block (mit tray_type/tray_color/id) — das Frontend (FileLibrary,
+        # AutoFarm, AMS-Lernen) liest r.data.ams.ams. OHNE dieses Feld wäre das AMS
+        # für die UI immer leer („No AMS detected" / 0 Filamente gelernt).
+        "ams":          ams_data if isinstance(ams_data, dict) else {},
         "tray_active":  tray_now,
         "raw": raw,
     }

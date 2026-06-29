@@ -855,6 +855,12 @@ const EN_STRINGS = {
     'Learned automatically from the active AMS + manual · {0} filament(s)',
   'Filamente (AMS + manuell)': 'Filaments (AMS + manual)',
   'Alle löschen': 'Clear all',
+  '↻ Aus AMS aktualisieren': '↻ Refresh from AMS',
+  'Lese AMS…': 'Reading AMS…',
+  'Kein AMS erkannt — Drucker offline oder keine Spulen?': 'No AMS detected — printer offline or no spools?',
+  '{0} aus dem AMS hinzugefügt': '{0} added from the AMS',
+  'AMS bereits aktuell ({0} Spulen)': 'AMS already up to date ({0} spools)',
+  'AMS konnte nicht gelesen werden': 'Could not read the AMS',
   '+ Manuell hinzufügen': '+ Add manually',
   'Neu geladene Spulen im AMS werden automatisch erkannt und hier ergänzt (mit Hinweis unten).':
     'Newly loaded AMS spools are detected automatically and added here (with a toast at the bottom).',

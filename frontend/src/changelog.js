@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.83',
+    de: [
+      'Fix: AMS-Spulen wurden nicht erkannt/gelernt (0 Filamente), obwohl geladen — die Status-Antwort lieferte das AMS unter einem anderen Feld als das Frontend gelesen hat. Jetzt sehen Datei-Browser, Auto-Farm und das Filament-Lernen die AMS-Slots wieder.',
+      'Filamente-Seite: Knopf „↻ Aus AMS aktualisieren" — liest die aktiven Spulen sofort ein und ergänzt neue (mit Rückmeldung, falls kein AMS erkannt wird).',
+    ],
+    en: [
+      'Fix: AMS spools were not detected/learned (0 filaments) despite being loaded — the status response exposed the AMS under a different field than the frontend read. File browser, Auto Farm and filament learning see the AMS slots again.',
+      'Filaments page: “↻ Refresh from AMS” button — reads the active spools immediately and adds new ones (with feedback if no AMS is detected).',
+    ],
+  },
+  {
     version: '1.0.82',
     de: [
       'Fix „No AMS detected" trotz Online-Drucker: Bambu schickt das AMS nur im ersten Vollreport, danach nur Teil-Updates — die haben den Zustand bisher überschrieben, so ging das AMS verloren. Jetzt werden die Updates zusammengeführt (AMS bleibt erhalten), die Status-Abfrage wartet aktiv auf den Vollreport, und der Datei-Browser frischt die AMS-Slots alle 30 s auf.',

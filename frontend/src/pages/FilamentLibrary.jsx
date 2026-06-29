@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { filamentService } from '../services/api'
+import { filamentService, deviceService, printerService } from '../services/api'
+import { learnFromAms } from '../services/amsLearn'
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 
@@ -170,6 +171,32 @@ export default function FilamentLibrary() {
     }
   }
 
+  const [refreshing, setRefreshing] = useState(false)
+  const refreshFromAms = async () => {
+    setRefreshing(true)
+    try {
+      const d = await deviceService.listDevices()
+      const bambu = (d.data ?? []).find(x => x.device_type === 'bambu_lab')
+      if (!bambu) { setFeedback({ ok: false, msg: tr('Kein Bambu Lab Gerät konfiguriert') }); return }
+      const r = await printerService.getStatus(bambu.id)
+      const slots = []
+      for (const unit of (r.data?.ams?.ams ?? [])) {
+        for (const tray of (unit.tray ?? [])) {
+          const type = tray.tray_type || tray.tray_sub_brands || ''
+          if (type) slots.push({ type, color: (tray.tray_color || '').replace('#', '').slice(0, 6) })
+        }
+      }
+      if (!slots.length) { setFeedback({ ok: false, msg: tr('Kein AMS erkannt — Drucker offline oder keine Spulen?') }); return }
+      const added = await learnFromAms(slots)
+      await load()
+      setFeedback({ ok: true, msg: added.length ? tr('{0} aus dem AMS hinzugefügt', added.length) : tr('AMS bereits aktuell ({0} Spulen)', slots.length) })
+    } catch {
+      setFeedback({ ok: false, msg: tr('AMS konnte nicht gelesen werden') })
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   const handleClearAll = async () => {
     if (!(await confirmDialog({ title: tr('Alle Filamente löschen'),
       message: tr('Die gesamte Filament-Bibliothek leeren? Sie wird danach automatisch wieder aus dem aktiven AMS gelernt.'),
@@ -245,6 +272,9 @@ export default function FilamentLibrary() {
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <p className="section-label">{tr('Filamente (AMS + manuell)')}</p>
           <div className="flex items-center gap-2">
+            <button onClick={refreshFromAms} disabled={refreshing} className="btn btn-ghost btn-sm text-xs">
+              {refreshing ? tr('Lese AMS…') : tr('↻ Aus AMS aktualisieren')}
+            </button>
             {custom.length > 0 && (
               <button onClick={handleClearAll} className="btn btn-ghost btn-sm text-xs text-red-400 hover:text-red-300">
                 {tr('Alle löschen')}
