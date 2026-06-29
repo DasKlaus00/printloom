@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.81',
+    de: [
+      'Manuelle AMS-Zuordnung pro Datei (Datei-Browser → „Filamente & AMS-Zuordnung"): je Filament der Datei einen AKTIVEN AMS-Slot wählen; wird pro Datei gespeichert und beim Druck verwendet. „↺ Automatisch" stellt die automatische Zuordnung (Material + Farbe) wieder her.',
+      'Sicherheitsnetz: Auch eine manuelle Zuordnung darf das Material nicht kreuzen — wählst du z. B. für PETG einen PLA-Slot, gibt es eine Warnung und der Druck pausiert, statt falsch zu drucken.',
+    ],
+    en: [
+      'Manual AMS mapping per file (File Library → “Filaments & AMS mapping”): pick an ACTIVE AMS slot for each filament of the file; saved per file and used when printing. “↺ Automatic” restores automatic mapping (material + color).',
+      'Safety net: even a manual mapping may not cross materials — e.g. choosing a PLA slot for PETG warns and pauses the print instead of printing wrong.',
+    ],
+  },
+  {
     version: '1.0.80',
     de: [
       'Filament-Bibliothek lernt aus dem AMS: kein fester Bambu-Katalog mehr — die Liste füllt sich automatisch aus den aktiven AMS-Spulen. Jede neu erkannte Material+Farbe-Kombination wird ergänzt und unten als „Material · Farbe hinzugefügt" gemeldet.',

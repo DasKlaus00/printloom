@@ -24,7 +24,7 @@ from app.models.models import Device, PrinterType, UploadedFile
 from app.services.bambu_mqtt import BambuLabMQTT
 from app.services.bambu_ftp import BambuFTP
 from app.services import storage
-from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _get_plate_gcode_param, _ams_match_confident, capture_snapshot, publish_live_status
+from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _get_plate_gcode_param, _ams_match_confident, _ams_slots_from_raw, capture_snapshot, publish_live_status
 from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _load as _rack_load
 from app.services import hms
 from app.services.rack_logic import (
@@ -50,6 +50,7 @@ HISTORY_KEEP  = 8     # rolling samples per file for the duration average
 SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
 
 HOMING_3MF_PATH = "/app/db/printloom_homing.3mf"
+FILE_AMSMAP_PATH = "/app/db/file_ams_map.json"   # pro Datei manuell gewählte AMS-Slots {file_id: "gid,gid"}
 
 _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": True,
                      "hms_ignore": ["0C00-0100-0001-0004"],
@@ -603,6 +604,57 @@ def _effective_filaments(file_id, fpath: str, ftype: str, plate=None) -> tuple:
     return _read_filament_info(fpath, ftype, plate)
 
 
+# ── Pro-Datei manuell gewählte AMS-Slots (vom Nutzer im Datei-Browser) ──────
+def _file_ams_map(file_id) -> str:
+    try:
+        return str(storage.read_json(FILE_AMSMAP_PATH, {}).get(str(file_id), "") or "")
+    except Exception:
+        return ""
+
+
+def _save_file_ams_map(file_id, ams_map: str):
+    data = storage.read_json(FILE_AMSMAP_PATH, {})
+    if (ams_map or "").strip():
+        data[str(file_id)] = ams_map.strip()
+    else:
+        data.pop(str(file_id), None)
+    storage.write_json(FILE_AMSMAP_PATH, data)
+
+
+def _job_manual_map(job: dict) -> str:
+    """Manuelle AMS-Zuordnung eines Jobs: zuerst der Job selbst, sonst die pro Datei
+    im Browser gespeicherte Zuordnung."""
+    return (job.get("amsMap") or "").strip() or _file_ams_map(job.get("fileId"))
+
+
+def _material_base(t: str) -> str:
+    return (t or "").upper().strip().split()[0] if t else ""
+
+
+def _material_mismatch(types: list, ams_map_str: str, ams_raw: dict) -> str:
+    """Sicherheitsnetz: prüft, ob eine MANUELLE AMS-Zuordnung das Material kreuzt
+    (z. B. Datei PETG → Slot PLA). Gibt eine Klartext-Beschreibung der Konflikte
+    zurück, oder '' wenn alle Materialien passen."""
+    slots = {s["gid"]: s for s in _ams_slots_from_raw(ams_raw)}
+    gids = []
+    for x in str(ams_map_str).split(","):
+        x = x.strip()
+        if x.lstrip("-").isdigit():
+            gids.append(int(x))
+    bad = []
+    for i, ftype in enumerate(types):
+        if i >= len(gids):
+            continue
+        slot = slots.get(gids[i])
+        if not slot:
+            bad.append(f"Slot {gids[i]} leer/unbekannt")
+            continue
+        fb, sb = _material_base(ftype), _material_base(slot.get("type"))
+        if fb and sb and fb != sb and fb not in (slot.get("type") or "").upper() and sb not in (ftype or "").upper():
+            bad.append(f"{ftype}→{slot.get('type')}")
+    return ", ".join(bad)
+
+
 async def _do_send_file(job: dict, device: Device, use_ams: bool):
     loop = asyncio.get_event_loop()
     db = SessionLocal()
@@ -618,7 +670,7 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
             raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
 
         try:
-            ams_map_str = (job.get("amsMap") or "").strip()
+            ams_map_str = _job_manual_map(job)   # Job-Map oder pro-Datei im Browser gewählt
 
             if not use_ams:
                 ams_mapping = []
@@ -910,8 +962,6 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
     don't match what's loaded is never printed unattended ('manuelle Festlegung')."""
     if not use_ams:
         return
-    if (job.get("amsMap") or "").strip():
-        return  # manual mapping set → trust the user
 
     loop = asyncio.get_event_loop()
     db = SessionLocal()
@@ -929,15 +979,27 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
     notified = False
     while not _farm["stopping"]:
         ams_raw = await _read_live_ams(device)
-        _, missing = _ams_match_confident(types, colors, ams_raw, _farm.get("exact_color_only", False))
-        if not missing:
-            _set_job(job["id"], {"needs_ams": False, "ams_missing": []})
-            _farm["error"] = None
-            return
-        desc = ", ".join(
-            (f"{m['type'] or '?'} {m['color'] or ''}".strip() + f" ({m['reason']})")
-            for m in missing
-        )
+        manual = _job_manual_map(job)
+        if manual:
+            # Manuelle Zuordnung (Job oder pro-Datei im Browser) — vertrauen, ABER
+            # niemals materialübergreifend: das Material muss zur Datei passen.
+            bad = _material_mismatch(types, manual, ams_raw)
+            if not bad:
+                _set_job(job["id"], {"needs_ams": False, "ams_missing": []})
+                _farm["error"] = None
+                return
+            desc = f"manuelle Zuordnung kreuzt Material ({bad}) — bitte korrigieren"
+            missing = [{"type": "", "color": "", "reason": desc}]
+        else:
+            _, missing = _ams_match_confident(types, colors, ams_raw, _farm.get("exact_color_only", False))
+            if not missing:
+                _set_job(job["id"], {"needs_ams": False, "ams_missing": []})
+                _farm["error"] = None
+                return
+            desc = ", ".join(
+                (f"{m['type'] or '?'} {m['color'] or ''}".strip() + f" ({m['reason']})")
+                for m in missing
+            )
         _log(f"⚠ AMS-Abgleich für {job['fileName']}: {desc} — manuelle Festlegung notwendig")
         _set_job(job["id"], {"needs_ams": True, "ams_missing": missing})
         action = _estrat("ams_unmatched")
@@ -958,11 +1020,7 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
             await asyncio.sleep(0.5)
         if _farm["stopping"]:
             raise RuntimeError("Gestoppt")
-        if (job.get("amsMap") or "").strip():
-            _set_job(job["id"], {"needs_ams": False})
-            _farm["error"] = None
-            return
-        # otherwise re-validate (user may have swapped filament physically)
+        # nach dem Fortsetzen erneut prüfen (Nutzer hat ggf. neu zugeordnet/getauscht)
         _farm["error"] = None
     raise RuntimeError("Gestoppt")
 
@@ -2635,9 +2693,22 @@ async def get_file_filaments(file_id: int, plate: Optional[int] = None):
         if not os.path.exists(f.file_path):
             raise HTTPException(404, "Datei nicht auf Disk")
         types, colors = _read_filament_info(f.file_path, f.file_type, plate)
-        return {"filaments": [{"type": t, "color": c} for t, c in zip(types, colors)]}
+        return {"filaments": [{"type": t, "color": c} for t, c in zip(types, colors)],
+                "ams_map": _file_ams_map(file_id)}
     finally:
         db.close()
+
+
+class FileAmsPayload(BaseModel):
+    ams_map: str = ""   # "gid,gid" je Datei-Filament; leer = wieder Auto
+
+
+@router.put("/file_ams/{file_id}")
+async def set_file_ams(file_id: int, payload: FileAmsPayload):
+    """Pro Datei manuell gewählte AMS-Slots speichern (im Datei-Browser). Wird beim
+    Druck verwendet; leer = wieder automatisches Matching (material-/farbgenau)."""
+    _save_file_ams_map(file_id, payload.ams_map)
+    return {"success": True, "ams_map": _file_ams_map(file_id)}
 
 
 @router.get("/stats")

@@ -845,6 +845,12 @@ const EN_STRINGS = {
   'Filament fixieren': 'Pin filament',
   'Filament fixiert': 'Filament pinned',
   'Filamente im Druck': 'Filaments in the print',
+  'Filamente & AMS-Zuordnung': 'Filaments & AMS mapping',
+  'manuell': 'manual',
+  'Manuell — wird beim Druck verwendet': 'Manual — used when printing',
+  'Automatisch (Material + Farbe)': 'Automatic (material + color)',
+  'Anderes Material — Druck pausiert': 'Different material — print pauses',
+  '↺ Automatisch': '↺ Automatic',
   'Automatisch aus dem aktiven AMS gelernt + manuell · {0} Filament(e)':
     'Learned automatically from the active AMS + manual · {0} filament(s)',
   'Filamente (AMS + manuell)': 'Filaments (AMS + manual)',

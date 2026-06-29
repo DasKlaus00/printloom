@@ -4,6 +4,7 @@ import { useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 import { colorLabel } from '../services/colorNames'
+import { amsAutoMap } from '../services/amsUtils'
 
 function ColorDot({ hex }) {
   if (!hex) return <span className="w-3 h-3 rounded-full bg-surface-700 inline-block" />
@@ -169,42 +170,91 @@ function AmsInfoPanel({ fileId, fileType }) {
 }
 
 
-/* Zeigt die im Druck verwendeten Filamente (Material + Farbe) — direkt aus der
-   Datei gelesen. Read-only: die Zuordnung zum AMS passiert beim Drucken automatisch
-   material- UND farbgenau (nie materialübergreifend), bzw. manuell in der Queue. */
-function FileFilaments({ fileId }) {
+const _matBase = (t) => (t || '').toUpperCase().trim().split(/\s+/)[0]
+
+/* Zeigt die Filamente aus dem Druck (Material + Farbe) und lässt PRO DATEI manuell
+   einen AKTIVEN AMS-Slot je Filament wählen. Gespeichert (pro Datei) und beim Druck
+   verwendet. Wählt der Nutzer ein anderes MATERIAL, gibt es eine Warnung (PETG≠PLA),
+   und der Druck pausiert beim Material-Mismatch (Sicherheitsnetz im Backend). */
+function FileFilaments({ fileId, amsSlots }) {
   const { tr } = useLanguage()
   const [fils, setFils] = useState(null)
+  const [map,  setMap]  = useState([])      // gids je Filament
   const [open, setOpen] = useState(false)
+  const [manual, setManual] = useState(false)
+
   useEffect(() => {
     if (!open || fils !== null) return
-    autofarmService.getFileFilaments(fileId)
-      .then(r => setFils(r.data.filaments ?? []))
-      .catch(() => setFils([]))
-  }, [open, fileId, fils])
+    autofarmService.getFileFilaments(fileId).then(r => {
+      const f = r.data.filaments ?? []
+      setFils(f)
+      const saved = String(r.data.ams_map || '').split(',').map(x => parseInt(x, 10)).filter(n => !isNaN(n))
+      if (saved.length === f.length && f.length) { setMap(saved); setManual(true) }
+      else {
+        const auto = amsAutoMap(f, amsSlots)
+        setMap(auto.map(a => a.slot?.gid ?? amsSlots[0]?.gid ?? 0))
+        setManual(false)
+      }
+    }).catch(() => setFils([]))
+  }, [open, fileId, fils, amsSlots])
+
+  const save = (next) => {
+    setMap(next); setManual(true)
+    autofarmService.setFileAms(fileId, next.join(',')).catch(() => {})
+  }
+  const resetAuto = () => {
+    setManual(false)
+    autofarmService.setFileAms(fileId, '').catch(() => {})
+    const auto = amsAutoMap(fils ?? [], amsSlots)
+    setMap(auto.map(a => a.slot?.gid ?? amsSlots[0]?.gid ?? 0))
+  }
+
   return (
     <div className="mt-1.5">
       <button onClick={() => setOpen(o => !o)}
         className="flex items-center gap-1.5 text-[11px] text-surface-500 hover:text-blue-400 transition-colors">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="9"/></svg>
-        {tr('Filamente im Druck')}
+        {tr('Filamente & AMS-Zuordnung')}{manual ? ` · ${tr('manuell')}` : ''}
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
           className={`transition-transform ${open ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"/></svg>
       </button>
       {open && (
-        <div className="mt-2 pl-2 border-l border-surface-700 space-y-1">
+        <div className="mt-2 pl-2 border-l border-surface-700 space-y-1.5">
           {fils === null && <p className="text-[10px] text-surface-600 animate-pulse">{tr('Lese…')}</p>}
           {fils && fils.length === 0 && <p className="text-[10px] text-surface-600">{tr('Keine Filament-Info in der Datei')}</p>}
-          {(fils ?? []).map((f, i) => (
-            <div key={i} className="flex items-center gap-2 text-[10px]">
-              <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0"
-                style={{ backgroundColor: f.color ? (f.color.startsWith('#') ? f.color : `#${f.color}`) : '#555' }} />
-              <span className="text-surface-300 w-16 truncate">{f.type || '?'}</span>
-              {f.color && <span className="text-surface-500 font-mono">{colorLabel(f.color)}</span>}
+          {fils && fils.length > 0 && amsSlots.length === 0 && (
+            <p className="text-[10px] text-surface-600">{tr('Kein AMS erkannt — Drucker offline?')}</p>
+          )}
+          {(fils ?? []).map((f, i) => {
+            const slot = amsSlots.find(s => s.gid === map[i])
+            const mism = slot && _matBase(f.type) && _matBase(slot.type) && _matBase(f.type) !== _matBase(slot.type)
+            return (
+              <div key={i} className="flex items-center gap-1.5 text-[10px]">
+                <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0"
+                  style={{ backgroundColor: f.color ? (f.color.startsWith('#') ? f.color : `#${f.color}`) : '#555' }} />
+                <span className="text-surface-300 w-14 truncate" title={f.color ? colorLabel(f.color) : ''}>{f.type || '?'}</span>
+                <span className="text-surface-700">→</span>
+                {amsSlots.length > 0 ? (
+                  <select value={map[i] ?? ''} onChange={e => { const n = [...map]; n[i] = +e.target.value; save(n) }}
+                    className={`flex-1 text-[10px] font-mono h-6 py-0 ${mism ? 'border-red-700 text-red-300' : ''}`}>
+                    {amsSlots.map(s => (
+                      <option key={s.gid} value={s.gid}>[{s.gid}] {s.type}{s.color ? ` · ${colorLabel(s.color)}` : ''}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-surface-500 font-mono">{f.color ? colorLabel(f.color) : ''}</span>
+                )}
+                {slot && <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0"
+                  style={{ backgroundColor: slot.color ? `#${String(slot.color).slice(0,6)}` : '#555' }} />}
+                {mism && <span className="text-red-400 text-[9px] shrink-0" title={tr('Anderes Material — Druck pausiert')}>⚠</span>}
+              </div>
+            )
+          })}
+          {fils && fils.length > 0 && amsSlots.length > 0 && (
+            <div className="flex items-center gap-3 pt-0.5">
+              <span className="text-[9px] text-surface-600">{manual ? tr('Manuell — wird beim Druck verwendet') : tr('Automatisch (Material + Farbe)')}</span>
+              {manual && <button onClick={resetAuto} className="text-[9px] text-blue-400 hover:text-blue-300">{tr('↺ Automatisch')}</button>}
             </div>
-          ))}
-          {fils && fils.length > 0 && (
-            <p className="text-[9px] text-surface-600 pt-0.5">{tr('Wird beim Druck material- und farbgenau dem AMS zugeordnet (nie materialübergreifend).')}</p>
           )}
         </div>
       )}
@@ -328,7 +378,7 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
               <span className="text-[10px] text-surface-600">📁 {folderById[file.folder_id].name}</span>
             )}
           </div>
-          {isPrintable && <FileFilaments fileId={file.id} />}
+          {isPrintable && <FileFilaments fileId={file.id} amsSlots={amsSlots} />}
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
