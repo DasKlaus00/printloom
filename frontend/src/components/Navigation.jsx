@@ -32,6 +32,14 @@ const icons = {
       <rect x="2" y="17" width="20" height="4" rx="1"/>
     </svg>
   ),
+  konfigurator: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
+      <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
+      <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
+      <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
+    </svg>
+  ),
   calibration: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
@@ -121,6 +129,7 @@ function buildPages(t, tr) {
     { id: 'sequence',      label: t('nav.sequence'),      icon: 'sequence'    },
     { id: 'profiles',      label: t('nav.profiles'),      icon: 'profiles'    },
     { id: 'filamente',     label: tr('Filamente'),        icon: 'filamente'   },
+    { id: 'konfigurator',  label: tr('Konfigurator'),     icon: 'konfigurator'},
     { id: 'configuration', label: t('nav.configuration'), icon: 'config'      },
     { id: 'setup',         label: tr('Setup-Assistent'),  icon: 'config'      },
     { id: 'system',        label: t('nav.system'),        icon: 'system'      },

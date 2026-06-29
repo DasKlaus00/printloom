@@ -34,6 +34,7 @@ const Configuration   = React.lazy(() => import('./pages/Configuration'))
 const FileLibrary     = React.lazy(() => import('./pages/FileLibrary'))
 const FilamentLibrary = React.lazy(() => import('./pages/FilamentLibrary'))
 const RackManager     = React.lazy(() => import('./pages/RackManager'))
+const Konfigurator    = React.lazy(() => import('./pages/Konfigurator'))
 const AutoFarm        = React.lazy(() => import('./pages/AutoFarm'))
 const Steuerung       = React.lazy(() => import('./pages/Steuerung'))
 const System          = React.lazy(() => import('./pages/System'))
@@ -61,6 +62,7 @@ const PATH_TO_PAGE = {
   '/autofarm':      'autofarm',
   '/projekt':       'projekt',
   '/rack':          'rack',
+  '/konfigurator':  'konfigurator',
   '/configuration': 'configuration',
   '/filamente':     'filamente',
   '/system':        'system',
@@ -79,6 +81,7 @@ const PAGE_TO_PATH = {
   autofarm:      '/autofarm',
   projekt:       '/projekt',
   rack:          '/rack',
+  konfigurator:  '/konfigurator',
   configuration: '/configuration',
   filamente:     '/filamente',
   system:        '/system',
@@ -283,6 +286,7 @@ function App() {
     autofarm:      'Auto Farm',
     projekt:       'Projekt',
     rack:          'Rack Manager',
+    konfigurator:  'Konfigurator',
     configuration: 'Konfiguration',
     system:        'System',
     sequence:      'Sequenz-Editor',
@@ -369,6 +373,7 @@ function App() {
             {page('autofarm',      AutoFarm)}
             {page('projekt',       Projekt)}
             {page('rack',          RackManager)}
+            {page('konfigurator',  Konfigurator)}
             {page('configuration', Configuration)}
             {page('system',        System, { onUpdateAvailable: setUpdateAvailable, onUpdatePhase: setUpdateOverlay })}
             {page('sequence',      SequenceEditor)}

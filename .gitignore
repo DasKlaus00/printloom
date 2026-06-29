@@ -35,3 +35,7 @@ frontend/.vite
 .cache/
 .coverage
 htmlcov/
+
+# Extrahierte OTTOmat3D-Anleitung (riesig, gehoert nicht ins Repo)
+mk01/
+*.zip
