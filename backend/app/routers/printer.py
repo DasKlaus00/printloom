@@ -1019,13 +1019,57 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
         raise HTTPException(status_code=502, detail="MQTT-Verbindung zum Drucker fehlgeschlagen")
     _diag_add(sess, "MQTT-Verbindung", ["OK"])
 
-    # ── AMS-Mapping bestimmen ────────────────────────────────────
+    # ── AMS-Mapping bestimmen (sicher wie die Auto-Farm) ─────────
+    # Direkt-Druck NUTZT jetzt dieselbe Logik: echtes Material+Farbe der Datei,
+    # Live-AMS-Abgleich (NIE materialübergreifend), pro-Datei manuelle Zuordnung —
+    # und BRICHT AB, wenn das passende Filament gar nicht geladen ist (statt z. B.
+    # PETG mit dem geladenen PLA „Latte Brown" zu drucken).
     diag_mapping: list = []
-    if use_ams:
-        ams_mapping = _get_ams_mapping(file.file_path, file.file_type, ams_slot_override=ams_slot, diag=diag_mapping)
-    else:
+    if not use_ams:
         ams_mapping = []
         diag_mapping.append("AMS deaktiviert (use_ams=False) — kein Mapping gesendet")
+    elif ams_slot is not None:
+        ams_mapping = _get_ams_mapping(file.file_path, file.file_type, ams_slot_override=ams_slot, diag=diag_mapping)
+    else:
+        f_types, f_colors = _read_filament_info(file.file_path, file.file_type)
+        # Live-AMS lesen (Drucker antwortet erst im Vollreport mit ams)
+        await loop.run_in_executor(None, mqtt_client.request_status)
+        ams_raw = {}
+        for _ in range(8):
+            await asyncio.sleep(0.5)
+            raw = mqtt_client.get_last_message()
+            ams_raw = ((raw.get("print", {}) if raw else {}).get("ams", {})) or {}
+            if ams_raw.get("ams"):
+                break
+        manual, mat_check, exact_only = "", None, False
+        try:
+            from app.routers.autofarm import _file_ams_map, _material_mismatch, _read_config, SETTINGS_PATH, _DEFAULT_SETTINGS
+            manual = _file_ams_map(file_id)
+            mat_check = _material_mismatch
+            exact_only = bool(_read_config(SETTINGS_PATH, _DEFAULT_SETTINGS).get("exact_color_only", False))
+        except Exception:
+            pass
+
+        def _refuse(detail):
+            try: mqtt_client.disconnect()
+            except Exception: pass
+            _diag_add(sess, "AMS-Mapping bestimmen", [detail], ok=False)
+            _diag_finish(sess, "error")
+            raise HTTPException(status_code=400, detail=detail)
+
+        if manual:
+            bad = mat_check(f_types, manual, ams_raw) if mat_check else ""
+            if bad:
+                _refuse(f"Manuelle AMS-Zuordnung passt nicht zum Material ({bad}) — bitte im Datei-Browser korrigieren.")
+            ams_mapping = [int(x) for x in manual.split(",") if x.strip().lstrip("-").isdigit()]
+            diag_mapping.append(f"Manuelle pro-Datei-Zuordnung: {ams_mapping}")
+        else:
+            mapping, missing = _ams_match_confident(f_types, f_colors, ams_raw, exact_only)
+            if missing:
+                desc = ", ".join((f"{m['type'] or '?'} {m['color'] or ''}".strip() + f" ({m['reason']})") for m in missing)
+                _refuse(f"Druck abgebrochen — passendes Filament fehlt im AMS: {desc}. Richtige Spule laden, im Datei-Browser zuordnen, oder über Auto Farm drucken.")
+            ams_mapping = _match_ams_live(f_types, f_colors, ams_raw)
+            diag_mapping.append(f"Live-Match (Material+Farbe, nie materialübergreifend): {ams_mapping}")
     _diag_add(sess, "AMS-Mapping bestimmen", diag_mapping)
 
     # ── FTP-Upload ───────────────────────────────────────────────

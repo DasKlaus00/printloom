@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.84',
+    de: [
+      'WICHTIG: Der „Drucken"-Knopf im Datei-Browser (Direktdruck) nutzt jetzt dieselbe sichere AMS-Logik wie die Auto-Farm — echtes Material + Farbe der Datei, Live-AMS-Abgleich (NIE materialübergreifend) und deine pro-Datei-Zuordnung. Fehlt das passende Filament im AMS (z. B. PETG nicht geladen), wird der Druck ABGEBROCHEN mit klarer Meldung, statt alles mit dem geladenen Filament (z. B. PLA „Latte Brown") zu drucken. Das war der letzte ungeschützte Pfad.',
+    ],
+    en: [
+      'IMPORTANT: the “Print” button in the file browser (direct print) now uses the same safe AMS logic as Auto Farm — the file’s real material + color, live AMS matching (NEVER across materials) and your per-file mapping. If the matching filament isn’t loaded (e.g. PETG missing), the print is ABORTED with a clear message instead of printing everything with the loaded filament (e.g. PLA “Latte Brown”). This was the last unguarded path.',
+    ],
+  },
+  {
     version: '1.0.83',
     de: [
       'Fix: AMS-Spulen wurden nicht erkannt/gelernt (0 Filamente), obwohl geladen — die Status-Antwort lieferte das AMS unter einem anderen Feld als das Frontend gelesen hat. Jetzt sehen Datei-Browser, Auto-Farm und das Filament-Lernen die AMS-Slots wieder.',
