@@ -184,7 +184,8 @@ export default function Konfigurator() {
         <p className="text-sm text-surface-500 mt-0.5">{tr('Drucker & Regal einrichten → fertige Klipper-Config für die OTTOeject')}</p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[200px_1fr_1.1fr]">
+      {/* Drucker + Regal nebeneinander oben */}
+      <div className="grid gap-4 lg:grid-cols-[240px_1fr] items-start">
         {/* ── Links: Drucker wählen ── */}
         <div className="card p-3 space-y-1.5 self-start">
           <p className="section-label">{tr('1 · Drucker')}</p>
@@ -254,8 +255,11 @@ export default function Konfigurator() {
           </div>
         </div>
 
-        {/* ── Rechts: generierte Config ── */}
-        <div className="space-y-3 self-start">
+      </div>
+
+      {/* ── Generierte Config: volle Breite darunter, beide Dateien nebeneinander ── */}
+      <div className="space-y-2">
+        <div className="grid gap-4 lg:grid-cols-2">
           {[
             { title: tr('storage_calibration_variables.cfg'), text: storageCfg, key: 'storage', file: 'storage_calibration_variables.cfg' },
             { title: tr('printer_calibration_variables.cfg'), text: printerCfg, key: 'printer', file: 'printer_calibration_variables.cfg' },
@@ -268,13 +272,13 @@ export default function Konfigurator() {
                   <button onClick={() => download(c.text, c.file)} className="btn btn-ghost btn-sm text-xs">{tr('↓ Download')}</button>
                 </div>
               </div>
-              <pre className="text-[10px] leading-snug font-mono text-surface-300 bg-surface-900/70 border border-surface-700/60 rounded-lg p-2.5 overflow-auto max-h-72 whitespace-pre">{c.text}</pre>
+              <pre className="text-[10px] leading-snug font-mono text-surface-300 bg-surface-900/70 border border-surface-700/60 rounded-lg p-2.5 overflow-auto max-h-[32rem] whitespace-pre">{c.text}</pre>
             </div>
           ))}
-          <p className="text-[10px] text-surface-600 px-1">
-            {tr('Diese beiden Dateien in den Klipper-Config-Ordner der OTTOeject legen (neben ottoeject_macros.cfg) und Klipper neu starten. Feinjustierung pro Fach danach in „Steuerung".')}
-          </p>
         </div>
+        <p className="text-[10px] text-surface-600 px-1">
+          {tr('Diese beiden Dateien in den Klipper-Config-Ordner der OTTOeject legen (neben ottoeject_macros.cfg) und Klipper neu starten. Feinjustierung pro Fach danach in „Steuerung".')}
+        </p>
       </div>
     </div>
   )

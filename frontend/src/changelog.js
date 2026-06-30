@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.86',
+    de: [
+      'Konfigurator-Layout: Drucker- und Regal-Auswahl liegen jetzt oben nebeneinander, die generierte Klipper-Config steht in voller Breite darunter (beide Dateien nebeneinander) — übersichtlicher.',
+    ],
+    en: [
+      'Configurator layout: printer and rack selection now sit side by side at the top, with the generated Klipper config full width below (both files side by side) — clearer.',
+    ],
+  },
+  {
     version: '1.0.85',
     de: [
       'Neuer Tab „Konfigurator": Drucker wählen (X1C, P1S, P1P, A1, K1C, Elegoo CC, Anycubic Kobra S1, Flashforge AD5X), Regale/Fächer/Magazin und Maße einstellen — mit Live-Vorschau. Erzeugt fertige Klipper-Configs (storage_calibration_variables.cfg + printer_calibration_variables.cfg inkl. Tür-Macros) zum Kopieren/Download. Magazin-Option dabei.',
