@@ -288,7 +288,19 @@ function HlsVideo({ src, onError, className }) {
       hls.on(Hls.Events.FRAG_CHANGED, jumpLive)
       ref.current.play?.().catch(() => {})
     }).catch(() => onError?.('HLS-Player konnte nicht geladen werden'))
-    return () => { cancelled = true; try { hls?.destroy() } catch {} }
+
+    // Wenn das Video ausgeblendet ist (andere Seite offen → display:none, der
+    // Container hat keine Box → nicht „intersecting"), Wiedergabe & Download
+    // stoppen — sonst dekodiert der Browser im Hintergrund weiter (CPU-Last!).
+    let io
+    if (typeof IntersectionObserver !== 'undefined') {
+      io = new IntersectionObserver(([e]) => {
+        if (e.isIntersecting) { try { hls?.startLoad() } catch {} video.play?.().catch(() => {}) }
+        else { video.pause?.(); try { hls?.stopLoad() } catch {} }
+      }, { threshold: 0.01 })
+      io.observe(video)
+    }
+    return () => { cancelled = true; try { io?.disconnect() } catch {} try { hls?.destroy() } catch {} }
   }, [src])
   return <video ref={ref} muted autoPlay playsInline className={className} />
 }
@@ -314,9 +326,11 @@ function WhepVideo({ src, onError, className }) {
   useEffect(() => {
     const video = ref.current
     if (!video || !src) return
-    let pc, cancelled = false
+    let pc, cancelled = false, started = false
 
     const start = async () => {
+      if (started || cancelled) return
+      started = true
       try {
         pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
         pc.addTransceiver('video', { direction: 'recvonly' })
@@ -354,8 +368,15 @@ function WhepVideo({ src, onError, className }) {
         if (!cancelled) onError?.(String(e?.message || e))
       }
     }
-    start()
-    return () => { cancelled = true; try { pc?.close() } catch {} }
+    // WebRTC dekodiert laufend — bei ausgeblendetem Video (andere Seite offen) die
+    // Verbindung schließen, sonst CPU-Last im Hintergrund. Beim Wiedersehen neu auf.
+    const stop = () => { started = false; try { pc?.close() } catch {} pc = null; video.pause?.() }
+    let io
+    if (typeof IntersectionObserver !== 'undefined') {
+      io = new IntersectionObserver(([e]) => { e.isIntersecting ? start() : stop() }, { threshold: 0.01 })
+      io.observe(video)
+    } else { start() }
+    return () => { cancelled = true; try { io?.disconnect() } catch {} try { pc?.close() } catch {} }
   }, [src])
   return <video ref={ref} muted autoPlay playsInline className={className} />
 }
@@ -445,6 +466,21 @@ function X1CView({ bambuId }) {
   // Direkt anzeigen: sobald ein Drucker da ist, automatisch verbinden (der
   // Kamera-Toggle im Panel steuert das Ein/Aus; hier kein manueller Klick nötig).
   useEffect(() => { if (bambuId) connect() /* eslint-disable-next-line */ }, [bambuId])
+
+  // Ausgeblendet (andere Seite offen → display:none) den MJPEG-Stream droppen, sonst
+  // läuft ffmpeg auf dem Server weiter (CPU!). Beim Wiedersehen frisch verbinden.
+  const wrapRef = useRef(null)
+  const [visible, setVisible] = useState(true)
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(([e]) => {
+      setVisible(prev => { if (e.isIntersecting && !prev) setKey(k => k + 1); return e.isIntersecting })
+    }, { threshold: 0.01 })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
@@ -455,7 +491,7 @@ function X1CView({ bambuId }) {
           {live ? tr('⏹ Stopp') : tr('📷 Live')}
         </button>
       </div>
-      <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '16/9', maxWidth: '100%' }}>
+      <div ref={wrapRef} className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '16/9', maxWidth: '100%' }}>
         {live ? (
           err ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1.5 px-3 text-center">
@@ -464,9 +500,13 @@ function X1CView({ bambuId }) {
               <button onClick={connect} className="btn btn-ghost btn-sm mt-0.5">{tr('Neu verbinden')}</button>
             </div>
           ) : ready ? (
-            <img src={`${printerService.cameraStreamUrl(bambuId)}?t=${key}`} alt="X1C Live"
-              onError={() => setErr(e => e || tr('Stream-Verbindung abgebrochen'))}
-              className="w-full h-full object-contain" />
+            visible ? (
+              <img key={key} src={`${printerService.cameraStreamUrl(bambuId)}?t=${key}`} alt="X1C Live"
+                onError={() => setErr(e => e || tr('Stream-Verbindung abgebrochen'))}
+                className="w-full h-full object-contain" />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center text-surface-600 text-[10px]">{tr('Pausiert (Seite im Hintergrund)')}</div>
+            )
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-[10px]">{tr('Verbinde …')}</div>
           )

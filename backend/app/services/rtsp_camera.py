@@ -29,7 +29,7 @@ def _url(ip: str, access_code: str) -> str:
     return f"rtsps://bblp:{access_code}@{ip}:{RTSP_PORT}/streaming/live/1"
 
 
-def _cmd(ip: str, access_code: str, single: bool, fps: int = 10) -> list:
+def _cmd(ip: str, access_code: str, single: bool, fps: int = 6) -> list:
     # NOTE: no -rw_timeout / -stimeout here — those vary by ffmpeg build and the
     # RTSP demuxer rejects unknown ones ("Error opening input files: Option not
     # found"). A connect/first-frame timeout is enforced with a watchdog instead.
@@ -39,7 +39,12 @@ def _cmd(ip: str, access_code: str, single: bool, fps: int = 10) -> list:
         "-i", _url(ip, access_code),
         "-an",                                 # X1C stream has no audio
     ]
-    cmd += ["-frames:v", "1"] if single else ["-r", str(fps)]
+    if single:
+        cmd += ["-frames:v", "1"]              # Snapshot: ein Frame, volle Auflösung
+    else:
+        # Weniger fps + auf max. 1280 Breite herunterskalieren (nie hoch) → deutlich
+        # weniger CPU beim MJPEG-Transcode (war 10 fps @ Vollauflösung).
+        cmd += ["-r", str(fps), "-vf", "scale='min(1280,iw)':-2"]
     cmd += ["-f", "mjpeg", "-q:v", "6", "pipe:1"]
     return cmd
 

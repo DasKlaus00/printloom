@@ -183,6 +183,7 @@ const EN_STRINGS = {
   'Diese beiden Dateien in den Klipper-Config-Ordner der OTTOeject legen (neben ottoeject_macros.cfg) und Klipper neu starten. Feinjustierung pro Fach danach in „Steuerung".':
     'Put both files into the OTTOeject Klipper config folder (next to ottoeject_macros.cfg) and restart Klipper. Fine-tune per slot afterwards in “Control”.',
   'Regal {0}': 'Rack {0}',
+  'Pausiert (Seite im Hintergrund)': 'Paused (page in background)',
   'Magazin (Fach {0})': 'Magazine (slot {0})',
   '+ Beispiel-Teil laden': '+ Load demo part',
   'Beispiel-Teil geladen': 'Demo part loaded',

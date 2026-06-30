@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.87',
+    de: [
+      'CPU-Fix: Die Kamera-Streams (X1C-MJPEG, HLS, WebRTC) liefen weiter, auch wenn man längst auf einer anderen Seite war — Seiten bleiben für schnellen Wechsel im Hintergrund geladen, und die Videos dekodierten/transcodierten unsichtbar weiter (deutliche CPU-Last). Jetzt pausieren die Streams automatisch, sobald ihre Kachel nicht sichtbar ist, und laufen beim Zurückwechseln wieder an.',
+      'Die X1C-Kamera wird zudem sparsamer transcodiert (6 statt 10 fps, max. 1280 px Breite) → weniger CPU im laufenden Betrieb.',
+    ],
+    en: [
+      'CPU fix: camera streams (X1C MJPEG, HLS, WebRTC) kept running even after you’d navigated to another page — pages stay mounted in the background for fast switching, and the videos kept decoding/transcoding invisibly (noticeable CPU load). Streams now pause automatically when their tile isn’t visible and resume on return.',
+      'The X1C camera is also transcoded more efficiently (6 instead of 10 fps, max 1280 px wide) → less CPU during operation.',
+    ],
+  },
+  {
     version: '1.0.86',
     de: [
       'Konfigurator-Layout: Drucker- und Regal-Auswahl liegen jetzt oben nebeneinander, die generierte Klipper-Config steht in voller Breite darunter (beide Dateien nebeneinander) — übersichtlicher.',
