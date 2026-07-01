@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { useLanguage } from '../services/i18n'
 import { controlService } from '../services/api'
-import RackDiagram from '../components/RackDiagram'
+import RackDiagram, { PrinterBadge } from '../components/RackDiagram'
 
 /* ── Drucker-Presets (aus OTTOmat3D printer_calibration_variables.cfg) ──────────
    eject/load: Arm-Positionen am Drucker (x = „Abstand zum Drucker"); door: Tür-Macro.
@@ -221,7 +221,8 @@ export default function Konfigurator() {
   const [gap, setGap]       = useState(DEFAULTS.slot_gap)
   const [xUnclamp, setX]    = useState(DEFAULTS.x_unclamp)
   const [yEngage, setY]     = useState(DEFAULTS.y_engage)
-  const [rackGap, setRackGap] = useState(DEFAULTS.rack_x_gap)   // global_rack_x_gap
+  const [rackGap, setRackGap] = useState(DEFAULTS.rack_x_gap)   // global_rack_x_gap (Regal-Raster)
+  const [rackWidth, setRackWidth] = useState(DEFAULTS.rack_x_gap - 20)  // Regalbreite (nur fürs Bau-Schema)
   const [plate, setPlate]   = useState('256')       // 256 → pullback 5, 220 → 30
   const [magazine, setMagazine] = useState(true)
   const [advanced, setAdvanced] = useState(false)
@@ -306,7 +307,8 @@ export default function Konfigurator() {
             <NumField label={tr('Lager-Fächer je Regal')} value={storage} min={1} max={12} onChange={setStorage} />
             <NumField label={tr('Höhe Fach 1 (mm)')} hint={tr('global_first_z_flat')} value={firstZ} step={0.5} onChange={setFirstZ} />
             <NumField label={tr('Fach-Abstand (mm)')} hint={tr('global_slot_gap · Z-Schritt = +30')} value={gap} step={1} onChange={setGap} />
-            <NumField label={tr('Regal-Versatz X (mm)')} hint={tr('global_rack_x_gap · pro Regal nach rechts')} value={rackGap} step={1} onChange={setRackGap} />
+            <NumField label={tr('Regal-Versatz X (mm)')} hint={tr('global_rack_x_gap · Raster Anfang→Anfang')} value={rackGap} step={1} onChange={setRackGap} />
+            <NumField label={tr('Regalbreite (mm)')} hint={tr('nur fürs Bau-Schema · lichte Weite = Raster − 20')} value={rackWidth} step={1} onChange={setRackWidth} />
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -349,7 +351,7 @@ export default function Konfigurator() {
             <p className="text-[10px] uppercase tracking-wide text-surface-600 mb-1">{tr('Vorschau')}</p>
             <RackDiagram printerName={printer.name} enclosed={printer.enclosed}
               numRacks={racks} slotsPerRack={slots} magazineSlot={magazineSlot}
-              slotStepMm={slotStepZ} rackGapMm={+rackGap || 0}
+              slotStepMm={slotStepZ} rackGapMm={+rackGap || 0} rackWidthMm={+rackWidth || 0}
               printerGapMm={Math.round(Math.abs((+load.x) - (+xUnclamp)))}
               onSlotClick={approachSlot} busy={jog.busy} />
             <p className="text-[10px] text-surface-600 mt-1">
@@ -357,17 +359,30 @@ export default function Konfigurator() {
             </p>
           </div>
 
-          {/* Live: Fach anfahren */}
-          <div className="pt-2 border-t border-surface-700/50 space-y-1.5">
+          {/* Live-Aktionen am echten OTTOeject */}
+          <div className="pt-2 border-t border-surface-700/50 space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] text-surface-400">{tr('Live: Fach anfahren (OTTOeject)')}</p>
+              <p className="text-[11px] text-surface-400">{tr('Live-Aktionen (OTTOeject)')}</p>
               <button onClick={homeOtto} disabled={jog.busy}
                 className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('⌂ Referenzfahrt')}</button>
             </div>
             <p className="text-[10px] text-surface-600">
-              {tr('Erst Referenzfahrt, dann im Bild ein Fach anklicken — der Arm fährt mit den aktuellen Werten davor (greift nicht).')}
+              {tr('Erst Referenzfahrt. Dann im Bild ein Fach anklicken (Arm fährt davor, greift nicht) oder eine Drucker-Aktion wählen.')}
             </p>
+            <div className="flex items-center gap-2">
+              <div className="shrink-0 rounded-md border border-blue-800/50 bg-blue-950/30 p-1" title={printer.name}>
+                <PrinterBadge enclosed={printer.enclosed} size={38} />
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 flex-1">
+                {printer.door && <button onClick={() => sendG('OPEN_DOOR_BAMBU_X_ONE_C', tr('Tür öffnen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('🚪 Tür öffnen')}</button>}
+                {printer.door && <button onClick={() => sendG('CLOSE_DOOR_BAMBU_X_ONE_C', tr('Tür schließen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('🚪 Tür schließen')}</button>}
+                <button onClick={() => sendG('EJECT_FROM_BAMBULAB_X_ONE_C', tr('Platte rausholen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('⬆ Platte rausholen')}</button>
+                <button onClick={() => sendG('LOAD_ONTO_BAMBULAB_X_ONE_C', tr('Platte einlegen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('⬇ Platte einlegen')}</button>
+              </div>
+            </div>
+            {!printer.door && <p className="text-[9px] text-surface-600">{tr('{0} hat kein Tür-Macro — Tür-Aktionen entfallen.', printer.name)}</p>}
             {jog.msg && <p className={`text-[10px] font-mono ${jog.err ? 'text-red-400' : jog.busy ? 'text-amber-400' : 'text-emerald-400'}`}>{jog.msg}</p>}
+            <p className="text-[9px] text-surface-600">{tr('Drucker-Aktionen brauchen die aufgespielte printer_calibration_variables.cfg + eine Referenzfahrt.')}</p>
           </div>
         </div>
 

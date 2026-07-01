@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.90',
+    de: [
+      'Live-Aktionen im Konfigurator erweitert: neben „Fach anfahren" gibt es jetzt Tür öffnen, Tür schließen, Platte einlegen und Platte aus dem Drucker holen — mit dem passenden Piktogramm des gewählten Druckers. (Braucht die aufgespielte printer_calibration_variables.cfg + Referenzfahrt; Tür-Aktionen nur bei Druckern mit Tür-Macro.)',
+      'Das Bau-Schema zeigt jetzt die 2020-Alu-Profile zwischen den Regalen und bemaßt oben alle Abstände: Drucker ↔ Regal 1, Regal-Raster (Anfang 1 → Anfang 2 = Regal-Versatz X), Regalbreite und die lichte Weite zwischen zwei 2020-Trägern. Neues Feld „Regalbreite" (nur fürs Schema; geht nicht in die Klipper-Config ein).',
+    ],
+    en: [
+      'Live actions in the configurator extended: besides “approach slot” there are now open door, close door, load plate and eject plate from the printer — with the matching pictogram of the selected printer. (Needs the flashed printer_calibration_variables.cfg + homing; door actions only for printers with a door macro.)',
+      'The build schematic now shows the 2020 aluminium profiles between the racks and dimensions all distances at the top: printer ↔ rack 1, rack pitch (start 1 → start 2 = rack offset X), rack width and the clear width between two 2020 profiles. New field “Rack width” (schematic only; not part of the Klipper config).',
+    ],
+  },
+  {
     version: '1.0.89',
     de: [
       'Konfigurator-Vorschau ist jetzt ein technisches Schema: links das Piktogramm des gewählten Druckers (geschlossen mit Tür bzw. offener Rahmen), rechts daneben die Regale — die nach rechts wachsen. Eingezeichnet sind die einzuhaltenden Abstände: Drucker ↔ Regal 1, Regal-Raster (Mitte–Mitte = Regal-Versatz X) und das Fach-Raster (Z-Schritt). Fächer bleiben anklickbar zum Anfahren.',

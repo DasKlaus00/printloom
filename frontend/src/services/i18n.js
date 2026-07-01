@@ -189,6 +189,23 @@ const EN_STRINGS = {
   'Live: Fach anfahren (OTTOeject)': 'Live: approach slot (OTTOeject)',
   '⌂ Referenzfahrt': '⌂ Home',
   'Referenzfahrt…': 'Homing…',
+  'Live-Aktionen (OTTOeject)': 'Live actions (OTTOeject)',
+  'Erst Referenzfahrt. Dann im Bild ein Fach anklicken (Arm fährt davor, greift nicht) oder eine Drucker-Aktion wählen.':
+    'Home first. Then click a slot in the diagram (arm moves in front, does not grab) or pick a printer action.',
+  '🚪 Tür öffnen': '🚪 Open door', '🚪 Tür schließen': '🚪 Close door',
+  '⬆ Platte rausholen': '⬆ Eject plate', '⬇ Platte einlegen': '⬇ Load plate',
+  'Tür öffnen…': 'Opening door…', 'Tür schließen…': 'Closing door…',
+  'Platte rausholen…': 'Ejecting plate…', 'Platte einlegen…': 'Loading plate…',
+  '{0} hat kein Tür-Macro — Tür-Aktionen entfallen.': '{0} has no door macro — door actions omitted.',
+  'Drucker-Aktionen brauchen die aufgespielte printer_calibration_variables.cfg + eine Referenzfahrt.':
+    'Printer actions need the flashed printer_calibration_variables.cfg + homing.',
+  'Regalbreite (mm)': 'Rack width (mm)',
+  'nur fürs Bau-Schema · lichte Weite = Raster − 20': 'schematic only · clear width = pitch − 20',
+  'global_rack_x_gap · Raster Anfang→Anfang': 'global_rack_x_gap · pitch start→start',
+  'Bemaßung oben: Drucker↔Regal 1 · Regal-Raster (Anfang→Anfang) · Regalbreite · lichte Weite 2020↔2020. Rechts: Fach-Raster (Z).':
+    'Dimensions top: printer↔rack 1 · rack pitch (start→start) · rack width · clear width 2020↔2020. Right: slot pitch (Z).',
+  'Regal-Raster = Regalbreite + {0} mm Profil (2020) · Maße schematisch, Z-Höhen nicht maßstäblich':
+    'Rack pitch = rack width + {0} mm profile (2020) · schematic, Z heights not to scale',
   'Erst Referenzfahrt, dann im Bild ein Fach anklicken — der Arm fährt mit den aktuellen Werten davor (greift nicht).':
     'Home first, then click a slot in the diagram — the arm moves in front of it with the current values (does not grab).',
   'Regal {0} · Fach {1} anfahren…': 'Rack {0} · slot {1} — approaching…',

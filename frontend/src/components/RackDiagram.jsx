@@ -2,55 +2,68 @@ import React from 'react'
 import { useLanguage } from '../services/i18n'
 
 /* Technisches Schema für den Konfigurator: Drucker-Piktogramm (fest links) + Regale
-   (wachsen nach rechts) mit eingezeichneten Abständen. Fächer sind anklickbar
-   (onSlotClick → OTTOeject fährt das Fach an). Maße = OTTOeject-X/Z in mm, schematisch
-   (nicht maßstabsgetreu). 2020-Alu-Profil (20 mm) wird als Rahmenstärke berücksichtigt. */
+   (wachsen nach rechts), dazwischen 2020-Alu-Profile. Über den Regalen sind die
+   einzuhaltenden Abstände bemaßt. Fächer sind anklickbar (onSlotClick → OTTOeject
+   fährt das Fach an). Horizontal maßstäblich (mm→px), Z-Höhen schematisch. */
 
-const PROFILE_MM = 20   // 2020-Aluprofil
+const PROFILE_MM = 20   // 2020-Aluprofil (20 × 20 mm)
+const C = {             // Farben inline (robust, unabhängig von Tailwind-fill-Utilities)
+  txt: '#cbd5e1', dim: '#64748b',
+  slotF: '#1e293b', slotS: '#475569',
+  magF: 'rgba(120,53,15,0.45)', magS: '#d97706', magT: '#fbbf24',
+  pcbS: '#60a5fa', pcbF: 'rgba(30,58,138,0.28)',
+  postF: '#64748b', postS: '#94a3b8',
+}
 
 // Piktogramm je Bauart. enclosed = geschlossen (mit Tür), sonst offener Rahmen (Bedslinger).
-function PrinterIcon({ x, y, w, h, enclosed }) {
-  const s = 'stroke-blue-400'
-  const f = 'fill-blue-950/40'
+export function PrinterIcon({ x = 0, y = 0, w = 60, h = 80, enclosed = true }) {
   if (enclosed) {
     return (
-      <g className={`${s} ${f}`} strokeWidth="1.5" fill="none">
-        <rect x={x} y={y} width={w} height={h} rx="4" className={f} />
-        <line x1={x + 4} y1={y + h * 0.22} x2={x + w - 4} y2={y + h * 0.22} />          {/* Gantry */}
-        <rect x={x + w * 0.52} y={y + h * 0.34} width={w * 0.4} height={h * 0.56} rx="2" /> {/* Tür */}
-        <line x1={x + w * 0.58} y1={y + h * 0.62} x2={x + w * 0.6} y2={y + h * 0.62} strokeWidth="3" /> {/* Griff */}
-        <circle cx={x + w * 0.24} cy={y + h * 0.5} r={Math.min(w, h) * 0.09} />           {/* Spule */}
+      <g stroke={C.pcbS} strokeWidth="1.5" fill="none">
+        <rect x={x} y={y} width={w} height={h} rx="4" fill={C.pcbF} />
+        <line x1={x + 4} y1={y + h * 0.22} x2={x + w - 4} y2={y + h * 0.22} />
+        <rect x={x + w * 0.5} y={y + h * 0.34} width={w * 0.42} height={h * 0.56} rx="2" />
+        <line x1={x + w * 0.56} y1={y + h * 0.62} x2={x + w * 0.58} y2={y + h * 0.62} strokeWidth="3" />
+        <circle cx={x + w * 0.24} cy={y + h * 0.5} r={Math.min(w, h) * 0.09} />
       </g>
     )
   }
   return (
-    <g className={s} strokeWidth="1.5" fill="none">
-      <rect x={x} y={y + h * 0.78} width={w} height={h * 0.14} rx="1" className="fill-blue-950/40" /> {/* Basis/Bett */}
-      <line x1={x + w * 0.5} y1={y + h * 0.85} x2={x + w * 0.5} y2={y + h * 0.12} />                   {/* Portal */}
-      <line x1={x + w * 0.22} y1={y + h * 0.12} x2={x + w * 0.78} y2={y + h * 0.12} />                 {/* Querbalken */}
-      <line x1={x + w * 0.5} y1={y + h * 0.22} x2={x + w * 0.68} y2={y + h * 0.22} strokeWidth="3" />  {/* Druckkopf */}
+    <g stroke={C.pcbS} strokeWidth="1.5" fill="none">
+      <rect x={x} y={y + h * 0.78} width={w} height={h * 0.14} rx="1" fill={C.pcbF} />
+      <line x1={x + w * 0.5} y1={y + h * 0.85} x2={x + w * 0.5} y2={y + h * 0.12} />
+      <line x1={x + w * 0.22} y1={y + h * 0.12} x2={x + w * 0.78} y2={y + h * 0.12} />
+      <line x1={x + w * 0.5} y1={y + h * 0.22} x2={x + w * 0.68} y2={y + h * 0.22} strokeWidth="3" />
     </g>
+  )
+}
+
+// Kleines eigenständiges Piktogramm für Buttons/Panels.
+export function PrinterBadge({ enclosed = true, size = 34 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 44 52" aria-hidden="true">
+      <PrinterIcon x={4} y={2} w={36} h={48} enclosed={enclosed} />
+    </svg>
   )
 }
 
 // Bemaßung mit Endstrichen + zentriertem Label (horizontal oder vertikal).
 function Dim({ x1, y1, x2, y2, label, vertical }) {
-  const tick = 4
-  const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2
+  const t = 4, midX = (x1 + x2) / 2, midY = (y1 + y2) / 2
   return (
-    <g className="stroke-surface-500" strokeWidth="1">
+    <g stroke={C.dim} strokeWidth="1">
       <line x1={x1} y1={y1} x2={x2} y2={y2} />
       {vertical ? (
         <>
-          <line x1={x1 - tick} y1={y1} x2={x1 + tick} y2={y1} />
-          <line x1={x2 - tick} y1={y2} x2={x2 + tick} y2={y2} />
-          <text x={midX + 6} y={midY} className="fill-surface-300 stroke-none text-[8px]" dominantBaseline="middle">{label}</text>
+          <line x1={x1 - t} y1={y1} x2={x1 + t} y2={y1} />
+          <line x1={x2 - t} y1={y2} x2={x2 + t} y2={y2} />
+          <text x={midX + 6} y={midY} fill={C.txt} stroke="none" fontSize="8" dominantBaseline="middle">{label}</text>
         </>
       ) : (
         <>
-          <line x1={x1} y1={y1 - tick} x2={x1} y2={y1 + tick} />
-          <line x1={x2} y1={y2 - tick} x2={x2} y2={y2 + tick} />
-          <text x={midX} y={midY - 3} className="fill-surface-300 stroke-none text-[8px]" textAnchor="middle">{label}</text>
+          <line x1={x1} y1={y1 - t} x2={x1} y2={y1 + t} />
+          <line x1={x2} y1={y2 - t} x2={x2} y2={y2 + t} />
+          <text x={midX} y={y1 - 3} fill={C.txt} stroke="none" fontSize="8" textAnchor="middle">{label}</text>
         </>
       )}
     </g>
@@ -60,75 +73,98 @@ function Dim({ x1, y1, x2, y2, label, vertical }) {
 export default function RackDiagram({
   printerName = 'Drucker', enclosed = true,
   numRacks = 1, slotsPerRack = 6, magazineSlot = null,
-  slotStepMm = 55, rackGapMm = 250, printerGapMm = 0,
+  slotStepMm = 55, rackGapMm = 250, rackWidthMm = 230, printerGapMm = 0,
   onSlotClick = null, busy = false,
 }) {
   const { tr } = useLanguage()
   const racks = Math.max(1, Math.min(9, +numRacks || 1))
   const slots = Math.max(1, Math.min(20, +slotsPerRack || 1))
   const clickable = typeof onSlotClick === 'function'
+  const pitch = Math.max(PROFILE_MM + 10, +rackGapMm || 250)          // Regal-Raster (Mitte/Anfang→Anfang)
+  const pGap  = Math.max(0, +printerGapMm || 0)                        // Drucker → Regal 1
+  const rW    = Math.max(20, Math.min(+rackWidthMm || 230, pitch - PROFILE_MM))  // Regalbreite (in Raster passend)
+  const clear = pitch - PROFILE_MM                                     // lichte Weite 2020 ↔ 2020
 
-  // Layout (px, schematisch)
-  const PAD = 10, SLOT_W = 38, SLOT_H = 20, VGAP = 2
-  const RACK_GAP_PX = 46, PRINTER_W = 74, PRINTER_GAP_PX = 54
-  const DIM_BOTTOM = 42, DIM_RIGHT = 56, LABEL_H = 14, TOP = 12
+  // Maßstab: der bemaßte (rechte) Teil wird auf ~540px skaliert
+  const spanMm = pGap + racks * pitch + PROFILE_MM
+  const scale  = Math.max(0.12, Math.min(0.55, 540 / Math.max(1, spanMm)))
 
-  const stackH = slots * SLOT_H + (slots - 1) * VGAP
-  const stackTop = TOP, stackBottom = TOP + stackH
-  const rackX = r => PAD + PRINTER_W + PRINTER_GAP_PX + r * (SLOT_W + RACK_GAP_PX)
-  const slotY = n => stackTop + (slots - n) * (SLOT_H + VGAP)   // n: 1=unten … slots=oben
-  const lastRackRight = rackX(racks - 1) + SLOT_W
-  const W = lastRackRight + DIM_RIGHT
-  const H = stackBottom + DIM_BOTTOM + LABEL_H
+  // Layout (px)
+  const PAD = 10, PRINTER_PX = 66, SLOT_H = 20, VGAP = 2, DIM_RIGHT = 46, LABEL_H = 14
+  const rowA = 12, rowB = 27, rowC = 42, TOPDIM = 52
+  const stackTop = TOPDIM, stackH = slots * SLOT_H + (slots - 1) * VGAP, stackBottom = stackTop + stackH
+  const originX = PAD + PRINTER_PX
+  const X = mm => originX + mm * scale                                 // mm 0 = rechte Kante Drucker-Symbol
+  const rackStart = i => pGap + i * pitch                             // i: 0-basiert
+  const postW = Math.max(3, PROFILE_MM * scale)
+  const slotY = n => stackTop + (slots - n) * (SLOT_H + VGAP)          // n: 1=unten … slots=oben
 
-  const printerX = PAD, printerRight = PAD + PRINTER_W
-  const dimYp = stackBottom + 14           // Drucker ↔ Regal 1
-  const dimYr = stackBottom + 30           // Regal-Raster
+  const lastRight = X(rackStart(racks - 1) + rW) + postW               // rechte Kante inkl. Schlusspfosten
+  const W = lastRight + DIM_RIGHT, H = stackBottom + LABEL_H + 4
+
+  // Pfosten: einer links jedes Regals + Schlusspfosten rechts
+  const posts = []
+  for (let i = 0; i < racks; i++) posts.push(rackStart(i) - PROFILE_MM)
+  posts.push(rackStart(racks - 1) + rW)
+
+  const fmt = v => `${Math.round(v)} mm`
 
   return (
     <div className="rounded-lg border border-surface-700 bg-surface-900/50 p-2 overflow-x-auto">
       <style>{`.otto-slot{cursor:pointer}.otto-slot:hover{stroke:#60a5fa;stroke-width:2}`}</style>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: Math.min(W, 720), maxWidth: W }} role="img">
-        {/* Drucker-Piktogramm (fest links, direkt neben Regal 1) */}
-        <PrinterIcon x={printerX} y={stackTop} w={PRINTER_W} h={stackH} enclosed={enclosed} />
-        <text x={printerX + PRINTER_W / 2} y={stackBottom + LABEL_H + DIM_BOTTOM - 2} textAnchor="middle"
-          className="fill-blue-300 text-[8px]">{printerName}</text>
+        {/* Drucker-Piktogramm (fest links) */}
+        <PrinterIcon x={PAD} y={stackTop} w={PRINTER_PX - 6} h={stackH} enclosed={enclosed} />
+        <text x={PAD + (PRINTER_PX - 6) / 2} y={stackBottom + LABEL_H} textAnchor="middle" fill={C.pcbS} fontSize="8">{printerName}</text>
 
-        {/* Regale */}
-        {Array.from({ length: racks }).map((_, r) => (
-          <g key={r}>
-            {Array.from({ length: slots }).map((_, i) => {
-              const n = i + 1
-              const isMag = magazineSlot != null && n === +magazineSlot
-              const y = slotY(n)
-              const common = {
-                x: rackX(r), y, width: SLOT_W, height: SLOT_H, rx: 2,
-                className: `${isMag ? 'fill-amber-950/50 stroke-amber-600' : 'fill-surface-800 stroke-surface-600'}${clickable ? ' otto-slot' : ''}`,
-                strokeWidth: 1,
-              }
-              return clickable
-                ? <rect key={n} {...common} onClick={() => !busy && onSlotClick(r + 1, n)} style={busy ? { opacity: 0.5, cursor: 'wait' } : undefined}>
-                    <title>{tr('{0} anfahren (Regal {1})', isMag ? tr('Magazin (Fach {0})', n) : tr('Fach {0}', n), r + 1)}</title>
-                  </rect>
-                : <rect key={n} {...common}><title>{isMag ? tr('Magazin (Fach {0})', n) : tr('Fach {0}', n)}</title></rect>
-            })}
-            {/* Fachnummern in Regal 1 */}
-            {r === 0 && Array.from({ length: slots }).map((_, i) => (
-              <text key={i} x={rackX(0) + SLOT_W / 2} y={slotY(i + 1) + SLOT_H / 2} textAnchor="middle" dominantBaseline="middle"
-                className={`${(i + 1) === +magazineSlot ? 'fill-amber-400' : 'fill-surface-500'} text-[8px] pointer-events-none`}>{i + 1}</text>
-            ))}
-            <text x={rackX(r) + SLOT_W / 2} y={stackBottom + LABEL_H} textAnchor="middle" className="fill-surface-500 text-[8px]">{tr('Regal {0}', r + 1)}</text>
+        {/* 2020-Profile zwischen/um die Regale */}
+        {posts.map((mm, k) => (
+          <g key={k}>
+            <rect x={X(mm)} y={stackTop} width={postW} height={stackH} fill={C.postF} stroke={C.postS} strokeWidth="0.8" />
           </g>
         ))}
+        <text x={X(posts[0]) + postW / 2} y={stackBottom + LABEL_H} textAnchor="middle" fill={C.postS} fontSize="7">2020</text>
 
-        {/* Bemaßung: Drucker ↔ Regal 1 */}
-        <Dim x1={printerRight} y1={dimYp} x2={rackX(0)} y2={dimYp} label={`${printerGapMm} mm`} />
-        {/* Bemaßung: Regal-Raster (Mitte–Mitte) */}
-        {racks >= 2
-          ? <Dim x1={rackX(0) + SLOT_W / 2} y1={dimYr} x2={rackX(1) + SLOT_W / 2} y2={dimYr} label={`${rackGapMm} mm`} />
-          : <Dim x1={rackX(0) - RACK_GAP_PX / 2} y1={dimYr} x2={rackX(0) + SLOT_W + RACK_GAP_PX / 2} y2={dimYr} label={tr('Raster {0} mm', rackGapMm)} />}
-        {/* Bemaßung: Fach-Raster (senkrecht, rechts) */}
-        <Dim vertical x1={lastRackRight + 12} y1={slotY(1) + SLOT_H / 2} x2={lastRackRight + 12} y2={slotY(2) + SLOT_H / 2} label={`${slotStepMm} mm`} />
+        {/* Regale */}
+        {Array.from({ length: racks }).map((_, r) => {
+          const x0 = X(rackStart(r)), rackPxW = Math.max(14, rW * scale)
+          return (
+            <g key={r}>
+              {Array.from({ length: slots }).map((_, i) => {
+                const n = i + 1, isMag = magazineSlot != null && n === +magazineSlot, y = slotY(n)
+                const fill = isMag ? C.magF : C.slotF, stroke = isMag ? C.magS : C.slotS
+                const title = isMag ? tr('Magazin (Fach {0})', n) : tr('Fach {0}', n)
+                return clickable ? (
+                  <rect key={n} x={x0} y={y} width={rackPxW} height={SLOT_H} rx="2" fill={fill} stroke={stroke} strokeWidth="1"
+                    className="otto-slot" style={busy ? { opacity: 0.5, cursor: 'wait' } : undefined}
+                    onClick={() => !busy && onSlotClick(r + 1, n)}>
+                    <title>{tr('{0} anfahren (Regal {1})', title, r + 1)}</title>
+                  </rect>
+                ) : (
+                  <rect key={n} x={x0} y={y} width={rackPxW} height={SLOT_H} rx="2" fill={fill} stroke={stroke} strokeWidth="1">
+                    <title>{title}</title>
+                  </rect>
+                )
+              })}
+              {r === 0 && Array.from({ length: slots }).map((_, i) => (
+                <text key={i} x={x0 + Math.max(14, rW * scale) / 2} y={slotY(i + 1) + SLOT_H / 2} textAnchor="middle" dominantBaseline="middle"
+                  fill={(i + 1) === +magazineSlot ? C.magT : C.slotS} fontSize="8" style={{ pointerEvents: 'none' }}>{i + 1}</text>
+              ))}
+              <text x={x0 + Math.max(14, rW * scale) / 2} y={stackBottom + LABEL_H} textAnchor="middle" fill={C.slotS} fontSize="8">{tr('Regal {0}', r + 1)}</text>
+            </g>
+          )
+        })}
+
+        {/* ── Bemaßung ÜBER den Regalen ── */}
+        {/* Reihe A: 2020 ↔ Drucker  |  Regal-Raster (Anfang 1 → Anfang 2) */}
+        <Dim x1={X(0)} y1={rowA} x2={X(rackStart(0)) } y2={rowA} label={fmt(pGap)} />
+        <Dim x1={X(rackStart(0))} y1={rowA} x2={X(rackStart(1))} y2={rowA} label={fmt(pitch)} />
+        {/* Reihe B: Regalbreite (Regal 1) */}
+        <Dim x1={X(rackStart(0))} y1={rowB} x2={X(rackStart(0) + rW)} y2={rowB} label={fmt(rW)} />
+        {/* Reihe C: lichte Weite 2020 ↔ 2020 */}
+        <Dim x1={X(rackStart(0))} y1={rowC} x2={X(rackStart(1) - PROFILE_MM)} y2={rowC} label={fmt(clear)} />
+        {/* Z: Fach-Raster (senkrecht, rechts) */}
+        <Dim vertical x1={lastRight + 12} y1={slotY(1) + SLOT_H / 2} x2={lastRight + 12} y2={slotY(2) + SLOT_H / 2} label={fmt(slotStepMm)} />
       </svg>
 
       <p className="text-[10px] text-surface-400 text-center mt-1">
@@ -136,9 +172,10 @@ export default function RackDiagram({
           ? tr('Drucker fest links · Regale wachsen nach rechts · Fach anklicken zum Anfahren')
           : tr('Drucker fest links · Regale wachsen nach rechts')}
       </p>
-      <p className="text-[9px] text-surface-600 text-center">
-        {tr('Rahmen aus 2020-Alu (20 mm): Regal-Raster {0} mm Mitte–Mitte (min. Regalbreite + {1} mm Profil + Luft) · Maße schematisch', rackGapMm, PROFILE_MM)}
-      </p>
+      <div className="text-[9px] text-surface-600 text-center leading-snug mt-0.5">
+        <p>{tr('Bemaßung oben: Drucker↔Regal 1 · Regal-Raster (Anfang→Anfang) · Regalbreite · lichte Weite 2020↔2020. Rechts: Fach-Raster (Z).')}</p>
+        <p>{tr('Regal-Raster = Regalbreite + {0} mm Profil (2020) · Maße schematisch, Z-Höhen nicht maßstäblich', PROFILE_MM)}</p>
+      </div>
     </div>
   )
 }
