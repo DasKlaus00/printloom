@@ -195,6 +195,14 @@ const EN_STRINGS = {
   '✓ {0}': '✓ {0}',
   '{0} anfahren (Regal {1})': 'Approach {0} (rack {1})',
   'Gesamt: {0} Fächer · Fach anklicken zum Anfahren': 'Total: {0} slots · click a slot to approach',
+  'Drucker fest links neben Regal 1 · jedes weitere Regal wächst nach rechts (Regal-Versatz X)':
+    'Printer fixed on the left next to rack 1 · each additional rack grows to the right (rack offset X)',
+  'Raster {0} mm': 'Pitch {0} mm',
+  'Drucker fest links · Regale wachsen nach rechts · Fach anklicken zum Anfahren':
+    'Printer fixed left · racks grow to the right · click a slot to approach',
+  'Drucker fest links · Regale wachsen nach rechts': 'Printer fixed left · racks grow to the right',
+  'Rahmen aus 2020-Alu (20 mm): Regal-Raster {0} mm Mitte–Mitte (min. Regalbreite + {1} mm Profil + Luft) · Maße schematisch':
+    'Frame from 2020 extrusion (20 mm): rack pitch {0} mm centre-to-centre (min. rack width + {1} mm profile + clearance) · schematic',
   'Beide Dateien in den Klipper-Config-Ordner der OTTOeject legen (neben ottoeject_macros.cfg, in printer.cfg per [include slots.cfg] einbinden) und Klipper neu starten. Ein zusätzliches Regal verschiebt automatisch alles um „Regal-Versatz X".':
     'Put both files into the OTTOeject Klipper config folder (next to ottoeject_macros.cfg; add [include slots.cfg] to printer.cfg) and restart Klipper. Adding a rack automatically shifts everything by “Rack offset X”.',
   'Pausiert (Seite im Hintergrund)': 'Paused (page in background)',

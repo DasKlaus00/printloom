@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.89',
+    de: [
+      'Konfigurator-Vorschau ist jetzt ein technisches Schema: links das Piktogramm des gewählten Druckers (geschlossen mit Tür bzw. offener Rahmen), rechts daneben die Regale — die nach rechts wachsen. Eingezeichnet sind die einzuhaltenden Abstände: Drucker ↔ Regal 1, Regal-Raster (Mitte–Mitte = Regal-Versatz X) und das Fach-Raster (Z-Schritt). Fächer bleiben anklickbar zum Anfahren.',
+      'Hinweis für den Aufbau mit 2020-Alu-Profil (20 mm): das Regal-Raster muss mindestens Regalbreite + Profil + etwas Luft betragen. Maße sind schematisch (OTTOeject-X/Z in mm).',
+    ],
+    en: [
+      'The configurator preview is now a technical schematic: the pictogram of the selected printer on the left (enclosed with door or open frame), the racks to its right — growing to the right. The required distances are drawn in: printer ↔ rack 1, rack pitch (centre-to-centre = rack offset X) and the slot pitch (Z step). Slots stay clickable to approach them.',
+      'Note for building with 2020 aluminium extrusion (20 mm): the rack pitch must be at least rack width + profile + some clearance. Dimensions are schematic (OTTOeject X/Z in mm).',
+    ],
+  },
+  {
     version: '1.0.88',
     de: [
       'Konfigurator erzeugt die Regal-Config jetzt skalierbar (slots.cfg): keine einzelnen Pro-Fach-Macros mehr, sondern eine Formel. Aufruf wie in der Farm — GRAB_FROM_RACK RACK=2 SLOT=5 / STORE_TO_RACK RACK=3 SLOT=1. Neuer Wert „Regal-Versatz X" (global_rack_x_gap): ein zusätzliches Regal verschiebt automatisch alles um eine Regalbreite. Pro-Regal-Feinkorrektur (rack_x_trim/rack_z_trim) ist vorbereitet. Das Magazin (oberste Etage) wird automatisch ohne Anheben gegriffen (NOLIFT).',
