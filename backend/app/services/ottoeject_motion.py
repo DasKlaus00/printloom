@@ -38,7 +38,7 @@ DEFAULT_GEOMETRY = {
         "load":  {"x": 425, "y": 340, "z": 17.5},
         "door":  {"open":  {"x": 104, "y": 319, "z": 105, "d": 370},
                   "close": {"x": 103, "y": 322, "z": 105, "d": 375}},
-        "x_scales_with_racks": False,
+        "x_scales_with_racks": True,   # Drucker sitzt hinter dem letzten Regal → X += (racks-1)*rack_x_gap
     },
 }
 

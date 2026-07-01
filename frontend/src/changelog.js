@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.92',
+    de: [
+      'Mehrere Regale korrekt: Auswurf, Einlegen und Tür öffnen/schließen wandern jetzt automatisch mit der Regalzahl mit (X + (Regale−1)·Regal-Versatz), damit der Drucker immer HINTER dem letzten Regal (ganz links) angefahren wird — vorher landete die Tür bei 3 Regalen mitten im Regal. Standard ist AN; ein Hinweis zeigt den Versatz, ausschaltbar unter „Koordinaten je Operation".',
+      'Auswurf-Startwerte an die OTTOmat3D-Referenz (mk01) angeglichen: X1C 425/340/17.5, P1S 421/334/15 (Auswurf = Einlegen).',
+    ],
+    en: [
+      'Multiple racks fixed: eject, load and open/close door now shift automatically with the rack count (X + (racks−1)·rack offset), so the printer is always approached BEHIND the last rack (far left) — previously the door ended up in the middle of the racks with 3 racks. Default is ON; a hint shows the offset, can be turned off under “coordinates per operation”.',
+      'Eject start values aligned with the OTTOmat3D reference (mk01): X1C 425/340/17.5, P1S 421/334/15 (eject = load).',
+    ],
+  },
+  {
     version: '1.0.91',
     de: [
       'Neuer Weg: Printloom kennt jetzt ALLE Koordinaten und kann die Bewegungen direkt als G-code senden (Greifen, Ablegen, Auswurf, Einlegen, Tür auf/zu, Fach anfahren) — kein Config-Flashen, sofort wirksam. Nur OTTOEJECT_HOME bleibt Geräte-Macro. Der klassische Config-Export bleibt zusätzlich erhalten (beide Wege möglich).',

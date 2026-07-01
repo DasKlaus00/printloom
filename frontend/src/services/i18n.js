@@ -213,6 +213,10 @@ const EN_STRINGS = {
   'Start-X': 'Start X', 'Y': 'Y', 'Z': 'Z', 'Pin-Abst.': 'Pin dist.', 'd_to_pin': 'd_to_pin',
   'Drucker hinter letztem Regal (X = Start + (Racks−1)·Regal-Versatz)':
     'Printer behind last rack (X = start + (racks−1)·rack offset)',
+  '🖨 Drucker sitzt hinter Regal {0} · Auswurf/Einlegen/Tür-X automatisch +{1} mm (ganz links, hinter dem letzten Regal)':
+    '🖨 Printer sits behind rack {0} · eject/load/door X automatically +{1} mm (far left, behind the last rack)',
+  '⚠ Drucker-X wird NICHT verschoben — Tür/Auswurf/Einlegen landen bei {0} Regalen evtl. mitten im Regal. Unten „Drucker hinter letztem Regal" einschalten.':
+    '⚠ Printer X is NOT shifted — with {0} racks the door/eject/load may end up in the middle of the racks. Enable “printer behind last rack” below.',
   'Zwei Wege — beides möglich': 'Two ways — both possible',
   'A · Klipper-Config: die zwei Dateien unten aufs Gerät flashen (klassisch).':
     'A · Klipper config: flash the two files below onto the device (classic).',

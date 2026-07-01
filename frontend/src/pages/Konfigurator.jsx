@@ -9,8 +9,8 @@ import RackDiagram, { PrinterBadge } from '../components/RackDiagram'
    LOAD_ONTO_BAMBULAB_X_ONE_C / OPEN_DOOR_BAMBU_X_ONE_C / CLOSE_DOOR_BAMBU_X_ONE_C auf —
    unabhängig vom Modell. Daher steckt das Modell nur in Werten/Beschriftung, nicht im Namen. */
 const PRINTERS = [
-  { id: 'x1c',   name: 'Bambu Lab X1C',          enclosed:true,  eject:{x:442,y:319,z:21},   load:{x:425,y:340,z:17.5}, door:{open:{x:104,y:319,z:105,d:370}, close:{x:103,y:322,z:105,d:375}} },
-  { id: 'p1s',   name: 'Bambu Lab P1S',          enclosed:true,  eject:{x:412,y:323,z:20},   load:{x:412,y:323,z:20},   door:{open:{x:97,y:303,z:112,d:372},  close:{x:97,y:303,z:112,d:372}} },
+  { id: 'x1c',   name: 'Bambu Lab X1C',          enclosed:true,  eject:{x:425,y:340,z:17.5}, load:{x:425,y:340,z:17.5}, door:{open:{x:104,y:319,z:105,d:370}, close:{x:103,y:322,z:105,d:375}} },
+  { id: 'p1s',   name: 'Bambu Lab P1S',          enclosed:true,  eject:{x:421,y:334,z:15},   load:{x:421,y:334,z:15},   door:{open:{x:97,y:303,z:112,d:372},  close:{x:97,y:303,z:112,d:372}} },
   { id: 'p1p',   name: 'Bambu Lab P1P',          enclosed:false, eject:{x:417,y:334,z:15},   load:{x:417,y:334,z:15},   door:null },
   { id: 'a1',    name: 'Bambu Lab A1',           enclosed:false, eject:{x:418,y:318,z:2},    load:{x:418,y:318,z:2},    door:null },
   { id: 'k1c',   name: 'Creality K1C',           enclosed:true,  eject:{x:411,y:329,z:33.5}, load:{x:411,y:329,z:33.5}, door:{open:{x:101,y:321,z:160,d:347}, close:{x:101,y:321,z:160,d:347}} },
@@ -238,8 +238,9 @@ export default function Konfigurator() {
   const [load,  setLoad]  = useState(printer.load)
   const [doorOpen,  setDoorOpen]  = useState(printer.door?.open  ?? null)
   const [doorClose, setDoorClose] = useState(printer.door?.close ?? null)
-  // Drucker-X = Basis + (Racks−1)·Regal-Versatz (Drucker hinter dem letzten Regal)
-  const [printerScales, setPrinterScales] = useState(false)
+  // Drucker sitzt hinter dem letzten Regal → X = Basis + (Racks−1)·Regal-Versatz.
+  // Standard AN: sonst landen Tür/Auswurf/Einlegen bei mehreren Regalen mitten im Regal statt ganz links.
+  const [printerScales, setPrinterScales] = useState(true)
 
   // Drucker wählen → alle Positionen aus dem Preset neu setzen
   const pickPrinter = (p) => {
@@ -361,6 +362,16 @@ export default function Konfigurator() {
             <NumField label={tr('Regal-Versatz X (mm)')} hint={tr('global_rack_x_gap · Raster Anfang→Anfang')} value={rackGap} step={1} onChange={setRackGap} />
             <NumField label={tr('Regalbreite (mm)')} hint={tr('nur fürs Bau-Schema · lichte Weite = Raster − 20')} value={rackWidth} step={1} onChange={setRackWidth} />
           </div>
+
+          {(+racks || 1) > 1 && (
+            printerScales
+              ? <p className="text-[10px] text-blue-300 bg-blue-950/30 border border-blue-800/40 rounded-lg px-2 py-1.5">
+                  {tr('🖨 Drucker sitzt hinter Regal {0} · Auswurf/Einlegen/Tür-X automatisch +{1} mm (ganz links, hinter dem letzten Regal)', racks, (racks - 1) * (+rackGap || 0))}
+                </p>
+              : <p className="text-[10px] text-amber-300 bg-amber-950/30 border border-amber-800/40 rounded-lg px-2 py-1.5">
+                  {tr('⚠ Drucker-X wird NICHT verschoben — Tür/Auswurf/Einlegen landen bei {0} Regalen evtl. mitten im Regal. Unten „Drucker hinter letztem Regal" einschalten.', racks)}
+                </p>
+          )}
 
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <button type="button" onClick={() => setMagazine(v => !v)}
