@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.91',
+    de: [
+      'Neuer Weg: Printloom kennt jetzt ALLE Koordinaten und kann die Bewegungen direkt als G-code senden (Greifen, Ablegen, Auswurf, Einlegen, Tür auf/zu, Fach anfahren) — kein Config-Flashen, sofort wirksam. Nur OTTOEJECT_HOME bleibt Geräte-Macro. Der klassische Config-Export bleibt zusätzlich erhalten (beide Wege möglich).',
+      'Im Konfigurator lassen sich die Start-Koordinaten je Operation eingeben (Start-X für Regal, Auswurf, Einlegen, Türen inkl. Pin-Abstand). Die Werte speichert Printloom und nutzt sie sowohl für den Config-Export als auch für den Live-G-code. Neue Live-Buttons: Magazin greifen / in R1/F1 ablegen zum Testen.',
+      'Skalierung von rechts korrigiert: Regal 1 sitzt rechts (x_unclamp), jedes weitere Regal nach links Richtung Drucker; optional „Drucker hinter letztem Regal" (X = Start + (Regale−1)·Regal-Versatz). Das Schema ist entsprechend gespiegelt (Drucker links, Regal 1 rechts).',
+    ],
+    en: [
+      'New path: Printloom now knows ALL coordinates and can send the motions directly as G-code (grab, store, eject, load, open/close door, approach slot) — no config flashing, instantly effective. Only OTTOEJECT_HOME stays a device macro. The classic config export remains available too (both ways possible).',
+      'In the configurator you can enter the start coordinates per operation (start X for rack, eject, load, doors incl. pin distance). Printloom stores the values and uses them for both the config export and the live G-code. New live buttons: grab magazine / store to R1/S1 for testing.',
+      'Fixed the build-from-the-right scaling: rack 1 sits on the right (x_unclamp), each further rack extends left toward the printer; optional “printer behind last rack” (X = start + (racks−1)·rack offset). The schematic is mirrored accordingly (printer left, rack 1 right).',
+    ],
+  },
+  {
     version: '1.0.90',
     de: [
       'Live-Aktionen im Konfigurator erweitert: neben „Fach anfahren" gibt es jetzt Tür öffnen, Tür schließen, Platte einlegen und Platte aus dem Drucker holen — mit dem passenden Piktogramm des gewählten Druckers. (Braucht die aufgespielte printer_calibration_variables.cfg + Referenzfahrt; Tür-Aktionen nur bei Druckern mit Tür-Macro.)',

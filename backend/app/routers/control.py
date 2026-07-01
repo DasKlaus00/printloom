@@ -365,3 +365,86 @@ async def get_control_status(db: Session = Depends(get_db)):
             for d in devices
         ]
     }
+
+
+# ── OTTOeject-Geometrie: Printloom kennt ALLE Koordinaten (Single Source) ────
+# Statt Klipper-Macros erzeugt Printloom die G-code-Sequenzen aus dieser Geometrie.
+from app.services import storage as _storage
+from app.services import ottoeject_motion as _motion
+
+GEOMETRY_PATH = "/app/db/ottoeject_geometry.json"
+
+
+def _load_geometry() -> dict:
+    return _motion.merge_defaults(_storage.read_json(GEOMETRY_PATH, None))
+
+
+@router.get("/ottoeject/geometry")
+async def get_ottoeject_geometry():
+    """Gespeicherte Geometrie (mit Defaults aufgefüllt)."""
+    return {"success": True, "geometry": _load_geometry()}
+
+
+@router.put("/ottoeject/geometry")
+async def put_ottoeject_geometry(geometry: dict):
+    """Geometrie speichern (Printloom merkt sich alle Positionen)."""
+    merged = _motion.merge_defaults(geometry)
+    _storage.write_json(GEOMETRY_PATH, merged)
+    return {"success": True, "geometry": merged}
+
+
+@router.post("/ottoeject/op")
+async def run_ottoeject_op(request: dict, db: Session = Depends(get_db)):
+    """Eine OTTOeject-Bewegung aus der gespeicherten Geometrie erzeugen und live senden.
+
+    Body: {op: grab|store|eject|load|open_door|close_door|approach|park|home,
+           rack?, slot?, nolift?, geometry?}
+    `geometry` optional = Vorschau/Test mit ungespeicherten Werten (sonst gespeicherte).
+    """
+    op = (request.get("op") or "").strip()
+    if not op:
+        raise HTTPException(400, "Keine Operation angegeben")
+    geom = request.get("geometry") or _load_geometry()
+    try:
+        script = _motion.build_op(
+            geom, op,
+            rack=int(request.get("rack", 1) or 1),
+            slot=int(request.get("slot", 1) or 1),
+            nolift=request.get("nolift"),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
+    if not klipper:
+        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
+    url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            r = await client.post(url, json={"script": script})
+        if r.status_code != 200:
+            raise HTTPException(502, f"Moonraker: {r.text}")
+        return {"success": True, "op": op, "script": script}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
+
+
+@router.post("/ottoeject/preview")
+async def preview_ottoeject_op(request: dict):
+    """Nur die G-code-Sequenz zeigen (ohne zu senden) — für die Anzeige."""
+    op = (request.get("op") or "").strip()
+    if not op:
+        raise HTTPException(400, "Keine Operation angegeben")
+    geom = request.get("geometry") or _load_geometry()
+    try:
+        script = _motion.build_op(
+            geom, op,
+            rack=int(request.get("rack", 1) or 1),
+            slot=int(request.get("slot", 1) or 1),
+            nolift=request.get("nolift"),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"success": True, "op": op, "script": script}

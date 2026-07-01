@@ -59,6 +59,11 @@ export const controlService = {
   sendKlipperGcode:    (gcode) => api.post('/control/klipper/gcode', { gcode }),
   getKlipperPosition:  ()      => api.get('/control/klipper/position'),
   getKlipperInfo:      ()      => api.get('/control/klipper/info'),
+  // OTTOeject-Geometrie (Printloom kennt alle Koordinaten, sendet G-code direkt)
+  getGeometry:         ()      => api.get('/control/ottoeject/geometry'),
+  putGeometry:         (g)     => api.put('/control/ottoeject/geometry', g),
+  runOp:               (body)  => api.post('/control/ottoeject/op', body),
+  previewOp:           (body)  => api.post('/control/ottoeject/preview', body),
 }
 
 export const printerService = {

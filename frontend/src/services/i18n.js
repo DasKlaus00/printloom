@@ -197,6 +197,32 @@ const EN_STRINGS = {
   'Tür öffnen…': 'Opening door…', 'Tür schließen…': 'Closing door…',
   'Platte rausholen…': 'Ejecting plate…', 'Platte einlegen…': 'Loading plate…',
   '{0} hat kein Tür-Macro — Tür-Aktionen entfallen.': '{0} has no door macro — door actions omitted.',
+  '{0} hat keine Tür — Tür-Aktionen entfallen.': '{0} has no door — door actions omitted.',
+  '📥 Magazin greifen': '📥 Grab magazine', 'Magazin greifen…': 'Grabbing magazine…',
+  '📤 In R1/F1 ablegen': '📤 Store to R1/S1', 'In Regal 1 / Fach 1 ablegen…': 'Storing to rack 1 / slot 1…',
+  'Printloom sendet den G-code direkt aus den Koordinaten oben (nur OTTOEJECT_HOME ist Macro). Erst Referenzfahrt.':
+    'Printloom sends the G-code directly from the coordinates above (only OTTOEJECT_HOME is a macro). Home first.',
+  '▾ Koordinaten je Operation ausblenden': '▾ Hide coordinates per operation',
+  '▸ Koordinaten je Operation (Start-X …)': '▸ Coordinates per operation (start X …)',
+  'Start-Koordinaten je Operation. Dieselben Werte nutzt der Config-Export UND der Live-G-code.':
+    'Start coordinates per operation. The same values feed the config export AND the live G-code.',
+  'Regal (Greifen / Ablegen)': 'Rack (grab / store)',
+  'Start-X (Regal 1)': 'Start X (rack 1)', 'x_unclamp': 'x_unclamp', 'Regal-Versatz X': 'Rack offset X',
+  '⬆ Platte rausholen (Start am Drucker)': '⬆ Eject plate (start at printer)',
+  '⬇ Platte einlegen (Start am Drucker)': '⬇ Load plate (start at printer)',
+  'Start-X': 'Start X', 'Y': 'Y', 'Z': 'Z', 'Pin-Abst.': 'Pin dist.', 'd_to_pin': 'd_to_pin',
+  'Drucker hinter letztem Regal (X = Start + (Racks−1)·Regal-Versatz)':
+    'Printer behind last rack (X = start + (racks−1)·rack offset)',
+  'Zwei Wege — beides möglich': 'Two ways — both possible',
+  'A · Klipper-Config: die zwei Dateien unten aufs Gerät flashen (klassisch).':
+    'A · Klipper config: flash the two files below onto the device (classic).',
+  'B · Printloom sendet G-code: die Live-Aktionen oben nutzen die gespeicherten Koordinaten direkt — kein Flashen, sofort wirksam. Nur OTTOEJECT_HOME bleibt Geräte-Macro.':
+    'B · Printloom sends G-code: the live actions above use the stored coordinates directly — no flashing, instantly effective. Only OTTOEJECT_HOME stays a device macro.',
+  'Drucker links · Regal 1 rechts (Aufbau von rechts) · Fach anklicken zum Anfahren':
+    'Printer left · rack 1 right (built from the right) · click a slot to approach',
+  'Drucker links · Regal 1 rechts (Aufbau von rechts)': 'Printer left · rack 1 right (built from the right)',
+  'Bemaßung oben: Drucker↔nächstes Regal · Regal-Raster (Anfang→Anfang) · Regalbreite · lichte Weite 2020↔2020. Rechts: Fach-Raster (Z).':
+    'Dimensions top: printer↔nearest rack · rack pitch (start→start) · rack width · clear width 2020↔2020. Right: slot pitch (Z).',
   'Drucker-Aktionen brauchen die aufgespielte printer_calibration_variables.cfg + eine Referenzfahrt.':
     'Printer actions need the flashed printer_calibration_variables.cfg + homing.',
   'Regalbreite (mm)': 'Rack width (mm)',

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useLanguage } from '../services/i18n'
 import { controlService } from '../services/api'
 import RackDiagram, { PrinterBadge } from '../components/RackDiagram'
@@ -146,15 +146,18 @@ function genSlotsCfg(s) {
 
 /* ── printer_calibration_variables.cfg ──────────────────────────────────────────
    Feste Macro-Namen (…_X_ONE_C) — exakt die, die die Printloom-Farm-Sequenz aufruft. */
-function genPrinterCfg(p, e, l) {
+function genPrinterCfg(p, e, l, doorOpen = null, doorClose = null, scales = false, racks = 1, rackGap = 0) {
   const out = []
+  // Drucker steht hinter dem letzten Regal → X um (Racks−1)·Regal-Versatz verschieben (optional)
+  const xoff = scales ? (racks - 1) * (+rackGap || 0) : 0
   out.push(`; |---- OTTOmat3D printer_calibration_variables.cfg — ${p.name} (Printloom-Konfigurator) ----|`)
   out.push('; Feste Macro-Namen (…_X_ONE_C): die Printloom-Farm-Sequenz ruft genau diese auf.')
+  if (xoff) out.push(`; Drucker-X um ${xoff} mm verschoben (hinter ${racks} Regalen · Regal-Versatz ${+rackGap || 0} mm).`)
   out.push('')
   out.push('[gcode_macro EJECT_FROM_BAMBULAB_X_ONE_C]')
   out.push(`description: 'Eject build plate from ${p.name} (without homing)'`)
   out.push('gcode:')
-  out.push(`    {% set x_unclamp = ${e.x} %}`)
+  out.push(`    {% set x_unclamp = ${+e.x + xoff} %}`)
   out.push(`    {% set y_engage = ${e.y} %}`)
   out.push(`    {% set z_flat = ${e.z} %}`)
   out.push(`    M117 'Removing build plate from ${p.name}...'`)
@@ -167,7 +170,7 @@ function genPrinterCfg(p, e, l) {
   out.push('[gcode_macro LOAD_ONTO_BAMBULAB_X_ONE_C]')
   out.push(`description: 'Load a build plate onto ${p.name}'`)
   out.push('gcode:')
-  out.push(`    {% set x_unclamp = ${l.x} %}`)
+  out.push(`    {% set x_unclamp = ${+l.x + xoff} %}`)
   out.push(`    {% set y_engage = ${l.y} %}`)
   out.push(`    {% set z_flat = ${l.z} %}`)
   out.push(`    M117 'Moving build plate to Printer: ${p.name}'`)
@@ -176,13 +179,13 @@ function genPrinterCfg(p, e, l) {
   out.push('    SET_GCODE_VARIABLE MACRO=_LOAD_ONTO_PRINTER VARIABLE=otto_z_flat VALUE={z_flat}')
   out.push('    _LOAD_ONTO_PRINTER')
   out.push('    M400')
-  if (p.door) {
-    for (const [kind, d, verb] of [['OPEN', p.door.open, 'Opening'], ['CLOSE', p.door.close, 'Closing']]) {
+  if (doorOpen && doorClose) {
+    for (const [kind, d, verb] of [['OPEN', doorOpen, 'Opening'], ['CLOSE', doorClose, 'Closing']]) {
       out.push('')
       out.push(`[gcode_macro ${kind}_DOOR_BAMBU_X_ONE_C]`)
       out.push(`description: '${verb} ${p.name} Door'`)
       out.push('gcode:')
-      out.push(`    {% set x_start = ${d.x} %}`)
+      out.push(`    {% set x_start = ${+d.x + xoff} %}`)
       out.push(`    {% set y_start = ${d.y} %}`)
       out.push(`    {% set z_engage = ${d.z} %}`)
       out.push(`    {% set d_to_pin_dist = ${d.d} %} ; Abstand Tür-Drehpunkt → Armspitze`)
@@ -230,22 +233,74 @@ export default function Konfigurator() {
   const [jog, setJog] = useState({ busy: false, msg: '', err: false })
 
   const printer = PRINTERS.find(p => p.id === printerId) ?? PRINTERS[0]
-  // Drucker-Positionen lokal überschreibbar (Abstand zum Drucker = eject.x)
+  // Alle Operations-Koordinaten lokal editierbar (Start-X je Operation)
   const [eject, setEject] = useState(printer.eject)
   const [load,  setLoad]  = useState(printer.load)
-  // Bei Druckerwechsel die Positionen neu aus dem Preset setzen
-  React.useEffect(() => { setEject(printer.eject); setLoad(printer.load) }, [printerId])  // eslint-disable-line
+  const [doorOpen,  setDoorOpen]  = useState(printer.door?.open  ?? null)
+  const [doorClose, setDoorClose] = useState(printer.door?.close ?? null)
+  // Drucker-X = Basis + (Racks−1)·Regal-Versatz (Drucker hinter dem letzten Regal)
+  const [printerScales, setPrinterScales] = useState(false)
+
+  // Drucker wählen → alle Positionen aus dem Preset neu setzen
+  const pickPrinter = (p) => {
+    setPrinterId(p.id)
+    setEject(p.eject); setLoad(p.load)
+    setDoorOpen(p.door?.open ?? null); setDoorClose(p.door?.close ?? null)
+  }
 
   const slots = (+storage || 1) + (magazine ? 1 : 0)
   const magazineSlot = magazine ? slots : null
   const yPullback = plate === '220' ? 30 : 5
   const slotStepZ = (+gap || 0) + 30
+  const hasDoor = !!(doorOpen && doorClose)
+
+  // ── Geometrie: EINE Quelle für Config-Export UND Live-G-code ──
+  const geometry = useMemo(() => ({
+    printer_id: printerId, printer_name: printer.name, enclosed: printer.enclosed,
+    racks: +racks || 1, storage_slots: +storage || 1, magazine,
+    storage: {
+      x_unclamp: +xUnclamp, y_engage: +yEngage, first_z_flat: +firstZ,
+      slot_gap: +gap, y_pullback_limit: yPullback, rack_x_gap: +rackGap || 0,
+    },
+    printer: {
+      eject: { x: +eject.x, y: +eject.y, z: +eject.z },
+      load:  { x: +load.x,  y: +load.y,  z: +load.z },
+      door: hasDoor ? { open: { ...doorOpen }, close: { ...doorClose } } : null,
+      x_scales_with_racks: printerScales,
+    },
+  }), [printerId, printer, racks, storage, magazine, xUnclamp, yEngage, firstZ, gap, yPullback, rackGap, eject, load, doorOpen, doorClose, hasDoor, printerScales])
+
+  // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
+  const hydrated = useRef(false)
+  useEffect(() => {
+    controlService.getGeometry().then(r => {
+      const g = r?.data?.geometry
+      if (g && g.printer_id && PRINTERS.some(p => p.id === g.printer_id)) {
+        setPrinterId(g.printer_id); setRacks(g.racks); setStorage(g.storage_slots); setMagazine(!!g.magazine)
+        const s = g.storage || {}
+        setFirstZ(s.first_z_flat); setGap(s.slot_gap); setX(s.x_unclamp); setY(s.y_engage); setRackGap(s.rack_x_gap)
+        setPlate((s.y_pullback_limit >= 30) ? '220' : '256')
+        const p = g.printer || {}
+        if (p.eject) setEject(p.eject)
+        if (p.load) setLoad(p.load)
+        setDoorOpen(p.door?.open ?? null); setDoorClose(p.door?.close ?? null)
+        setPrinterScales(!!p.x_scales_with_racks)
+      }
+    }).catch(() => {}).finally(() => { hydrated.current = true })
+  }, [])
+  useEffect(() => {
+    if (!hydrated.current) return
+    const t = setTimeout(() => { controlService.putGeometry(geometry).catch(() => {}) }, 600)
+    return () => clearTimeout(t)
+  }, [geometry])
 
   const slotsCfg = useMemo(() => genSlotsCfg({
     x_unclamp: +xUnclamp, y_engage: +yEngage, first_z_flat: +firstZ, slot_gap: +gap,
     y_pullback: yPullback, rack_x_gap: +rackGap, slots, racks: +racks || 1, magazineSlot,
   }), [xUnclamp, yEngage, firstZ, gap, yPullback, rackGap, slots, racks, magazineSlot])
-  const printerCfg = useMemo(() => genPrinterCfg(printer, eject, load), [printer, eject, load])
+  const printerCfg = useMemo(
+    () => genPrinterCfg(printer, eject, load, doorOpen, doorClose, printerScales, +racks || 1, +rackGap || 0),
+    [printer, eject, load, doorOpen, doorClose, printerScales, racks, rackGap])
 
   const copy = (text, which) => {
     navigator.clipboard?.writeText(text).then(() => { setCopied(which); setTimeout(() => setCopied(''), 1500) })
@@ -256,25 +311,21 @@ export default function Konfigurator() {
     URL.revokeObjectURL(a.href)
   }
 
-  // ── Live: ein Fach am echten OTTOeject anfahren (gleiche Mathematik wie slots.cfg) ──
-  const sendG = async (gcode, label) => {
+  // ── Live: OTTOeject-Operation aus der AKTUELLEN Geometrie senden (Printloom → G-code) ──
+  // Server baut die Sequenz aus den eingegebenen Koordinaten; nur OTTOEJECT_HOME ist noch Macro.
+  const sendOp = async (op, label, extra = {}) => {
+    if (jog.busy) return
     setJog({ busy: true, msg: label, err: false })
     try {
-      await controlService.sendKlipperGcode(gcode)
+      await controlService.runOp({ op, geometry, ...extra })
       setJog({ busy: false, msg: tr('✓ {0}', label), err: false })
     } catch (e) {
       const detail = e?.response?.data?.detail || e?.message || tr('Fehler')
       setJog({ busy: false, msg: detail, err: true })
     }
   }
-  const homeOtto = () => sendG('OTTOEJECT_HOME', tr('Referenzfahrt…'))
-  const approachSlot = (rack, slot) => {
-    if (jog.busy) return
-    const x = (+xUnclamp) + (rack - 1) * (+rackGap || 0)
-    const z = (+firstZ) + (slot - 1) * slotStepZ
-    // Sicher: vor das Fach fahren (Y zurückgezogen), in Fachhöhe — greift NICHT.
-    sendG(`G90\nG1 X${x} Y280 Z${z} F3000`, tr('Regal {0} · Fach {1} anfahren…', rack, slot))
-  }
+  const homeOtto = () => sendOp('home', tr('Referenzfahrt…'))
+  const approachSlot = (rack, slot) => sendOp('approach', tr('Regal {0} · Fach {1} anfahren…', rack, slot), { rack, slot })
 
   return (
     <div className="space-y-5">
@@ -289,7 +340,7 @@ export default function Konfigurator() {
         <div className="card p-3 space-y-1.5 self-start">
           <p className="section-label">{tr('1 · Drucker')}</p>
           {PRINTERS.map(p => (
-            <button key={p.id} onClick={() => setPrinterId(p.id)}
+            <button key={p.id} onClick={() => pickPrinter(p)}
               className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors ${
                 printerId === p.id ? 'border-blue-600 bg-blue-950/40 text-blue-200'
                                    : 'border-surface-700 text-surface-400 hover:border-surface-600 hover:text-surface-200'}`}>
@@ -329,20 +380,60 @@ export default function Konfigurator() {
             </div>
           </div>
 
-          {/* Drucker-Positionen (Abstand zum Drucker) */}
+          {/* Start-Koordinaten je Operation (für Config-Export UND Live-G-code) */}
           <button onClick={() => setAdvanced(a => !a)} className="text-[11px] text-blue-400 hover:text-blue-300">
-            {advanced ? tr('▾ Drucker-Positionen ausblenden') : tr('▸ Drucker-Positionen (Abstand zum Drucker) …')}
+            {advanced ? tr('▾ Koordinaten je Operation ausblenden') : tr('▸ Koordinaten je Operation (Start-X …)')}
           </button>
           {advanced && (
-            <div className="grid grid-cols-3 gap-2 p-2 rounded-lg bg-surface-900/60 border border-surface-700/60">
-              <NumField label={tr('Auswurf X')} hint={tr('Abstand z. Drucker')} value={eject.x} onChange={v => setEject({ ...eject, x: +v })} />
-              <NumField label={tr('Auswurf Y')} value={eject.y} onChange={v => setEject({ ...eject, y: +v })} />
-              <NumField label={tr('Auswurf Z')} value={eject.z} step={0.5} onChange={v => setEject({ ...eject, z: +v })} />
-              <NumField label={tr('Einlegen X')} value={load.x} onChange={v => setLoad({ ...load, x: +v })} />
-              <NumField label={tr('Einlegen Y')} value={load.y} onChange={v => setLoad({ ...load, y: +v })} />
-              <NumField label={tr('Einlegen Z')} value={load.z} step={0.5} onChange={v => setLoad({ ...load, z: +v })} />
-              <NumField label={tr('X-Unclamp')} value={xUnclamp} onChange={setX} />
-              <NumField label={tr('Y-Engage')} value={yEngage} onChange={setY} />
+            <div className="space-y-2.5 p-2 rounded-lg bg-surface-900/60 border border-surface-700/60">
+              <p className="text-[9px] text-surface-500">{tr('Start-Koordinaten je Operation. Dieselben Werte nutzt der Config-Export UND der Live-G-code.')}</p>
+
+              <div>
+                <p className="text-[10px] text-surface-400 mb-1">{tr('Regal (Greifen / Ablegen)')}</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <NumField label={tr('Start-X (Regal 1)')} hint={tr('x_unclamp')} value={xUnclamp} onChange={setX} />
+                  <NumField label={tr('Y-Engage')} value={yEngage} onChange={setY} />
+                  <NumField label={tr('Regal-Versatz X')} value={rackGap} onChange={setRackGap} />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[10px] text-surface-400 mb-1">{tr('⬆ Platte rausholen (Start am Drucker)')}</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <NumField label={tr('Start-X')} value={eject.x} onChange={v => setEject({ ...eject, x: +v })} />
+                  <NumField label={tr('Y')} value={eject.y} onChange={v => setEject({ ...eject, y: +v })} />
+                  <NumField label={tr('Z')} value={eject.z} step={0.5} onChange={v => setEject({ ...eject, z: +v })} />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[10px] text-surface-400 mb-1">{tr('⬇ Platte einlegen (Start am Drucker)')}</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <NumField label={tr('Start-X')} value={load.x} onChange={v => setLoad({ ...load, x: +v })} />
+                  <NumField label={tr('Y')} value={load.y} onChange={v => setLoad({ ...load, y: +v })} />
+                  <NumField label={tr('Z')} value={load.z} step={0.5} onChange={v => setLoad({ ...load, z: +v })} />
+                </div>
+              </div>
+
+              {hasDoor && [['open', doorOpen, setDoorOpen, tr('🚪 Tür öffnen')], ['close', doorClose, setDoorClose, tr('🚪 Tür schließen')]].map(([k, d, set, lbl]) => (
+                <div key={k}>
+                  <p className="text-[10px] text-surface-400 mb-1">{lbl}</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    <NumField label={tr('Start-X')} value={d.x} onChange={v => set({ ...d, x: +v })} />
+                    <NumField label={tr('Y')} value={d.y} onChange={v => set({ ...d, y: +v })} />
+                    <NumField label={tr('Z')} value={d.z} step={0.5} onChange={v => set({ ...d, z: +v })} />
+                    <NumField label={tr('Pin-Abst.')} hint={tr('d_to_pin')} value={d.d} onChange={v => set({ ...d, d: +v })} />
+                  </div>
+                </div>
+              ))}
+
+              <label className="flex items-center gap-2 cursor-pointer select-none pt-1">
+                <button type="button" onClick={() => setPrinterScales(v => !v)}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${printerScales ? 'bg-blue-600' : 'bg-surface-700'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${printerScales ? 'translate-x-4' : 'translate-x-0'}`} />
+                </button>
+                <span className="text-[11px] text-surface-300">{tr('Drucker hinter letztem Regal (X = Start + (Racks−1)·Regal-Versatz)')}</span>
+              </label>
             </div>
           )}
 
@@ -352,7 +443,7 @@ export default function Konfigurator() {
             <RackDiagram printerName={printer.name} enclosed={printer.enclosed}
               numRacks={racks} slotsPerRack={slots} magazineSlot={magazineSlot}
               slotStepMm={slotStepZ} rackGapMm={+rackGap || 0} rackWidthMm={+rackWidth || 0}
-              printerGapMm={Math.round(Math.abs((+load.x) - (+xUnclamp)))}
+              printerGapMm={Math.round(Math.abs((+load.x) - (+xUnclamp)))} printerScales={printerScales}
               onSlotClick={approachSlot} busy={jog.busy} />
             <p className="text-[10px] text-surface-600 mt-1">
               {tr('Drucker: {0} · {1} Fächer/Regal{2} · Fach 1 @ {3} mm · Schritt {4} mm', printer.name, slots, magazine ? tr(' (inkl. Magazin)') : '', firstZ, slotStepZ)}
@@ -374,22 +465,29 @@ export default function Konfigurator() {
                 <PrinterBadge enclosed={printer.enclosed} size={38} />
               </div>
               <div className="grid grid-cols-2 gap-1.5 flex-1">
-                {printer.door && <button onClick={() => sendG('OPEN_DOOR_BAMBU_X_ONE_C', tr('Tür öffnen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('🚪 Tür öffnen')}</button>}
-                {printer.door && <button onClick={() => sendG('CLOSE_DOOR_BAMBU_X_ONE_C', tr('Tür schließen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('🚪 Tür schließen')}</button>}
-                <button onClick={() => sendG('EJECT_FROM_BAMBULAB_X_ONE_C', tr('Platte rausholen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('⬆ Platte rausholen')}</button>
-                <button onClick={() => sendG('LOAD_ONTO_BAMBULAB_X_ONE_C', tr('Platte einlegen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('⬇ Platte einlegen')}</button>
+                {hasDoor && <button onClick={() => sendOp('open_door', tr('Tür öffnen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('🚪 Tür öffnen')}</button>}
+                {hasDoor && <button onClick={() => sendOp('close_door', tr('Tür schließen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('🚪 Tür schließen')}</button>}
+                <button onClick={() => sendOp('eject', tr('Platte rausholen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('⬆ Platte rausholen')}</button>
+                <button onClick={() => sendOp('load', tr('Platte einlegen…'))} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('⬇ Platte einlegen')}</button>
+                {magazineSlot && <button onClick={() => sendOp('grab', tr('Magazin greifen…'), { rack: 1, slot: magazineSlot })} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('📥 Magazin greifen')}</button>}
+                <button onClick={() => sendOp('store', tr('In Regal 1 / Fach 1 ablegen…'), { rack: 1, slot: 1 })} disabled={jog.busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('📤 In R1/F1 ablegen')}</button>
               </div>
             </div>
-            {!printer.door && <p className="text-[9px] text-surface-600">{tr('{0} hat kein Tür-Macro — Tür-Aktionen entfallen.', printer.name)}</p>}
+            {!hasDoor && <p className="text-[9px] text-surface-600">{tr('{0} hat keine Tür — Tür-Aktionen entfallen.', printer.name)}</p>}
             {jog.msg && <p className={`text-[10px] font-mono ${jog.err ? 'text-red-400' : jog.busy ? 'text-amber-400' : 'text-emerald-400'}`}>{jog.msg}</p>}
-            <p className="text-[9px] text-surface-600">{tr('Drucker-Aktionen brauchen die aufgespielte printer_calibration_variables.cfg + eine Referenzfahrt.')}</p>
+            <p className="text-[9px] text-surface-600">{tr('Printloom sendet den G-code direkt aus den Koordinaten oben (nur OTTOEJECT_HOME ist Macro). Erst Referenzfahrt.')}</p>
           </div>
         </div>
 
       </div>
 
-      {/* ── Generierte Config: volle Breite darunter, beide Dateien nebeneinander ── */}
+      {/* ── Zwei Wege: (A) Config-Dateien flashen  ODER  (B) Printloom sendet G-code live ── */}
       <div className="space-y-2">
+        <div className="card p-3">
+          <p className="section-label mb-1">{tr('Zwei Wege — beides möglich')}</p>
+          <p className="text-[11px] text-surface-400">{tr('A · Klipper-Config: die zwei Dateien unten aufs Gerät flashen (klassisch).')}</p>
+          <p className="text-[11px] text-surface-400">{tr('B · Printloom sendet G-code: die Live-Aktionen oben nutzen die gespeicherten Koordinaten direkt — kein Flashen, sofort wirksam. Nur OTTOEJECT_HOME bleibt Geräte-Macro.')}</p>
+        </div>
         <div className="grid gap-4 lg:grid-cols-2">
           {[
             { title: 'slots.cfg', text: slotsCfg, key: 'slots', file: 'slots.cfg' },

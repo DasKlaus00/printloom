@@ -74,14 +74,17 @@ export default function RackDiagram({
   printerName = 'Drucker', enclosed = true,
   numRacks = 1, slotsPerRack = 6, magazineSlot = null,
   slotStepMm = 55, rackGapMm = 250, rackWidthMm = 230, printerGapMm = 0,
-  onSlotClick = null, busy = false,
+  printerScales = false, onSlotClick = null, busy = false,
 }) {
   const { tr } = useLanguage()
   const racks = Math.max(1, Math.min(9, +numRacks || 1))
   const slots = Math.max(1, Math.min(20, +slotsPerRack || 1))
   const clickable = typeof onSlotClick === 'function'
-  const pitch = Math.max(PROFILE_MM + 10, +rackGapMm || 250)          // Regal-Raster (Mitte/Anfang→Anfang)
-  const pGap  = Math.max(0, +printerGapMm || 0)                        // Drucker → Regal 1
+  const pitch = Math.max(PROFILE_MM + 10, +rackGapMm || 250)          // Regal-Raster (Anfang→Anfang)
+  // Aufbau von rechts: Regal 1 ganz rechts, Regal N links am Drucker.
+  // printerGapMm = Drucker ↔ Regal 1 (weitestes). Nächstes Regal (N) = weniger, außer der Drucker skaliert mit.
+  const pGapRack1 = Math.max(0, +printerGapMm || 0)
+  const pGap  = printerScales ? pGapRack1 : Math.max(0, pGapRack1 - (racks - 1) * pitch)  // Drucker → Regal N (nächstes)
   const rW    = Math.max(20, Math.min(+rackWidthMm || 230, pitch - PROFILE_MM))  // Regalbreite (in Raster passend)
   const clear = pitch - PROFILE_MM                                     // lichte Weite 2020 ↔ 2020
 
@@ -125,9 +128,10 @@ export default function RackDiagram({
         ))}
         <text x={X(posts[0]) + postW / 2} y={stackBottom + LABEL_H} textAnchor="middle" fill={C.postS} fontSize="7">2020</text>
 
-        {/* Regale */}
+        {/* Regale — Aufbau von rechts: Spalte r (links→rechts) = Regal (racks−r), Regal 1 ganz rechts */}
         {Array.from({ length: racks }).map((_, r) => {
           const x0 = X(rackStart(r)), rackPxW = Math.max(14, rW * scale)
+          const rackNo = racks - r
           return (
             <g key={r}>
               {Array.from({ length: slots }).map((_, i) => {
@@ -137,8 +141,8 @@ export default function RackDiagram({
                 return clickable ? (
                   <rect key={n} x={x0} y={y} width={rackPxW} height={SLOT_H} rx="2" fill={fill} stroke={stroke} strokeWidth="1"
                     className="otto-slot" style={busy ? { opacity: 0.5, cursor: 'wait' } : undefined}
-                    onClick={() => !busy && onSlotClick(r + 1, n)}>
-                    <title>{tr('{0} anfahren (Regal {1})', title, r + 1)}</title>
+                    onClick={() => !busy && onSlotClick(rackNo, n)}>
+                    <title>{tr('{0} anfahren (Regal {1})', title, rackNo)}</title>
                   </rect>
                 ) : (
                   <rect key={n} x={x0} y={y} width={rackPxW} height={SLOT_H} rx="2" fill={fill} stroke={stroke} strokeWidth="1">
@@ -146,11 +150,11 @@ export default function RackDiagram({
                   </rect>
                 )
               })}
-              {r === 0 && Array.from({ length: slots }).map((_, i) => (
+              {rackNo === 1 && Array.from({ length: slots }).map((_, i) => (
                 <text key={i} x={x0 + Math.max(14, rW * scale) / 2} y={slotY(i + 1) + SLOT_H / 2} textAnchor="middle" dominantBaseline="middle"
                   fill={(i + 1) === +magazineSlot ? C.magT : C.slotS} fontSize="8" style={{ pointerEvents: 'none' }}>{i + 1}</text>
               ))}
-              <text x={x0 + Math.max(14, rW * scale) / 2} y={stackBottom + LABEL_H} textAnchor="middle" fill={C.slotS} fontSize="8">{tr('Regal {0}', r + 1)}</text>
+              <text x={x0 + Math.max(14, rW * scale) / 2} y={stackBottom + LABEL_H} textAnchor="middle" fill={C.slotS} fontSize="8">{tr('Regal {0}', rackNo)}</text>
             </g>
           )
         })}
@@ -169,11 +173,11 @@ export default function RackDiagram({
 
       <p className="text-[10px] text-surface-400 text-center mt-1">
         {clickable
-          ? tr('Drucker fest links · Regale wachsen nach rechts · Fach anklicken zum Anfahren')
-          : tr('Drucker fest links · Regale wachsen nach rechts')}
+          ? tr('Drucker links · Regal 1 rechts (Aufbau von rechts) · Fach anklicken zum Anfahren')
+          : tr('Drucker links · Regal 1 rechts (Aufbau von rechts)')}
       </p>
       <div className="text-[9px] text-surface-600 text-center leading-snug mt-0.5">
-        <p>{tr('Bemaßung oben: Drucker↔Regal 1 · Regal-Raster (Anfang→Anfang) · Regalbreite · lichte Weite 2020↔2020. Rechts: Fach-Raster (Z).')}</p>
+        <p>{tr('Bemaßung oben: Drucker↔nächstes Regal · Regal-Raster (Anfang→Anfang) · Regalbreite · lichte Weite 2020↔2020. Rechts: Fach-Raster (Z).')}</p>
         <p>{tr('Regal-Raster = Regalbreite + {0} mm Profil (2020) · Maße schematisch, Z-Höhen nicht maßstäblich', PROFILE_MM)}</p>
       </div>
     </div>
