@@ -183,6 +183,20 @@ const EN_STRINGS = {
   'Diese beiden Dateien in den Klipper-Config-Ordner der OTTOeject legen (neben ottoeject_macros.cfg) und Klipper neu starten. Feinjustierung pro Fach danach in „Steuerung".':
     'Put both files into the OTTOeject Klipper config folder (next to ottoeject_macros.cfg) and restart Klipper. Fine-tune per slot afterwards in “Control”.',
   'Regal {0}': 'Rack {0}',
+  'Regal-Versatz X (mm)': 'Rack offset X (mm)',
+  'global_rack_x_gap · pro Regal nach rechts': 'global_rack_x_gap · per rack to the right',
+  'global_first_z_flat': 'global_first_z_flat',
+  'Live: Fach anfahren (OTTOeject)': 'Live: approach slot (OTTOeject)',
+  '⌂ Referenzfahrt': '⌂ Home',
+  'Referenzfahrt…': 'Homing…',
+  'Erst Referenzfahrt, dann im Bild ein Fach anklicken — der Arm fährt mit den aktuellen Werten davor (greift nicht).':
+    'Home first, then click a slot in the diagram — the arm moves in front of it with the current values (does not grab).',
+  'Regal {0} · Fach {1} anfahren…': 'Rack {0} · slot {1} — approaching…',
+  '✓ {0}': '✓ {0}',
+  '{0} anfahren (Regal {1})': 'Approach {0} (rack {1})',
+  'Gesamt: {0} Fächer · Fach anklicken zum Anfahren': 'Total: {0} slots · click a slot to approach',
+  'Beide Dateien in den Klipper-Config-Ordner der OTTOeject legen (neben ottoeject_macros.cfg, in printer.cfg per [include slots.cfg] einbinden) und Klipper neu starten. Ein zusätzliches Regal verschiebt automatisch alles um „Regal-Versatz X".':
+    'Put both files into the OTTOeject Klipper config folder (next to ottoeject_macros.cfg; add [include slots.cfg] to printer.cfg) and restart Klipper. Adding a rack automatically shifts everything by “Rack offset X”.',
   'Pausiert (Seite im Hintergrund)': 'Paused (page in background)',
   'Magazin (Fach {0})': 'Magazine (slot {0})',
   '+ Beispiel-Teil laden': '+ Load demo part',

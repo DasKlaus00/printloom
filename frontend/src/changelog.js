@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.88',
+    de: [
+      'Konfigurator erzeugt die Regal-Config jetzt skalierbar (slots.cfg): keine einzelnen Pro-Fach-Macros mehr, sondern eine Formel. Aufruf wie in der Farm — GRAB_FROM_RACK RACK=2 SLOT=5 / STORE_TO_RACK RACK=3 SLOT=1. Neuer Wert „Regal-Versatz X" (global_rack_x_gap): ein zusätzliches Regal verschiebt automatisch alles um eine Regalbreite. Pro-Regal-Feinkorrektur (rack_x_trim/rack_z_trim) ist vorbereitet. Das Magazin (oberste Etage) wird automatisch ohne Anheben gegriffen (NOLIFT).',
+      'Die Drucker-Config nutzt jetzt die festen Macro-Namen, die die Farm-Sequenz tatsächlich aufruft (EJECT_FROM_BAMBULAB_X_ONE_C, LOAD_ONTO_BAMBULAB_X_ONE_C, OPEN/CLOSE_DOOR_BAMBU_X_ONE_C) — unabhängig vom gewählten Modell.',
+      'Im Konfigurator lassen sich die Fächer in der Vorschau anklicken: nach einer Referenzfahrt fährt der OTTOeject das gewählte Fach mit den aktuellen Werten an (zum Kalibrieren, greift nicht).',
+    ],
+    en: [
+      'The configurator now generates the rack config in a scalable way (slots.cfg): no more per-slot macros, just a formula. Called like the farm does — GRAB_FROM_RACK RACK=2 SLOT=5 / STORE_TO_RACK RACK=3 SLOT=1. New value “Rack offset X” (global_rack_x_gap): adding a rack automatically shifts everything by one rack width. Per-rack fine-tuning (rack_x_trim/rack_z_trim) is prepared. The magazine (top slot) is grabbed without lifting automatically (NOLIFT).',
+      'The printer config now uses the fixed macro names the farm sequence actually calls (EJECT_FROM_BAMBULAB_X_ONE_C, LOAD_ONTO_BAMBULAB_X_ONE_C, OPEN/CLOSE_DOOR_BAMBU_X_ONE_C) — regardless of the chosen model.',
+      'Slots in the configurator preview are now clickable: after homing, the OTTOeject approaches the chosen slot with the current values (for calibration, does not grab).',
+    ],
+  },
+  {
     version: '1.0.87',
     de: [
       'CPU-Fix: Die Kamera-Streams (X1C-MJPEG, HLS, WebRTC) liefen weiter, auch wenn man längst auf einer anderen Seite war — Seiten bleiben für schnellen Wechsel im Hintergrund geladen, und die Videos dekodierten/transcodierten unsichtbar weiter (deutliche CPU-Last). Jetzt pausieren die Streams automatisch, sobald ihre Kachel nicht sichtbar ist, und laufen beim Zurückwechseln wieder an.',

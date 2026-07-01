@@ -1,126 +1,202 @@
 import React, { useState, useMemo } from 'react'
 import { useLanguage } from '../services/i18n'
+import { controlService } from '../services/api'
 import RackPreview from '../components/RackPreview'
 
 /* ── Drucker-Presets (aus OTTOmat3D printer_calibration_variables.cfg) ──────────
-   eject/load: Arm-Positionen am Drucker (x = „Abstand zum Drucker"); door: Tür-Macro. */
+   eject/load: Arm-Positionen am Drucker (x = „Abstand zum Drucker"); door: Tür-Macro.
+   Die Printloom-Farm-Sequenz ruft IMMER die festen Namen EJECT_FROM_BAMBULAB_X_ONE_C /
+   LOAD_ONTO_BAMBULAB_X_ONE_C / OPEN_DOOR_BAMBU_X_ONE_C / CLOSE_DOOR_BAMBU_X_ONE_C auf —
+   unabhängig vom Modell. Daher steckt das Modell nur in Werten/Beschriftung, nicht im Namen. */
 const PRINTERS = [
-  { id: 'x1c',   name: 'Bambu Lab X1C',          macro: 'BAMBULAB_X_ONE_C',     eject:{x:442,y:319,z:21},   load:{x:425,y:340,z:17.5}, door:{open:{x:104,y:319,z:105,d:370}, close:{x:103,y:322,z:105,d:375}} },
-  { id: 'p1s',   name: 'Bambu Lab P1S',          macro: 'BAMBULAB_P_ONE_S',     eject:{x:412,y:323,z:20},   load:{x:412,y:323,z:20},   door:{open:{x:97,y:303,z:112,d:372},  close:{x:97,y:303,z:112,d:372}} },
-  { id: 'p1p',   name: 'Bambu Lab P1P',          macro: 'BAMBULAB_P_ONE_P',     eject:{x:417,y:334,z:15},   load:{x:417,y:334,z:15},   door:null },
-  { id: 'a1',    name: 'Bambu Lab A1',           macro: 'BAMBULAB_A_ONE',       eject:{x:418,y:318,z:2},    load:{x:418,y:318,z:2},    door:null },
-  { id: 'k1c',   name: 'Creality K1C',           macro: 'CREALITY_K_ONE_C',     eject:{x:411,y:329,z:33.5}, load:{x:411,y:329,z:33.5}, door:{open:{x:101,y:321,z:160,d:347}, close:{x:101,y:321,z:160,d:347}} },
-  { id: 'cc',    name: 'Elegoo Centauri Carbon', macro: 'ELEGOO_CC',            eject:{x:423,y:345,z:40},   load:{x:423,y:345,z:40},   door:{open:{x:102,y:326,z:160,d:382}, close:{x:102,y:326,z:160,d:382}} },
-  { id: 'kobra', name: 'Anycubic Kobra S1',      macro: 'ANYCUBIC_KOBRA_S_ONE', eject:{x:421,y:344,z:12},   load:{x:421,y:344,z:12},   door:{open:{x:95,y:325,z:138,d:405},  close:{x:95,y:325,z:138,d:405}} },
-  { id: 'ad5x',  name: 'Flashforge AD5X',        macro: 'FLASHFORGE_AD_FIVE_X', eject:{x:422,y:316,z:10},   load:{x:422,y:316,z:10},   door:null },
+  { id: 'x1c',   name: 'Bambu Lab X1C',          eject:{x:442,y:319,z:21},   load:{x:425,y:340,z:17.5}, door:{open:{x:104,y:319,z:105,d:370}, close:{x:103,y:322,z:105,d:375}} },
+  { id: 'p1s',   name: 'Bambu Lab P1S',          eject:{x:412,y:323,z:20},   load:{x:412,y:323,z:20},   door:{open:{x:97,y:303,z:112,d:372},  close:{x:97,y:303,z:112,d:372}} },
+  { id: 'p1p',   name: 'Bambu Lab P1P',          eject:{x:417,y:334,z:15},   load:{x:417,y:334,z:15},   door:null },
+  { id: 'a1',    name: 'Bambu Lab A1',           eject:{x:418,y:318,z:2},    load:{x:418,y:318,z:2},    door:null },
+  { id: 'k1c',   name: 'Creality K1C',           eject:{x:411,y:329,z:33.5}, load:{x:411,y:329,z:33.5}, door:{open:{x:101,y:321,z:160,d:347}, close:{x:101,y:321,z:160,d:347}} },
+  { id: 'cc',    name: 'Elegoo Centauri Carbon', eject:{x:423,y:345,z:40},   load:{x:423,y:345,z:40},   door:{open:{x:102,y:326,z:160,d:382}, close:{x:102,y:326,z:160,d:382}} },
+  { id: 'kobra', name: 'Anycubic Kobra S1',      eject:{x:421,y:344,z:12},   load:{x:421,y:344,z:12},   door:{open:{x:95,y:325,z:138,d:405},  close:{x:95,y:325,z:138,d:405}} },
+  { id: 'ad5x',  name: 'Flashforge AD5X',        eject:{x:422,y:316,z:10},   load:{x:422,y:316,z:10},   door:null },
 ]
 
-// Standard-Storage-Werte (aus storage_calibration_variables.cfg)
-const DEFAULTS = { x_unclamp: 31, y_engage: 318, first_z_flat: 11, slot_gap: 25 }
+// Standard-Werte (aus slots.cfg)
+const DEFAULTS = { x_unclamp: 43, y_engage: 335, first_z_flat: 7, slot_gap: 25, rack_x_gap: 250 }
 
-/* ── Config-Generatoren ────────────────────────────────────────────────────── */
-function genStorageCfg(s) {
-  const lines = []
-  lines.push('; |---- OTTOmat3D STORAGE CALIBRATION — erzeugt vom Printloom-Konfigurator ----|')
-  lines.push('[gcode_macro _GLOBAL_VARS]')
-  lines.push(`variable_global_x_unclamp: ${s.x_unclamp} ; X zum Entriegeln der Plattenhalterung`)
-  lines.push(`variable_global_y_engage: ${s.y_engage} ; Y-Tiefe, bis die Platte in die Gabel rutscht`)
-  lines.push(`variable_global_first_z_flat: ${s.first_z_flat} ; Z-Höhe von Fach 1 (Anfangshöhe)`)
-  lines.push(`variable_global_slot_gap: ${s.slot_gap} ; Abstand zwischen den Fächern (Z-Schritt = slot_gap + 30)`)
-  lines.push(`variable_global_y_pullback_limit: ${s.y_pullback} ; 10 = 256x256-Platte, 30 = 220x220`)
-  lines.push('gcode:')
-  for (let n = 1; n <= s.slots; n++) {
-    const mag = n === s.magazineSlot
-    lines.push('')
-    lines.push(`; |---- FACH ${n}${mag ? '  (MAGAZIN — Quelle für frische Platten)' : ''} ----|`)
-    lines.push(`[gcode_macro GRAB_FROM_SLOT_${n}]`)
-    lines.push(`description: Platte aus Fach ${n} holen`)
-    lines.push('gcode:')
-    lines.push(`    M117 Grabbing bed from slot ${n}...`)
-    lines.push(`    _DO_SLOT_OPERATION SLOT_NUMBER=${n} OPERATION_MACRO=_GRAB_FROM_SLOT X_UNCLAMP_OFFSET=0 Z_FLAT_OFFSET=0`)
-    lines.push('')
-    lines.push(`[gcode_macro STORE_TO_SLOT_${n}]`)
-    lines.push(`description: Platte in Fach ${n} ablegen`)
-    lines.push('gcode:')
-    lines.push(`    M117 Storing to slot ${n}...`)
-    lines.push(`    _DO_SLOT_OPERATION SLOT_NUMBER=${n} OPERATION_MACRO=_STORE_TO_SLOT X_UNCLAMP_OFFSET=0 Z_FLAT_OFFSET=0`)
-  }
-  lines.push('')
-  lines.push('; |---- SLOT-OPERATION HELPER (nicht ändern) ----|')
-  lines.push('[gcode_macro _DO_SLOT_OPERATION]')
-  lines.push('variable_global_x_unclamp: 0')
-  lines.push('variable_global_y_engage: 0')
-  lines.push('variable_global_first_z_flat: 0')
-  lines.push('variable_global_slot_gap: 0')
-  lines.push('variable_global_y_pullback_limit: 0')
-  lines.push('description: Helper macro to perform slot operations')
-  lines.push('gcode:')
-  lines.push('    {% set slot_number = params.SLOT_NUMBER|int %}')
-  lines.push('    {% set operation_macro = params.OPERATION_MACRO|string %}')
-  lines.push('    {% set x_unclamp_offset = params.X_UNCLAMP_OFFSET|int %}')
-  lines.push('    {% set z_flat_offset = params.Z_FLAT_OFFSET|int %}')
-  lines.push('    {% set x_unclamp = printer["gcode_macro _GLOBAL_VARS"].global_x_unclamp + x_unclamp_offset %}')
-  lines.push('    {% set y_engage = printer["gcode_macro _GLOBAL_VARS"].global_y_engage %}')
-  lines.push('    {% set slot_gap = printer["gcode_macro _GLOBAL_VARS"].global_slot_gap + 30 %}')
-  lines.push('    {% set z_flat = printer["gcode_macro _GLOBAL_VARS"].global_first_z_flat + ((slot_number-1)*slot_gap) + z_flat_offset %}')
-  lines.push('    {% set y_pullback_limit = printer["gcode_macro _GLOBAL_VARS"].global_y_pullback_limit %}')
-  lines.push('    SET_GCODE_VARIABLE MACRO={operation_macro} VARIABLE=otto_x_unclamp VALUE={x_unclamp}')
-  lines.push('    SET_GCODE_VARIABLE MACRO={operation_macro} VARIABLE=otto_y_engage VALUE={y_engage}')
-  lines.push('    SET_GCODE_VARIABLE MACRO={operation_macro} VARIABLE=otto_z_flat VALUE={z_flat}')
-  lines.push('    SET_GCODE_VARIABLE MACRO={operation_macro} VARIABLE=otto_y_pullback_limit VALUE={y_pullback_limit}')
-  lines.push('    {operation_macro}')
-  lines.push('    M400')
-  return lines.join('\n')
+/* ── slots.cfg — SKALIERBARE Regal-Kalibrierung ─────────────────────────────────
+   Keine Pro-Fach-Macros mehr. Position wird mathematisch aus RACK+SLOT berechnet:
+     X = global_x_unclamp + (rack-1)*global_rack_x_gap + rack_x_trim[rack]
+     Z = global_first_z_flat + (slot-1)*(global_slot_gap+30) + rack_z_trim[rack]
+   → Ein zusätzliches Regal verschiebt automatisch alles um eine Regalbreite (global_rack_x_gap).
+   Aufruf wie von der Farm: GRAB_FROM_RACK RACK=2 SLOT=5  /  STORE_TO_RACK RACK=3 SLOT=1. */
+function genSlotsCfg(s) {
+  const L = []
+  const dict = () => '{' + Array.from({ length: s.racks }, (_, i) => `${i + 1}: 0`).join(', ') + '}'
+  L.push('; |---- OTTOmat3D slots.cfg — SKALIERBARE REGAL-KALIBRIERUNG (Printloom-Konfigurator) ----|')
+  L.push(`; |---- ${s.racks} REGAL(E) x ${s.slots} ETAGEN${s.magazineSlot ? ` · MAGAZIN = ETAGE ${s.magazineSlot} (NOLIFT)` : ''} ----|`)
+  L.push('')
+  L.push('[gcode_macro _GLOBAL_VARS]')
+  L.push(`variable_global_x_unclamp: ${s.x_unclamp}        ; X-LAGE ZUM ENTKLEMMEN DER PLATTE (REGAL 1)`)
+  L.push(`variable_global_y_engage: ${s.y_engage}        ; Y-TIEFE, IN DER DIE PLATTE IN DIE GABEL GLEITET`)
+  L.push(`variable_global_first_z_flat: ${s.first_z_flat}      ; Z-HOEHE ETAGE 1 (PLATTE EBEN ZUR GABEL)`)
+  L.push(`variable_global_slot_gap: ${s.slot_gap}         ; ABSTAND (mm) ZWISCHEN DEN ETAGEN  (effektiv +30 im Helper)`)
+  L.push(`variable_global_y_pullback_limit: ${s.y_pullback}  ; 5/10 FUER 256x256, 30 FUER 220x220`)
+  L.push(`variable_global_rack_x_gap: ${s.rack_x_gap}      ; <-- X-VERSATZ (mm) PRO REGAL NACH RECHTS  (AUSMESSEN!)`)
+  L.push(`variable_magazine_slot: ${s.magazineSlot || 0}        ; OBERSTE ETAGE = MAGAZIN (frische Platten, automatisch NOLIFT). 0 = keins`)
+  L.push('gcode: ;')
+  L.push('')
+  L.push('; |---- OEFFENTLICHE MACROS ----|')
+  L.push('; AUFRUF:  GRAB_FROM_RACK RACK=2 SLOT=5   /   STORE_TO_RACK RACK=3 SLOT=1')
+  L.push(`; RACK 1-${s.racks}, SLOT 1-${s.slots}`)
+  L.push('')
+  L.push('[gcode_macro GRAB_FROM_RACK]')
+  L.push('description: Platte aus Regal/Etage holen, z.B. GRAB_FROM_RACK RACK=2 SLOT=5 (NOLIFT=1 optional)')
+  L.push('gcode:')
+  L.push('    {% set rack = params.RACK|int %}')
+  L.push('    {% set slot = params.SLOT|int %}')
+  L.push('    {% set mag = printer["gcode_macro _GLOBAL_VARS"].magazine_slot|int %}')
+  L.push('    ; Magazin-Etage automatisch ohne Anheben greifen (oder per NOLIFT=1 erzwingen)')
+  L.push('    {% set nolift = 1 if (mag > 0 and slot == mag) else params.NOLIFT|default(0)|int %}')
+  L.push("    {% set grab_macro = '_GRAB_FROM_SLOT_NOLIFT' if nolift == 1 else '_GRAB_FROM_SLOT' %}")
+  L.push('    M117 Grab rack {rack} slot {slot}...')
+  L.push('    _DO_SLOT_OPERATION RACK={rack} SLOT_NUMBER={slot} OPERATION_MACRO={grab_macro} X_UNCLAMP_OFFSET=0 Z_FLAT_OFFSET=0')
+  L.push('')
+  L.push('[gcode_macro STORE_TO_RACK]')
+  L.push('description: Platte in Regal/Etage ablegen, z.B. STORE_TO_RACK RACK=3 SLOT=1')
+  L.push('gcode:')
+  L.push('    {% set rack = params.RACK|int %}')
+  L.push('    {% set slot = params.SLOT|int %}')
+  L.push('    M117 Store rack {rack} slot {slot}...')
+  L.push('    _DO_SLOT_OPERATION RACK={rack} SLOT_NUMBER={slot} OPERATION_MACRO=_STORE_TO_SLOT X_UNCLAMP_OFFSET=0 Z_FLAT_OFFSET=0')
+  L.push('')
+  L.push('; |---- SLOT-OPERATION (HELPER, mathematisch — nicht pro Fach) ----|')
+  L.push('[gcode_macro _DO_SLOT_OPERATION]')
+  L.push('variable_global_x_unclamp: 0')
+  L.push('variable_global_y_engage: 0')
+  L.push('variable_global_first_z_flat: 0')
+  L.push('variable_global_slot_gap: 0')
+  L.push('variable_global_y_pullback_limit: 0')
+  L.push('description: Helper macro to perform slot operations')
+  L.push('gcode:')
+  L.push('    {% set rack = params.RACK|default(1)|int %}')
+  L.push('    {% set slot_number = params.SLOT_NUMBER|int %}')
+  L.push('    {% set operation_macro = params.OPERATION_MACRO|string %}   ; _GRAB_FROM_SLOT / _GRAB_FROM_SLOT_NOLIFT / _STORE_TO_SLOT')
+  L.push('    {% set x_unclamp_offset = params.X_UNCLAMP_OFFSET|default(0)|int %}')
+  L.push('    {% set z_flat_offset = params.Z_FLAT_OFFSET|default(0)|int %}')
+  L.push('')
+  L.push('    ; Optionale Feinkorrektur PRO REGAL (0 = keine). Nur bei Bedarf anpassen:')
+  L.push(`    {% set rack_x_trim = ${dict()} %}`)
+  L.push(`    {% set rack_z_trim = ${dict()} %}`)
+  L.push('')
+  L.push('    {% set rack_x_gap = printer["gcode_macro _GLOBAL_VARS"].global_rack_x_gap %}')
+  L.push('    ; X = Basis + Etagen-Feinjust. + Regalversatz + Regal-Feinkorrektur')
+  L.push('    {% set x_unclamp = printer["gcode_macro _GLOBAL_VARS"].global_x_unclamp')
+  L.push('                       + x_unclamp_offset')
+  L.push('                       + ((rack-1) * rack_x_gap)')
+  L.push('                       + rack_x_trim[rack] %}')
+  L.push('    {% set y_engage = printer["gcode_macro _GLOBAL_VARS"].global_y_engage %}')
+  L.push('    {% set slot_gap = printer["gcode_macro _GLOBAL_VARS"].global_slot_gap + 30 %}')
+  L.push('    {% set z_flat = printer["gcode_macro _GLOBAL_VARS"].global_first_z_flat')
+  L.push('                    + ((slot_number-1) * slot_gap)')
+  L.push('                    + z_flat_offset')
+  L.push('                    + rack_z_trim[rack] %}')
+  L.push('    {% set y_pullback_limit = printer["gcode_macro _GLOBAL_VARS"].global_y_pullback_limit %}')
+  L.push('')
+  L.push('    M117 Op rack {rack} slot {slot_number}...')
+  L.push('    SET_GCODE_VARIABLE MACRO={operation_macro} VARIABLE=otto_x_unclamp VALUE={x_unclamp}')
+  L.push('    SET_GCODE_VARIABLE MACRO={operation_macro} VARIABLE=otto_y_engage VALUE={y_engage}')
+  L.push('    SET_GCODE_VARIABLE MACRO={operation_macro} VARIABLE=otto_z_flat VALUE={z_flat}')
+  L.push('    SET_GCODE_VARIABLE MACRO={operation_macro} VARIABLE=otto_y_pullback_limit VALUE={y_pullback_limit}')
+  L.push('    {operation_macro}')
+  L.push('    M400')
+  L.push('')
+  L.push('; |---- GRAB OHNE LIFT (oberste Etage / Magazin) ----|')
+  L.push('[gcode_macro _GRAB_FROM_SLOT_NOLIFT]')
+  L.push('variable_otto_x_unclamp: 0')
+  L.push('variable_otto_y_engage: 0')
+  L.push('variable_otto_z_flat: 0')
+  L.push('variable_otto_y_pullback_limit: 0')
+  L.push('description: Platte greifen und gerade rausziehen, OHNE Anheben')
+  L.push('gcode:')
+  L.push('    {% set x_unclamp = printer["gcode_macro _GRAB_FROM_SLOT_NOLIFT"].otto_x_unclamp %}')
+  L.push('    {% set x_middle = x_unclamp - 30 %}')
+  L.push('    {% set y_engage = printer["gcode_macro _GRAB_FROM_SLOT_NOLIFT"].otto_y_engage %}')
+  L.push('    {% set z_flat = printer["gcode_macro _GRAB_FROM_SLOT_NOLIFT"].otto_z_flat %}')
+  L.push('    {% set y_pullback_limit = printer["gcode_macro _GRAB_FROM_SLOT_NOLIFT"].otto_y_pullback_limit %}')
+  L.push('')
+  L.push('    G1 X{x_unclamp} Y280 Z{z_flat} F4000')
+  L.push('    M400')
+  L.push('    ; SLIDE ARM TOWARDS RACK')
+  L.push('    G1 Y{y_engage-35} F4000')
+  L.push('    M400')
+  L.push('    G1 Y{y_engage-25} F600')
+  L.push('    M400')
+  L.push('    G1 Y{y_engage} F300')
+  L.push('    M400')
+  L.push('    ; LOCK GRABBER INTO PLATE BRACKET')
+  L.push('    G1 X{x_middle} F800')
+  L.push('    M400')
+  L.push('    ; PULL OUT BED (OHNE LIFT — horizontal auf z_flat)')
+  L.push('    M117 Picking up new bed (no lift)...')
+  L.push('    G1 Y250 F1000')
+  L.push('    M400')
+  L.push('    G1 Y{y_pullback_limit} F2000')
+  L.push('    M400')
+  return L.join('\n')
 }
 
+/* ── printer_calibration_variables.cfg ──────────────────────────────────────────
+   Feste Macro-Namen (…_X_ONE_C) — exakt die, die die Printloom-Farm-Sequenz aufruft. */
 function genPrinterCfg(p, e, l) {
-  const M = p.macro
   const out = []
-  out.push(`; |---- OTTOmat3D PRINTER CALIBRATION (${p.name}) — Printloom-Konfigurator ----|`)
-  out.push(`[gcode_macro EJECT_FROM_${M}]`)
+  out.push(`; |---- OTTOmat3D printer_calibration_variables.cfg — ${p.name} (Printloom-Konfigurator) ----|`)
+  out.push('; Feste Macro-Namen (…_X_ONE_C): die Printloom-Farm-Sequenz ruft genau diese auf.')
+  out.push('')
+  out.push('[gcode_macro EJECT_FROM_BAMBULAB_X_ONE_C]')
   out.push(`description: 'Eject build plate from ${p.name} (without homing)'`)
   out.push('gcode:')
   out.push(`    {% set x_unclamp = ${e.x} %}`)
   out.push(`    {% set y_engage = ${e.y} %}`)
   out.push(`    {% set z_flat = ${e.z} %}`)
   out.push(`    M117 'Removing build plate from ${p.name}...'`)
-  if (p.door) out.push(`    OPEN_DOOR_${M}`)
-  out.push(`    SET_GCODE_VARIABLE MACRO=_EJECT_FROM_PRINTER VARIABLE=otto_x_unclamp VALUE={x_unclamp}`)
-  out.push(`    SET_GCODE_VARIABLE MACRO=_EJECT_FROM_PRINTER VARIABLE=otto_y_engage VALUE={y_engage}`)
-  out.push(`    SET_GCODE_VARIABLE MACRO=_EJECT_FROM_PRINTER VARIABLE=otto_z_flat VALUE={z_flat}`)
+  out.push('    SET_GCODE_VARIABLE MACRO=_EJECT_FROM_PRINTER VARIABLE=otto_x_unclamp VALUE={x_unclamp}')
+  out.push('    SET_GCODE_VARIABLE MACRO=_EJECT_FROM_PRINTER VARIABLE=otto_y_engage VALUE={y_engage}')
+  out.push('    SET_GCODE_VARIABLE MACRO=_EJECT_FROM_PRINTER VARIABLE=otto_z_flat VALUE={z_flat}')
   out.push('    _EJECT_FROM_PRINTER')
   out.push('    M400')
   out.push('')
-  out.push(`[gcode_macro LOAD_ONTO_${M}]`)
+  out.push('[gcode_macro LOAD_ONTO_BAMBULAB_X_ONE_C]')
   out.push(`description: 'Load a build plate onto ${p.name}'`)
   out.push('gcode:')
   out.push(`    {% set x_unclamp = ${l.x} %}`)
   out.push(`    {% set y_engage = ${l.y} %}`)
   out.push(`    {% set z_flat = ${l.z} %}`)
   out.push(`    M117 'Moving build plate to Printer: ${p.name}'`)
-  out.push(`    SET_GCODE_VARIABLE MACRO=_LOAD_ONTO_PRINTER VARIABLE=otto_x_unclamp VALUE={x_unclamp}`)
-  out.push(`    SET_GCODE_VARIABLE MACRO=_LOAD_ONTO_PRINTER VARIABLE=otto_y_engage VALUE={y_engage}`)
-  out.push(`    SET_GCODE_VARIABLE MACRO=_LOAD_ONTO_PRINTER VARIABLE=otto_z_flat VALUE={z_flat}`)
+  out.push('    SET_GCODE_VARIABLE MACRO=_LOAD_ONTO_PRINTER VARIABLE=otto_x_unclamp VALUE={x_unclamp}')
+  out.push('    SET_GCODE_VARIABLE MACRO=_LOAD_ONTO_PRINTER VARIABLE=otto_y_engage VALUE={y_engage}')
+  out.push('    SET_GCODE_VARIABLE MACRO=_LOAD_ONTO_PRINTER VARIABLE=otto_z_flat VALUE={z_flat}')
   out.push('    _LOAD_ONTO_PRINTER')
   out.push('    M400')
-  if (p.door) out.push(`    CLOSE_DOOR_${M}`)
   if (p.door) {
-    for (const [kind, d] of [['OPEN', p.door.open], ['CLOSE', p.door.close]]) {
+    for (const [kind, d, verb] of [['OPEN', p.door.open, 'Opening'], ['CLOSE', p.door.close, 'Closing']]) {
       out.push('')
-      out.push(`[gcode_macro ${kind}_DOOR_${M}]`)
-      out.push(`description: '${kind === 'OPEN' ? 'Opening' : 'Closing'} ${p.name} Door'`)
+      out.push(`[gcode_macro ${kind}_DOOR_BAMBU_X_ONE_C]`)
+      out.push(`description: '${verb} ${p.name} Door'`)
       out.push('gcode:')
       out.push(`    {% set x_start = ${d.x} %}`)
       out.push(`    {% set y_start = ${d.y} %}`)
       out.push(`    {% set z_engage = ${d.z} %}`)
-      out.push(`    {% set d_to_pin_dist = ${d.d} %} ; Abstand Tür-Drehpunkt zur Armspitze`)
+      out.push(`    {% set d_to_pin_dist = ${d.d} %} ; Abstand Tür-Drehpunkt → Armspitze`)
       out.push(`    SET_GCODE_VARIABLE MACRO=_${kind}_DOOR VARIABLE=door_x_start VALUE={x_start}`)
       out.push(`    SET_GCODE_VARIABLE MACRO=_${kind}_DOOR VARIABLE=door_y_start VALUE={y_start}`)
       out.push(`    SET_GCODE_VARIABLE MACRO=_${kind}_DOOR VARIABLE=door_z_engage VALUE={z_engage}`)
       out.push(`    SET_GCODE_VARIABLE MACRO=_${kind}_DOOR VARIABLE=door_d_to_pin_dist VALUE={d_to_pin_dist}`)
+      out.push(`    M117 '${verb} ${p.name} Door'`)
       out.push(`    _${kind}_DOOR`)
       out.push('    M400')
     }
+  } else {
+    out.push('')
+    out.push(`; (${p.name} hat kein Tür-Macro — OPEN/CLOSE_DOOR entfallen. Türschritte in der Sequenz weglassen.)`)
   }
   return out.join('\n')
 }
@@ -145,10 +221,12 @@ export default function Konfigurator() {
   const [gap, setGap]       = useState(DEFAULTS.slot_gap)
   const [xUnclamp, setX]    = useState(DEFAULTS.x_unclamp)
   const [yEngage, setY]     = useState(DEFAULTS.y_engage)
-  const [plate, setPlate]   = useState('256')       // 256 → pullback 10, 220 → 30
+  const [rackGap, setRackGap] = useState(DEFAULTS.rack_x_gap)   // global_rack_x_gap
+  const [plate, setPlate]   = useState('256')       // 256 → pullback 5, 220 → 30
   const [magazine, setMagazine] = useState(true)
   const [advanced, setAdvanced] = useState(false)
   const [copied, setCopied] = useState('')
+  const [jog, setJog] = useState({ busy: false, msg: '', err: false })
 
   const printer = PRINTERS.find(p => p.id === printerId) ?? PRINTERS[0]
   // Drucker-Positionen lokal überschreibbar (Abstand zum Drucker = eject.x)
@@ -159,13 +237,13 @@ export default function Konfigurator() {
 
   const slots = (+storage || 1) + (magazine ? 1 : 0)
   const magazineSlot = magazine ? slots : null
-  const yPullback = plate === '220' ? 30 : 10
+  const yPullback = plate === '220' ? 30 : 5
   const slotStepZ = (+gap || 0) + 30
 
-  const storageCfg = useMemo(() => genStorageCfg({
+  const slotsCfg = useMemo(() => genSlotsCfg({
     x_unclamp: +xUnclamp, y_engage: +yEngage, first_z_flat: +firstZ, slot_gap: +gap,
-    y_pullback: yPullback, slots, magazineSlot,
-  }), [xUnclamp, yEngage, firstZ, gap, yPullback, slots, magazineSlot])
+    y_pullback: yPullback, rack_x_gap: +rackGap, slots, racks: +racks || 1, magazineSlot,
+  }), [xUnclamp, yEngage, firstZ, gap, yPullback, rackGap, slots, racks, magazineSlot])
   const printerCfg = useMemo(() => genPrinterCfg(printer, eject, load), [printer, eject, load])
 
   const copy = (text, which) => {
@@ -175,6 +253,26 @@ export default function Konfigurator() {
     const blob = new Blob([text], { type: 'text/plain' })
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click()
     URL.revokeObjectURL(a.href)
+  }
+
+  // ── Live: ein Fach am echten OTTOeject anfahren (gleiche Mathematik wie slots.cfg) ──
+  const sendG = async (gcode, label) => {
+    setJog({ busy: true, msg: label, err: false })
+    try {
+      await controlService.sendKlipperGcode(gcode)
+      setJog({ busy: false, msg: tr('✓ {0}', label), err: false })
+    } catch (e) {
+      const detail = e?.response?.data?.detail || e?.message || tr('Fehler')
+      setJog({ busy: false, msg: detail, err: true })
+    }
+  }
+  const homeOtto = () => sendG('OTTOEJECT_HOME', tr('Referenzfahrt…'))
+  const approachSlot = (rack, slot) => {
+    if (jog.busy) return
+    const x = (+xUnclamp) + (rack - 1) * (+rackGap || 0)
+    const z = (+firstZ) + (slot - 1) * slotStepZ
+    // Sicher: vor das Fach fahren (Y zurückgezogen), in Fachhöhe — greift NICHT.
+    sendG(`G90\nG1 X${x} Y280 Z${z} F3000`, tr('Regal {0} · Fach {1} anfahren…', rack, slot))
   }
 
   return (
@@ -200,7 +298,7 @@ export default function Konfigurator() {
           ))}
         </div>
 
-        {/* ── Mitte: Regal/Magazin + Live-Bild ── */}
+        {/* ── Mitte: Regal/Magazin + Live-Vorschau ── */}
         <div className="card p-4 space-y-3 self-start">
           <p className="section-label">{tr('2 · Regal & Magazin')}</p>
           <div className="grid grid-cols-2 gap-3">
@@ -208,6 +306,7 @@ export default function Konfigurator() {
             <NumField label={tr('Lager-Fächer je Regal')} value={storage} min={1} max={12} onChange={setStorage} />
             <NumField label={tr('Höhe Fach 1 (mm)')} hint={tr('global_first_z_flat')} value={firstZ} step={0.5} onChange={setFirstZ} />
             <NumField label={tr('Fach-Abstand (mm)')} hint={tr('global_slot_gap · Z-Schritt = +30')} value={gap} step={1} onChange={setGap} />
+            <NumField label={tr('Regal-Versatz X (mm)')} hint={tr('global_rack_x_gap · pro Regal nach rechts')} value={rackGap} step={1} onChange={setRackGap} />
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -245,13 +344,27 @@ export default function Konfigurator() {
             </div>
           )}
 
-          {/* Live-Bild */}
+          {/* Live-Vorschau (Fächer anklickbar → anfahren) */}
           <div className="pt-1">
             <p className="text-[10px] uppercase tracking-wide text-surface-600 mb-1">{tr('Vorschau')}</p>
-            <RackPreview numRacks={racks} slotsPerRack={slots} slotHeightMm={slotStepZ} magazineSlot={magazineSlot} />
+            <RackPreview numRacks={racks} slotsPerRack={slots} slotHeightMm={slotStepZ}
+              magazineSlot={magazineSlot} onSlotClick={approachSlot} busy={jog.busy} />
             <p className="text-[10px] text-surface-600 mt-1">
               {tr('Drucker: {0} · {1} Fächer/Regal{2} · Fach 1 @ {3} mm · Schritt {4} mm', printer.name, slots, magazine ? tr(' (inkl. Magazin)') : '', firstZ, slotStepZ)}
             </p>
+          </div>
+
+          {/* Live: Fach anfahren */}
+          <div className="pt-2 border-t border-surface-700/50 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] text-surface-400">{tr('Live: Fach anfahren (OTTOeject)')}</p>
+              <button onClick={homeOtto} disabled={jog.busy}
+                className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('⌂ Referenzfahrt')}</button>
+            </div>
+            <p className="text-[10px] text-surface-600">
+              {tr('Erst Referenzfahrt, dann im Bild ein Fach anklicken — der Arm fährt mit den aktuellen Werten davor (greift nicht).')}
+            </p>
+            {jog.msg && <p className={`text-[10px] font-mono ${jog.err ? 'text-red-400' : jog.busy ? 'text-amber-400' : 'text-emerald-400'}`}>{jog.msg}</p>}
           </div>
         </div>
 
@@ -261,8 +374,8 @@ export default function Konfigurator() {
       <div className="space-y-2">
         <div className="grid gap-4 lg:grid-cols-2">
           {[
-            { title: tr('storage_calibration_variables.cfg'), text: storageCfg, key: 'storage', file: 'storage_calibration_variables.cfg' },
-            { title: tr('printer_calibration_variables.cfg'), text: printerCfg, key: 'printer', file: 'printer_calibration_variables.cfg' },
+            { title: 'slots.cfg', text: slotsCfg, key: 'slots', file: 'slots.cfg' },
+            { title: 'printer_calibration_variables.cfg', text: printerCfg, key: 'printer', file: 'printer_calibration_variables.cfg' },
           ].map(c => (
             <div key={c.key} className="card p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
@@ -277,7 +390,7 @@ export default function Konfigurator() {
           ))}
         </div>
         <p className="text-[10px] text-surface-600 px-1">
-          {tr('Diese beiden Dateien in den Klipper-Config-Ordner der OTTOeject legen (neben ottoeject_macros.cfg) und Klipper neu starten. Feinjustierung pro Fach danach in „Steuerung".')}
+          {tr('Beide Dateien in den Klipper-Config-Ordner der OTTOeject legen (neben ottoeject_macros.cfg, in printer.cfg per [include slots.cfg] einbinden) und Klipper neu starten. Ein zusätzliches Regal verschiebt automatisch alles um „Regal-Versatz X".')}
         </p>
       </div>
     </div>
