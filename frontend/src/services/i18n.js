@@ -181,6 +181,20 @@ const EN_STRINGS = {
   'Tür öffnen': 'Open door', 'Tür schließen': 'Close door',
   'Start-X': 'Start X', 'Pin-Abst.': 'Pin dist.', 'd_to_pin': 'd_to_pin',
   'Platte auswerfen': 'Eject plate', 'Platte einlegen': 'Load plate',
+  'Platte einlegen (Place)': 'Place plate', 'Vor Drucker fahren': 'Move to printer',
+  'Sichere Anfahrt vor den Drucker — nutzt die Auswurf-Position als Bezug. Eigene Geschwindigkeit für einen schnellen Wechsel.':
+    'Safe approach in front of the printer — uses the eject position as reference. Its own speed for a fast swap.',
+  'Speed: global': 'Speed: global', 'Geschwindigkeit dieser Operation (M220)': 'Speed for this operation (M220)',
+  'Geschwindigkeit (global)': 'Speed (global)',
+  'M220-Fallback · pro Operation oben eigene Geschwindigkeit einstellbar': 'M220 fallback · set a per-operation speed above',
+  'Platte holen': 'Grab from rack', 'Platte ablegen': 'Store to rack',
+  // Sequenz-Editor: Printloom-Op (app_op)
+  'Printloom-Op': 'Printloom op', 'Printloom-Operation': 'Printloom operation',
+  '· immer als Printloom-G-code (Drucker-Tab)': '· always Printloom G-code (Printer tab)',
+  'Nutzt Position & Geschwindigkeit aus dem Drucker-Tab. Bei „Platte holen/ablegen" liefert die Farm Regal/Fach automatisch.':
+    'Uses the position & speed from the Printer tab. For grab/store the farm supplies rack/slot automatically.',
+  'Printloom-eigene Operation (Tür, Auswurf, Einlegen, Greifen …) aus dem Drucker-Tab — immer als App-G-code, Position & Geschwindigkeit dort einstellbar':
+    'Printloom’s own operation (door, eject, place, grab …) from the Printer tab — always App G-code, position & speed set there',
   '{0} ist offen (ohne Tür) — Tür-Aktionen entfallen. In der Farm-Sequenz die Tür-Schritte weglassen (Sequenz-Editor).':
     '{0} is open (no door) — door actions omitted. Remove the door steps from the farm sequence (Sequence Editor).',
   '📦 Regal & Greifen': '📦 Rack & grab',

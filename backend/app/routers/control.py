@@ -88,6 +88,14 @@ async def list_macros():
         "total": len(VALID_MACROS)
     }
 
+
+@router.get("/app-ops")
+async def list_app_ops():
+    """Printloom-eigene Operationen (Drucker-Tab-Geometrie → G-code), die in Sequenzen
+    als app_op-Schritt frei nutzbar sind — wie Geräte-Macros, aber immer App-G-code."""
+    from app.services.ottoeject_motion import APP_OPS
+    return {"ops": APP_OPS}
+
 @router.get("/macro/{macro_name}")
 async def get_macro_info(macro_name: str):
     """Get information about a specific macro"""

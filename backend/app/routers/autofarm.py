@@ -21,9 +21,9 @@ from pydantic import BaseModel
 
 from app.db.database import SessionLocal
 from app.models.models import Device, PrinterType, UploadedFile
-from app.services.bambu_mqtt import BambuLabMQTT
 from app.services.bambu_ftp import BambuFTP
 from app.services import storage
+from app.services import bambu_manager
 from app.services import ottoeject_motion as _motion
 from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _get_plate_gcode_param, _ams_match_confident, _ams_slots_from_raw, capture_snapshot, publish_live_status
 from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _load as _rack_load
@@ -535,21 +535,17 @@ async def _send_print_cmd(cmd: str):
     if not device:
         return
     loop = asyncio.get_event_loop()
-    mqtt = BambuLabMQTT(device)
     try:
-        if not await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0)):
-            _log(f"⚠ Drucker-{cmd}: keine MQTT-Verbindung")
+        # Über die persistente Verbindung (bambu_manager) — kein eigener Connect/Disconnect.
+        if cmd not in ("pause", "resume", "stop"):
             return
-        fn = {"pause": mqtt.pause, "resume": mqtt.resume, "stop": mqtt.stop}.get(cmd)
-        if fn and await loop.run_in_executor(None, fn):
+        ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.print_command, device, cmd)
+        if ok:
             _log(f"⏯ Drucker: {cmd} gesendet")
+        else:
+            _log(f"⚠ Drucker-{cmd}: keine MQTT-Verbindung")
     except Exception as e:
         _log(f"⚠ Drucker-{cmd} fehlgeschlagen: {e}")
-    finally:
-        try:
-            await loop.run_in_executor(None, mqtt.disconnect)
-        except Exception:
-            pass
 
 
 # ── Step implementations ─────────────────────────────────────
@@ -586,15 +582,9 @@ async def _do_macro(name: str, _recover: bool = True):
 
 async def _do_bambu_gcode(gcode: str, device: Device):
     loop = asyncio.get_event_loop()
-    mqtt = BambuLabMQTT(device)
-    ok = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
-    if not ok:
-        raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
-    try:
-        sent = await loop.run_in_executor(None, lambda: mqtt.send_gcode(gcode))
-        await asyncio.sleep(1)
-    finally:
-        mqtt.disconnect()
+    # Über die persistente Verbindung (bambu_manager) senden — kein eigener Connect.
+    sent = await loop.run_in_executor(bambu_manager.executor, bambu_manager.send_gcode, device, gcode)
+    await asyncio.sleep(1)
     if not sent:
         raise RuntimeError(f"GCode fehlgeschlagen: {gcode[:40]}")
 
@@ -666,74 +656,72 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
             raise RuntimeError(f"Datei {job['fileId']} nicht gefunden")
 
         print_name = _make_print_name(file.original_filename)
-        mqtt = BambuLabMQTT(device)
-        connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+        # Persistente Verbindung (bambu_manager) — kein eigener Connect/Disconnect.
+        connected = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
         if not connected:
             raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
 
-        try:
-            ams_map_str = _job_manual_map(job)   # Job-Map oder pro-Datei im Browser gewählt
+        ams_map_str = _job_manual_map(job)   # Job-Map oder pro-Datei im Browser gewählt
 
-            if not use_ams:
-                ams_mapping = []
-                _log("AMS deaktiviert")
+        if not use_ams:
+            ams_mapping = []
+            _log("AMS deaktiviert")
 
-            elif ams_map_str:
-                try:
-                    ams_mapping = [int(x.strip()) for x in ams_map_str.split(',') if x.strip().lstrip('-').isdigit()]
-                    if not ams_mapping:
-                        raise ValueError("empty")
-                    _log(f"AMS-Mapping: {ams_mapping} (manuell)")
-                except Exception:
-                    _log(f"⚠ AMS-Mapping '{ams_map_str}' ungültig — Auto-Matching")
-                    ams_map_str = ''
+        elif ams_map_str:
+            try:
+                ams_mapping = [int(x.strip()) for x in ams_map_str.split(',') if x.strip().lstrip('-').isdigit()]
+                if not ams_mapping:
+                    raise ValueError("empty")
+                _log(f"AMS-Mapping: {ams_mapping} (manuell)")
+            except Exception:
+                _log(f"⚠ AMS-Mapping '{ams_map_str}' ungültig — Auto-Matching")
+                ams_map_str = ''
 
-            if use_ams and not ams_map_str:
-                _log("AMS-Status abfragen…")
-                await loop.run_in_executor(None, mqtt.request_status)
+        if use_ams and not ams_map_str:
+            _log("AMS-Status abfragen…")
+            await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
+            await asyncio.sleep(3.0)
+            raw = bambu_manager.last_status(device)
+            ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
+
+            if not ams_raw or not ams_raw.get("ams"):
+                _log("AMS-Daten leer — nochmal…")
+                await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
                 await asyncio.sleep(3.0)
-                raw = mqtt.get_last_message()
+                raw = bambu_manager.last_status(device)
                 ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
 
-                if not ams_raw or not ams_raw.get("ams"):
-                    _log("AMS-Daten leer — nochmal…")
-                    await loop.run_in_executor(None, mqtt.request_status)
-                    await asyncio.sleep(3.0)
-                    raw = mqtt.get_last_message()
-                    ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
-
-                fil_types, fil_colors = await loop.run_in_executor(
-                    None, _effective_filaments, file.id, file.file_path, file.file_type, job.get("plate")
-                )
-                _log(f"Filamente in Datei: {list(zip(fil_types, fil_colors))}")
-
-                if ams_raw and ams_raw.get("ams"):
-                    ams_mapping = await loop.run_in_executor(
-                        None, _match_ams_live, fil_types, fil_colors, ams_raw
-                    )
-                    _log(f"AMS-Match (Live): {ams_mapping}")
-                else:
-                    _log("⚠ Kein Live-AMS — Fallback aus Datei")
-                    ams_mapping = await loop.run_in_executor(
-                        None, _get_ams_mapping, file.file_path, file.file_type, None
-                    )
-                    _log(f"AMS-Mapping (Datei): {ams_mapping}")
-
-            ftp = BambuFTP(device.ip_address, device.access_code)
-            up = await loop.run_in_executor(None, ftp.upload_file, file.file_path, print_name)
-            if not up:
-                raise RuntimeError("FTP-Upload fehlgeschlagen")
-
-            plate_param = _get_plate_gcode_param(file.file_path, job.get("plate")) if file.file_type == '.3mf' else ""
-            _log(f"Plate-GCode: {plate_param or 'n/a'}")
-
-            await asyncio.sleep(5)
-            ok = await loop.run_in_executor(
-                None, lambda: mqtt.start_print(print_name, use_ams=use_ams, ams_mapping=ams_mapping, plate_param=plate_param)
+            fil_types, fil_colors = await loop.run_in_executor(
+                None, _effective_filaments, file.id, file.file_path, file.file_type, job.get("plate")
             )
-            await asyncio.sleep(2)
-        finally:
-            mqtt.disconnect()
+            _log(f"Filamente in Datei: {list(zip(fil_types, fil_colors))}")
+
+            if ams_raw and ams_raw.get("ams"):
+                ams_mapping = await loop.run_in_executor(
+                    None, _match_ams_live, fil_types, fil_colors, ams_raw
+                )
+                _log(f"AMS-Match (Live): {ams_mapping}")
+            else:
+                _log("⚠ Kein Live-AMS — Fallback aus Datei")
+                ams_mapping = await loop.run_in_executor(
+                    None, _get_ams_mapping, file.file_path, file.file_type, None
+                )
+                _log(f"AMS-Mapping (Datei): {ams_mapping}")
+
+        ftp = BambuFTP(device.ip_address, device.access_code)
+        up = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, file.file_path, print_name)
+        if not up:
+            raise RuntimeError("FTP-Upload fehlgeschlagen")
+
+        plate_param = _get_plate_gcode_param(file.file_path, job.get("plate")) if file.file_type == '.3mf' else ""
+        _log(f"Plate-GCode: {plate_param or 'n/a'}")
+
+        await asyncio.sleep(5)
+        ok = await loop.run_in_executor(
+            bambu_manager.executor,
+            lambda: bambu_manager.start_print(device, print_name, use_ams=use_ams, ams_mapping=ams_mapping, plate_param=plate_param)
+        )
+        await asyncio.sleep(2)
 
         if not ok:
             raise RuntimeError("Druckstart fehlgeschlagen")
@@ -789,46 +777,41 @@ def _decrement_magazine():
 async def _read_live_ams(device: Device) -> dict:
     """Read live AMS status from the printer (with one retry). Returns {} if unavailable."""
     loop = asyncio.get_event_loop()
-    mqtt = BambuLabMQTT(device)
-    connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+    # Persistente Verbindung (bambu_manager) — kein eigener Connect.
+    connected = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
     if not connected:
         return {}
-    try:
-        for _ in range(2):
-            await loop.run_in_executor(None, mqtt.request_status)
-            await asyncio.sleep(3.0)
-            raw = mqtt.get_last_message()
-            ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
-            if ams_raw and ams_raw.get("ams"):
-                return ams_raw
-        return ams_raw or {}
-    finally:
-        mqtt.disconnect()
+    ams_raw = {}
+    for _ in range(2):
+        await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
+        await asyncio.sleep(3.0)
+        raw = bambu_manager.last_status(device)
+        ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
+        if ams_raw and ams_raw.get("ams"):
+            return ams_raw
+    return ams_raw or {}
 
 
 async def _read_live_print(device: Device, max_age: float = 8.0) -> dict:
     """Live printer `print` status dict, cached briefly so conditional steps don't
-    each open a fresh MQTT connection. Returns {} if unavailable."""
+    each hammer the printer. Returns {} if unavailable."""
     loop = asyncio.get_event_loop()
     cache = _farm.get("_status_cache")
     if cache and (loop.time() - cache["t"]) < max_age:
         return cache["data"]
-    mqtt = BambuLabMQTT(device)
-    connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+    # Persistente Verbindung (bambu_manager) — kein eigener Connect.
+    connected = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
     if not connected:
         return (cache or {}).get("data", {})
-    try:
-        for _ in range(2):
-            await loop.run_in_executor(None, mqtt.request_status)
-            await asyncio.sleep(2.0)
-            raw = mqtt.get_last_message()
-            p = (raw or {}).get("print", {})
-            if p:
-                _farm["_status_cache"] = {"t": loop.time(), "data": p}
-                return p
-        return (cache or {}).get("data", {})
-    finally:
-        mqtt.disconnect()
+    for _ in range(2):
+        await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
+        await asyncio.sleep(2.0)
+        raw = bambu_manager.last_status(device)
+        p = (raw or {}).get("print", {})
+        if p:
+            _farm["_status_cache"] = {"t": loop.time(), "data": p}
+            return p
+    return (cache or {}).get("data", {})
 
 
 # Sequence-condition fields → live MQTT status keys.
@@ -883,79 +866,62 @@ async def _wait_bambu_finish(device: Device, label: str = "Bewegung", timeout: f
     start = loop.time()
     seen_running = False
     last_log = -999.0
-    mqtt = BambuLabMQTT(device)
+    # Über die EINE persistente Verbindung (bambu_manager) warten — einmal sicherstellen,
+    # danach nur den laufend aktualisierten Cache lesen (paho reconnectet selbst).
+    await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
+    while not _farm["stopping"]:
+        while _farm["paused"] and not _farm["stopping"]:
+            await asyncio.sleep(0.5)
+        if _farm["stopping"]:
+            raise RuntimeError("Gestoppt")
 
-    async def _ensure_connected() -> bool:
-        if mqtt.connected:
-            return True
-        try:
-            await loop.run_in_executor(None, mqtt.disconnect)
-        except Exception:
-            pass
-        ok = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=8.0))
-        if ok:
-            await loop.run_in_executor(None, mqtt.request_status)  # ask for a full push
-        return ok
+        elapsed = loop.time() - start
+        if elapsed > timeout:
+            _log(f"⚠ {label}: FINISH-Timeout ({timeout:.0f}s) — fahre fort")
+            return
 
-    try:
-        await _ensure_connected()
-        while not _farm["stopping"]:
-            while _farm["paused"] and not _farm["stopping"]:
-                await asyncio.sleep(0.5)
-            if _farm["stopping"]:
-                raise RuntimeError("Gestoppt")
-
-            elapsed = loop.time() - start
-            if elapsed > timeout:
-                _log(f"⚠ {label}: FINISH-Timeout ({timeout:.0f}s) — fahre fort")
-                return
-
-            if not await _ensure_connected():
-                if elapsed - last_log >= 5:
-                    _log(f"… {label}: warte auf Drucker-Verbindung ({elapsed:.0f}s)")
-                    last_log = elapsed
-                await asyncio.sleep(3)
-                continue
-
-            # Nudge a fresh full-status push, then read the latest pushed report.
-            try:
-                await loop.run_in_executor(None, mqtt.request_status)
-            except Exception:
-                pass
-            await asyncio.sleep(2)
-            raw = mqtt.get_last_message() or {}
-            state = raw.get("print", {}).get("gcode_state", "")
-
-            if state in ("RUNNING", "PREPARE", "SLICING", "PAUSE"):
-                seen_running = True
-
+        if not bambu_manager.is_connected(device):
             if elapsed - last_log >= 5:
-                _log(f"… {label}: warte auf FINISH (Status: {state or '—'}, {elapsed:.0f}s)")
+                _log(f"… {label}: warte auf Drucker-Verbindung ({elapsed:.0f}s)")
                 last_log = elapsed
+            await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
+            await asyncio.sleep(3)
+            continue
 
-            # A homing/move-only .3mf has no real print body, so the X1C marks it
-            # FAILED at the end even though the motion (incl. M400) completed. Once
-            # we've seen it RUN, treat FAILED as "movement done" — the bed IS in
-            # position. We deliberately do NOT send a stop/clear here: that could
-            # move the bed back off Z200, and a new print starts fine from FAILED.
-            if state == "FAILED" and seen_running:
-                _log(f"✓ {label} — Bewegung abgeschlossen (Bambu wertet den reinen "
-                     f"Homing/Move-Druck als FAILED — harmlos, Position erreicht)")
-                return
-
-            # Done once we see FINISH/IDLE — either after having seen it run, or
-            # after a short settle for very fast moves that skipped RUNNING.
-            if state in ("FINISH", "IDLE") and (seen_running or elapsed > 12):
-                _log(f"✓ {label} — Position erreicht (FINISH)")
-                return
-
-            await asyncio.sleep(1)
-        raise RuntimeError("Gestoppt")
-    finally:
+        # Nudge a fresh full-status push, then read the latest pushed report.
         try:
-            await loop.run_in_executor(None, mqtt.disconnect)
+            await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
         except Exception:
             pass
+        await asyncio.sleep(2)
+        raw = bambu_manager.last_status(device) or {}
+        state = raw.get("print", {}).get("gcode_state", "")
+
+        if state in ("RUNNING", "PREPARE", "SLICING", "PAUSE"):
+            seen_running = True
+
+        if elapsed - last_log >= 5:
+            _log(f"… {label}: warte auf FINISH (Status: {state or '—'}, {elapsed:.0f}s)")
+            last_log = elapsed
+
+        # A homing/move-only .3mf has no real print body, so the X1C marks it
+        # FAILED at the end even though the motion (incl. M400) completed. Once
+        # we've seen it RUN, treat FAILED as "movement done" — the bed IS in
+        # position. We deliberately do NOT send a stop/clear here: that could
+        # move the bed back off Z200, and a new print starts fine from FAILED.
+        if state == "FAILED" and seen_running:
+            _log(f"✓ {label} — Bewegung abgeschlossen (Bambu wertet den reinen "
+                 f"Homing/Move-Druck als FAILED — harmlos, Position erreicht)")
+            return
+
+        # Done once we see FINISH/IDLE — either after having seen it run, or
+        # after a short settle for very fast moves that skipped RUNNING.
+        if state in ("FINISH", "IDLE") and (seen_running or elapsed > 12):
+            _log(f"✓ {label} — Position erreicht (FINISH)")
+            return
+
+        await asyncio.sleep(1)
+    raise RuntimeError("Gestoppt")
 
 
 async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
@@ -1282,13 +1248,12 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
     last_progress_t = loop.time()
     stall_notified  = False
 
-    mqtt = None  # P4: persistente MQTT-Verbindung über alle Polls dieses Drucks
+    # Status kommt jetzt aus der EINEN persistenten Verbindung (bambu_manager) —
+    # keine eigene Poll-Verbindung mehr. _wp_disconnect bleibt als No-op, damit die
+    # vorhandenen Aufrufstellen (vor _do_send_file, bei Abriss …) unverändert bleiben;
+    # die geteilte Verbindung darf NICHT pro Poll geschlossen werden.
     def _wp_disconnect():
-        nonlocal mqtt
-        if mqtt is not None:
-            try: mqtt.disconnect()
-            except Exception: pass
-            mqtt = None
+        return
     try:
         while not _farm["stopping"]:
             if _farm["paused"]:
@@ -1305,19 +1270,13 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                 break
 
             try:
-                # P4: bestehende Verbindung wiederverwenden; nur neu aufbauen, wenn keine
-                # da ist oder die letzte abgerissen wurde. Spart pro Poll einen kompletten
-                # MQTT-Connect/Disconnect über die gesamte Druckdauer.
-                if mqtt is None or not getattr(mqtt, "connected", False):
-                    _wp_disconnect()
-                    mqtt = BambuLabMQTT(device)
-                    connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
-                    if not connected:
-                        mqtt = None
-                        raise ConnectionError("MQTT nicht erreichbar")
-                await loop.run_in_executor(None, mqtt.request_status)
+                # Über die EINE persistente Verbindung (bambu_manager) lesen — kein
+                # Connect/Disconnect pro Poll mehr über die gesamte Druckdauer.
+                if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
+                    raise ConnectionError("MQTT nicht erreichbar")
+                await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
                 await asyncio.sleep(1.5)
-                raw = mqtt.get_last_message()
+                raw = bambu_manager.last_status(device)
 
                 if not raw:
                     raise ConnectionError("Keine MQTT-Antwort")
@@ -1540,6 +1499,13 @@ def _load_farm_geometry() -> dict:
         _motion.apply_rack_config(g, _rack_load())
     except Exception:
         pass
+    # Migration: die Einlege-Op hieß früher „load", jetzt „place" (Alias). Alte
+    # Opt-in-/Override-Einträge übernehmen, damit eine aktivierte Einlege-Position
+    # nicht still auf das Geräte-Macro zurückfällt.
+    for key in ("use_gcode", "gcode_override"):
+        d = g.get(key)
+        if isinstance(d, dict) and d.get("load") is not None and d.get("place") is None:
+            d["place"] = d["load"]
     return g
 
 
@@ -1556,10 +1522,12 @@ def _macro_to_op(val: str, rack_num: str, slot_num: str, stack_rack: str, stack_
         return ("open_door", 1, 1)
     if v.startswith("CLOSE_DOOR"):
         return ("close_door", 1, 1)
+    if v.startswith("MOVE_TO_PRINTER"):
+        return ("move_to_printer", 1, 1)
     if v.startswith("EJECT_FROM"):
         return ("eject", 1, 1)
-    if v.startswith("LOAD_ONTO"):
-        return ("load", 1, 1)
+    if v.startswith("PLACE_ONTO") or v.startswith("LOAD_ONTO"):
+        return ("place", 1, 1)   # place ist die kanonische Op; „load" ist nur ein Alias
     return None
 
 
@@ -1658,6 +1626,41 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             _rack_update(job["slot"], "done",
                          object_height_mm=job.get("object_height_mm"))
 
+    elif t == "app_op":
+        # Printloom-eigene Operation (Drucker-Tab-Geometrie → G-code), frei in Sequenzen
+        # nutzbar wie ein Macro — aber IMMER als Printloom-G-code (unabhängig vom
+        # farmweiten use_gcode-Opt-in). value = Op-Key (open_door/close_door/
+        # move_to_printer/eject/place/grab/store).
+        op = (val or "").strip().lower()
+        if op not in _motion.APP_OP_KEYS:
+            raise RuntimeError(f"Unbekannte Printloom-Op: {op!r}")
+        is_grab, is_store = op == "grab", op == "store"
+        if is_grab:
+            # Magazin-Check wie beim macro-Grab (leer → Farm pausiert)
+            if _magazine_count() <= 0:
+                _log("📦 Magazin leer — Farm pausiert. Platten auffüllen und Zähler anpassen.")
+                _farm["paused"] = True
+                _farm["error"]  = "Magazin leer — Platten auffüllen, Zähler anpassen, dann fortsetzen"
+            while _farm["paused"] and not _farm["stopping"]:
+                await asyncio.sleep(0.5)
+            if _farm["stopping"]:
+                raise RuntimeError("Gestoppt")
+            if _magazine_count() <= 0:
+                raise RuntimeError("Magazin leer — abgebrochen")
+            _farm["error"] = None
+        rk, sl = (int(stack_rack), int(stack_slot)) if is_grab else \
+                 (int(rack_num), int(slot_num)) if is_store else (1, 1)
+        geom = _farm.get("geometry") or _load_farm_geometry()
+        script = _motion.build_op(geom, op, rack=rk, slot=sl)
+        _log(f"▶ Printloom-Op: {op}" + (f" (Regal {rk} Fach {sl})" if (is_grab or is_store) else ""))
+        await _do_macro(script)   # Klipper HTTP blocks until movement is complete
+        if is_grab:
+            _decrement_magazine()
+            if job.get("slot") and job["slot"] != "1-0":
+                _rack_update(job["slot"], "printing", job["fileName"])
+        elif is_store:
+            _rack_update(job["slot"], "done", object_height_mm=job.get("object_height_mm"))
+
     elif t == "delay":
         secs = int(step.get("seconds", 0))
         _log(f"⏱ {step.get('label', '')} — {secs}s…")
@@ -1676,19 +1679,19 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         loop = asyncio.get_event_loop()
         _log("[↑] Homing senden (G28+Z200)…")
         ftp = BambuFTP(device.ip_address, device.access_code)
-        up = await loop.run_in_executor(None, ftp.upload_file, HOMING_3MF_PATH, homing_name)
+        up = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, HOMING_3MF_PATH, homing_name)
         if not up:
             raise RuntimeError("Homing FTP-Upload fehlgeschlagen")
-        mqtt = BambuLabMQTT(device)
-        connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
+        # Über die persistente Verbindung (bambu_manager) starten — kein eigener Connect.
+        connected = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
         if not connected:
             raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
         await asyncio.sleep(5)
         ok = await loop.run_in_executor(
-            None, lambda: mqtt.start_print(homing_name, use_ams=False, ams_mapping=[], plate_param="")
+            bambu_manager.executor,
+            lambda: bambu_manager.start_print(device, homing_name, use_ams=False, ams_mapping=[], plate_param="")
         )
         await asyncio.sleep(2)
-        mqtt.disconnect()
         if not ok:
             raise RuntimeError("Homing-Druck Start fehlgeschlagen")
         _log("✓ Homing gesendet — warte auf FINISH…")
@@ -1706,13 +1709,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         feed = int(step.get("feed", 3000) or 3000)
         loop = asyncio.get_event_loop()
         _log(f"[↑] Bambu Position Z{z} (F{feed}) per G-Code…")
-        mqtt = BambuLabMQTT(device)
-        connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=8.0))
-        if not connected:
-            raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
-        ok = await loop.run_in_executor(None, lambda: mqtt.send_gcode(f"G90\nG1 Z{z} F{feed}"))
+        # Über die persistente Verbindung (bambu_manager) senden — kein eigener Connect.
+        ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.send_gcode, device, f"G90\nG1 Z{z} F{feed}")
         if not ok:
-            await loop.run_in_executor(None, mqtt.disconnect)
             raise RuntimeError("Z-Bewegung (G-Code) fehlgeschlagen")
         # Settle = worst-case Z travel / feed + buffer (capped). z.B. F3000 → ~8s.
         wait_s = min(30.0, max(5.0, 256.0 / max(1.0, feed / 60.0) + 3.0))
@@ -1721,7 +1720,6 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         while waited < wait_s and not _farm["stopping"]:
             await asyncio.sleep(0.5)
             waited += 0.5
-        await loop.run_in_executor(None, mqtt.disconnect)
         if _farm["stopping"]:
             raise RuntimeError("Gestoppt")
         _log(f"✓ Z{z} — Position erreicht (G-Code + {wait_s:.0f}s)")
@@ -1777,16 +1775,12 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             if _farm["stopping"]:
                 raise RuntimeError("Gestoppt")
             try:
-                mqtt = BambuLabMQTT(device)
-                connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
-                if not connected:
+                # Persistente Verbindung (bambu_manager) — kein Connect pro Poll.
+                if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
                     raise ConnectionError("MQTT nicht erreichbar")
-                try:
-                    await loop.run_in_executor(None, mqtt.request_status)
-                    await asyncio.sleep(1.5)
-                    raw = mqtt.get_last_message()
-                finally:
-                    mqtt.disconnect()
+                await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
+                await asyncio.sleep(1.5)
+                raw = bambu_manager.last_status(device)
                 if not raw:
                     raise ConnectionError("Keine MQTT-Antwort")
                 p = raw.get("print", {})
@@ -1821,18 +1815,16 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                     f"Crash-Schutz: Platte NICHT eingelegt"
                 )
             try:
-                mqtt = BambuLabMQTT(device)
-                connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
-                if not connected:
+                # Persistente Verbindung (bambu_manager) — kein Connect pro Poll.
+                if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
                     conn_fails += 1
                     if conn_fails >= 5:
                         raise RuntimeError(f"{label} — MQTT dauerhaft nicht erreichbar")
                     _log(f"⚠ MQTT nicht erreichbar ({conn_fails}/5)…")
                     continue
-                await loop.run_in_executor(None, mqtt.request_status)
+                await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
                 await asyncio.sleep(1.5)
-                raw = mqtt.get_last_message()
-                mqtt.disconnect()
+                raw = bambu_manager.last_status(device)
                 conn_fails = 0
                 if not raw:
                     continue
@@ -1865,13 +1857,11 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         label = step.get("label") or "Fehler quittieren"
         _log(f"[⚠] {label}…")
         loop = asyncio.get_event_loop()
-        mqtt = BambuLabMQTT(device)
-        connected = await loop.run_in_executor(None, lambda: mqtt.connect(wait_timeout=5.0))
-        if not connected:
+        # Persistente Verbindung (bambu_manager); clear_error = stop-Befehl (FAILED → IDLE).
+        if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
             raise RuntimeError("MQTT nicht erreichbar für clear_error")
-        ok = await loop.run_in_executor(None, mqtt.clear_error)
+        ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.print_command, device, "stop")
         await asyncio.sleep(2)
-        mqtt.disconnect()
         _log(f"{'✓' if ok else '⚠'} {label}{'​' if ok else ' — Befehl nicht bestätigt'}")
 
     else:

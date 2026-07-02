@@ -3,8 +3,33 @@ import { DEFAULT_SEQ_NEW, DEFAULT_SEQ_NEXT } from '../services/sequenceData'
 import { autofarmService, controlService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 
+// Printloom-eigene Operationen (Drucker-Tab-Geometrie → G-code) — frei in Sequenzen
+// nutzbar wie Makros. Fallback, falls das /app-ops-Backend (noch) nicht da ist.
+const APP_OP_FALLBACK = [
+  { key: 'open_door',       label_de: 'Tür öffnen',         label_en: 'Open door' },
+  { key: 'close_door',      label_de: 'Tür schließen',      label_en: 'Close door' },
+  { key: 'move_to_printer', label_de: 'Vor Drucker fahren', label_en: 'Move to printer' },
+  { key: 'eject',           label_de: 'Auswerfen',          label_en: 'Eject plate' },
+  { key: 'place',           label_de: 'Einlegen',           label_en: 'Place plate' },
+  { key: 'grab',            label_de: 'Platte holen',       label_en: 'Grab from rack' },
+  { key: 'store',           label_de: 'Platte ablegen',     label_en: 'Store to rack' },
+]
+let _appOpsCache = null
+function useAppOps() {
+  const [ops, setOps] = useState(_appOpsCache || APP_OP_FALLBACK)
+  useEffect(() => {
+    if (_appOpsCache) return
+    controlService.listAppOps()
+      .then(r => { const o = r?.data?.ops; if (Array.isArray(o) && o.length) { _appOpsCache = o; setOps(o) } })
+      .catch(() => {})
+  }, [])
+  return ops
+}
+const appOpLabel = (ops, key) => (ops.find(o => o.key === key) || {}).label_de || key
+
 const TYPE_META = {
   macro:          { label: 'OTTOeject Makro',  icon: '▶',    color: 'text-violet-400',  bg: 'bg-violet-950/20',  border: 'border-violet-900/40' },
+  app_op:         { label: 'Printloom-Op',     icon: '◆',    color: 'text-fuchsia-400', bg: 'bg-fuchsia-950/20', border: 'border-fuchsia-900/40' },
   klipper_gcode:  { label: 'OTTOeject GCode',  icon: '⌘',    color: 'text-teal-400',    bg: 'bg-teal-950/20',    border: 'border-teal-900/40'   },
   gcode:          { label: 'Bambu GCode',      icon: '</>',  color: 'text-blue-400',    bg: 'bg-blue-950/20',    border: 'border-blue-900/40'   },
   bambu_move:     { label: 'Bambu Position Z', icon: '↕',    color: 'text-cyan-400',    bg: 'bg-cyan-950/20',    border: 'border-cyan-900/40'   },
@@ -21,16 +46,17 @@ const TYPE_META = {
 }
 
 // Curated building blocks offered in the "+ add step" menu (legacy types omitted).
-const ADD_TYPES = ['macro', 'klipper_gcode', 'gcode', 'bambu_move', 'send_homing_file', 'send_file', 'wait_print', 'delay']
+const ADD_TYPES = ['macro', 'app_op', 'klipper_gcode', 'gcode', 'bambu_move', 'send_homing_file', 'send_file', 'wait_print', 'delay']
 
 /* ─── Individual step block ──────────────────────────────────── */
 function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, onToggleDisabled,
                      onDragStart, onDragEnd, onDragOver, onDrop, isDragOver, onRun }) {
   const { tr } = useLanguage()
+  const appOps = useAppOps()
   const [open, setOpen] = useState(false)
   const [running, setRunning] = useState(false)
   const isDisabled = !!step.disabled
-  const canRun = (step.type === 'macro' || step.type === 'klipper_gcode') && step.value
+  const canRun = (step.type === 'macro' || step.type === 'klipper_gcode' || step.type === 'app_op') && step.value
   const meta  = TYPE_META[step.type] ?? TYPE_META.macro
   const fixed = false
 
@@ -73,6 +99,11 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
           {!open && (step.type === 'macro' || step.type === 'gcode') && step.value && (
             <span className="text-[9px] text-surface-700 font-mono truncate max-w-[110px] shrink-0">
               {step.value.replace(/\n/g, ' · ')}
+            </span>
+          )}
+          {!open && step.type === 'app_op' && step.value && (
+            <span className="text-[9px] text-fuchsia-700 font-mono truncate max-w-[130px] shrink-0">
+              {appOpLabel(appOps, step.value)}
             </span>
           )}
           {step.type === 'send_file_fixed' && step.value && (
@@ -240,6 +271,27 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
                   }
                   className="w-full text-xs font-mono resize-none"
                 />
+              </div>
+            )}
+
+            {step.type === 'app_op' && (
+              <div>
+                <label className="text-[10px] text-surface-600 block mb-0.5">
+                  {tr('Printloom-Operation')}
+                  <span className="text-surface-700 ml-1">{tr('· immer als Printloom-G-code (Drucker-Tab)')}</span>
+                </label>
+                <select
+                  value={step.value || ''}
+                  onChange={e => onChange(step.id, { value: e.target.value })}
+                  className="w-full text-xs font-mono"
+                >
+                  {appOps.map(o => (
+                    <option key={o.key} value={o.key}>{tr(o.label_de)} — {o.key}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-fuchsia-700 font-mono mt-1">
+                  {tr('Nutzt Position & Geschwindigkeit aus dem Drucker-Tab. Bei „Platte holen/ablegen" liefert die Farm Regal/Fach automatisch.')}
+                </p>
               </div>
             )}
 
@@ -424,6 +476,7 @@ const TYPE_DEFAULTS = {
   gcode:          { label: 'Bambu G-Code',         value: '',                 seconds: 0   },
   klipper_gcode:  { label: 'Klipper GCode',        value: 'G1 Z200 F3000',   seconds: 0   },
   macro:          { label: 'Makro',                value: '',                 seconds: 0   },
+  app_op:         { label: 'Printloom-Op',         value: 'eject',            seconds: 0   },
   wait_bambu_idle:{ label: 'Warte Z200',            value: '',                 seconds: 50  },
   delay:          { label: 'Wartezeit',            value: '',                 seconds: 5   },
   send_homing_file:{ label: 'Homing senden',       value: '',                 seconds: 180 },
@@ -484,6 +537,9 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true 
         await controlService.executeMacro({ macro: step.value })
       } else if (step.type === 'klipper_gcode') {
         await controlService.sendKlipperGcode(step.value)
+      } else if (step.type === 'app_op') {
+        // Printloom-Op live testen — Backend lädt die gespeicherte Drucker-Geometrie.
+        await controlService.runOp({ op: step.value })
       }
       setRunFeedback({ ok: true, msg: `✓ ${step.value}` })
     } catch (e) {
@@ -738,6 +794,7 @@ function SequenceEditor() {
             ['</>',  'Bambu GCode',   'blue-400',    'G-Code an Bambu Lab via MQTT — fire-and-forget, kein Completion-Feedback'],
             ['⌘',    'Klipper GCode', 'teal-400',    'Raw GCode an OTTOeject (Klipper) — blockiert bis Position erreicht, kein Delay nötig'],
             ['▶',    'Makro',         'violet-400',  'OTTOeject-Makro — {rack} = Rack-Nr, {slot} = Fach-Nr (z.B. GRAB_FROM_RACK RACK={rack} SLOT={slot})'],
+            ['◆',    'Printloom-Op',  'fuchsia-400', 'Printloom-eigene Operation (Tür, Auswurf, Einlegen, Greifen …) aus dem Drucker-Tab — immer als App-G-code, Position & Geschwindigkeit dort einstellbar'],
             ['◎',    'Warte Z200',    'cyan-400',    'Wartet verbleibende G28-Zeit — Zwischenschritte (Homen, Tür, Platte) werden automatisch abgezogen'],
             ['⏱',   'Delay',         'amber-400',   'Feste Wartezeit — nur nötig wenn kein synchrones Feedback möglich'],
             ['⇫',    'Homing',        'indigo-400',  'Konfigurierte Homing-.3mf senden (G28+Z200) — Bambu meldet FINISH → wait_print erkennt Z200 zuverlässig'],

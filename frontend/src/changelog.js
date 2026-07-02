@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.98',
+    de: [
+      'Stabilität: Printloom hält jetzt EINE dauerhafte Verbindung pro Drucker, statt bei fast jeder Aktion (Status-Abfrage, Kamera-Licht, Farm-Schritt) eine neue aufzubauen. Der X1C erlaubt nur wenige Verbindungen — das ständige Neu-Verbinden hat sie sich gegenseitig rauswerfen lassen (dauernder Verbindungsabbruch) und die App zum Hängen gebracht. Behoben: eine geteilte Verbindung mit Auto-Reconnect + gemeinsamer Status-Cache; alle Seiten teilen sich denselben Status.',
+      'Drucker-Tab: der Wechsel lässt sich jetzt feiner steuern — neue Operation „Vor Drucker fahren", plus „Auswerfen" und „Einlegen (Place)" als getrennte Schritte. Jede Operation hat eine EIGENE Geschwindigkeit (M220), damit der Plattenwechsel so schnell und effizient wie möglich wird. Die globale Geschwindigkeit bleibt als Fallback.',
+      'Sequenz-Editor: die Printloom-eigenen Operationen (Tür, Auswurf, Einlegen, Greifen …) lassen sich jetzt als Schritt „Printloom-Op" frei in Sequenzen einsetzen — wie die Geräte-Makros, aber immer mit der im Drucker-Tab eingestellten Position & Geschwindigkeit.',
+    ],
+    en: [
+      'Stability: Printloom now keeps ONE persistent connection per printer instead of opening a new one for almost every action (status poll, camera light, farm step). The X1C only allows a few connections — the constant reconnecting made them evict each other (repeated connection drops) and froze the app. Fixed with a shared connection (auto-reconnect) + a common status cache that all pages share.',
+      'Printer tab: the swap can be tuned more finely now — a new “Move to printer” operation, plus “Eject” and “Place” as separate steps. Each operation has its OWN speed (M220) to make the plate swap as fast and efficient as possible. The global speed remains as a fallback.',
+      'Sequence editor: Printloom’s own operations (door, eject, place, grab …) can now be used freely as a “Printloom op” step — like the device macros, but always with the position & speed set in the Printer tab.',
+    ],
+  },
+  {
     version: '1.0.97',
     de: [
       'Fehler behoben: Beim Feinjustieren im Drucker-Tab konnte ein leeres oder mit Komma eingegebenes Zahlenfeld (z. B. „17,5") den Test und die G-code-Anzeige lahmlegen (Server-Fehler → kein Klartext-G-code mehr, Werte schienen nicht zu greifen). Die Zahlenfelder akzeptieren jetzt Komma UND Punkt, und der Server ist robust gegen leere/ungültige Werte (nimmt dann den Standard).',

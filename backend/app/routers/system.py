@@ -12,7 +12,7 @@ from typing import Optional
 from app.services import storage
 from app.db.database import SessionLocal
 from app.models.models import Device, PrinterType, SystemConfig
-from app.services.bambu_mqtt import BambuLabMQTT
+from app.services import bambu_manager
 
 router = APIRouter(tags=["System"])
 logger = logging.getLogger(__name__)
@@ -563,10 +563,10 @@ async def _health_printer() -> dict:
         name = device.name
         try:
             loop = asyncio.get_event_loop()
-            client = BambuLabMQTT(device)
-            connected = await loop.run_in_executor(None, lambda: client.connect(wait_timeout=3.0))
+            # Persistente Verbindung (bambu_manager) — kein eigener Connect/Disconnect pro Health-Poll.
+            connected = await loop.run_in_executor(
+                bambu_manager.executor, lambda: bambu_manager.ensure(device, wait_timeout=3.0))
             if connected:
-                await loop.run_in_executor(None, client.disconnect)
                 return {"status": "online", "detail": name}
             return {"status": "offline", "detail": "Keine MQTT-Verbindung"}
         except Exception:

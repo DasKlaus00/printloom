@@ -32,6 +32,11 @@ class BambuLabMQTT:
         self.callbacks = {}
         self.last_message = None
         self._connected_event = threading.Event()
+        # Persistenter Modus (bambu_manager): einmal verbinden, danach hält paho die
+        # Verbindung per Auto-Reconnect. `_started` verhindert, dass parallel ein
+        # zweiter Client aufgebaut wird, während paho noch reconnectet.
+        self._started = False
+        self._connect_lock = threading.Lock()
 
     def set_callback(self, event: str, callback: Callable):
         self.callbacks[event] = callback
@@ -55,12 +60,18 @@ class BambuLabMQTT:
                 self.client.tls_insecure_set(True)
 
             self.client.username_pw_set("bblp", self.device.access_code)
+            # Auto-Reconnect: bricht die Verbindung ab (Firmware, Strom, WLAN), baut paho
+            # sie im loop_start-Thread selbst wieder auf (1..30 s Backoff). So bleibt EINE
+            # dauerhafte Verbindung bestehen, statt bei jedem Request neu zu verbinden.
+            self.client.reconnect_delay_set(min_delay=1, max_delay=30)
             self.client.connect(self.device.ip_address, self.device.mqtt_port, keepalive=60)
             self.client.loop_start()
+            self._started = True
 
             if not self._connected_event.wait(timeout=wait_timeout):
                 logger.error(f"MQTT connection timeout to {self.device.ip_address}")
                 self.client.loop_stop()
+                self._started = False
                 return False
 
             return self.connected
@@ -74,6 +85,7 @@ class BambuLabMQTT:
             self.client.loop_stop()
             self.client.disconnect()
             self.connected = False
+            self._started = False
 
     def subscribe(self):
         topic = f"device/{self.device.serial_number}/report"
@@ -231,6 +243,14 @@ class BambuLabMQTT:
             self.connected = True
             logger.info(f"Bambu Lab MQTT connected to {self.device.ip_address}")
             self.subscribe()
+            # Direkt nach (Re-)Connect einen Vollreport anfordern, damit Status/AMS
+            # sofort frisch sind (fire-and-forget — kein wait_for_publish im Loop-Thread).
+            try:
+                topic = f"device/{self.device.serial_number}/request"
+                client.publish(topic, json.dumps(
+                    {"pushing": {"sequence_id": "0", "command": "pushall"}}), qos=0)
+            except Exception as e:
+                logger.debug(f"pushall on connect failed: {e}")
         else:
             self.connected = False
             logger.error(f"Bambu Lab MQTT connection failed, rc={rc}")

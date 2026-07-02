@@ -39,9 +39,25 @@ DEFAULT_GEOMETRY = {
         "door":  {"open":  {"x": 104, "y": 319, "z": 105, "d": 370},
                   "close": {"x": 103, "y": 322, "z": 105, "d": 375}},
     },
-    "speed_factor": 100,     # M220-Vorschub in % (100 = normal, bis 500 schneller) für App-G-code
+    "speed_factor": 100,     # globaler M220-Vorschub in % (100 = normal, bis 500 schneller) — Fallback
+    "speed_factors": {},     # {op: %} — Vorschub PRO Operation (überschreibt speed_factor); für schnellen, feinjustierten Wechsel
     "gcode_override": {},    # {op: "roher G-code"} — Feinjustage, überschreibt die berechnete Bewegung
 }
+
+
+# Kanonische Liste der App-Operationen — genutzt vom Drucker-Tab, dem Sequenz-Schritt
+# „app_op" (frei in Sequenzen nutzbar) und dem /app-ops-Endpoint. `rack_slot` = ob die
+# Op ein Fach/Regal braucht (grab/store). Reihenfolge = Wechselablauf.
+APP_OPS = [
+    {"key": "open_door",       "label_de": "Tür öffnen",         "label_en": "Open door",       "rack_slot": False},
+    {"key": "close_door",      "label_de": "Tür schließen",      "label_en": "Close door",      "rack_slot": False},
+    {"key": "move_to_printer", "label_de": "Vor Drucker fahren", "label_en": "Move to printer", "rack_slot": False},
+    {"key": "eject",           "label_de": "Auswerfen",          "label_en": "Eject plate",     "rack_slot": False},
+    {"key": "place",           "label_de": "Einlegen",           "label_en": "Place plate",     "rack_slot": False},
+    {"key": "grab",            "label_de": "Platte holen",       "label_en": "Grab from rack",  "rack_slot": True},
+    {"key": "store",           "label_de": "Platte ablegen",     "label_en": "Store to rack",   "rack_slot": True},
+]
+APP_OP_KEYS = {o["key"] for o in APP_OPS}
 
 
 # ── Helfer ──────────────────────────────────────────────────────────────────
@@ -69,6 +85,9 @@ def _sanitize_geometry(g: dict) -> dict:
     for k in ("racks", "storage_slots", "magazine_slot", "speed_factor"):
         if g.get(k) is not None:
             g[k] = _num(g.get(k), d.get(k, 0))
+    sf = g.get("speed_factors")
+    if isinstance(sf, dict):
+        g["speed_factors"] = {k: _num(v, 100) for k, v in sf.items() if v is not None}
     s = g.setdefault("storage", {})
     for k, dv in d["storage"].items():
         s[k] = _num(s.get(k), dv)
@@ -195,6 +214,24 @@ def store_to_rack(g: dict, rack: int, slot: int) -> list[str]:
         f"G1 X{_n(x_unclamp)} F800", "M400",
         "G1 Y300 F800",
         "G1 Y280 F3000", "M400",
+    ]
+
+
+def move_to_printer(g: dict) -> list[str]:
+    """Nur VOR den Drucker fahren (sichere Anfahrt) — greift/wirft nicht.
+    Eigene Operation für einen schnellen, feinjustierbaren Wechsel: erst hierher fahren,
+    dann eject bzw. place mit eigener Geschwindigkeit. Bezugspunkt ist die eject-Position
+    (Drucker sitzt hinter dem letzten Regal → +printer_x_off)."""
+    p = g["printer"]["eject"]
+    off = _printer_x_off(g)
+    x = float(p["x"]) + off
+    y_engage, z_flat = float(p["y"]), float(p["z"])
+    y_pb = float(g["storage"]["y_pullback_limit"])
+    return [
+        f"M117 Moving to {g.get('printer_name','printer')}...",
+        f"G1 Z{_n(z_flat)} Y{_n(y_pb)} F3000", "M400",   # sichere Höhe, zurückziehen
+        f"G1 X{_n(x)} F3000", "M400",                     # auf Drucker-X ausrichten
+        f"G1 Y{_n(y_engage-90)} F3000", "M400",           # vor die Druckerfront
     ]
 
 
@@ -327,10 +364,18 @@ def park() -> list[str]:
 
 
 # ── Dispatcher ──────────────────────────────────────────────────────────────
-def _speed_prefix(g: dict) -> str:
-    """M220-Vorschubfaktor (%) für den App-G-code. 100 = normal → kein Prefix."""
+def _speed_prefix(g: dict, op: str | None = None) -> str:
+    """M220-Vorschubfaktor (%) für den App-G-code. Reihenfolge: speed_factors[op] →
+    globaler speed_factor → 100. 100 = normal → kein Prefix."""
+    val = None
+    if op:
+        sf = g.get("speed_factors")
+        if isinstance(sf, dict):
+            val = sf.get(op)
+    if val is None:
+        val = g.get("speed_factor", 100)
     try:
-        f = int(g.get("speed_factor", 100) or 100)
+        f = int(val or 100)
     except (TypeError, ValueError):
         f = 100
     f = max(10, min(500, f))
@@ -340,9 +385,10 @@ def _speed_prefix(g: dict) -> str:
 def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str:
     g = _sanitize_geometry(merge_defaults(g))
     op = (op or "").lower()
-    speed = _speed_prefix(g)
-    if op == "speed":   # nur den Vorschubfaktor live setzen
-        return (speed or "M220 S100\n").rstrip() + "\nM400"
+    if op == "speed":   # nur den globalen Vorschubfaktor live setzen
+        s = _speed_prefix(g)
+        return (s or "M220 S100\n").rstrip() + "\nM400"
+    speed = _speed_prefix(g, op)   # Vorschub PRO Operation (Fallback global)
     # Eigener G-code (Feinjustage im Drucker-Tab) hat Vorrang — 1:1 senden.
     ov = (g.get("gcode_override") or {}).get(op)
     if isinstance(ov, str) and ov.strip():
@@ -352,9 +398,11 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
         lines = grab_from_rack(g, rack, slot, nolift)
     elif op == "store":
         lines = store_to_rack(g, rack, slot)
+    elif op in ("move_to_printer", "move"):
+        lines = move_to_printer(g)
     elif op == "eject":
         lines = eject_from_printer(g)
-    elif op == "load":
+    elif op in ("place", "load"):   # place = neuer Name, load = Alias (Rückwärtskompat.)
         lines = load_onto_printer(g)
     elif op in ("open_door", "opendoor"):
         lines = open_door(g)

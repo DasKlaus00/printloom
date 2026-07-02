@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import Device, PrinterType
 from app.schemas.schemas import DeviceCreate, DeviceUpdate, DeviceResponse
-from app.services.bambu_mqtt import BambuLabMQTT
+from app.services import bambu_manager
 from app.services.bambu_ftp import BambuFTP
 from typing import List
 import httpx
@@ -161,15 +161,13 @@ async def test_device(device_id: int, db: Session = Depends(get_db)):
     loop = asyncio.get_event_loop()
 
     if device.device_type == PrinterType.BAMBU_LAB:
-        # MQTT-Test
-        mqtt_client = BambuLabMQTT(device)
-        mqtt_ok = await loop.run_in_executor(None, lambda: mqtt_client.connect(wait_timeout=5.0))
-        if mqtt_ok:
-            mqtt_client.disconnect()
+        # MQTT-Test über die persistente Verbindung (bambu_manager) — kein konkurrierender
+        # Extra-Connect, der die dauerhafte Verbindung rauswerfen könnte.
+        mqtt_ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
 
         # FTP-Test
         ftp = BambuFTP(device.ip_address, device.access_code)
-        ftp_ok, ftp_msg = await loop.run_in_executor(None, ftp.test_connection)
+        ftp_ok, ftp_msg = await loop.run_in_executor(bambu_manager.executor, ftp.test_connection)
 
         success = mqtt_ok and ftp_ok
         return {

@@ -51,6 +51,7 @@ export const queueService = {
 export const controlService = {
   executeMacro:        (data)  => api.post('/control/macro', data),
   listMacros:          ()      => api.get('/control/macros'),
+  listAppOps:          ()      => api.get('/control/app-ops'),
   emergencyStop:       ()      => api.post('/control/emergency-stop'),
   resume:              ()      => api.post('/control/resume'),
   getStatus:           ()      => api.get('/control/status'),
@@ -66,10 +67,30 @@ export const controlService = {
   previewOp:           (body)  => api.post('/control/ottoeject/preview', body),
 }
 
+// Printer-Status koaleszieren: viele gleichzeitig gemountete Seiten (Dashboard,
+// AutoFarm, FileLibrary, FilamentLibrary, Steuerung) pollen /status. Damit nicht N
+// identische Requests parallel laufen, teilen sich zeitgleiche Aufrufer EINEN
+// In-Flight-Request; ein sehr kurzer TTL-Cache fängt versetzte Polls ab. Der
+// Backend-Status kommt ohnehin aus EINER persistenten Verbindung (bambu_manager) —
+// der Cache ist also frisch, und die eigentliche Verbindungslast liegt bei 1.
+const _statusInFlight = {}
+const _statusCache = {}
+const STATUS_TTL_MS = 2000
+function _getPrinterStatus(deviceId) {
+  const c = _statusCache[deviceId]
+  if (c && Date.now() - c.t < STATUS_TTL_MS) return Promise.resolve(c.res)
+  if (_statusInFlight[deviceId]) return _statusInFlight[deviceId]
+  const p = api.get(`/printer/status/${deviceId}`)
+    .then(res => { _statusCache[deviceId] = { t: Date.now(), res }; return res })
+    .finally(() => { delete _statusInFlight[deviceId] })
+  _statusInFlight[deviceId] = p
+  return p
+}
+
 export const printerService = {
   sendFile:             (deviceId, fileId, useAms = true, amsSlot = null) => api.post(`/printer/send/${deviceId}/${fileId}`, null, { params: { use_ams: useAms, ...(amsSlot !== null && amsSlot !== undefined && { ams_slot: amsSlot }) } }),
   sendGcode:            (deviceId, gcode)  => api.post(`/printer/gcode/${deviceId}`, null, { params: { gcode } }),
-  getStatus:            (deviceId)         => api.get(`/printer/status/${deviceId}`),
+  getStatus:            (deviceId)         => _getPrinterStatus(deviceId),
   cameraStreamUrl:      (deviceId)         => `/api/printer/camera/${deviceId}`,
   cameraFrameUrl:       (deviceId)         => `/api/printer/camera/${deviceId}/frame`,
   haCameraStreamUrl:    (deviceId)         => `/api/printer/ha-camera/${deviceId}`,

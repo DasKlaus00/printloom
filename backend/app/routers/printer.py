@@ -15,9 +15,8 @@ from fastapi.responses import FileResponse, StreamingResponse, Response
 from sqlalchemy.orm import Session
 from app.db.database import get_db, SessionLocal
 from app.models.models import Device, PrinterType, UploadedFile
-from app.services.bambu_mqtt import BambuLabMQTT
 from app.services.bambu_ftp import BambuFTP
-from app.services import storage, bambu_camera, rtsp_camera
+from app.services import storage, bambu_camera, rtsp_camera, bambu_manager
 
 
 def _make_print_name(original: str) -> str:
@@ -679,12 +678,10 @@ async def capture_snapshot(device_id: int) -> Optional[str]:
 
 def _ensure_chamber_light(device, on: bool = True) -> None:
     """Best-effort: switch the X1C chamber LED on so the camera isn't black.
-    Quick connect → ledctrl → disconnect. Never raises."""
+    Nutzt die persistente Verbindung (bambu_manager) — KEIN eigener Connect/Disconnect
+    pro Kamerabild mehr (das war eine Hauptquelle der Verbindungsabbrüche). Never raises."""
     try:
-        mqtt_client = BambuLabMQTT(device)
-        if mqtt_client.connect(wait_timeout=5.0):
-            mqtt_client.set_chamber_light(on)
-        mqtt_client.disconnect()
+        bambu_manager.set_chamber_light(device, on)
     except Exception as e:
         logger.warning(f"chamber light toggle failed for device {device.id}: {e}")
 
@@ -1010,9 +1007,8 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
     loop = asyncio.get_event_loop()
     print_name = _make_print_name(file.original_filename)
 
-    # ── MQTT verbinden ───────────────────────────────────────────
-    mqtt_client = BambuLabMQTT(device)
-    connected = await loop.run_in_executor(None, lambda: mqtt_client.connect(wait_timeout=5.0))
+    # ── MQTT (persistente Verbindung, bambu_manager) ─────────────
+    connected = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
     if not connected:
         _diag_add(sess, "MQTT-Verbindung", ["Verbindung FEHLGESCHLAGEN"], ok=False)
         _diag_finish(sess, "error")
@@ -1033,11 +1029,11 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
     else:
         f_types, f_colors = _read_filament_info(file.file_path, file.file_type)
         # Live-AMS lesen (Drucker antwortet erst im Vollreport mit ams)
-        await loop.run_in_executor(None, mqtt_client.request_status)
+        await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
         ams_raw = {}
         for _ in range(8):
             await asyncio.sleep(0.5)
-            raw = mqtt_client.get_last_message()
+            raw = bambu_manager.last_status(device)
             ams_raw = ((raw.get("print", {}) if raw else {}).get("ams", {})) or {}
             if ams_raw.get("ams"):
                 break
@@ -1051,8 +1047,6 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
             pass
 
         def _refuse(detail):
-            try: mqtt_client.disconnect()
-            except Exception: pass
             _diag_add(sess, "AMS-Mapping bestimmen", [detail], ok=False)
             _diag_finish(sess, "error")
             raise HTTPException(status_code=400, detail=detail)
@@ -1074,20 +1068,21 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
 
     # ── FTP-Upload ───────────────────────────────────────────────
     ftp = BambuFTP(device.ip_address, device.access_code)
-    upload_ok = await loop.run_in_executor(None, ftp.upload_file, file.file_path, print_name)
+    upload_ok = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, file.file_path, print_name)
     if not upload_ok:
-        mqtt_client.disconnect()
         _diag_add(sess, "FTP-Upload", [f"Dateiname: {print_name}", "FEHLGESCHLAGEN"], ok=False)
         _diag_finish(sess, "error")
         raise HTTPException(status_code=502, detail="FTP-Upload zum Drucker fehlgeschlagen")
     _diag_add(sess, "FTP-Upload", [f"Dateiname: {print_name}", "OK"])
 
-    # ── Druckstart ───────────────────────────────────────────────
+    # ── Druckstart (über die persistente Verbindung) ─────────────
     await asyncio.sleep(3)
     plate_param = _get_plate_gcode_param(file.file_path) if file.file_type == '.3mf' else ""
-    print_ok = await loop.run_in_executor(None, lambda: mqtt_client.start_print(print_name, use_ams=use_ams, ams_mapping=ams_mapping, plate_param=plate_param))
+    print_ok = await loop.run_in_executor(
+        bambu_manager.executor,
+        lambda: bambu_manager.start_print(device, print_name, use_ams=use_ams,
+                                          ams_mapping=ams_mapping, plate_param=plate_param))
     await asyncio.sleep(2)
-    mqtt_client.disconnect()
 
     _diag_add(sess, "MQTT-Befehl  project_file", [
         f"Dateiname:   {print_name}",
@@ -1117,15 +1112,10 @@ async def send_gcode(device_id: int, gcode: str, db: Session = Depends(get_db)):
     device = _get_bambu_device(device_id, db)
     loop = asyncio.get_event_loop()
 
-    mqtt_client = BambuLabMQTT(device)
-    connected = await loop.run_in_executor(None, lambda: mqtt_client.connect(wait_timeout=5.0))
-    if not connected:
-        raise HTTPException(status_code=502, detail="MQTT-Verbindung zum Drucker fehlgeschlagen")
-
-    ok = await loop.run_in_executor(None, lambda: mqtt_client.send_gcode(gcode))
+    # Über die persistente Verbindung (bambu_manager) senden — kein eigener Connect.
+    ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.send_gcode, device, gcode)
     await asyncio.sleep(2)
-    response = mqtt_client.get_last_message()
-    mqtt_client.disconnect()
+    response = bambu_manager.last_status(device)
 
     if not ok:
         raise HTTPException(status_code=502, detail="GCode konnte nicht gesendet werden")
@@ -1141,6 +1131,7 @@ async def send_gcode(device_id: int, gcode: str, db: Session = Depends(get_db)):
 # entfällt das 15-s-Poll-Connect der Steuerung, solange die Farm läuft.
 _LIVE: dict = {"t": 0.0, "raw": None, "dev": None}
 _LIVE_TTL = 35.0   # s — etwas über dem Standard-Poll (20 s) der Farm
+_last_hist_state: dict = {}   # device_id -> letzter geloggter FINISH/FAILED-Zustand (Anti-Spam)
 
 
 def publish_live_status(raw: dict, device_id=None):
@@ -1203,41 +1194,29 @@ def _status_from_raw(raw: dict) -> dict:
 
 @router.get("/status/{device_id}")
 async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
-    """Druckerstatus. Solange die Farm druckt, aus deren persistenter Verbindung
-    (live, ohne eigene MQTT-Verbindung); sonst frisch per MQTT abfragen."""
+    """Druckerstatus aus der EINEN persistenten MQTT-Verbindung (bambu_manager) —
+    kein Connect pro Poll mehr. Der Cache wird laufend über dieselbe Verbindung
+    aktualisiert; nur wenn noch nichts/keine AMS da ist, wird einmal pushall angefragt."""
     device = _get_bambu_device(device_id, db)
+    loop = asyncio.get_event_loop()
 
-    # Live-Daten aus dem Auto-Farm verwenden, wenn frisch und für DIESEN Drucker
-    # (dev=None = unbekannt → akzeptieren) → keine zweite MQTT-Verbindung.
-    if (_LIVE["raw"] is not None and (time.monotonic() - _LIVE["t"]) < _LIVE_TTL
-            and _LIVE.get("dev") in (None, device_id)):
+    raw = await loop.run_in_executor(bambu_manager.executor, bambu_manager.fetch_status, device)
+
+    # Fallback: Farm-Live-Cache (Legacy), falls der Manager (noch) nichts hat.
+    if raw is None and _LIVE["raw"] is not None and (time.monotonic() - _LIVE["t"]) < _LIVE_TTL \
+            and _LIVE.get("dev") in (None, device_id):
         resp = _status_from_raw(_LIVE["raw"])
         resp["source"] = "farm"
         return resp
-
-    loop = asyncio.get_event_loop()
-    mqtt_client = BambuLabMQTT(device)
-
-    connected = await loop.run_in_executor(None, lambda: mqtt_client.connect(wait_timeout=5.0))
-    if not connected:
+    if raw is None:
         return {"status": "offline", "message": "Keine Verbindung zum Drucker", "online": False}
-
-    await loop.run_in_executor(None, mqtt_client.request_status)
-    # Bis ~4 s auf den Vollreport warten — der enthält erst das AMS (sonst „No AMS
-    # detected"). Dank Delta-Merge im MQTT-Client bleibt das AMS dann erhalten.
-    raw = None
-    for _ in range(8):
-        await asyncio.sleep(0.5)
-        raw = mqtt_client.get_last_message()
-        if raw and ((raw.get("print", {}) or {}).get("ams", {}) or {}).get("ams"):
-            break
-    mqtt_client.disconnect()
 
     p = raw.get("print", {}) if raw else {}
     gcode_state = p.get("gcode_state", "IDLE")
 
-    # Log FINISH/FAILED events to print history
-    if gcode_state in ("FINISH", "FAILED"):
+    # FINISH/FAILED nur beim ZUSTANDSWECHSEL loggen (sonst Spam bei jedem Poll, da der
+    # Cache dauerhaft frisch ist).
+    if gcode_state in ("FINISH", "FAILED") and _last_hist_state.get(device_id) != gcode_state:
         _append_history({
             "ts":         datetime.utcnow().isoformat(),
             "device":     device.name,
@@ -1248,6 +1227,7 @@ async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
             "layer":      p.get("layer_num", 0),
             "total_layers": p.get("total_layer_num", 0),
         })
+    _last_hist_state[device_id] = gcode_state
 
     return _status_from_raw(raw)
 
