@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useLanguage } from '../services/i18n'
-import { controlService } from '../services/api'
+import { controlService, rackManagerService } from '../services/api'
 import { PRINTERS, CUSTOM_PRINTER } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
 
@@ -95,17 +95,17 @@ export default function Drucker() {
   const [doorOpen,  setDoorOpen]  = useState({ x: 104, y: 319, z: 105, d: 370 })
   const [doorClose, setDoorClose] = useState({ x: 103, y: 322, z: 105, d: 375 })
 
-  // Regal / Greifen
+  // Regal / Greifen — nur PHYSISCHE mm-Werte (Regalzahl/Fächer/Magazin: global aus Konfiguration)
   const [xUnclamp, setX]  = useState(43)
   const [yEngage,  setY]  = useState(335)
   const [firstZ, setFirstZ] = useState(7)
   const [gap, setGap]     = useState(25)
   const [rackGap, setRackGap] = useState(250)
-  const [racks, setRacks] = useState(1)
-  const [storageSlots, setStorageSlots] = useState(6)
-  const [magazine, setMagazine] = useState(true)
   const [plate, setPlate] = useState('256')          // 256 → pullback 5, 220 → 30
   const [speedFactor, setSpeedFactor] = useState(100) // M220-Vorschub in % (100–500)
+
+  // Regalzahl / Fächer / Magazin-Fach: EINE Quelle = Configuration → Rack Configuration.
+  const [rackCfg, setRackCfg] = useState({ num_racks: 3, slots_per_rack: 6, magazine_slot: 7 })
 
   // Opt-in: welche Operationen die Farm als App-G-code statt Geräte-Macro fährt
   const [useGcode, setUseGcode] = useState(
@@ -127,7 +127,8 @@ export default function Drucker() {
 
   const hasDoor = enclosed && !!(doorOpen && doorClose)
   const yPullback = plate === '220' ? 30 : 5
-  const magazineSlot = magazine ? (+storageSlots || 1) + 1 : 0
+  const numRacks = +rackCfg.num_racks || 1
+  const magazineSlot = +rackCfg.magazine_slot || 0
 
   const pickPrinter = (p) => {
     setPrinterId(p.id); setPrinterName(p.name); setEnclosed(p.enclosed)
@@ -138,9 +139,10 @@ export default function Drucker() {
   }
 
   // ── Geometrie: EINE Quelle für Live-G-code UND (opt-in) die Farm ──
+  // Regalzahl/Fächer/Magazin bewusst NICHT hier — die überlagert das Backend global
+  // aus der Rack-Konfiguration (apply_rack_config). Hier nur Drucker + physische mm.
   const geometry = useMemo(() => ({
     printer_id: printerId, printer_name: printerName, enclosed,
-    racks: +racks || 1, storage_slots: +storageSlots || 1, magazine,
     storage: {
       x_unclamp: +xUnclamp, y_engage: +yEngage, first_z_flat: +firstZ,
       slot_gap: +gap, y_pullback_limit: yPullback, rack_x_gap: +rackGap || 0,
@@ -154,7 +156,7 @@ export default function Drucker() {
     use_gcode: { ...useGcode },
     gcode_override: gcodeOverride,
     speed_factor: +speedFactor || 100,
-  }), [printerId, printerName, enclosed, racks, storageSlots, magazine, xUnclamp, yEngage,
+  }), [printerId, printerName, enclosed, xUnclamp, yEngage,
        firstZ, gap, yPullback, rackGap, eject, load, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor])
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
@@ -165,7 +167,6 @@ export default function Drucker() {
       if (g && g.printer_id) {
         setPrinterId(g.printer_id); setPrinterName(g.printer_name || g.printer_id)
         setEnclosed(!!g.enclosed)
-        setRacks(g.racks || 1); setStorageSlots(g.storage_slots || 6); setMagazine(!!g.magazine)
         const s = g.storage || {}
         if (s.first_z_flat != null) setFirstZ(s.first_z_flat)
         if (s.slot_gap != null) setGap(s.slot_gap)
@@ -191,12 +192,25 @@ export default function Drucker() {
     return () => clearTimeout(t)
   }, [geometry])
 
+  // Regalzahl / Fächer / Magazin-Fach global aus der Rack-Konfiguration (Configuration).
+  useEffect(() => {
+    const load = () => rackManagerService.getAll().then(r => {
+      const d = r?.data || {}
+      setRackCfg({
+        num_racks: d.num_racks ?? 3, slots_per_rack: d.slots_per_rack ?? 6, magazine_slot: d.magazine_slot ?? 7,
+      })
+    }).catch(() => {})
+    load()
+    window.addEventListener('printloom:rackConfigSaved', load)
+    return () => window.removeEventListener('printloom:rackConfigSaved', load)
+  }, [])
+
   // ── Live: OTTOeject-Operation aus der AKTUELLEN Geometrie senden ──
-  const sendOp = async (op, label, extra = {}) => {
+  const sendOp = async (op, label, extra = {}, geomOverride = null) => {
     if (jog.busy) return
     setJog({ busy: true, msg: label, err: false })
     try {
-      const r = await controlService.runOp({ op, geometry, ...extra })
+      const r = await controlService.runOp({ op, geometry: geomOverride || geometry, ...extra })
       if (r?.data?.script) setLastScript(r.data.script)
       setJog({ busy: false, msg: tr('✓ {0}', label), err: false })
     } catch (e) {
@@ -205,6 +219,12 @@ export default function Drucker() {
     }
   }
   const homeOtto = () => sendOp('home', tr('Referenzfahrt…'))
+
+  // Geschwindigkeit setzen → M220 sofort an den OTTOeject schicken (und für Ops speichern).
+  const applySpeed = (v) => {
+    setSpeedFactor(v)
+    sendOp('speed', tr('Geschwindigkeit {0}%', v), {}, { ...geometry, speed_factor: v })
+  }
 
   // G-code der Operation aus den aktuellen Werten laden → Startpunkt zum Bearbeiten.
   const loadGcodeForEdit = async (op, extra = {}) => {
@@ -275,8 +295,8 @@ export default function Drucker() {
             <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-surface-800/50">
               <span className="text-[11px] text-surface-400">{tr('OTTOeject-Geschwindigkeit')}</span>
               {[100, 200, 300, 400, 500].map(v => (
-                <button key={v} onClick={() => setSpeedFactor(v)}
-                  className={`text-[11px] px-2 py-1 rounded border transition-colors ${(+speedFactor || 100) === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>{v}%</button>
+                <button key={v} onClick={() => applySpeed(v)} disabled={jog.busy}
+                  className={`text-[11px] px-2 py-1 rounded border transition-colors disabled:opacity-50 ${(+speedFactor || 100) === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>{v}%</button>
               ))}
               <span className="text-[9px] text-surface-600">{tr('M220-Vorschub · gilt für Test & aktivierte Farm-Operationen')}</span>
             </div>
@@ -351,39 +371,34 @@ export default function Drucker() {
             </button>
             {regalOpen && (
               <div className="space-y-3 pt-1">
+                <p className="text-[10px] text-surface-500">
+                  {tr('Physische Regal-Positionen (mm). Regalzahl ({0}), Fächer/Regal ({1}) & Magazin-Fach ({2}) kommen global aus der Konfiguration → Rack Configuration.', numRacks, rackCfg.slots_per_rack, magazineSlot || '—')}
+                </p>
                 <div className="grid grid-cols-3 gap-2">
                   <NumField label={tr('Start-X (Regal 1)')} hint={tr('x_unclamp')} value={xUnclamp} onChange={setX} />
                   <NumField label={tr('Y-Engage')} value={yEngage} onChange={setY} />
                   <NumField label={tr('Höhe Fach 1 (mm)')} hint={tr('first_z_flat')} step={0.5} value={firstZ} onChange={setFirstZ} />
                   <NumField label={tr('Fach-Abstand (mm)')} hint={tr('Z-Schritt = +30')} value={gap} onChange={setGap} />
-                  <NumField label={tr('Regal-Versatz X (mm)')} hint={tr('rack_x_gap')} value={rackGap} onChange={setRackGap} />
-                  <NumField label={tr('Regale')} value={racks} min={1} max={9} onChange={setRacks} />
-                  <NumField label={tr('Lager-Fächer/Regal')} value={storageSlots} min={1} max={12} onChange={setStorageSlots} />
+                  <NumField label={tr('Regal-Versatz X (mm)')} hint={tr('rack_x_gap · pro Regal')} value={rackGap} onChange={setRackGap} />
                 </div>
-                <div className="flex flex-wrap items-center gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <Toggle on={magazine} onClick={() => setMagazine(v => !v)} color="bg-amber-600" />
-                    <span className="text-[11px] text-surface-300">{tr('Magazin-Fach (oben, frische Platten)')}</span>
-                  </label>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-surface-400">{tr('Platte')}</span>
-                    {[['256', '256'], ['220', '220']].map(([v, lbl]) => (
-                      <button key={v} onClick={() => setPlate(v)}
-                        className={`text-[11px] px-2 py-1 rounded border ${plate === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500'}`}>{lbl}</button>
-                    ))}
-                  </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-surface-400">{tr('Platte')}</span>
+                  {[['256', '256'], ['220', '220']].map(([v, lbl]) => (
+                    <button key={v} onClick={() => setPlate(v)}
+                      className={`text-[11px] px-2 py-1 rounded border ${plate === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500'}`}>{lbl}</button>
+                  ))}
                 </div>
 
                 {/* Test Greifen / Ablegen */}
                 <div className="flex flex-wrap items-end gap-2 pt-1 border-t border-surface-800/50">
                   <label className="block">
                     <span className="text-[11px] text-surface-400">{tr('Regal')}</span>
-                    <input type="number" min={1} max={racks} value={testRack}
+                    <input type="number" min={1} max={numRacks} value={testRack}
                       onChange={e => setTestRack(+e.target.value)} className="w-16 text-sm font-mono mt-0.5" />
                   </label>
                   <label className="block">
                     <span className="text-[11px] text-surface-400">{tr('Fach')}</span>
-                    <input type="number" min={1} max={magazineSlot || storageSlots} value={testSlot}
+                    <input type="number" min={1} max={magazineSlot || rackCfg.slots_per_rack} value={testSlot}
                       onChange={e => setTestSlot(+e.target.value)} className="w-16 text-sm font-mono mt-0.5" />
                   </label>
                   <button onClick={() => sendOp('approach', tr('Fach anfahren…'), { rack: testRack, slot: testSlot })} disabled={jog.busy}

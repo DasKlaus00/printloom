@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.95',
+    de: [
+      'Regalzahl, Fächer/Regal und Magazin-Fach gibt es jetzt nur noch an EINER Stelle: Konfiguration → Rack Configuration. Der Drucker-Tab (und der erzeugte G-code) lesen sie global von dort — die doppelten Felder im Drucker-Tab sind weg. Im Drucker-Tab bleiben nur die physischen mm-Werte (Start-X, Regal-Versatz X, Höhe Fach 1, Fach-Abstand). Behebt u. a. eine mögliche Magazin-Fach-Abweichung (falsche NOLIFT-Erkennung).',
+      'Geschwindigkeit: Klick auf 100–500 % schickt jetzt sofort „M220 S…" an den OTTOeject (und gilt weiter für alle Test-/Farm-Bewegungen).',
+    ],
+    en: [
+      'Rack count, slots/rack and magazine slot now live in ONE place only: Configuration → Rack Configuration. The Printer tab (and the generated G-code) read them globally from there — the duplicate fields in the Printer tab are gone. The Printer tab keeps only the physical mm values (start X, rack offset X, slot 1 height, slot spacing). Fixes a possible magazine-slot mismatch (wrong NOLIFT detection).',
+      'Speed: clicking 100–500 % now immediately sends “M220 S…” to the OTTOeject (and still applies to all test/farm moves).',
+    ],
+  },
+  {
     version: '1.0.94',
     de: [
       'Drucker-Tab: die eingegebene Position wird jetzt 1:1 gesendet — der automatische Rack-Versatz für Auswurf/Einlegen/Tür ist raus (er hatte X um (Regale−1)·Regal-Versatz verschoben, dadurch wirkte alles wie „3 Regale", auch nach Umstellen auf 1). Die Regal-Zahl beeinflusst nur noch Greifen/Ablegen.',

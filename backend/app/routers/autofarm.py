@@ -1533,8 +1533,14 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
 # ── OTTOeject-Geometrie (opt-in: Farm sendet App-G-code statt Geräte-Macro) ──
 def _load_farm_geometry() -> dict:
     """Gespeicherte Drucker-Geometrie (Drucker-Tab) lesen, Defaults aufgefüllt.
+    Regalzahl/Fächer/Magazin-Fach global aus der Rack-Konfiguration überlagern.
     Ohne Datei → Defaults ohne use_gcode → Farm fährt wie bisher die Geräte-Macros."""
-    return _motion.merge_defaults(storage.read_json(GEOMETRY_PATH, None))
+    g = _motion.merge_defaults(storage.read_json(GEOMETRY_PATH, None))
+    try:
+        _motion.apply_rack_config(g, _rack_load())
+    except Exception:
+        pass
+    return g
 
 
 def _macro_to_op(val: str, rack_num: str, slot_num: str, stack_rack: str, stack_slot: str):

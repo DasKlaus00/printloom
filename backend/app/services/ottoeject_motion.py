@@ -69,7 +69,27 @@ def merge_defaults(g: dict | None) -> dict:
 
 
 def magazine_slot(g: dict) -> int:
+    ms = g.get("magazine_slot")
+    if ms:
+        return int(ms)
     return (int(g["storage_slots"]) + 1) if g.get("magazine") else 0
+
+
+def apply_rack_config(g: dict, rack_cfg: dict | None) -> dict:
+    """Regalzahl / Fächer / Magazin-Fach aus der GLOBALEN Rack-Konfiguration übernehmen
+    (Configuration → Rack Configuration) — eine Quelle. Physische mm (x_unclamp,
+    rack_x_gap, first_z_flat, slot_gap …) bleiben in der Geometrie."""
+    if not rack_cfg:
+        return g
+    if rack_cfg.get("num_racks"):
+        g["racks"] = int(rack_cfg["num_racks"])
+    if rack_cfg.get("slots_per_rack"):
+        g["storage_slots"] = int(rack_cfg["slots_per_rack"])
+    ms = rack_cfg.get("magazine_slot")
+    if ms:
+        g["magazine_slot"] = int(ms)
+        g["magazine"] = True
+    return g
 
 
 def _printer_x_off(g: dict) -> float:
@@ -285,6 +305,8 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
     g = merge_defaults(g)
     op = (op or "").lower()
     speed = _speed_prefix(g)
+    if op == "speed":   # nur den Vorschubfaktor live setzen
+        return (speed or "M220 S100\n").rstrip() + "\nM400"
     # Eigener G-code (Feinjustage im Drucker-Tab) hat Vorrang — 1:1 senden.
     ov = (g.get("gcode_override") or {}).get(op)
     if isinstance(ov, str) and ov.strip():

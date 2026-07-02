@@ -375,8 +375,28 @@ from app.services import ottoeject_motion as _motion
 GEOMETRY_PATH = "/app/db/ottoeject_geometry.json"
 
 
+def _rack_config() -> dict | None:
+    """Globale Rack-Konfiguration (Configuration → Rack Configuration) — eine Quelle
+    für Regalzahl / Fächer / Magazin-Fach."""
+    try:
+        from app.routers.rack_manager import _load as _rack_load
+        return _rack_load()
+    except Exception:
+        return None
+
+
 def _load_geometry() -> dict:
-    return _motion.merge_defaults(_storage.read_json(GEOMETRY_PATH, None))
+    g = _motion.merge_defaults(_storage.read_json(GEOMETRY_PATH, None))
+    return _motion.apply_rack_config(g, _rack_config())
+
+
+def _geometry_from_request(request: dict) -> dict:
+    """Geometrie aus dem Request (Vorschau/Test mit ungespeicherten Werten) ODER die
+    gespeicherte — in beiden Fällen Regalzahl/Fächer/Magazin global überlagern."""
+    geom = request.get("geometry")
+    if geom is None:
+        return _load_geometry()
+    return _motion.apply_rack_config(geom, _rack_config())
 
 
 @router.get("/ottoeject/geometry")
@@ -404,7 +424,7 @@ async def run_ottoeject_op(request: dict, db: Session = Depends(get_db)):
     op = (request.get("op") or "").strip()
     if not op:
         raise HTTPException(400, "Keine Operation angegeben")
-    geom = request.get("geometry") or _load_geometry()
+    geom = _geometry_from_request(request)
     try:
         script = _motion.build_op(
             geom, op,
@@ -437,7 +457,7 @@ async def preview_ottoeject_op(request: dict):
     op = (request.get("op") or "").strip()
     if not op:
         raise HTTPException(400, "Keine Operation angegeben")
-    geom = request.get("geometry") or _load_geometry()
+    geom = _geometry_from_request(request)
     try:
         script = _motion.build_op(
             geom, op,
