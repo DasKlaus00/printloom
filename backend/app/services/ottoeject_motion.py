@@ -38,8 +38,10 @@ DEFAULT_GEOMETRY = {
         "load":  {"x": 425, "y": 340, "z": 17.5},
         "door":  {"open":  {"x": 104, "y": 319, "z": 105, "d": 370},
                   "close": {"x": 103, "y": 322, "z": 105, "d": 375}},
-        "x_scales_with_racks": True,   # Drucker sitzt hinter dem letzten Regal → X += (racks-1)*rack_x_gap
+        "x_scales_with_racks": False,  # Direkteingabe im Drucker-Tab: X = eingegebener Wert (kein Rack-Versatz)
     },
+    "speed_factor": 100,     # M220-Vorschub in % (100 = normal, bis 500 schneller) für App-G-code
+    "gcode_override": {},    # {op: "roher G-code"} — Feinjustage, überschreibt die berechnete Bewegung
 }
 
 
@@ -269,9 +271,25 @@ def park() -> list[str]:
 
 
 # ── Dispatcher ──────────────────────────────────────────────────────────────
+def _speed_prefix(g: dict) -> str:
+    """M220-Vorschubfaktor (%) für den App-G-code. 100 = normal → kein Prefix."""
+    try:
+        f = int(g.get("speed_factor", 100) or 100)
+    except (TypeError, ValueError):
+        f = 100
+    f = max(10, min(500, f))
+    return f"M220 S{f}\n" if f != 100 else ""
+
+
 def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str:
     g = merge_defaults(g)
     op = (op or "").lower()
+    speed = _speed_prefix(g)
+    # Eigener G-code (Feinjustage im Drucker-Tab) hat Vorrang — 1:1 senden.
+    ov = (g.get("gcode_override") or {}).get(op)
+    if isinstance(ov, str) and ov.strip():
+        s = ov.replace("{rack}", str(int(rack))).replace("{slot}", str(int(slot))).strip()
+        return speed + (s if s.rstrip().endswith("M400") else s + "\nM400")
     if op == "grab":
         lines = grab_from_rack(g, rack, slot, nolift)
     elif op == "store":
@@ -292,4 +310,4 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
         lines = ["OTTOEJECT_HOME"]
     else:
         raise ValueError(f"Unbekannte Operation: {op}")
-    return "\n".join(lines) + "\nM400"
+    return speed + "\n".join(lines) + "\nM400"

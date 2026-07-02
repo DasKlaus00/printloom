@@ -34,23 +34,46 @@ function Toggle({ on, onClick, color = 'bg-blue-600' }) {
 }
 
 /* Operations-Karte (Modul-Ebene → Eingabefelder verlieren beim Tippen nicht den Fokus).
-   Felder + Live-Test + opt-in „Farm nutzt diese Position". */
-function OpCard({ op, icon, title, fields, extra, note, busy, gcodeOn, onTest, onToggle }) {
+   Entweder X/Y/Z-Werte ODER (Feinjustage) ein eigener, editierbarer G-code. */
+function OpCard({ op, icon, title, fields, extra, note, busy, gcodeOn, onTest, onToggle,
+                 overrideVal, canOverride, onLoadGcode, onChangeGcode, onClearGcode }) {
   const { tr } = useLanguage()
+  const hasOverride = typeof overrideVal === 'string'
   return (
-    <div className="card p-3 space-y-2.5">
+    <div className={`card p-3 space-y-2.5 ${hasOverride ? 'border-blue-700/50' : ''}`}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium text-surface-200">{icon} {title}</p>
         <button onClick={() => onTest(op, tr('{0}…', title), extra)} disabled={busy}
           className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 shrink-0">{tr('▶ Test')}</button>
       </div>
-      <div className={`grid gap-2 ${fields.length >= 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
-        {fields.map(f => (
-          <NumField key={f.label} label={f.label} hint={f.hint} value={f.value}
-            step={f.step} onChange={f.onChange} />
-        ))}
-      </div>
-      {note && <p className="text-[9px] text-surface-600">{note}</p>}
+
+      {hasOverride ? (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-blue-300">{tr('⚙ Eigener G-code — Werte werden ignoriert')}</span>
+            <button onClick={() => onClearGcode(op)} className="text-[10px] text-surface-500 hover:text-surface-300">{tr('✕ zurück zu Werten')}</button>
+          </div>
+          <textarea value={overrideVal} onChange={e => onChangeGcode(op, e.target.value)} spellCheck={false} rows={8}
+            className="w-full text-[11px] leading-snug font-mono bg-surface-900/70 border border-surface-700/60 rounded-lg p-2 whitespace-pre" />
+          <p className="text-[9px] text-surface-600">{tr('Wird 1:1 an den OTTOeject gesendet. „Test" fährt genau diesen G-code.')}</p>
+        </div>
+      ) : (
+        <>
+          <div className={`grid gap-2 ${fields.length >= 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+            {fields.map(f => (
+              <NumField key={f.label} label={f.label} hint={f.hint} value={f.value}
+                step={f.step} onChange={f.onChange} />
+            ))}
+          </div>
+          {note && <p className="text-[9px] text-surface-600">{note}</p>}
+          {canOverride && (
+            <button onClick={() => onLoadGcode(op, extra)} className="text-[10px] text-blue-400 hover:text-blue-300">
+              {tr('⚙ Eigenen G-code bearbeiten (Feinjustage)')}
+            </button>
+          )}
+        </>
+      )}
+
       <label className="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-surface-800/50">
         <Toggle on={!!gcodeOn} onClick={() => onToggle(op)} color="bg-emerald-600" />
         <span className={`text-[11px] ${gcodeOn ? 'text-emerald-300' : 'text-surface-500'}`}>
@@ -82,13 +105,18 @@ export default function Drucker() {
   const [storageSlots, setStorageSlots] = useState(6)
   const [magazine, setMagazine] = useState(true)
   const [plate, setPlate] = useState('256')          // 256 → pullback 5, 220 → 30
-  const [printerScales, setPrinterScales] = useState(true)
+  const [speedFactor, setSpeedFactor] = useState(100) // M220-Vorschub in % (100–500)
 
   // Opt-in: welche Operationen die Farm als App-G-code statt Geräte-Macro fährt
   const [useGcode, setUseGcode] = useState(
     () => Object.fromEntries(OPS.map(o => [o, false]))
   )
   const toggleGcode = (op) => setUseGcode(m => ({ ...m, [op]: !m[op] }))
+
+  // Eigener G-code je Operation (Feinjustage) — überschreibt die berechnete Bewegung.
+  const [gcodeOverride, setGcodeOverride] = useState({})   // { op: "G1 ..." }
+  const setGcodeText = (op, text) => setGcodeOverride(m => ({ ...m, [op]: text }))
+  const clearGcode = (op) => setGcodeOverride(m => { const n = { ...m }; delete n[op]; return n })
 
   const [testRack, setTestRack] = useState(1)
   const [testSlot, setTestSlot] = useState(1)
@@ -121,11 +149,13 @@ export default function Drucker() {
       eject: { x: +eject.x, y: +eject.y, z: +eject.z },
       load:  { x: +load.x,  y: +load.y,  z: +load.z },
       door: hasDoor ? { open: { ...doorOpen }, close: { ...doorClose } } : null,
-      x_scales_with_racks: printerScales,
+      x_scales_with_racks: false,   // Direkteingabe: X = eingegebener Wert (kein Rack-Versatz)
     },
     use_gcode: { ...useGcode },
+    gcode_override: gcodeOverride,
+    speed_factor: +speedFactor || 100,
   }), [printerId, printerName, enclosed, racks, storageSlots, magazine, xUnclamp, yEngage,
-       firstZ, gap, yPullback, rackGap, eject, load, doorOpen, doorClose, hasDoor, printerScales, useGcode])
+       firstZ, gap, yPullback, rackGap, eject, load, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor])
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
   const hydrated = useRef(false)
@@ -149,8 +179,9 @@ export default function Drucker() {
         // Tür aus dem Speicher übernehmen; fehlt sie (offener/türloser Drucker) → leeren.
         setDoorOpen(p.door?.open || null)
         setDoorClose(p.door?.close || null)
-        setPrinterScales(p.x_scales_with_racks !== false)
+        if (g.speed_factor != null) setSpeedFactor(g.speed_factor)
         if (g.use_gcode) setUseGcode(m => ({ ...m, ...g.use_gcode }))
+        if (g.gcode_override) setGcodeOverride(g.gcode_override)
       }
     }).catch(() => {}).finally(() => { hydrated.current = true })
   }, [])
@@ -174,6 +205,16 @@ export default function Drucker() {
     }
   }
   const homeOtto = () => sendOp('home', tr('Referenzfahrt…'))
+
+  // G-code der Operation aus den aktuellen Werten laden → Startpunkt zum Bearbeiten.
+  const loadGcodeForEdit = async (op, extra = {}) => {
+    try {
+      const r = await controlService.previewOp({ op, geometry, ...extra })
+      setGcodeOverride(m => ({ ...m, [op]: r?.data?.script || '' }))
+    } catch {
+      setGcodeOverride(m => ({ ...m, [op]: '' }))
+    }
+  }
 
   const activeCount = OPS.filter(o => useGcode[o]).length
 
@@ -231,6 +272,14 @@ export default function Drucker() {
             <p className="text-[10px] text-surface-600">
               {tr('Immer erst Referenzfahrt (OTTOEJECT_HOME), dann eine Operation testen. Printloom sendet den G-code direkt aus den Werten unten.')}
             </p>
+            <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-surface-800/50">
+              <span className="text-[11px] text-surface-400">{tr('OTTOeject-Geschwindigkeit')}</span>
+              {[100, 200, 300, 400, 500].map(v => (
+                <button key={v} onClick={() => setSpeedFactor(v)}
+                  className={`text-[11px] px-2 py-1 rounded border transition-colors ${(+speedFactor || 100) === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>{v}%</button>
+              ))}
+              <span className="text-[9px] text-surface-600">{tr('M220-Vorschub · gilt für Test & aktivierte Farm-Operationen')}</span>
+            </div>
             {jog.msg && (
               <p className={`text-[11px] font-mono ${jog.err ? 'text-red-400' : jog.busy ? 'text-amber-400' : 'text-emerald-400'}`}>{jog.msg}</p>
             )}
@@ -251,6 +300,7 @@ export default function Drucker() {
             {hasDoor && (
               <OpCard op="open_door" icon="🚪" title={tr('Tür öffnen')}
                 busy={jog.busy} gcodeOn={useGcode.open_door} onTest={sendOp} onToggle={toggleGcode}
+                overrideVal={gcodeOverride.open_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
                 fields={[
                   { label: tr('Start-X'), value: doorOpen.x, onChange: v => setDoorOpen({ ...doorOpen, x: +v }) },
                   { label: tr('Y'), value: doorOpen.y, onChange: v => setDoorOpen({ ...doorOpen, y: +v }) },
@@ -261,6 +311,7 @@ export default function Drucker() {
             {hasDoor && (
               <OpCard op="close_door" icon="🚪" title={tr('Tür schließen')}
                 busy={jog.busy} gcodeOn={useGcode.close_door} onTest={sendOp} onToggle={toggleGcode}
+                overrideVal={gcodeOverride.close_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
                 fields={[
                   { label: tr('Start-X'), value: doorClose.x, onChange: v => setDoorClose({ ...doorClose, x: +v }) },
                   { label: tr('Y'), value: doorClose.y, onChange: v => setDoorClose({ ...doorClose, y: +v }) },
@@ -270,6 +321,7 @@ export default function Drucker() {
             )}
             <OpCard op="eject" icon="⬆" title={tr('Platte auswerfen')}
               busy={jog.busy} gcodeOn={useGcode.eject} onTest={sendOp} onToggle={toggleGcode}
+              overrideVal={gcodeOverride.eject} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
               fields={[
                 { label: tr('Start-X'), value: eject.x, onChange: v => setEject({ ...eject, x: +v }) },
                 { label: tr('Y'), value: eject.y, onChange: v => setEject({ ...eject, y: +v }) },
@@ -277,6 +329,7 @@ export default function Drucker() {
               ]} />
             <OpCard op="load" icon="⬇" title={tr('Platte einlegen')}
               busy={jog.busy} gcodeOn={useGcode.load} onTest={sendOp} onToggle={toggleGcode}
+              overrideVal={gcodeOverride.load} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
               fields={[
                 { label: tr('Start-X'), value: load.x, onChange: v => setLoad({ ...load, x: +v }) },
                 { label: tr('Y'), value: load.y, onChange: v => setLoad({ ...load, y: +v }) },
@@ -319,12 +372,6 @@ export default function Drucker() {
                         className={`text-[11px] px-2 py-1 rounded border ${plate === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500'}`}>{lbl}</button>
                     ))}
                   </div>
-                  {(+racks || 1) > 1 && (
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <Toggle on={printerScales} onClick={() => setPrinterScales(v => !v)} />
-                      <span className="text-[11px] text-surface-300">{tr('Drucker hinter letztem Regal')}</span>
-                    </label>
-                  )}
                 </div>
 
                 {/* Test Greifen / Ablegen */}

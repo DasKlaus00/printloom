@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.94',
+    de: [
+      'Drucker-Tab: die eingegebene Position wird jetzt 1:1 gesendet — der automatische Rack-Versatz für Auswurf/Einlegen/Tür ist raus (er hatte X um (Regale−1)·Regal-Versatz verschoben, dadurch wirkte alles wie „3 Regale", auch nach Umstellen auf 1). Die Regal-Zahl beeinflusst nur noch Greifen/Ablegen.',
+      'Neu: eigener, editierbarer G-code je Operation (Tür auf/zu, Auswurf, Einlegen) für die Feinjustage. „⚙ Eigenen G-code bearbeiten" lädt den berechneten G-code als Startpunkt; „Test" fährt genau diesen Text; „✕ zurück zu Werten" führt wieder zur X/Y/Z-Eingabe. Die Farm nutzt den eigenen G-code ebenfalls (wenn die Operation aktiviert ist).',
+      'Neu: OTTOeject-Geschwindigkeit 100–500 % (M220) im Drucker-Tab — gilt für Live-Test und aktivierte Farm-Operationen.',
+    ],
+    en: [
+      'Printer tab: the entered position is now sent 1:1 — the automatic rack offset for eject/load/door is gone (it shifted X by (racks−1)·rack offset, so everything behaved like “3 racks” even after switching to 1). Rack count now only affects grab/store.',
+      'New: custom, editable G-code per operation (open/close door, eject, load) for fine-tuning. “⚙ Edit custom G-code” loads the computed G-code as a starting point; “Test” runs exactly that text; “✕ back to values” returns to X/Y/Z entry. The farm uses the custom G-code too (when the operation is enabled).',
+      'New: OTTOeject speed 100–500 % (M220) in the printer tab — applies to live test and enabled farm operations.',
+    ],
+  },
+  {
     version: '1.0.93',
     de: [
       'Neuer Tab „Drucker" ersetzt den Konfigurator: Modell wählen (X1C, P1S, P1P, A1, K1C, Elegoo CC, Anycubic Kobra S1, Flashforge AD5X oder „Anderer") und die Position jeder Aufgabe direkt einstellen — Tür öffnen/schließen, Platte auswerfen/einlegen, Greifen/Ablegen. Jede Operation hat einen Live-Test-Knopf (Printloom sendet den G-code direkt aus den Werten; nur OTTOEJECT_HOME bleibt Geräte-Macro). Kein Bearbeiten der Klipper-Config mehr nötig.',

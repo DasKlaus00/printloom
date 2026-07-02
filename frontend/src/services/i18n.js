@@ -199,6 +199,14 @@ const EN_STRINGS = {
   'Greifen': 'Grab', 'Ablegen': 'Store', 'Farm: {0} als App-G-code': 'Farm: {0} as app G-code',
   'Printloom speichert diese Werte und sendet den G-code direkt (nur OTTOEJECT_HOME bleibt Geräte-Macro). Für die Auto-Farm wirken sie erst, wenn „Farm nutzt diese Position" für die jeweilige Operation aktiv ist — sonst fährt die Farm weiter die Geräte-Macros.':
     'Printloom stores these values and sends the G-code directly (only OTTOEJECT_HOME stays a device macro). For the auto farm they take effect once “Farm uses this position” is enabled for the operation — otherwise the farm keeps running the device macros.',
+  '⚙ Eigener G-code — Werte werden ignoriert': '⚙ Custom G-code — values are ignored',
+  '✕ zurück zu Werten': '✕ back to values',
+  'Wird 1:1 an den OTTOeject gesendet. „Test" fährt genau diesen G-code.':
+    'Sent verbatim to the OTTOeject. “Test” runs exactly this G-code.',
+  '⚙ Eigenen G-code bearbeiten (Feinjustage)': '⚙ Edit custom G-code (fine-tune)',
+  'OTTOeject-Geschwindigkeit': 'OTTOeject speed',
+  'M220-Vorschub · gilt für Test & aktivierte Farm-Operationen':
+    'M220 feed factor · applies to test & enabled farm operations',
   'Drucker & Regal einrichten → fertige Klipper-Config für die OTTOeject':
     'Set up printer & rack → ready-made Klipper config for the OTTOeject',
   '1 · Drucker': '1 · Printer',
