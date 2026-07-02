@@ -45,10 +45,46 @@ DEFAULT_GEOMETRY = {
 
 
 # ── Helfer ──────────────────────────────────────────────────────────────────
+def _num(v, d=0.0):
+    """Robuste Float-Konvertierung: None/NaN/leer/ungültig → Default. Verhindert 500,
+    wenn ein Eingabefeld im Drucker-Tab leer/halbfertig ist (JSON null / NaN)."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return float(d)
+    return f if f == f else float(d)   # NaN (f != f) → Default
+
+
 def _n(v):
     """Zahl hübsch runden (Klipper mag keine langen Floats)."""
-    r = round(float(v), 3)
+    r = round(_num(v), 3)
     return int(r) if r == int(r) else r
+
+
+# Zahlenfelder der Geometrie (Pfade relativ zu DEFAULT_GEOMETRY) für die Sanitisierung.
+def _sanitize_geometry(g: dict) -> dict:
+    """Alle Zahlenfelder robust machen (None/NaN/leer → Default), damit ein
+    halbfertiges Eingabefeld keine 500 auslöst."""
+    d = DEFAULT_GEOMETRY
+    for k in ("racks", "storage_slots", "magazine_slot", "speed_factor"):
+        if g.get(k) is not None:
+            g[k] = _num(g.get(k), d.get(k, 0))
+    s = g.setdefault("storage", {})
+    for k, dv in d["storage"].items():
+        s[k] = _num(s.get(k), dv)
+    p = g.setdefault("printer", {})
+    for key in ("eject", "load"):
+        node = p.setdefault(key, {})
+        for k, dv in d["printer"][key].items():
+            node[k] = _num(node.get(k), dv)
+    door = p.get("door")
+    if isinstance(door, dict):
+        for kind in ("open", "close"):
+            node = door.get(kind)
+            if isinstance(node, dict):
+                for k, dv in d["printer"]["door"][kind].items():
+                    node[k] = _num(node.get(k), dv)
+    return g
 
 
 def merge_defaults(g: dict | None) -> dict:
@@ -302,7 +338,7 @@ def _speed_prefix(g: dict) -> str:
 
 
 def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str:
-    g = merge_defaults(g)
+    g = _sanitize_geometry(merge_defaults(g))
     op = (op or "").lower()
     speed = _speed_prefix(g)
     if op == "speed":   # nur den Vorschubfaktor live setzen

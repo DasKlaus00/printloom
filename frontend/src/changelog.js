@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.97',
+    de: [
+      'Fehler behoben: Beim Feinjustieren im Drucker-Tab konnte ein leeres oder mit Komma eingegebenes Zahlenfeld (z. B. „17,5") den Test und die G-code-Anzeige lahmlegen (Server-Fehler → kein Klartext-G-code mehr, Werte schienen nicht zu greifen). Die Zahlenfelder akzeptieren jetzt Komma UND Punkt, und der Server ist robust gegen leere/ungültige Werte (nimmt dann den Standard).',
+    ],
+    en: [
+      'Bug fix: while fine-tuning in the Printer tab, an empty field or a comma decimal (e.g. “17,5”) could break the test and the G-code display (server error → no more plaintext G-code, values seemed not to apply). Number fields now accept both comma and period, and the server is robust against empty/invalid values (falls back to the default).',
+    ],
+  },
+  {
     version: '1.0.96',
     de: [
       'Drucker hinter dem letzten Regal: Auswurf, Einlegen und Tür wandern jetzt wieder korrekt mit der Regalzahl mit — X = eingegeben + (Regale−1)·Regal-Versatz, mit der GLOBALEN Regalzahl aus der Konfiguration. Bei 3 Regalen öffnet die Tür also weiter außen (hinter Regal 3), bei 1 Regal ohne Versatz. Jede Karte zeigt das effektive X an. (Wer den Drucker fix stehen hat: eigenen G-code nutzen — der wird absolut gesendet.)',

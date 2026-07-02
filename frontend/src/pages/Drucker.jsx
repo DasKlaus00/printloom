@@ -13,12 +13,20 @@ import { PrinterBadge } from '../components/PrinterBadge'
 
 const OPS = ['open_door', 'close_door', 'eject', 'load', 'grab', 'store']
 
-function NumField({ label, hint, value, onChange, step = 1, min, max }) {
+// Robuste Zahl: akzeptiert Komma-Dezimal (de), leer/ungültig → Default (nie NaN/null).
+const num = (v, d = 0) => {
+  const n = parseFloat(String(v).replace(',', '.'))
+  return Number.isFinite(n) ? n : d
+}
+
+// Textfeld mit Dezimal-Tastatur — akzeptiert „17,5" UND „17.5" (type=number würde das
+// Komma verwerfen → leeres Feld / NaN). Umgewandelt wird erst beim Bauen der Geometrie.
+function NumField({ label, hint, value, onChange }) {
   return (
     <label className="block">
       <span className="text-[11px] text-surface-400">{label}</span>
       {hint && <span className="block text-[9px] text-surface-600">{hint}</span>}
-      <input type="number" step={step} min={min} max={max} value={value}
+      <input type="text" inputMode="decimal" value={value ?? ''}
         onChange={e => onChange(e.target.value)} className="w-full text-sm font-mono mt-0.5" />
     </label>
   )
@@ -142,22 +150,25 @@ export default function Drucker() {
   // ── Geometrie: EINE Quelle für Live-G-code UND (opt-in) die Farm ──
   // Regalzahl/Fächer/Magazin bewusst NICHT hier — die überlagert das Backend global
   // aus der Rack-Konfiguration (apply_rack_config). Hier nur Drucker + physische mm.
-  const geometry = useMemo(() => ({
-    printer_id: printerId, printer_name: printerName, enclosed,
-    storage: {
-      x_unclamp: +xUnclamp, y_engage: +yEngage, first_z_flat: +firstZ,
-      slot_gap: +gap, y_pullback_limit: yPullback, rack_x_gap: +rackGap || 0,
-    },
-    printer: {
-      eject: { x: +eject.x, y: +eject.y, z: +eject.z },
-      load:  { x: +load.x,  y: +load.y,  z: +load.z },
-      door: hasDoor ? { open: { ...doorOpen }, close: { ...doorClose } } : null,
-    },
-    use_gcode: { ...useGcode },
-    gcode_override: gcodeOverride,
-    speed_factor: +speedFactor || 100,
-  }), [printerId, printerName, enclosed, xUnclamp, yEngage,
-       firstZ, gap, yPullback, rackGap, eject, load, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor])
+  const geometry = useMemo(() => {
+    const nd = (o) => ({ x: num(o.x), y: num(o.y), z: num(o.z), d: num(o.d) })
+    return {
+      printer_id: printerId, printer_name: printerName, enclosed,
+      storage: {
+        x_unclamp: num(xUnclamp), y_engage: num(yEngage), first_z_flat: num(firstZ),
+        slot_gap: num(gap), y_pullback_limit: yPullback, rack_x_gap: num(rackGap),
+      },
+      printer: {
+        eject: { x: num(eject.x), y: num(eject.y), z: num(eject.z) },
+        load:  { x: num(load.x),  y: num(load.y),  z: num(load.z) },
+        door: hasDoor ? { open: nd(doorOpen), close: nd(doorClose) } : null,
+      },
+      use_gcode: { ...useGcode },
+      gcode_override: gcodeOverride,
+      speed_factor: num(speedFactor, 100) || 100,
+    }
+  }, [printerId, printerName, enclosed, xUnclamp, yEngage,
+      firstZ, gap, yPullback, rackGap, eject, load, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor])
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
   const hydrated = useRef(false)
@@ -238,8 +249,8 @@ export default function Drucker() {
 
   const activeCount = OPS.filter(o => useGcode[o]).length
   // Drucker sitzt hinter dem letzten Regal → eject/load/Tür-X wandern mit der Regalzahl.
-  const xOff = numRacks > 1 ? (numRacks - 1) * (+rackGap || 0) : 0
-  const effHintFor = (b) => xOff ? tr('→ effektiv X{0} (Drucker hinter Regal {1})', Math.round((+b || 0) + xOff), numRacks) : null
+  const xOff = numRacks > 1 ? (numRacks - 1) * num(rackGap) : 0
+  const effHintFor = (b) => xOff ? tr('→ effektiv X{0} (Drucker hinter Regal {1})', Math.round(num(b) + xOff), numRacks) : null
 
   return (
     <div className="space-y-5">
@@ -326,10 +337,10 @@ export default function Drucker() {
                 overrideVal={gcodeOverride.open_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
                 effHint={effHintFor(doorOpen.x)}
                 fields={[
-                  { label: tr('Start-X'), value: doorOpen.x, onChange: v => setDoorOpen({ ...doorOpen, x: +v }) },
-                  { label: tr('Y'), value: doorOpen.y, onChange: v => setDoorOpen({ ...doorOpen, y: +v }) },
-                  { label: tr('Z'), step: 0.5, value: doorOpen.z, onChange: v => setDoorOpen({ ...doorOpen, z: +v }) },
-                  { label: tr('Pin-Abst.'), hint: tr('d_to_pin'), value: doorOpen.d, onChange: v => setDoorOpen({ ...doorOpen, d: +v }) },
+                  { label: tr('Start-X'), value: doorOpen.x, onChange: v => setDoorOpen({ ...doorOpen, x: v }) },
+                  { label: tr('Y'), value: doorOpen.y, onChange: v => setDoorOpen({ ...doorOpen, y: v }) },
+                  { label: tr('Z'), step: 0.5, value: doorOpen.z, onChange: v => setDoorOpen({ ...doorOpen, z: v }) },
+                  { label: tr('Pin-Abst.'), hint: tr('d_to_pin'), value: doorOpen.d, onChange: v => setDoorOpen({ ...doorOpen, d: v }) },
                 ]} />
             )}
             {hasDoor && (
@@ -338,10 +349,10 @@ export default function Drucker() {
                 overrideVal={gcodeOverride.close_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
                 effHint={effHintFor(doorClose.x)}
                 fields={[
-                  { label: tr('Start-X'), value: doorClose.x, onChange: v => setDoorClose({ ...doorClose, x: +v }) },
-                  { label: tr('Y'), value: doorClose.y, onChange: v => setDoorClose({ ...doorClose, y: +v }) },
-                  { label: tr('Z'), step: 0.5, value: doorClose.z, onChange: v => setDoorClose({ ...doorClose, z: +v }) },
-                  { label: tr('Pin-Abst.'), hint: tr('d_to_pin'), value: doorClose.d, onChange: v => setDoorClose({ ...doorClose, d: +v }) },
+                  { label: tr('Start-X'), value: doorClose.x, onChange: v => setDoorClose({ ...doorClose, x: v }) },
+                  { label: tr('Y'), value: doorClose.y, onChange: v => setDoorClose({ ...doorClose, y: v }) },
+                  { label: tr('Z'), step: 0.5, value: doorClose.z, onChange: v => setDoorClose({ ...doorClose, z: v }) },
+                  { label: tr('Pin-Abst.'), hint: tr('d_to_pin'), value: doorClose.d, onChange: v => setDoorClose({ ...doorClose, d: v }) },
                 ]} />
             )}
             <OpCard op="eject" icon="⬆" title={tr('Platte auswerfen')}
@@ -349,18 +360,18 @@ export default function Drucker() {
               overrideVal={gcodeOverride.eject} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
               effHint={effHintFor(eject.x)}
               fields={[
-                { label: tr('Start-X'), value: eject.x, onChange: v => setEject({ ...eject, x: +v }) },
-                { label: tr('Y'), value: eject.y, onChange: v => setEject({ ...eject, y: +v }) },
-                { label: tr('Z'), step: 0.5, value: eject.z, onChange: v => setEject({ ...eject, z: +v }) },
+                { label: tr('Start-X'), value: eject.x, onChange: v => setEject({ ...eject, x: v }) },
+                { label: tr('Y'), value: eject.y, onChange: v => setEject({ ...eject, y: v }) },
+                { label: tr('Z'), step: 0.5, value: eject.z, onChange: v => setEject({ ...eject, z: v }) },
               ]} />
             <OpCard op="load" icon="⬇" title={tr('Platte einlegen')}
               busy={jog.busy} gcodeOn={useGcode.load} onTest={sendOp} onToggle={toggleGcode}
               overrideVal={gcodeOverride.load} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
               effHint={effHintFor(load.x)}
               fields={[
-                { label: tr('Start-X'), value: load.x, onChange: v => setLoad({ ...load, x: +v }) },
-                { label: tr('Y'), value: load.y, onChange: v => setLoad({ ...load, y: +v }) },
-                { label: tr('Z'), step: 0.5, value: load.z, onChange: v => setLoad({ ...load, z: +v }) },
+                { label: tr('Start-X'), value: load.x, onChange: v => setLoad({ ...load, x: v }) },
+                { label: tr('Y'), value: load.y, onChange: v => setLoad({ ...load, y: v }) },
+                { label: tr('Z'), step: 0.5, value: load.z, onChange: v => setLoad({ ...load, z: v }) },
               ]} />
           </div>
 
