@@ -24,6 +24,7 @@ from app.models.models import Device, PrinterType, UploadedFile
 from app.services.bambu_mqtt import BambuLabMQTT
 from app.services.bambu_ftp import BambuFTP
 from app.services import storage
+from app.services import ottoeject_motion as _motion
 from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _get_plate_gcode_param, _ams_match_confident, _ams_slots_from_raw, capture_snapshot, publish_live_status
 from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _load as _rack_load
 from app.services import hms
@@ -51,6 +52,7 @@ SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
 
 HOMING_3MF_PATH = "/app/db/printloom_homing.3mf"
 FILE_AMSMAP_PATH = "/app/db/file_ams_map.json"   # pro Datei manuell gewählte AMS-Slots {file_id: "gid,gid"}
+GEOMETRY_PATH = "/app/db/ottoeject_geometry.json"  # Drucker-Geometrie (Drucker-Tab) — opt-in App-G-code
 
 _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": True,
                      "hms_ignore": ["0C00-0100-0001-0004"],
@@ -1528,6 +1530,33 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
         _wp_disconnect()
 
 
+# ── OTTOeject-Geometrie (opt-in: Farm sendet App-G-code statt Geräte-Macro) ──
+def _load_farm_geometry() -> dict:
+    """Gespeicherte Drucker-Geometrie (Drucker-Tab) lesen, Defaults aufgefüllt.
+    Ohne Datei → Defaults ohne use_gcode → Farm fährt wie bisher die Geräte-Macros."""
+    return _motion.merge_defaults(storage.read_json(GEOMETRY_PATH, None))
+
+
+def _macro_to_op(val: str, rack_num: str, slot_num: str, stack_rack: str, stack_slot: str):
+    """Bekanntes Farm-Macro → (op, rack, slot) für ottoeject_motion.build_op, sonst None.
+    Nur diese Operationen können opt-in als Printloom-G-code laufen; OTTOEJECT_HOME und
+    PARK_OTTOEJECT bleiben immer Geräte-Macros."""
+    v = (val or "").strip().upper()
+    if "GRAB_FROM_RACK" in v or v.startswith("GRAB_FROM_SLOT_"):
+        return ("grab", int(stack_rack), int(stack_slot))
+    if "STORE_TO_RACK" in v or v.startswith("STORE_TO_SLOT_"):
+        return ("store", int(rack_num), int(slot_num))
+    if v.startswith("OPEN_DOOR"):
+        return ("open_door", 1, 1)
+    if v.startswith("CLOSE_DOOR"):
+        return ("close_door", 1, 1)
+    if v.startswith("EJECT_FROM"):
+        return ("eject", 1, 1)
+    if v.startswith("LOAD_ONTO"):
+        return ("load", 1, 1)
+    return None
+
+
 async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                       poll_sec: int, min_min: int, prep_steps: list, fail_steps: list = []):
     if _farm["stopping"]:
@@ -1599,8 +1628,22 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             if _magazine_count() <= 0:
                 raise RuntimeError("Magazin leer — abgebrochen")
             _farm["error"] = None
-        _log(f"▶ {val}")
-        await _do_macro(val)
+        # Opt-in: bekannte Drucker-/Regal-Macros können als Printloom-G-code laufen
+        # (geometry.use_gcode[op] = true). Standard aus → Geräte-Macro wie bisher.
+        # Die Magazin-/Fach-Buchhaltung unten prüft weiter val (Macro-Name, unverändert).
+        send_val, op_used = val, None
+        try:
+            op_map = _macro_to_op(val, rack_num, slot_num, stack_rack, stack_slot)
+            if op_map:
+                geom = _farm.get("geometry") or _load_farm_geometry()
+                if geom.get("use_gcode", {}).get(op_map[0]):
+                    op_used = op_map[0]
+                    send_val = _motion.build_op(geom, op_used, rack=op_map[1], slot=op_map[2])
+        except Exception as e:
+            send_val, op_used = val, None
+            logger.warning(f"use_gcode-Auswertung fehlgeschlagen ({e}) — nutze Macro {val!r}")
+        _log(f"▶ {val}" + (f"  →  Printloom-G-code ({op_used})" if op_used else ""))
+        await _do_macro(send_val)
         if "GRAB_FROM_RACK" in val or val.startswith("GRAB_FROM_SLOT_"):
             _decrement_magazine()
             if job.get("slot") and job["slot"] != "1-0":
@@ -1885,6 +1928,12 @@ def _split_prep(steps: list) -> tuple:
 async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
                           poll_sec: int, min_min: int, prep_steps: list, fail_steps: list = []):
     steps = _filter_disabled(steps)
+    # Drucker-Geometrie einmal je Job laden → zwischenzeitliche Positions-Änderungen
+    # (Drucker-Tab) wirken ab dem nächsten Job. Nur wirksam, wo use_gcode[op] aktiv ist.
+    try:
+        _farm["geometry"] = _load_farm_geometry()
+    except Exception:
+        _farm["geometry"] = None
     groups: list = []
     for step in steps:
         if step.get("parallel") and groups:

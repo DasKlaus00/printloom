@@ -156,6 +156,49 @@ const EN_STRINGS = {
   'läuft…': 'running…',
   'Fach {0}': 'Slot {0}',
   'Konfigurator': 'Configurator',
+  // ── Drucker-Tab ──
+  'Drucker': 'Printer',
+  'Modell wählen, Positionen je Aufgabe einstellen und live testen — ohne Klipper-Config zu bearbeiten.':
+    'Pick a model, set the position of each task and test it live — without editing the Klipper config.',
+  '⚠ Erst jede Operation per „Test" prüfen und die Position feinjustieren. Falsche Werte können den Arm gegen den Drucker fahren. Danach je Operation „Farm nutzt diese Position" aktivieren.':
+    '⚠ Test every operation first and fine-tune the position. Wrong values can drive the arm into the printer. Then enable “Farm uses this position” per operation.',
+  '1 · Drucker-Modell': '1 · Printer model',
+  'geschlossen · mit Tür': 'enclosed · with door',
+  'offen · ohne Tür': 'open · no door',
+  'Farm nutzt aktuell die Geräte-Macros (keine App-Position aktiv).':
+    'Farm currently uses the device macros (no app position active).',
+  'Farm nutzt {0} App-Position(en). Rest über Geräte-Macros.':
+    'Farm uses {0} app position(s). Rest via device macros.',
+  '⌂ Referenzfahrt': '⌂ Home',
+  'Immer erst Referenzfahrt (OTTOEJECT_HOME), dann eine Operation testen. Printloom sendet den G-code direkt aus den Werten unten.':
+    'Always home first (OTTOEJECT_HOME), then test an operation. Printloom sends the G-code straight from the values below.',
+  'Referenzfahrt…': 'Homing…',
+  '▾ Gesendeten G-code ausblenden': '▾ Hide sent G-code',
+  '▸ Gesendeten G-code der letzten Aktion': '▸ Sent G-code of the last action',
+  '▶ Test': '▶ Test',
+  'Farm nutzt diese Position ✓': 'Farm uses this position ✓',
+  'Farm nutzt diese Position (aus → Geräte-Macro)': 'Farm uses this position (off → device macro)',
+  'Tür öffnen': 'Open door', 'Tür schließen': 'Close door',
+  'Start-X': 'Start X', 'Pin-Abst.': 'Pin dist.', 'd_to_pin': 'd_to_pin',
+  'Platte auswerfen': 'Eject plate', 'Platte einlegen': 'Load plate',
+  '{0} ist offen (ohne Tür) — Tür-Aktionen entfallen. In der Farm-Sequenz die Tür-Schritte weglassen (Sequenz-Editor).':
+    '{0} is open (no door) — door actions omitted. Remove the door steps from the farm sequence (Sequence Editor).',
+  '📦 Regal & Greifen': '📦 Rack & grab',
+  '▾ ausblenden': '▾ hide', '▸ anzeigen': '▸ show',
+  'Start-X (Regal 1)': 'Start X (rack 1)', 'x_unclamp': 'x_unclamp', 'first_z_flat': 'first_z_flat',
+  'Z-Schritt = +30': 'Z step = +30', 'Regal-Versatz X (mm)': 'Rack offset X (mm)', 'rack_x_gap': 'rack_x_gap',
+  'Regale': 'Racks', 'Lager-Fächer/Regal': 'Storage slots/rack',
+  'Magazin-Fach (oben, frische Platten)': 'Magazine slot (top, fresh plates)',
+  'Platte': 'Plate', 'Drucker hinter letztem Regal': 'Printer behind last rack',
+  'Regal': 'Rack', 'Fach': 'Slot',
+  '→ Anfahren': '→ Approach', 'Fach anfahren…': 'Approaching slot…',
+  '▶ Greifen testen': '▶ Test grab', 'Greifen…': 'Grabbing…',
+  '▶ Ablegen testen': '▶ Test store', 'Ablegen…': 'Storing…',
+  '„Anfahren" fährt nur vors Fach (greift nicht). Magazin = oberstes Fach ({0}) wird ohne Anheben gegriffen.':
+    '“Approach” only moves in front of the slot (no grab). Magazine = top slot ({0}) is grabbed without lifting.',
+  'Greifen': 'Grab', 'Ablegen': 'Store', 'Farm: {0} als App-G-code': 'Farm: {0} as app G-code',
+  'Printloom speichert diese Werte und sendet den G-code direkt (nur OTTOEJECT_HOME bleibt Geräte-Macro). Für die Auto-Farm wirken sie erst, wenn „Farm nutzt diese Position" für die jeweilige Operation aktiv ist — sonst fährt die Farm weiter die Geräte-Macros.':
+    'Printloom stores these values and sends the G-code directly (only OTTOEJECT_HOME stays a device macro). For the auto farm they take effect once “Farm uses this position” is enabled for the operation — otherwise the farm keeps running the device macros.',
   'Drucker & Regal einrichten → fertige Klipper-Config für die OTTOeject':
     'Set up printer & rack → ready-made Klipper config for the OTTOeject',
   '1 · Drucker': '1 · Printer',

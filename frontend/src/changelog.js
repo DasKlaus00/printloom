@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.93',
+    de: [
+      'Neuer Tab „Drucker" ersetzt den Konfigurator: Modell wählen (X1C, P1S, P1P, A1, K1C, Elegoo CC, Anycubic Kobra S1, Flashforge AD5X oder „Anderer") und die Position jeder Aufgabe direkt einstellen — Tür öffnen/schließen, Platte auswerfen/einlegen, Greifen/Ablegen. Jede Operation hat einen Live-Test-Knopf (Printloom sendet den G-code direkt aus den Werten; nur OTTOEJECT_HOME bleibt Geräte-Macro). Kein Bearbeiten der Klipper-Config mehr nötig.',
+      'Farm-Nutzung ist opt-in: je Operation ein Schalter „Farm nutzt diese Position". Standard AUS — die Auto-Farm fährt weiter die bewährten Geräte-Macros, bis du eine Operation nach dem Live-Test freischaltest. So wird nichts ungewollt umgestellt.',
+      'Der alte Konfigurator (inkl. Config-Export slots.cfg/printer_calibration_variables.cfg und Regal-Schema) ist entfernt — die Positionen leben jetzt in Printloom und werden gespeichert.',
+    ],
+    en: [
+      'New “Printer” tab replaces the configurator: pick a model (X1C, P1S, P1P, A1, K1C, Elegoo CC, Anycubic Kobra S1, Flashforge AD5X or “other”) and set the position of every task directly — open/close door, eject/load plate, grab/store. Each operation has a live test button (Printloom sends the G-code straight from the values; only OTTOEJECT_HOME stays a device macro). No more editing the Klipper config.',
+      'Farm use is opt-in: a “Farm uses this position” switch per operation. Default OFF — the auto farm keeps running the proven device macros until you enable an operation after the live test. Nothing gets switched over unintentionally.',
+      'The old configurator (incl. config export slots.cfg/printer_calibration_variables.cfg and rack schematic) is removed — the positions now live in Printloom and are saved.',
+    ],
+  },
+  {
     version: '1.0.92',
     de: [
       'Mehrere Regale korrekt: Auswurf, Einlegen und Tür öffnen/schließen wandern jetzt automatisch mit der Regalzahl mit (X + (Regale−1)·Regal-Versatz), damit der Drucker immer HINTER dem letzten Regal (ganz links) angefahren wird — vorher landete die Tür bei 3 Regalen mitten im Regal. Standard ist AN; ein Hinweis zeigt den Versatz, ausschaltbar unter „Koordinaten je Operation".',
