@@ -211,6 +211,7 @@ const EN_STRINGS = {
   'rack_x_gap · pro Regal': 'rack_x_gap · per rack',
   'Physische Regal-Positionen (mm). Regalzahl ({0}), Fächer/Regal ({1}) & Magazin-Fach ({2}) kommen global aus der Konfiguration → Rack Configuration.':
     'Physical rack positions (mm). Rack count ({0}), slots/rack ({1}) & magazine slot ({2}) come globally from Configuration → Rack Configuration.',
+  '→ effektiv X{0} (Drucker hinter Regal {1})': '→ effective X{0} (printer behind rack {1})',
   'Drucker & Regal einrichten → fertige Klipper-Config für die OTTOeject':
     'Set up printer & rack → ready-made Klipper config for the OTTOeject',
   '1 · Drucker': '1 · Printer',

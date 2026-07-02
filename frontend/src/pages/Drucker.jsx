@@ -36,7 +36,7 @@ function Toggle({ on, onClick, color = 'bg-blue-600' }) {
 /* Operations-Karte (Modul-Ebene → Eingabefelder verlieren beim Tippen nicht den Fokus).
    Entweder X/Y/Z-Werte ODER (Feinjustage) ein eigener, editierbarer G-code. */
 function OpCard({ op, icon, title, fields, extra, note, busy, gcodeOn, onTest, onToggle,
-                 overrideVal, canOverride, onLoadGcode, onChangeGcode, onClearGcode }) {
+                 overrideVal, canOverride, onLoadGcode, onChangeGcode, onClearGcode, effHint }) {
   const { tr } = useLanguage()
   const hasOverride = typeof overrideVal === 'string'
   return (
@@ -65,6 +65,7 @@ function OpCard({ op, icon, title, fields, extra, note, busy, gcodeOn, onTest, o
                 step={f.step} onChange={f.onChange} />
             ))}
           </div>
+          {effHint && <p className="text-[10px] text-blue-300">{effHint}</p>}
           {note && <p className="text-[9px] text-surface-600">{note}</p>}
           {canOverride && (
             <button onClick={() => onLoadGcode(op, extra)} className="text-[10px] text-blue-400 hover:text-blue-300">
@@ -151,7 +152,6 @@ export default function Drucker() {
       eject: { x: +eject.x, y: +eject.y, z: +eject.z },
       load:  { x: +load.x,  y: +load.y,  z: +load.z },
       door: hasDoor ? { open: { ...doorOpen }, close: { ...doorClose } } : null,
-      x_scales_with_racks: false,   // Direkteingabe: X = eingegebener Wert (kein Rack-Versatz)
     },
     use_gcode: { ...useGcode },
     gcode_override: gcodeOverride,
@@ -237,6 +237,9 @@ export default function Drucker() {
   }
 
   const activeCount = OPS.filter(o => useGcode[o]).length
+  // Drucker sitzt hinter dem letzten Regal → eject/load/Tür-X wandern mit der Regalzahl.
+  const xOff = numRacks > 1 ? (numRacks - 1) * (+rackGap || 0) : 0
+  const effHintFor = (b) => xOff ? tr('→ effektiv X{0} (Drucker hinter Regal {1})', Math.round((+b || 0) + xOff), numRacks) : null
 
   return (
     <div className="space-y-5">
@@ -294,7 +297,7 @@ export default function Drucker() {
             </p>
             <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-surface-800/50">
               <span className="text-[11px] text-surface-400">{tr('OTTOeject-Geschwindigkeit')}</span>
-              {[100, 200, 300, 400, 500].map(v => (
+              {[25, 50, 100, 200, 300, 400, 500].map(v => (
                 <button key={v} onClick={() => applySpeed(v)} disabled={jog.busy}
                   className={`text-[11px] px-2 py-1 rounded border transition-colors disabled:opacity-50 ${(+speedFactor || 100) === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>{v}%</button>
               ))}
@@ -321,6 +324,7 @@ export default function Drucker() {
               <OpCard op="open_door" icon="🚪" title={tr('Tür öffnen')}
                 busy={jog.busy} gcodeOn={useGcode.open_door} onTest={sendOp} onToggle={toggleGcode}
                 overrideVal={gcodeOverride.open_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
+                effHint={effHintFor(doorOpen.x)}
                 fields={[
                   { label: tr('Start-X'), value: doorOpen.x, onChange: v => setDoorOpen({ ...doorOpen, x: +v }) },
                   { label: tr('Y'), value: doorOpen.y, onChange: v => setDoorOpen({ ...doorOpen, y: +v }) },
@@ -332,6 +336,7 @@ export default function Drucker() {
               <OpCard op="close_door" icon="🚪" title={tr('Tür schließen')}
                 busy={jog.busy} gcodeOn={useGcode.close_door} onTest={sendOp} onToggle={toggleGcode}
                 overrideVal={gcodeOverride.close_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
+                effHint={effHintFor(doorClose.x)}
                 fields={[
                   { label: tr('Start-X'), value: doorClose.x, onChange: v => setDoorClose({ ...doorClose, x: +v }) },
                   { label: tr('Y'), value: doorClose.y, onChange: v => setDoorClose({ ...doorClose, y: +v }) },
@@ -342,6 +347,7 @@ export default function Drucker() {
             <OpCard op="eject" icon="⬆" title={tr('Platte auswerfen')}
               busy={jog.busy} gcodeOn={useGcode.eject} onTest={sendOp} onToggle={toggleGcode}
               overrideVal={gcodeOverride.eject} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
+              effHint={effHintFor(eject.x)}
               fields={[
                 { label: tr('Start-X'), value: eject.x, onChange: v => setEject({ ...eject, x: +v }) },
                 { label: tr('Y'), value: eject.y, onChange: v => setEject({ ...eject, y: +v }) },
@@ -350,6 +356,7 @@ export default function Drucker() {
             <OpCard op="load" icon="⬇" title={tr('Platte einlegen')}
               busy={jog.busy} gcodeOn={useGcode.load} onTest={sendOp} onToggle={toggleGcode}
               overrideVal={gcodeOverride.load} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
+              effHint={effHintFor(load.x)}
               fields={[
                 { label: tr('Start-X'), value: load.x, onChange: v => setLoad({ ...load, x: +v }) },
                 { label: tr('Y'), value: load.y, onChange: v => setLoad({ ...load, y: +v }) },

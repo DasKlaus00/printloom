@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.96',
+    de: [
+      'Drucker hinter dem letzten Regal: Auswurf, Einlegen und Tür wandern jetzt wieder korrekt mit der Regalzahl mit — X = eingegeben + (Regale−1)·Regal-Versatz, mit der GLOBALEN Regalzahl aus der Konfiguration. Bei 3 Regalen öffnet die Tür also weiter außen (hinter Regal 3), bei 1 Regal ohne Versatz. Jede Karte zeigt das effektive X an. (Wer den Drucker fix stehen hat: eigenen G-code nutzen — der wird absolut gesendet.)',
+      'Geschwindigkeit: zusätzlich 25 % und 50 % für langsame, vorsichtige Fahrten.',
+    ],
+    en: [
+      'Printer behind the last rack: eject, load and door again move correctly with the rack count — X = entered + (racks−1)·rack offset, using the GLOBAL rack count from Configuration. With 3 racks the door opens further out (behind rack 3), with 1 rack no offset. Each card shows the effective X. (Fixed printer position: use custom G-code — it is sent absolutely.)',
+      'Speed: added 25 % and 50 % for slow, careful moves.',
+    ],
+  },
+  {
     version: '1.0.95',
     de: [
       'Regalzahl, Fächer/Regal und Magazin-Fach gibt es jetzt nur noch an EINER Stelle: Konfiguration → Rack Configuration. Der Drucker-Tab (und der erzeugte G-code) lesen sie global von dort — die doppelten Felder im Drucker-Tab sind weg. Im Drucker-Tab bleiben nur die physischen mm-Werte (Start-X, Regal-Versatz X, Höhe Fach 1, Fach-Abstand). Behebt u. a. eine mögliche Magazin-Fach-Abweichung (falsche NOLIFT-Erkennung).',

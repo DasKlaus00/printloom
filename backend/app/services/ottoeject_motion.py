@@ -38,7 +38,6 @@ DEFAULT_GEOMETRY = {
         "load":  {"x": 425, "y": 340, "z": 17.5},
         "door":  {"open":  {"x": 104, "y": 319, "z": 105, "d": 370},
                   "close": {"x": 103, "y": 322, "z": 105, "d": 375}},
-        "x_scales_with_racks": False,  # Direkteingabe im Drucker-Tab: X = eingegebener Wert (kein Rack-Versatz)
     },
     "speed_factor": 100,     # M220-Vorschub in % (100 = normal, bis 500 schneller) für App-G-code
     "gcode_override": {},    # {op: "roher G-code"} — Feinjustage, überschreibt die berechnete Bewegung
@@ -93,9 +92,10 @@ def apply_rack_config(g: dict, rack_cfg: dict | None) -> dict:
 
 
 def _printer_x_off(g: dict) -> float:
-    if g["printer"].get("x_scales_with_racks"):
-        return (int(g["racks"]) - 1) * float(g["storage"]["rack_x_gap"])
-    return 0.0
+    # Drucker sitzt hinter dem letzten Regal → eject/load/Tür-X += (Regale−1)·rack_x_gap.
+    # Regalzahl kommt global aus der Rack-Konfiguration (apply_rack_config). Wer den Drucker
+    # fix stehen hat, nutzt den eigenen G-code (gcode_override, wird absolut gesendet).
+    return (int(g.get("racks", 1)) - 1) * float(g["storage"]["rack_x_gap"])
 
 
 def slot_position(g: dict, rack: int, slot: int) -> tuple[float, float, float, float]:
