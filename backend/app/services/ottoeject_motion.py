@@ -8,11 +8,13 @@ Die Bewegungsabläufe sind 1:1 aus den getesteten OTTOmat3D-Macros portiert
 (ottoeject_macros.cfg): _GRAB_FROM_SLOT, _GRAB_FROM_SLOT_NOLIFT, _STORE_TO_SLOT,
 _EJECT_FROM_PRINTER, _LOAD_ONTO_PRINTER, _OPEN_DOOR, _CLOSE_DOOR.
 
-Skalierung (von rechts aufgebaut, Regal 1 bei x_unclamp, jedes weitere +rack_x_gap;
-Drucker optional hinter dem letzten Regal):
-    rack_x(rack)  = x_unclamp + (rack-1)*rack_x_gap + rack_x_trim[rack]
+Skalierung: Home ist ganz RECHTS (fester Anker), der Drucker sitzt LINKS und wandert
+mit der Regalzahl mit. R1 = Regal DIREKT am Drucker (druckerseitiges Ende), Rn = Regal
+am Home-Anker (x_unclamp). Zusatzregale werden Richtung Drucker eingefügt; gefüllt wird
+R1→Rn = vom Drucker weg nach rechts (im Bild links→rechts):
+    rack_x(rack)  = x_unclamp + (racks-rack)*rack_x_gap + rack_x_trim[rack]
     z_flat(slot)  = first_z_flat + (slot-1)*(slot_gap+30) + rack_z_trim[rack]
-    printer_x_off = (racks-1)*rack_x_gap   (nur wenn printer.x_scales_with_racks)
+    printer_x_off = (racks-1)*rack_x_gap   (Drucker wandert mit; Home rechts ist fest)
 """
 from __future__ import annotations
 import math
@@ -148,7 +150,8 @@ def apply_rack_config(g: dict, rack_cfg: dict | None) -> dict:
 
 
 def _printer_x_off(g: dict) -> float:
-    # Drucker sitzt hinter dem letzten Regal → eject/load/Tür-X += (Regale−1)·rack_x_gap.
+    # Drucker sitzt am druckerseitigen Ende (vor R1) und WANDERT mit der Regalzahl mit,
+    # weil der Home-Anker rechts fest ist → eject/load/Tür-X += (Regale−1)·rack_x_gap.
     # Regalzahl kommt global aus der Rack-Konfiguration (apply_rack_config). Wer den Drucker
     # fix stehen hat, nutzt den eigenen G-code (gcode_override, wird absolut gesendet).
     return (int(g.get("racks", 1)) - 1) * float(g["storage"]["rack_x_gap"])
@@ -157,10 +160,15 @@ def _printer_x_off(g: dict) -> float:
 def slot_position(g: dict, rack: int, slot: int) -> tuple[float, float, float, float]:
     """(x_unclamp, y_engage, z_flat, y_pullback_limit) für ein Fach — inkl. Skalierung."""
     s = g["storage"]
+    nr = int(g.get("racks", 1) or 1)
     xt = float(g.get("rack_x_trim", {}).get(str(rack), 0) or 0)
     zt = float(g.get("rack_z_trim", {}).get(str(rack), 0) or 0)
     step = float(s["slot_gap"]) + SLOT_Z_EXTRA
-    x = float(s["x_unclamp"]) + (int(rack) - 1) * float(s["rack_x_gap"]) + xt
+    # R1 = Regal DIREKT am Drucker (druckerseitiges Ende = x_unclamp + (racks-1)*gap),
+    # Rn = Regal am Home-Anker (x_unclamp, ganz rechts). So füllt die Farm R1→Rn vom
+    # Drucker weg nach rechts. Home fest, Drucker wandert mit (siehe _printer_x_off).
+    # Bei nur 1 Regal identisch zu früher (rack=1=nr → Offset 0 → x_unclamp).
+    x = float(s["x_unclamp"]) + (nr - int(rack)) * float(s["rack_x_gap"]) + xt
     z = float(s["first_z_flat"]) + (int(slot) - 1) * step + zt
     return x, float(s["y_engage"]), z, float(s["y_pullback_limit"])
 

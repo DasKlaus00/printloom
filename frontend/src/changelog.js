@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.103',
+    de: [
+      'Regal-Nummerierung korrigiert: R1 ist jetzt das Regal DIREKT am Drucker, R2/R3/… gehen nach rechts davon weg (Richtung Home-Anker). Eingelagert wird von R1‑1 bis R1‑6, dann R2‑1…, IMMER von links (Drucker) nach rechts. Vorher war R1 das vom Drucker am weitesten entfernte Regal — die Sortierung lief verkehrt herum. Der Drucker wandert wie gehabt mit der Regalzahl mit (Home rechts = fester Anker), skalierbar 1–99 Regale. Bei nur 1 Regal ändert sich nichts.',
+    ],
+    en: [
+      'Rack numbering fixed: R1 is now the rack DIRECTLY at the printer, R2/R3/… extend to the right away from it (toward the home anchor). Storing goes R1‑1…R1‑6, then R2‑1…, ALWAYS left (printer) to right. Previously R1 was the rack farthest from the printer, so sorting ran backwards. The printer still shifts with the rack count (home anchor on the right is fixed), scalable 1–99 racks. With a single rack nothing changes.',
+    ],
+  },
+  {
     version: '1.0.102',
     de: [
       'Neue Fehlerstrategie „Platte auswerfen & weiter" für „Druck fehlgeschlagen": Bei FAILED fährt das Bett auf Z200, die Tür wird geöffnet, die fehlgeschlagene Platte ausgeworfen und ins vorgesehene Fach eingelagert — danach startet automatisch der nächste Job (der eine frische Platte holt). Behebt den gemeldeten Fehler, dass nach einem Fehldruck sofort eine neue Platte geholt wurde, obwohl die alte noch im Drucker lag (Tür zu, Bett nicht auf Z200) — Kollisionsgefahr.',
