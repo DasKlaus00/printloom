@@ -2,8 +2,30 @@ import axios from 'axios'
 
 const api = axios.create({ baseURL: '/api' })
 
+// Nach einem Auto-Reload (Watchtower-Update → Container gerade neu gestartet) kann
+// die erste Geräteabfrage ins noch nicht bereite Backend laufen — vorher blieb die
+// Geräteliste dann leer, bis der Nutzer F5 drückte. Deshalb kurz nachfassen bei
+// FEHLER oder bei LEERER Antwort OBWOHL das Setup schon durch ist (dann ist „leer"
+// nicht echt). Eine frische Installation (kein Setup) liefert legitim leer → kein Retry.
+const _setupDone = () => { try { return !!localStorage.getItem('ottomat3d_setup_done') } catch { return false } }
+async function _listDevices() {
+  let last
+  for (let i = 0; i < 4; i++) {
+    try {
+      const r = await api.get('/devices/')
+      if (!Array.isArray(r.data) || r.data.length > 0 || !_setupDone()) return r
+      last = r
+    } catch (e) {
+      last = e
+    }
+    if (i < 3) await new Promise(res => setTimeout(res, 1000))
+  }
+  if (last && last.data !== undefined) return last   // gültige (leere) Antwort durchreichen
+  throw last
+}
+
 export const deviceService = {
-  listDevices:  ()         => api.get('/devices/'),
+  listDevices:  ()         => _listDevices(),
   getDevice:    (id)       => api.get(`/devices/${id}`),
   createDevice: (data)     => api.post('/devices/', data),
   updateDevice: (id, data) => api.put(`/devices/${id}`, data),

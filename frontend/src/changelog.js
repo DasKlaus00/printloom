@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.100',
+    de: [
+      'Fehler behoben: Im Sequenz-Editor stürzte die Seite ab („Fehler auf dieser Seite"), sobald man einen Schritt per ▶ auslösen wollte. Ursache war eine Server-Fehlermeldung, die als Objekt statt als Text angezeigt wurde. Zusätzlich funktioniert der Einzel-Test jetzt für ALLE Makros (auch GRAB_FROM_RACK, MOVE_TO_PRINTER … mit Platzhaltern), nicht nur für die feste Liste — und Fehler erscheinen jetzt als lesbarer Text.',
+      'Fehler behoben: Direkt nach einem Update war die Geräteliste manchmal leer (erst ein F5 brachte die Geräte zurück). Die App fragt jetzt kurz nach, wenn das gerade neu gestartete Backend noch nicht bereit war.',
+    ],
+    en: [
+      'Bug fix: the Sequence editor crashed (“Error on this page”) as soon as you triggered a step with ▶. The cause was a server error being rendered as an object instead of text. Single-step test now also works for ALL macros (including GRAB_FROM_RACK, MOVE_TO_PRINTER … with placeholders), not just the fixed list — and errors now show as readable text.',
+      'Bug fix: right after an update the device list was sometimes empty (only an F5 brought the devices back). The app now retries briefly when the just-restarted backend was not ready yet.',
+    ],
+  },
+  {
     version: '1.0.99',
     de: [
       'Sequenz-Editor: neue Printloom-Op „Aus Magazin holen" — greift die frische Platte immer aus dem Magazin-Fach des Regals (global gesetztes Fach, z. B. 7) und zwar mit NOLIFT (die Platten liegen flach gestapelt). Ergänzt „Platte holen" (aus einem normalen Fach, mit Anheben).',

@@ -28,6 +28,17 @@ function useAppOps() {
 }
 const appOpLabel = (ops, key) => (ops.find(o => o.key === key) || {}).label_de || key
 
+// FastAPI-Fehler robust in Text wandeln: `detail` kann ein String, eine Pydantic-
+// Validierungsliste [{type,loc,msg,…}] oder ein Objekt sein. NIE direkt rendern —
+// ein Objekt als React-Child löst „Minified React error #31" aus.
+function errText(e) {
+  const d = e?.response?.data?.detail
+  if (typeof d === 'string') return d
+  if (Array.isArray(d)) return d.map(x => x?.msg || (typeof x === 'string' ? x : JSON.stringify(x))).join('; ')
+  if (d && typeof d === 'object') return d.msg || JSON.stringify(d)
+  return e?.message || 'Fehler'
+}
+
 const TYPE_META = {
   macro:          { label: 'OTTOeject Makro',  icon: '▶',    color: 'text-violet-400',  bg: 'bg-violet-950/20',  border: 'border-violet-900/40' },
   app_op:         { label: 'Printloom-Op',     icon: '◆',    color: 'text-fuchsia-400', bg: 'bg-fuchsia-950/20', border: 'border-fuchsia-900/40' },
@@ -535,7 +546,13 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true 
   const runStep = async (step) => {
     try {
       if (step.type === 'macro') {
-        await controlService.executeMacro({ macro: step.value })
+        // Platzhalter mit Test-Standardwerten füllen und als rohes Klipper-Gcode
+        // senden — so laufen ALLE Sequenz-Makros (auch parametrierte wie
+        // GRAB_FROM_RACK/MOVE_TO_PRINTER), nicht nur die feste Allowlist von /macro.
+        const g = String(step.value)
+          .replace(/\{rack\}/g, '1').replace(/\{slot\}/g, '1')
+          .replace(/\{stack_rack\}/g, '1').replace(/\{stack_slot\}/g, '7')
+        await controlService.sendKlipperGcode(g)
       } else if (step.type === 'klipper_gcode') {
         await controlService.sendKlipperGcode(step.value)
       } else if (step.type === 'app_op') {
@@ -544,7 +561,7 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true 
       }
       setRunFeedback({ ok: true, msg: `✓ ${step.value}` })
     } catch (e) {
-      setRunFeedback({ ok: false, msg: e.response?.data?.detail ?? e.message })
+      setRunFeedback({ ok: false, msg: errText(e) })
     }
     setTimeout(() => setRunFeedback(null), 3000)
   }
