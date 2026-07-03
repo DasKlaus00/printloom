@@ -217,6 +217,9 @@ const EN_STRINGS = {
   '✕ zurück zu Werten': '✕ back to values',
   'Wird 1:1 an den OTTOeject gesendet. „Test" fährt genau diesen G-code.':
     'Sent verbatim to the OTTOeject. “Test” runs exactly this G-code.',
+  'Platzhalter für Regale/Fächer:': 'Placeholders for racks/slots:',
+  'EIN G-code fährt so jedes Regal (R1 am Drucker) und Fach korrekt an.':
+    'One G-code then reaches every rack (R1 at the printer) and slot correctly.',
   '⚙ Eigenen G-code bearbeiten (Feinjustage)': '⚙ Edit custom G-code (fine-tune)',
   'OTTOeject-Geschwindigkeit': 'OTTOeject speed',
   'M220-Vorschub · gilt für Test & aktivierte Farm-Operationen':

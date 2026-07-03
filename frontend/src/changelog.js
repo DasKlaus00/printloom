@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.105',
+    de: [
+      'Eigener G-code skaliert jetzt über mehrere Regale/Fächer. In den G-code-Feldern (Drucker-Tab) kannst du Platzhalter verwenden, die Printloom pro Regal/Fach einsetzt: {rack_x} = X-Position des Regals, {slot_z} = Z-Höhe des Fachs, {mag_z} = Z des Magazinfachs, {y_engage}/{y_pullback} = Y-Werte, {rack}/{slot} = Nummern. So schreibst du die Bewegung EINMAL und sie fährt jedes Regal (R1 am Drucker … Rn am Home-Ende) und jedes Fach korrekt an. Behebt: fixer G-code ohne Platzhalter schickte JEDES Regal an denselben Punkt (die fertige Platte landete immer im selben Fach).',
+    ],
+    en: [
+      'Custom G-code now scales across racks/slots. In the G-code fields (Printer tab) you can use placeholders that Printloom fills in per rack/slot: {rack_x} = the rack’s X position, {slot_z} = the slot’s Z height, {mag_z} = magazine-slot Z, {y_engage}/{y_pullback} = Y values, {rack}/{slot} = numbers. Write the motion ONCE and it reaches every rack (R1 at the printer … Rn at the home end) and every slot correctly. Fixes: fixed G-code without placeholders sent EVERY rack to the same point (finished plates always landed in the same slot).',
+    ],
+  },
+  {
     version: '1.0.104',
     de: [
       'Robuster nach einem Update: Ein Tab, der noch die alte Version geladen hatte, zeigte beim Seitenwechsel manchmal „Fehler auf dieser Seite — Unable to preload CSS …" (die neuen Build-Dateien haben neue Namen, die alten sind weg). Die App lädt jetzt in dem Fall automatisch EINMAL neu und holt die frische Version (mit Schutz gegen Endlos-Neuladen). Der „Neu laden"-Knopf lädt die Seite jetzt wirklich neu statt nur neu zu rendern.',

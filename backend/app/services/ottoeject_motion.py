@@ -401,7 +401,22 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
     # Eigener G-code (Feinjustage im Drucker-Tab) hat Vorrang — 1:1 senden.
     ov = (g.get("gcode_override") or {}).get(op)
     if isinstance(ov, str) and ov.strip():
-        s = ov.replace("{rack}", str(int(rack))).replace("{slot}", str(int(slot))).strip()
+        # Platzhalter, damit EIN eigener G-code über alle Regale/Fächer skaliert — statt fixer
+        # Koordinaten, die jedes Regal an denselben Punkt schicken. Werte aus der Kalibrierung
+        # (x_unclamp/rack_x_gap/first_z_flat/slot_gap); R1 = druckerseitig (siehe slot_position):
+        #   {rack_x}=X-Position des Regals · {slot_z}=Z-Höhe des Fachs · {mag_z}=Z des Magazin-
+        #   fachs · {y_engage}/{y_pullback}=Y-Werte · {rack}/{slot}=Nummern.
+        rx, ry, rz, ypb = slot_position(g, rack, slot)
+        _mag = magazine_slot(g)
+        magz = slot_position(g, rack, _mag)[2] if _mag > 0 else rz
+        s = ov
+        for k, v in (
+            ("{rack_x}", f"{rx:g}"), ("{slot_z}", f"{rz:g}"), ("{mag_z}", f"{magz:g}"),
+            ("{y_engage}", f"{ry:g}"), ("{y_pullback}", f"{ypb:g}"),
+            ("{rack}", str(int(rack))), ("{slot}", str(int(slot))),
+        ):
+            s = s.replace(k, v)
+        s = s.strip()
         return speed + (s if s.rstrip().endswith("M400") else s + "\nM400")
     if op == "grab":
         lines = grab_from_rack(g, rack, slot, nolift)

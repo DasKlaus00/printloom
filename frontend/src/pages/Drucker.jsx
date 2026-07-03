@@ -85,6 +85,11 @@ function OpCard({ op, icon, title, fields = [], extra, note, busy, gcodeOn, onTe
           <textarea value={overrideVal} onChange={e => onChangeGcode(op, e.target.value)} spellCheck={false} rows={8}
             className="w-full text-[11px] leading-snug font-mono bg-surface-900/70 border border-surface-700/60 rounded-lg p-2 whitespace-pre" />
           <p className="text-[9px] text-surface-600">{tr('Wird 1:1 an den OTTOeject gesendet. „Test" fährt genau diesen G-code.')}</p>
+          <p className="text-[9px] text-blue-400/80 leading-relaxed">
+            {tr('Platzhalter für Regale/Fächer:')}{' '}
+            <span className="font-mono text-blue-300">{'{rack_x} {slot_z} {mag_z} {y_engage} {y_pullback} {rack} {slot}'}</span>
+            {' — '}{tr('EIN G-code fährt so jedes Regal (R1 am Drucker) und Fach korrekt an.')}
+          </p>
         </div>
       ) : (
         <>
