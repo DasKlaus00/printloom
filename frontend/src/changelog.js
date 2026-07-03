@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.101',
+    de: [
+      'Fehler behoben: Beim Auslösen eines Schritts im Sequenz-Editor (▶) kam „Network Error", obwohl der OTTOeject verbunden war. Ursache: die Bewegung wurde synchron abgewartet — bei einem echten Greifen/Auswerfen (20–60 s) brach die Verbindung vorher ab (zu kurzer Timeout bzw. Proxy). Der ▶-Test kehrt jetzt zurück, sobald die Bewegung GESTARTET ist, und zeigt „läuft…" statt abzubrechen. Betrifft Makro-, Klipper-GCode- und Printloom-Op-Schritte sowie die Live-Tests im Drucker-Tab und in der Steuerung.',
+    ],
+    en: [
+      'Bug fix: triggering a step in the Sequence editor (▶) returned “Network Error” even though the OTTOeject was connected. Cause: the move was awaited synchronously — a real grab/eject (20–60 s) outlasted the timeout (or a proxy) and the connection dropped first. The ▶ test now returns as soon as the move has STARTED and shows “running…” instead of failing. Affects macro, Klipper-GCode and Printloom-op steps as well as the live tests in the Printer and Control tabs.',
+    ],
+  },
+  {
     version: '1.0.100',
     de: [
       'Fehler behoben: Im Sequenz-Editor stürzte die Seite ab („Fehler auf dieser Seite"), sobald man einen Schritt per ▶ auslösen wollte. Ursache war eine Server-Fehlermeldung, die als Objekt statt als Text angezeigt wurde. Zusätzlich funktioniert der Einzel-Test jetzt für ALLE Makros (auch GRAB_FROM_RACK, MOVE_TO_PRINTER … mit Platzhaltern), nicht nur für die feste Liste — und Fehler erscheinen jetzt als lesbarer Text.',

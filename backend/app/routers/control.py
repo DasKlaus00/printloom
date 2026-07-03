@@ -159,9 +159,42 @@ async def resume_operations(db: Session = Depends(get_db)):
         "message": "Operations resumed"
     }
 
+# Moonraker's /printer/gcode/script blocks until the G-code has FULLY executed. For a
+# manual trigger/test that is fragile: a real grab/eject/place move runs 20-60 s — longer
+# than any sane HTTP timeout, and longer than a reverse proxy (or the vite dev proxy) in
+# front of Printloom will hold the connection open. The socket gets reset before a result
+# arrives → the browser shows "Network Error". For a trigger we only need Klipper to ACCEPT
+# and START the move; once it is running, that is success. So we wait a short window: the
+# move finishes fast → report done; it is still moving when the window elapses → report
+# started (it keeps running on the machine). Only a fast rejection (unknown macro, not
+# homed) or an unreachable host is a real error.
+_MOONRAKER_TRIGGER_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+
+
+async def _fire_moonraker_script(url: str, script: str) -> bool:
+    """POST a G-code script to Moonraker and wait briefly. Returns True if the move is
+    still running when the wait window elapsed, False if it already finished. Raises
+    HTTPException on a real failure (Klipper rejected it, or the host is unreachable)."""
+    try:
+        async with httpx.AsyncClient(timeout=_MOONRAKER_TRIGGER_TIMEOUT) as client:
+            r = await client.post(url, json={"script": script})
+        if r.status_code != 200:
+            raise HTTPException(502, f"Moonraker: {r.text}")
+        return False
+    except httpx.ReadTimeout:
+        # Connected + command sent, but the move is still running → treat as started.
+        return True
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
+
+
 @router.post("/klipper/gcode")
 async def send_klipper_gcode(request: dict, db: Session = Depends(get_db)):
-    """Send raw GCode to Klipper via Moonraker (for Z movement, jog, etc.)."""
+    """Send raw GCode to Klipper via Moonraker (Z move, jog, single-step test). Returns as
+    soon as the move has started — never holds the request open for the whole physical
+    motion (see _fire_moonraker_script)."""
     gcode = request.get("gcode", "").strip()
     if not gcode:
         raise HTTPException(400, "Kein GCode angegeben")
@@ -171,16 +204,8 @@ async def send_klipper_gcode(request: dict, db: Session = Depends(get_db)):
         raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
 
     url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.post(url, json={"script": gcode})
-        if r.status_code != 200:
-            raise HTTPException(502, f"Moonraker: {r.text}")
-        return {"success": True, "gcode": gcode}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
+    running = await _fire_moonraker_script(url, gcode)
+    return {"success": True, "gcode": gcode, "running": running}
 
 
 @router.get("/klipper/position")
@@ -447,16 +472,8 @@ async def run_ottoeject_op(request: dict, db: Session = Depends(get_db)):
     if not klipper:
         raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
     url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            r = await client.post(url, json={"script": script})
-        if r.status_code != 200:
-            raise HTTPException(502, f"Moonraker: {r.text}")
-        return {"success": True, "op": op, "script": script}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
+    running = await _fire_moonraker_script(url, script)
+    return {"success": True, "op": op, "script": script, "running": running}
 
 
 @router.post("/ottoeject/preview")

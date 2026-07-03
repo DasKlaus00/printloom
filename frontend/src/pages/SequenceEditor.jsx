@@ -545,6 +545,7 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true 
   const [runFeedback, setRunFeedback] = useState(null)
   const runStep = async (step) => {
     try {
+      let r
       if (step.type === 'macro') {
         // Platzhalter mit Test-Standardwerten füllen und als rohes Klipper-Gcode
         // senden — so laufen ALLE Sequenz-Makros (auch parametrierte wie
@@ -552,14 +553,17 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true 
         const g = String(step.value)
           .replace(/\{rack\}/g, '1').replace(/\{slot\}/g, '1')
           .replace(/\{stack_rack\}/g, '1').replace(/\{stack_slot\}/g, '7')
-        await controlService.sendKlipperGcode(g)
+        r = await controlService.sendKlipperGcode(g)
       } else if (step.type === 'klipper_gcode') {
-        await controlService.sendKlipperGcode(step.value)
+        r = await controlService.sendKlipperGcode(step.value)
       } else if (step.type === 'app_op') {
         // Printloom-Op live testen — Backend lädt die gespeicherte Drucker-Geometrie.
-        await controlService.runOp({ op: step.value })
+        r = await controlService.runOp({ op: step.value })
       }
-      setRunFeedback({ ok: true, msg: `✓ ${step.value}` })
+      // Das Backend kehrt zurück, sobald die Bewegung GESTARTET ist (blockiert nicht bis
+      // zum Ende der langen Fahrt) — running=true heißt „läuft noch auf der Maschine".
+      const running = !!r?.data?.running
+      setRunFeedback({ ok: true, msg: running ? `▶ ${step.value} — läuft…` : `✓ ${step.value}` })
     } catch (e) {
       setRunFeedback({ ok: false, msg: errText(e) })
     }
