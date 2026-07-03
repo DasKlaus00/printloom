@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.104',
+    de: [
+      'Robuster nach einem Update: Ein Tab, der noch die alte Version geladen hatte, zeigte beim Seitenwechsel manchmal „Fehler auf dieser Seite — Unable to preload CSS …" (die neuen Build-Dateien haben neue Namen, die alten sind weg). Die App lädt jetzt in dem Fall automatisch EINMAL neu und holt die frische Version (mit Schutz gegen Endlos-Neuladen). Der „Neu laden"-Knopf lädt die Seite jetzt wirklich neu statt nur neu zu rendern.',
+      'Die Status-Anzeigen „Drucker/Klipper" oben flackern beim Update nicht mehr sofort rot, wenn das Backend kurz neu startet — erst nach 2 Fehlversuchen, und die Anzeige erholt sich in Sekunden (schnelleres Nachfassen) statt erst beim nächsten 30-Sekunden-Poll. Behebt die „mal Network Error / alles rot"-Aussetzer nach einem Update.',
+    ],
+    en: [
+      'More robust after an update: a tab still running the old version sometimes showed “Error on this page — Unable to preload CSS …” when navigating (the new build’s files have new hashed names, the old ones are gone). The app now automatically reloads ONCE in that case to fetch the fresh version (with a guard against reload loops). The “Reload” button now truly reloads the page instead of only re-rendering.',
+      'The “Printer/Klipper” status pills at the top no longer flash red the instant the backend briefly restarts during an update — only after 2 failed checks, and they recover within seconds (faster re-poll) instead of waiting for the next 30-second poll. Fixes the occasional “Network Error / everything red” blips after an update.',
+    ],
+  },
+  {
     version: '1.0.103',
     de: [
       'Regal-Nummerierung korrigiert: R1 ist jetzt das Regal DIREKT am Drucker, R2/R3/… gehen nach rechts davon weg (Richtung Home-Anker). Eingelagert wird von R1‑1 bis R1‑6, dann R2‑1…, IMMER von links (Drucker) nach rechts. Vorher war R1 das vom Drucker am weitesten entfernte Regal — die Sortierung lief verkehrt herum. Der Drucker wandert wie gehabt mit der Regalzahl mit (Home rechts = fester Anker), skalierbar 1–99 Regale. Bei nur 1 Regal ändert sich nichts.',

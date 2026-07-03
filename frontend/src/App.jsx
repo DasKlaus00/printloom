@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, Component, Suspense } from 'react'
+import { isChunkLoadError, reloadOnceForStaleChunk } from './services/reloadGuard'
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -8,15 +9,24 @@ class ErrorBoundary extends Component {
   static getDerivedStateFromError(error) {
     return { hasError: true, error }
   }
-  componentDidCatch() {}
-  reset() { this.setState({ hasError: false, error: null }) }
+  componentDidCatch(error) {
+    // Stale-Chunk nach Update (alter Tab lädt gelöschtes Asset) → einmal hart neu laden
+    // holt die frische Version. reset() würde nur neu rendern und wieder scheitern.
+    if (isChunkLoadError(error)) reloadOnceForStaleChunk()
+  }
   render() {
     if (this.state.hasError) {
+      const stale = isChunkLoadError(this.state.error)
       return (
         <div className="p-6 space-y-3">
-          <p className="text-red-400 font-semibold text-sm">Fehler auf dieser Seite</p>
-          <p className="text-surface-500 text-xs font-mono">{String(this.state.error)}</p>
-          <button onClick={() => this.reset()} className="btn-secondary text-xs">Neu laden</button>
+          <p className="text-red-400 font-semibold text-sm">
+            {stale ? 'Neue Version verfügbar' : 'Fehler auf dieser Seite'}
+          </p>
+          <p className="text-surface-500 text-xs font-mono">
+            {stale ? 'Die App wurde aktualisiert — bitte neu laden.' : String(this.state.error)}
+          </p>
+          {/* Echter Seiten-Reload (nicht nur Re-Render) → holt frische index.html + Assets. */}
+          <button onClick={() => window.location.reload()} className="btn-secondary text-xs">Neu laden</button>
         </div>
       )
     }
@@ -257,24 +267,36 @@ function App() {
     }
   }, [])
 
-  /* ── Online / health check (local backend) ────────────────── */
+  /* ── Online / health check (local backend) ──────────────────
+     Transiente Blips (Backend-Neustart nach Update) NICHT sofort rot zeigen: erst nach
+     2 Fehlversuchen offline, und nach einem Fehler schneller nachfassen (4 s statt 30 s)
+     → die Anzeige erholt sich in Sekunden statt erst beim nächsten regulären Poll. */
   useEffect(() => {
-    const check = () =>
-      healthService.check().then(() => setOnline(true)).catch(() => setOnline(false))
-    check()
-    const t = setInterval(check, 30000)
-    return () => clearInterval(t)
+    let fails = 0, timer
+    const run = () => {
+      healthService.check()
+        .then(() => { fails = 0; setOnline(true); timer = setTimeout(run, 30000) })
+        .catch(() => {
+          fails += 1
+          if (fails >= 2) setOnline(false)
+          timer = setTimeout(run, fails >= 2 ? 15000 : 4000)
+        })
+    }
+    run()
+    return () => clearTimeout(timer)
   }, [])
 
   /* ── Multi-target health: printer · klipper ──────────────── */
   useEffect(() => {
-    const check = () =>
+    let timer
+    const run = () => {
       healthService.targets()
-        .then(r => setTargets(r.data))
-        .catch(() => setTargets(null))
-    check()
-    const t = setInterval(check, 30000)
-    return () => clearInterval(t)
+        .then(r => { setTargets(r.data); timer = setTimeout(run, 30000) })
+        // Bei einem Blip den LETZTEN Stand behalten (nicht auf Grau springen) + schnell nachfassen.
+        .catch(() => { timer = setTimeout(run, 5000) })
+    }
+    run()
+    return () => clearTimeout(timer)
   }, [])
 
   const pageTitle = {
