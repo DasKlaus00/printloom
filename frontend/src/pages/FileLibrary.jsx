@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { fileService, folderService, printerService, deviceService, filamentService, autofarmService } from '../services/api'
-import { useAutoRefresh } from '../services/useAutoRefresh'
+import { useAutoRefresh, usePageActive } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 import { colorLabel } from '../services/colorNames'
@@ -521,6 +521,12 @@ function FileLibrary() {
       .catch(() => {})
   }, [])
 
+  // Versteckt gemountete Seite: AMS-Poll pausieren (Ref, damit der Effekt mit dem
+  // 30-s-Intervall nicht bei jedem Seitenwechsel neu aufgebaut wird).
+  const pageActive = usePageActive()
+  const pageActiveRef = useRef(pageActive)
+  useEffect(() => { pageActiveRef.current = pageActive }, [pageActive])
+
   useEffect(() => {
     if (!bambuId) return
     let cancelled = false
@@ -549,7 +555,9 @@ function FileLibrary() {
         .catch(() => {})
     }
     loadAms()
-    const t = setInterval(loadAms, 30000)   // periodisch auffrischen (erholt sich nach Offline)
+    // Periodisch auffrischen (erholt sich nach Offline) — aber nur solange die Seite
+    // sichtbar ist; versteckt gemountete Seiten sollen nicht ewig weiterpollen.
+    const t = setInterval(() => { if (pageActiveRef.current) loadAms() }, 30000)
     return () => { cancelled = true; clearInterval(t) }
   }, [bambuId])
 

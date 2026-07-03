@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.106',
+    de: [
+      'Deutlich weniger CPU-Last: Die X1C-Kamera läuft jetzt über EINEN geteilten Video-Prozess pro Drucker — egal wie viele Ansichten/Geräte zuschauen (vorher: ein eigener ffmpeg PRO Zuschauer, je ~1 CPU-Kern, und da der Drucker nur EINEN Kamera-Zugriff erlaubt, warfen sich mehrere gegenseitig raus → Dauer-Reconnects, hohe Grundlast). Der Prozess stoppt ~5 s nachdem der letzte Zuschauer weg ist. Snapshots bedienen sich am laufenden Stream, statt ihn zu unterbrechen.',
+      'Die Kamera in der Steuerung pausiert jetzt, wenn die Seite im Hintergrund ist (wie in Auto Farm) — vorher lief der Server-Transcode ewig weiter, sobald man die Steuerung einmal besucht hatte.',
+      'Versteckte Seiten fragen nicht mehr dauerhaft Daten ab: Einmal besuchte Seiten bleiben zwar im Speicher (schneller Wechsel), aber ihr Auto-Refresh pausiert jetzt im Hintergrund und frischt beim Zurückwechseln sofort auf. Spart dauerhaft ~1–2 Anfragen pro Sekunde.',
+      'Kleinere Einsparungen: Kammerlicht wird höchstens einmal pro Minute geschaltet (statt bei jedem Kamerabild), Kamera-Snapshots blockieren keine anderen Anfragen mehr, und der Live-Status (WebSocket + /status) überträgt die interne Drucker-Geometrie nicht mehr mit.',
+    ],
+    en: [
+      'Much lower CPU load: the X1C camera now runs through ONE shared video process per printer — no matter how many views/devices watch (before: a separate ffmpeg PER viewer at ~1 CPU core each, and since the printer allows only ONE camera client they kept evicting each other → constant reconnects, high base load). The process stops ~5 s after the last viewer leaves. Snapshots reuse the running stream instead of interrupting it.',
+      'The camera on the Control page now pauses when the page is in the background (like Auto Farm) — previously the server-side transcode ran forever once you had visited the page.',
+      'Hidden pages no longer poll continuously: visited pages stay mounted (fast switching), but their auto-refresh now pauses in the background and refreshes immediately when you switch back. Saves a constant ~1–2 requests per second.',
+      'Smaller savings: the chamber light is toggled at most once per minute (instead of on every camera frame), camera snapshots no longer block other requests, and the live status (WebSocket + /status) no longer transmits the internal printer geometry.',
+    ],
+  },
+  {
     version: '1.0.105',
     de: [
       'Eigener G-code skaliert jetzt über mehrere Regale/Fächer. In den G-code-Feldern (Drucker-Tab) kannst du Platzhalter verwenden, die Printloom pro Regal/Fach einsetzt: {rack_x} = X-Position des Regals, {slot_z} = Z-Höhe des Fachs, {mag_z} = Z des Magazinfachs, {y_engage}/{y_pullback} = Y-Werte, {rack}/{slot} = Nummern. So schreibst du die Bewegung EINMAL und sie fährt jedes Regal (R1 am Drucker … Rn am Home-Ende) und jedes Fach korrekt an. Behebt: fixer G-code ohne Platzhalter schickte JEDES Regal an denselben Punkt (die fertige Platte landete immer im selben Fach).',

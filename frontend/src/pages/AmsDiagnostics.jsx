@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { printerService } from '../services/api'
 import { useLanguage } from '../services/i18n'
+import { useAutoRefresh } from '../services/useAutoRefresh'
 
 function StatusBadge({ result }) {
   const { tr } = useLanguage()
@@ -100,11 +101,7 @@ function AmsDiagnostics() {
       .finally(() => setLoading(false))
   }, [])
 
-  useEffect(() => {
-    load()
-    const t = setInterval(load, 5000)
-    return () => clearInterval(t)
-  }, [load])
+  useAutoRefresh(load, 5000)   // pausiert automatisch, wenn die Seite versteckt ist
 
   const clear = () => {
     setClearing(true)

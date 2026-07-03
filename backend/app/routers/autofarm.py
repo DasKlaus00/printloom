@@ -2522,7 +2522,9 @@ async def remove_job_from_farm(job_id: int):
 async def get_status(light: bool = False):
     # `light=1` lässt das Aktivitäts-Log (bis 200 Einträge) weg — Dashboard,
     # Mobile-View, Datei-Bibliothek & ETA-Hook brauchen es nicht und pollen oft.
-    data = dict(_farm)
+    # Wie beim WS: interne _-Felder (Sets) und den Geometrie-Cache nicht ausliefern.
+    data = {k: v for k, v in _farm.items()
+            if not k.startswith("_") and k not in _WS_SKIP_KEYS}
     if light:
         data.pop("log", None)
     return data
@@ -2541,10 +2543,17 @@ _ws_last_payload: Optional[str] = None
 _WS_LOG_LIMIT = 80   # nur die jüngsten N Log-Zeilen über den WS pushen (Panel zeigt Aktuelles; das volle Log gibt es als Download)
 
 
+# Nicht über den WS pushen: "geometry" ist der komplette Drucker-Geometrie-Speicher
+# (inkl. gcode_override-Texte) — nur intern für den Sequenz-Runner gecacht, für die
+# UI irrelevant und unnötig groß im 1-s-Vergleich + jedem Push.
+_WS_SKIP_KEYS = {"geometry"}
+
+
 def _ws_snapshot() -> str:
     """Farm-Status als JSON — interne Underscore-Felder (z. B. Sets) ausgeblendet,
     Log auf die jüngsten Zeilen gekappt (kleinere Push-Pakete)."""
-    data = {k: v for k, v in _farm.items() if not k.startswith("_")}
+    data = {k: v for k, v in _farm.items()
+            if not k.startswith("_") and k not in _WS_SKIP_KEYS}
     log = data.get("log")
     if isinstance(log, list) and len(log) > _WS_LOG_LIMIT:
         data["log"] = log[:_WS_LOG_LIMIT]   # Log ist neueste-zuerst → erste N = aktuellste

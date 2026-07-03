@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { deviceService, printerService, rackManagerService, autofarmService } from '../services/api'
 import { useQueueEta, fmtDur } from '../services/useQueueEta'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
+import { useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
 import HmsErrorText from '../components/HmsErrorText'
 
@@ -159,17 +160,9 @@ export default function Dashboard() {
     finally { setResuming(false) }
   }
 
-  useEffect(() => {
-    refresh()
-    const t = setInterval(refresh, 15000)
-    return () => clearInterval(t)
-  }, [refresh])
-
-  useEffect(() => {
-    fetchPrinter()
-    const t = setInterval(fetchPrinter, 20000)
-    return () => clearInterval(t)
-  }, [fetchPrinter])
+  // Pausieren automatisch, wenn die Seite versteckt ist (App hält Seiten gemountet).
+  useAutoRefresh(refresh, 15000)
+  useAutoRefresh(fetchPrinter, 20000)
 
   /* ── Derived ─────────────────────────────────────────── */
   const farmRunning = farmStatus?.running  ?? false

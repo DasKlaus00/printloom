@@ -7,6 +7,7 @@ import { colorLabel } from '../services/colorNames'
 import { useQueueEta, fmtDur, jobPrintSec, ensureMeta, getCachedMeta, CHANGEOVER_SEC } from '../services/useQueueEta'
 import { gateStart } from '../services/operatingHours'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
+import { usePageActive } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
 
 /* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
@@ -1009,19 +1010,22 @@ function AutoFarm() {
     prevRunningRef.current = nowRunning
   }, [farmStatus?.running, farmStatus?.stop_reason]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pageActive = usePageActive()
   useEffect(() => {
-    if (running) {
+    if (running && pageActive) {
       // Status läuft jetzt über den WebSocket (P6). Während die Farm läuft ziehen
-      // wir nur noch das Regal nach, damit fertige Fächer sofort „fertig" werden.
+      // wir nur noch das Regal nach, damit fertige Fächer sofort „fertig" werden —
+      // aber nur solange die Seite sichtbar ist (versteckt: kein Polling).
       const poll = () => {
         rackManagerService.getAll().then(r => setRackData(r.data)).catch(() => {})
       }
+      poll()
       pollTimerRef.current = setInterval(poll, 5000)
     } else {
       if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null }
     }
     return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current) }
-  }, [running])
+  }, [running, pageActive])
 
   useEffect(() => {
     autofarmService.getSettings()

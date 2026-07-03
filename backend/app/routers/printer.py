@@ -663,7 +663,7 @@ async def capture_snapshot(device_id: int) -> Optional[str]:
             loop = asyncio.get_event_loop()
             if device:
                 _ensure_chamber_light_async(device)
-            img_bytes = await loop.run_in_executor(None, rtsp_camera.single_frame, ip, code)
+            img_bytes = await loop.run_in_executor(rtsp_camera.executor, rtsp_camera.single_frame, ip, code)
         else:
             return None
         if not img_bytes:
@@ -686,8 +686,20 @@ def _ensure_chamber_light(device, on: bool = True) -> None:
         logger.warning(f"chamber light toggle failed for device {device.id}: {e}")
 
 
+_light_last_sent: dict = {}   # device_id → monotonic ts des letzten "Licht an"
+_LIGHT_DEDUPE_S = 60.0
+
+
 def _ensure_chamber_light_async(device, on: bool = True) -> None:
-    """Fire-and-forget light toggle so it never delays the camera stream/first frame."""
+    """Fire-and-forget light toggle so it never delays the camera stream/first frame.
+    Dedupe: Kamera-Stream/-Frame/-Snapshot rufen das bei JEDEM Zugriff — dasselbe
+    "an" nicht öfter als einmal pro Minute je Drucker über MQTT schicken."""
+    if on:
+        now = time.monotonic()
+        last = _light_last_sent.get(device.id, 0)
+        if now - last < _LIGHT_DEDUPE_S:
+            return
+        _light_last_sent[device.id] = now
     threading.Thread(target=_ensure_chamber_light, args=(device, on), daemon=True).start()
 
 
@@ -705,12 +717,16 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
     # Turn the chamber light on (non-blocking, so it can't delay the first frame).
     _ensure_chamber_light_async(device)
 
+    # Geteilter Hub: EIN ffmpeg pro Drucker, alle Zuschauer teilen sich die Frames
+    # (der X1C erlaubt nur einen RTSP-Client; mehrere ffmpeg warfen sich früher
+    # gegenseitig raus und kosteten je ~1 CPU-Kern). stream() wirft bei Verbindungs-/
+    # Auth-/Liveview-Fehlern sofort → echtes HTTP 502 mit dem Grund.
     # Pull the FIRST frame synchronously so connection/auth/LAN-liveview failures
     # surface as a real HTTP 502 (→ the <img> onError fires and the UI shows the
     # actual reason). Otherwise StreamingResponse would already be committed and a
     # failed camera would just stream nothing → a silent black box with no error.
-    frame_iter = rtsp_camera.frames(ip, code)
     try:
+        frame_iter = rtsp_camera.stream(ip, code)
         first = next(frame_iter)
     except StopIteration:
         raise HTTPException(502, "Kamera lieferte kein Bild (LAN-Modus Liveview am Drucker aktiv?)")

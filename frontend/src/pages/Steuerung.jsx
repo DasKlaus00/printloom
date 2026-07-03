@@ -3,6 +3,7 @@ import { controlService, printerService, deviceService, deviceSettingsService, k
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
+import { usePageActive } from '../services/useAutoRefresh'
 
 /* ── Drucker-Profile ───────────────────────────────────────── */
 const PRINTER_PROFILES = [
@@ -222,6 +223,21 @@ export default function Steuerung() {
   const [liveCamMsg,    setLiveCamMsg]    = useState('')     // real reason from the backend probe
   const [camReady,      setCamReady]      = useState(false)  // probe succeeded → safe to open stream
   const [camKey,        setCamKey]        = useState(0)      // bump to reconnect the stream
+  const pageActive = usePageActive()                          // versteckt → kein Status-Polling
+  // Verdeckt (andere Seite offen / Karte aus dem Bild) den MJPEG-Stream droppen —
+  // sonst läuft der Kamera-Transcode auf dem Server ewig weiter (CPU!). Beim
+  // Wiedersehen mit neuem key frisch verbinden (gleiche Mechanik wie in AutoFarm).
+  const camWrapRef = useRef(null)
+  const [camVisible, setCamVisible] = useState(true)
+  useEffect(() => {
+    const el = camWrapRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(([e]) => {
+      setCamVisible(prev => { if (e.isIntersecting && !prev) setCamKey(k => k + 1); return e.isIntersecting })
+    }, { threshold: 0.01 })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
   const [tempThreshold, setTempThreshold] = useState(
     () => Number(localStorage.getItem('ottomat3d_temp_threshold') ?? 20)
   )
@@ -303,14 +319,16 @@ export default function Steuerung() {
   useEffect(() => { fetchPos() }, [fetchPos])
 
   useEffect(() => {
-    if (!autoRefresh || !bambuDevice) { clearInterval(intervalRef.current); return }
+    // pageActive: versteckte Seite pollt nicht (App hält Seiten gemountet).
+    if (!autoRefresh || !bambuDevice || !pageActive) { clearInterval(intervalRef.current); return }
     clearInterval(intervalRef.current)
+    fetchStatus(bambuDevice.id)   // beim Wieder-Aktivwerden sofort auffrischen
     // Während die Farm druckt, sind die Daten serverseitig live (aus deren
     // Verbindung) — häufiger holen ist billig (kein Drucker-Connect). Sonst 15 s.
     const ms = farmRunning ? 4000 : 15000
     intervalRef.current = setInterval(() => fetchStatus(bambuDevice.id), ms)
     return () => clearInterval(intervalRef.current)
-  }, [autoRefresh, bambuDevice, fetchStatus, farmRunning])
+  }, [autoRefresh, bambuDevice, fetchStatus, farmRunning, pageActive])
 
   /* ── Webcam speichern ─────────────────────────────── */
   const saveWebcam = async () => {
@@ -539,7 +557,7 @@ export default function Steuerung() {
           </div>
 
           {/* Webcam */}
-          <div className="card space-y-2">
+          <div ref={camWrapRef} className="card space-y-2">
             <div className="flex items-center justify-between">
               <p className="section-label">{tr('Webcam')}</p>
               <div className="flex items-center gap-1">
@@ -576,9 +594,13 @@ export default function Steuerung() {
                     <button onClick={connectLiveCam} className="btn btn-ghost btn-sm mt-1">{tr('Neu verbinden')}</button>
                   </div>
                 ) : camReady ? (
-                  <img src={`${printerService.cameraStreamUrl(bambuDevice.id)}?t=${camKey}`} alt="X1C Live"
-                    onError={() => { setLiveCamErr(true); if (!liveCamMsg) setLiveCamMsg(tr('Stream-Verbindung abgebrochen')) }}
-                    className="w-full h-full object-contain" />
+                  camVisible ? (
+                    <img src={`${printerService.cameraStreamUrl(bambuDevice.id)}?t=${camKey}`} alt="X1C Live"
+                      onError={() => { setLiveCamErr(true); if (!liveCamMsg) setLiveCamMsg(tr('Stream-Verbindung abgebrochen')) }}
+                      className="w-full h-full object-contain" />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-surface-600 text-[10px]">{tr('Pausiert (Seite im Hintergrund)')}</div>
+                  )
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-xs">
                     {tr('Verbinde mit Kamera …')}
@@ -593,9 +615,11 @@ export default function Steuerung() {
                     <p className="text-xs">{tr('Webcam nicht erreichbar')}</p>
                     <p className="text-[10px] font-mono text-surface-700">{webcamUrl}</p>
                   </div>
-                ) : (
+                ) : camVisible ? (
                   <img src={webcamUrl} alt="Webcam" onError={() => setImgErr(true)} onLoad={() => setImgErr(false)}
                     className="w-full h-full object-contain" />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center text-surface-600 text-[10px]">{tr('Pausiert (Seite im Hintergrund)')}</div>
                 )}
               </div>
             ) : (

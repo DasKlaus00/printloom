@@ -55,6 +55,7 @@ const AmsDiagnostics  = React.lazy(() => import('./pages/AmsDiagnostics'))
 const MobileView      = React.lazy(() => import('./pages/MobileView'))
 const Projekt         = React.lazy(() => import('./pages/Projekt'))
 import { healthService, systemService, deviceService, printerService } from './services/api'
+import { PageActiveContext } from './services/useAutoRefresh'
 import Toaster from './components/Toaster'
 import { learnFromAms } from './services/amsLearn'
 import { loadLangPacks, useLanguage } from './services/i18n'
@@ -319,16 +320,20 @@ function App() {
 
   /* ── Render a page — lazy mount, never unmount ────────────── */
   // Components are only created on first visit, then kept in the DOM
-  // (but hidden via CSS) so their state survives page switches.
+  // (but hidden via CSS) so their state survives page switches. Der
+  // PageActiveContext sagt der Seite, ob sie gerade sichtbar ist — versteckte
+  // Seiten pausieren ihr Polling (usePageActive/useAutoRefresh).
   const page = (id, Component, extraProps = {}) => {
     if (!visitedPages.has(id)) return null
     return (
       <div key={id} hidden={currentPage !== id}>
-        <ErrorBoundary>
-          <Suspense fallback={<PageFallback />}>
-            <Component {...extraProps} />
-          </Suspense>
-        </ErrorBoundary>
+        <PageActiveContext.Provider value={currentPage === id}>
+          <ErrorBoundary>
+            <Suspense fallback={<PageFallback />}>
+              <Component {...extraProps} />
+            </Suspense>
+          </ErrorBoundary>
+        </PageActiveContext.Provider>
       </div>
     )
   }
