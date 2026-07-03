@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.99',
+    de: [
+      'Sequenz-Editor: neue Printloom-Op „Aus Magazin holen" — greift die frische Platte immer aus dem Magazin-Fach des Regals (global gesetztes Fach, z. B. 7) und zwar mit NOLIFT (die Platten liegen flach gestapelt). Ergänzt „Platte holen" (aus einem normalen Fach, mit Anheben).',
+    ],
+    en: [
+      'Sequence editor: new Printloom op “Grab from magazine” — always grabs the fresh plate from the rack’s magazine slot (the globally set slot, e.g. 7) with NOLIFT (plates are stacked flat). Complements “Grab from rack” (from a normal slot, with lift).',
+    ],
+  },
+  {
     version: '1.0.98',
     de: [
       'Stabilität: Printloom hält jetzt EINE dauerhafte Verbindung pro Drucker, statt bei fast jeder Aktion (Status-Abfrage, Kamera-Licht, Farm-Schritt) eine neue aufzubauen. Der X1C erlaubt nur wenige Verbindungen — das ständige Neu-Verbinden hat sie sich gegenseitig rauswerfen lassen (dauernder Verbindungsabbruch) und die App zum Hängen gebracht. Behoben: eine geteilte Verbindung mit Auto-Reconnect + gemeinsamer Status-Cache; alle Seiten teilen sich denselben Status.',

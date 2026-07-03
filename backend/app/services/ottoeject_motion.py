@@ -55,6 +55,7 @@ APP_OPS = [
     {"key": "eject",           "label_de": "Auswerfen",          "label_en": "Eject plate",     "rack_slot": False},
     {"key": "place",           "label_de": "Einlegen",           "label_en": "Place plate",     "rack_slot": False},
     {"key": "grab",            "label_de": "Platte holen",       "label_en": "Grab from rack",  "rack_slot": True},
+    {"key": "grab_magazine",   "label_de": "Aus Magazin holen",  "label_en": "Grab from magazine", "rack_slot": True},
     {"key": "store",           "label_de": "Platte ablegen",     "label_en": "Store to rack",   "rack_slot": True},
 ]
 APP_OP_KEYS = {o["key"] for o in APP_OPS}
@@ -396,6 +397,11 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
         return speed + (s if s.rstrip().endswith("M400") else s + "\nM400")
     if op == "grab":
         lines = grab_from_rack(g, rack, slot, nolift)
+    elif op in ("grab_magazine", "grab_mag"):
+        # Frische Platte aus dem Magazin-Fach (global, z. B. 7) des Regals — IMMER NOLIFT
+        # (die Platten liegen flach gestapelt, kein Anheben ins Fach nötig).
+        mag = magazine_slot(g)
+        lines = grab_from_rack(g, rack, mag if mag > 0 else slot, nolift=True)
     elif op == "store":
         lines = store_to_rack(g, rack, slot)
     elif op in ("move_to_printer", "move"):

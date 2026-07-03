@@ -12,6 +12,7 @@ const APP_OP_FALLBACK = [
   { key: 'eject',           label_de: 'Auswerfen',          label_en: 'Eject plate' },
   { key: 'place',           label_de: 'Einlegen',           label_en: 'Place plate' },
   { key: 'grab',            label_de: 'Platte holen',       label_en: 'Grab from rack' },
+  { key: 'grab_magazine',   label_de: 'Aus Magazin holen',  label_en: 'Grab from magazine' },
   { key: 'store',           label_de: 'Platte ablegen',     label_en: 'Store to rack' },
 ]
 let _appOpsCache = null

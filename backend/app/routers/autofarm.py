@@ -1634,7 +1634,8 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         op = (val or "").strip().lower()
         if op not in _motion.APP_OP_KEYS:
             raise RuntimeError(f"Unbekannte Printloom-Op: {op!r}")
-        is_grab, is_store = op == "grab", op == "store"
+        # grab UND grab_magazine zählen als Greifen (Magazin-Check + Zähler dekrementieren).
+        is_grab, is_store = op in ("grab", "grab_magazine"), op == "store"
         if is_grab:
             # Magazin-Check wie beim macro-Grab (leer → Farm pausiert)
             if _magazine_count() <= 0:
