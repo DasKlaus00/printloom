@@ -1443,6 +1443,9 @@ const EN_STRINGS = {
   'Job überspringen': 'Skip job',
   'Farm stoppen': 'Stop farm',
   'Ignorieren': 'Ignore',
+  'Platte auswerfen & weiter': 'Eject plate & continue',
+  '„Platte auswerfen & weiter": Bett auf Z200, Tür öffnen, Platte auswerfen und ins Fach einlagern — dann startet der nächste Job automatisch. „Job überspringen" lässt die fehlgeschlagene Platte im Drucker (nur wählen, wenn du sie selbst entnimmst).':
+    '“Eject plate & continue”: bed to Z200, open door, eject the plate and store it in the rack — then the next job starts automatically. “Skip job” leaves the failed plate in the printer (only pick this if you remove it yourself).',
   'Wiederholungen:': 'Retries:',
 
   // ── Watchdog (1.1 / 1.7) ──

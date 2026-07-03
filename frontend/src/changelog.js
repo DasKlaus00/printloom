@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.102',
+    de: [
+      'Neue Fehlerstrategie „Platte auswerfen & weiter" für „Druck fehlgeschlagen": Bei FAILED fährt das Bett auf Z200, die Tür wird geöffnet, die fehlgeschlagene Platte ausgeworfen und ins vorgesehene Fach eingelagert — danach startet automatisch der nächste Job (der eine frische Platte holt). Behebt den gemeldeten Fehler, dass nach einem Fehldruck sofort eine neue Platte geholt wurde, obwohl die alte noch im Drucker lag (Tür zu, Bett nicht auf Z200) — Kollisionsgefahr.',
+      '„Platte auswerfen & weiter" ist jetzt der Standard für Druckfehler (die bisherige „Job überspringen"-Voreinstellung ließ die kaputte Platte im Drucker). „Job überspringen" bleibt wählbar — nur nutzen, wenn du die Platte selbst entnimmst. In Configuration → Fehlerstrategie einstellbar.',
+    ],
+    en: [
+      'New error strategy “Eject plate & continue” for “Print failed”: on FAILED the bed moves to Z200, the door opens, the failed plate is ejected and stored in its rack slot — then the next job starts automatically (grabbing a fresh plate). Fixes the reported bug where, after a failed print, a new plate was grabbed immediately even though the old one was still in the printer (door closed, bed not at Z200) — a collision risk.',
+      '“Eject plate & continue” is now the default for print failures (the previous “Skip job” default left the failed plate in the printer). “Skip job” stays available — only use it if you remove the plate yourself. Configurable under Configuration → Error strategy.',
+    ],
+  },
+  {
     version: '1.0.101',
     de: [
       'Fehler behoben: Beim Auslösen eines Schritts im Sequenz-Editor (▶) kam „Network Error", obwohl der OTTOeject verbunden war. Ursache: die Bewegung wurde synchron abgewartet — bei einem echten Greifen/Auswerfen (20–60 s) brach die Verbindung vorher ab (zu kurzer Timeout bzw. Proxy). Der ▶-Test kehrt jetzt zurück, sobald die Bewegung GESTARTET ist, und zeigt „läuft…" statt abzubrechen. Betrifft Makro-, Klipper-GCode- und Printloom-Op-Schritte sowie die Live-Tests im Drucker-Tab und in der Steuerung.',

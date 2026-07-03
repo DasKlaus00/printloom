@@ -995,11 +995,13 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
 
 # ── Fehlerstrategie (Roadmap 1.3) ────────────────────────────────────────────
 # Pro Fehlerart eine Aktion: 'pause' (warten), 'skip' (Job als Fehler, nächster),
-# 'stop' (Farm anhalten), 'ignore' (weiterlaufen). Defaults = bisheriges Verhalten,
-# damit ohne Konfiguration nichts anders läuft.
+# 'stop' (Farm anhalten), 'ignore' (weiterlaufen), 'eject' (nur print_failed:
+# fehlgeschlagene Platte bergen — Z200 → Tür auf → Auswurf → Einlagern — dann weiter
+# mit dem nächsten Job). print_failed-Default ist 'eject', weil 'skip' die kaputte
+# Platte im Drucker lässt und der nächste Zyklus blind darauf laden würde (Kollision).
 _ERROR_DEFAULTS = {
     "hms":             "pause",
-    "print_failed":    "skip",
+    "print_failed":    "eject",
     "connection_lost": "skip",
     "progress_stall":  "pause",
     "no_slot":         "pause",
@@ -1009,6 +1011,38 @@ _ERROR_DEFAULTS = {
 
 def _estrat(key: str) -> str:
     return (_farm.get("error_strategy") or {}).get(key) or _ERROR_DEFAULTS.get(key, "pause")
+
+
+class _EjectRecovered(RuntimeError):
+    """FAILED-Druck, dessen Platte per 'eject'-Strategie geborgen (ausgeworfen +
+    eingelagert) wurde. Signalisiert der Hauptschleife: Job als Fehler werten, aber das
+    Fach als BELEGT lassen (die Platte liegt jetzt darin) und mit dem nächsten Job
+    weitermachen (der lädt automatisch eine frische Platte und startet)."""
+
+
+def _eject_recovery_steps(seq_next: list) -> list:
+    """Bergungs-Sequenz für die aktuelle (fehlgeschlagene) Platte = alle Schritte NACH
+    dem wait_print-Schritt des Zyklus (Z200 → homen → auswerfen → einlagern), mit einem
+    vorangestellten „Tür öffnen" (falls der Zyklus eine Tür-Op nutzt), damit die Platte
+    erreichbar ist, obwohl der Druck mit geschlossener Tür fehlschlug. Nutzt die eigenen
+    Makros/App-Ops aus seq_next (respektiert die Drucker-Geometrie). prep/parallel werden
+    entfernt → alles läuft inline & sequenziell (sicher bei der Bergung)."""
+    steps = seq_next or []
+    wp = next((i for i, s in enumerate(steps) if s.get("type") == "wait_print"), None)
+    tail = steps[wp + 1:] if wp is not None else []
+
+    def _is_open_door(s: dict) -> bool:
+        t = s.get("type")
+        v = str(s.get("value", "")).upper()
+        return (t == "macro" and "OPEN_DOOR" in v) or (t == "app_op" and s.get("value") == "open_door")
+
+    recovery: list = []
+    door = next((s for s in steps if _is_open_door(s)), None)
+    if door and not (tail and _is_open_door(tail[0])):
+        recovery.append({**door, "prep": False, "parallel": False, "optional": True})
+    for s in tail:
+        recovery.append({**s, "prep": False, "parallel": False})
+    return recovery
 
 
 # ── Betriebszeiten (Roadmap 2.5) ─────────────────────────────
@@ -1436,13 +1470,33 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         await _do_send_file(job, device, True)
                         _set_job(job["id"], {"status": "printing"})
                         continue
-                    # skip (Default): optionale Fehler-Sequenz, dann Job als Fehler markieren
-                    if fail_steps:
-                        _log("🔴 Druck fehlgeschlagen — Fehler-Sequenz läuft…")
+                    if action == "eject" and fail_steps:
+                        # Bergen: fehlgeschlagene Platte auf Z200 heben, Tür öffnen, auswerfen
+                        # und ins vorgesehene Fach einlagern — dann weiter mit dem nächsten Job.
+                        # Ohne diese Bergung würde der nächste Zyklus blind auf die alte Platte
+                        # laden (Kollision) — genau der gemeldete Fehler.
+                        _log("🔴 Druck fehlgeschlagen — Auswurf-Sequenz (Platte bergen)…")
+                        await _notify(f"🔴 *Printloom — Druck fehlgeschlagen*\n`{job['fileName']}`\n"
+                                      "Platte wird ausgeworfen & eingelagert, dann weiter.")
                         try:
                             await _exec_sequence(fail_steps, job, device, False, poll_sec, min_min, [], [])
                         except Exception as fe:
-                            _log(f"⚠ Fehler-Sequenz: {fe}")
+                            # Auswurf misslungen → NICHT blind weiterfahren (Kollisionsgefahr) → pausieren.
+                            _log(f"🛑 Auswurf-Sequenz fehlgeschlagen: {fe} — pausiert")
+                            _farm["paused"] = True
+                            _farm["error"] = (f"Auswurf nach Druckfehler misslungen ({fe}) — Platte "
+                                              "manuell entnehmen, dann fortsetzen")
+                            await _notify(f"🛑 *Printloom — Auswurf misslungen*\n`{job['fileName']}`\n{fe}")
+                            while _farm["paused"] and not _farm["stopping"]:
+                                await asyncio.sleep(0.5)
+                            if _farm["stopping"]:
+                                raise RuntimeError("Gestoppt")
+                            raise RuntimeError("Druck fehlgeschlagen (FAILED)")
+                        raise _EjectRecovered(
+                            "Druck fehlgeschlagen (FAILED) — Platte ausgeworfen & eingelagert")
+                    # skip: Job als Fehler markieren, nächster Job. ACHTUNG: die fehlgeschlagene
+                    # Platte bleibt im Drucker — der nächste Zyklus lädt darauf. Nur wählen, wenn
+                    # die Platte manuell entnommen wird. Sichere Alternative: 'eject'.
                     raise RuntimeError("Druck fehlgeschlagen (FAILED)")
 
                 if state == "IDLE" and pct == 0 and not was_running:
@@ -2093,7 +2147,11 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 # pulled out and handed to _wait_print so they fire ~1 min before
                 # the print ends (pre-positioning) instead of in their normal slot.
                 cycle_normal, cycle_prep = _split_prep(seq_next)
-                await _exec_sequence(cycle_normal, job, device, use_ams, poll_sec, min_min, cycle_prep, [])
+                # Bergungs-Sequenz für die 'eject'-Strategie bei Druckfehler (Z200 → Tür →
+                # Auswurf → Einlagern der fehlgeschlagenen Platte). Bei Erfolg ungenutzt.
+                eject_recovery = _eject_recovery_steps(seq_next)
+                await _exec_sequence(cycle_normal, job, device, use_ams, poll_sec, min_min,
+                                     cycle_prep, eject_recovery)
                 completed += 1
                 actual_min = (datetime.now() - job_started_at).total_seconds() / 60.0
                 end_kwh  = await _read_energy_kwh(bambu_id)
@@ -2119,6 +2177,22 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 await _notify(
                     f"✅ *Printloom — Druck fertig*\n`{job['fileName']}`\nFach {job['slot']}"
                 )
+
+            except _EjectRecovered as e:
+                # Druckfehler, dessen Platte geborgen (ausgeworfen + eingelagert) wurde →
+                # Fach bleibt BELEGT (Platte liegt drin), nächster Job lädt eine frische
+                # Platte und startet. Kein blockierender Fehlerzustand.
+                msg = str(e)
+                _log(f"🔴 {msg}")
+                _record_failure(msg)
+                _record_event("error", job.get("fileName", ""), msg[:70])
+                _set_job(job["id"], {"status": "error"})
+                _rack_update(job["slot"], "done", job.get("fileName", ""))
+                cur_slot = None
+                _farm["current_job_id"] = None
+                _farm["error"] = None
+                await _notify(f"➡️ *Printloom — weiter nach Druckfehler*\n`{job['fileName']}`\n"
+                              "Platte eingelagert, nächster Job startet.")
 
             except RuntimeError as e:
                 msg = str(e)

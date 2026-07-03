@@ -702,14 +702,14 @@ function PowerSettings() {
 /* ─── Fehlerstrategie (Roadmap 1.3) ──────────────────────────────── */
 const ERROR_CATALOG = [
   { key: 'hms',             label: 'Drucker-Fehler (HMS)',        desc: 'Schwere/fatale Druckermeldung (z. B. Hardwarefehler)',        actions: ['pause', 'skip', 'stop', 'ignore'] },
-  { key: 'print_failed',    label: 'Druck fehlgeschlagen',         desc: 'Drucker meldet FAILED nach den Wiederholungen',               actions: ['skip', 'pause', 'stop'] },
+  { key: 'print_failed',    label: 'Druck fehlgeschlagen',         desc: 'Drucker meldet FAILED nach den Wiederholungen',               actions: ['eject', 'skip', 'pause', 'stop'] },
   { key: 'connection_lost', label: 'Verbindung verloren',          desc: 'Drucker nach mehreren Reconnects nicht erreichbar',           actions: ['skip', 'pause', 'stop'] },
   { key: 'progress_stall',  label: 'Stillstand / kein Fortschritt', desc: 'Watchdog: kein Druckfortschritt (mögliche Verstopfung)',      actions: ['pause', 'skip', 'stop'] },
   { key: 'no_slot',         label: 'Kein freies Regalfach',        desc: 'Regal voll — kein Platz für die fertige Platte',              actions: ['pause', 'stop'] },
   { key: 'ams_unmatched',   label: 'AMS-Festlegung nötig',         desc: 'Kein passendes Filament im AMS gefunden',                     actions: ['pause', 'skip'] },
 ]
-const ERROR_DEFAULTS = { hms: 'pause', print_failed: 'skip', connection_lost: 'skip', progress_stall: 'pause', no_slot: 'pause', ams_unmatched: 'pause' }
-const ACTION_LABEL = { pause: 'Pausieren', skip: 'Job überspringen', stop: 'Farm stoppen', ignore: 'Ignorieren' }
+const ERROR_DEFAULTS = { hms: 'pause', print_failed: 'eject', connection_lost: 'skip', progress_stall: 'pause', no_slot: 'pause', ams_unmatched: 'pause' }
+const ACTION_LABEL = { pause: 'Pausieren', skip: 'Job überspringen', stop: 'Farm stoppen', ignore: 'Ignorieren', eject: 'Platte auswerfen & weiter' }
 
 function ErrorStrategy() {
   const { tr } = useLanguage()
@@ -748,12 +748,17 @@ function ErrorStrategy() {
               <p className="text-xs text-surface-200">{tr(err.label)}</p>
               <p className="text-[10px] text-surface-600">{tr(err.desc)}</p>
               {err.key === 'print_failed' && (
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span className="text-[10px] text-surface-500">{tr('Wiederholungen:')}</span>
-                  <input type="number" min="0" max="9" value={retries}
-                    onChange={e => setRetries(Math.max(0, Number(e.target.value)))}
-                    className="w-12 font-mono text-xs h-6 py-0" />
-                </div>
+                <>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-[10px] text-surface-500">{tr('Wiederholungen:')}</span>
+                    <input type="number" min="0" max="9" value={retries}
+                      onChange={e => setRetries(Math.max(0, Number(e.target.value)))}
+                      className="w-12 font-mono text-xs h-6 py-0" />
+                  </div>
+                  <p className="text-[10px] text-emerald-700/90 mt-1 leading-snug">
+                    {tr('„Platte auswerfen & weiter": Bett auf Z200, Tür öffnen, Platte auswerfen und ins Fach einlagern — dann startet der nächste Job automatisch. „Job überspringen" lässt die fehlgeschlagene Platte im Drucker (nur wählen, wenn du sie selbst entnimmst).')}
+                  </p>
+                </>
               )}
             </div>
             <select value={strategy[err.key] ?? ERROR_DEFAULTS[err.key]}
