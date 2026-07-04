@@ -1257,6 +1257,19 @@ async def _run_prep(steps: list, slot: str, device: Device):
             elif t in ("klipper_gcode",):
                 _log(f"▶ {step.get('label', val[:30])}")
                 await _do_macro(val)   # Klipper HTTP blocks until movement complete
+            elif t == "app_op":
+                # Printloom-Op auch im Vorstart (z. B. move_to_printer ⏱) — wie im
+                # normalen app_op-Zweig, aber ohne Magazin-/Fach-Buchhaltung (Vorstart
+                # positioniert nur; Griffe gehören nicht in die Vorpositionierung).
+                op = (val or "").strip().lower()
+                if op in _motion.APP_OP_KEYS:
+                    rk, sl = (int(stack_rack), int(stack_slot)) if op in ("grab", "grab_magazine") else \
+                             (int(rack_num), int(slot_num)) if op == "store" else (1, 1)
+                    geom = _farm.get("geometry") or _load_farm_geometry()
+                    _log(f"▶ Printloom-Op: {op}")
+                    await _do_macro(_motion.build_op(geom, op, rack=rk, slot=sl))
+                else:
+                    _log(f"Warnung Vorstart: unbekannte Printloom-Op {op!r}")
             elif t == "gcode":
                 await _do_bambu_gcode(val, device)
             elif t == "delay":

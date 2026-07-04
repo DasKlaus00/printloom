@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.112',
+    de: [
+      'Standard-Sequenzen nutzen jetzt Printloom-Ops statt Geräte-Macros: Tür öffnen/schließen, Aus Magazin holen, Platte einlegen, Vor Drucker fahren, Auswerfen und Zurücklegen laufen als App-Bausteine über die Drucker-Tab-Geometrie bzw. deinen eigenen G-code mit Platzhaltern — nur so skalieren die Bewegungen korrekt über mehrere Regale (inkl. Magazin-Durchbiegung und Geschwindigkeit pro Operation). Nur OTTOeject homen/Parken bleiben Geräte-Macros (Endstops). Der ⏱-Vorstart unterstützt Printloom-Ops jetzt ebenfalls. Zum Übernehmen: im Sequenz-Editor je Karte „↺ Standard".',
+    ],
+    en: [
+      'Default sequences now use Printloom ops instead of device macros: open/close door, grab from magazine, place plate, move to printer, eject and store run as app blocks through the printer-tab geometry or your custom G-code with placeholders — only then do the motions scale correctly across multiple racks (incl. magazine sag and per-operation speed). Only OTTOeject home/park remain device macros (endstops). The ⏱ pre-start now supports Printloom ops as well. To adopt: press “↺ Default” per card in the sequence editor.',
+    ],
+  },
+  {
     version: '1.0.111',
     de: [
       'Übergabe First Start → Zyklus vervollständigt: Beim 1. Job überspringt der Zyklus jetzt ALLES bis einschließlich seines Griff-Schritts — nicht nur den Griff. Vorher wäre z. B. „Tür öffnen" vor dem Griff nochmal gelaufen, mit der Platte im Greifer (Tür war schon offen — unnötige Fahrt, Kollisionsrisiko). Der grüne Marker im Editor sagt es jetzt genau so; das Farm-Log listet die übersprungenen Schritte auf. Sicherheits-Fallback: steckt der Griff in einer ∥-Gruppe oder liegt ein Datei-/Warteschritt davor, wird wie bisher nur der Griff selbst übersprungen.',
