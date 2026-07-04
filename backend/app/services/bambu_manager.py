@@ -69,22 +69,52 @@ def get_client(device):
         return c
 
 
+# Nach einem GESCHEITERTEN Connect so lange keinen neuen Versuch starten, sondern sofort
+# False (→ Cache/offline) liefern. Ohne Backoff versuchte JEDER Status-Poll bei Drucker
+# aus/unerreichbar einen vollen ~6-s-Connect — seriell hinter dem Lock, auf nur 4 Workern:
+# die Warteschlange wuchs schneller als sie abgearbeitet wurde, Status-Requests hingen
+# minutenlang, hielten dabei DB-Sessions → der SQLite-Pool lief voll → die GANZE App hing
+# („Seite lädt ewig", nur Neustart half).
+_FAIL_BACKOFF_S = 20.0
+
+
+def _in_backoff(c) -> bool:
+    return time.monotonic() - getattr(c, "_last_fail", 0.0) < _FAIL_BACKOFF_S
+
+
 def ensure(device, wait_timeout: float = 6.0) -> bool:
     """Sicherstellen, dass die dauerhafte Verbindung steht. Reused eine bestehende
-    Verbindung; verbindet nur beim ersten Mal (danach hält paho sie per Auto-Reconnect)."""
+    Verbindung; verbindet nur beim ersten Mal (danach hält paho sie per Auto-Reconnect).
+    Nach einem Fehlschlag greift ein Backoff: Aufrufer bekommen sofort False statt
+    sich hinter einem aussichtslosen Connect zu stauen."""
     c = get_client(device)
     if c.connected:
         return True
-    with c._connect_lock:
+    if _in_backoff(c):
+        return False
+    # Bounded warten statt unbegrenzt: hängt ein Connect fest, stauen sich Aufrufer
+    # hier nicht mehr endlos, sondern geben nach wait_timeout auf.
+    if not c._connect_lock.acquire(timeout=max(wait_timeout, 0.1)):
+        return c.connected
+    try:
         if c.connected:
             return True
+        if _in_backoff(c):
+            return False
         if getattr(c, "_started", False):
             # paho reconnectet im Hintergrund — KEINEN zweiten Client bauen, nur kurz warten.
             deadline = time.monotonic() + min(wait_timeout, 3.0)
             while time.monotonic() < deadline and not c.connected:
                 time.sleep(0.2)
+            if not c.connected:
+                c._last_fail = time.monotonic()
             return c.connected
-        return c.connect(wait_timeout=wait_timeout)
+        ok = c.connect(wait_timeout=wait_timeout)
+        if not ok:
+            c._last_fail = time.monotonic()
+        return ok
+    finally:
+        c._connect_lock.release()
 
 
 def is_connected(device) -> bool:
@@ -118,13 +148,18 @@ def fetch_status(device, want_ams: bool = True, max_wait: float = 4.0) -> Option
     c = get_client(device)
     raw = c.get_last_message()
     if raw is None or (want_ams and not _has_ams(raw)):
-        c.request_status()
-        deadline = time.monotonic() + max_wait
-        while time.monotonic() < deadline:
-            time.sleep(0.3)
-            raw = c.get_last_message()
-            if raw and (not want_ams or _has_ams(raw)):
-                break
+        # Warte-Dedupe: liefert der Drucker dauerhaft kein AMS (z. B. keins verbaut),
+        # würde sonst JEDER Poll hier max_wait Sekunden einen Worker blockieren.
+        now = time.monotonic()
+        if now - getattr(c, "_pushall_wait_ts", 0.0) >= 15.0:
+            c._pushall_wait_ts = now
+            c.request_status()
+            deadline = time.monotonic() + max_wait
+            while time.monotonic() < deadline:
+                time.sleep(0.3)
+                raw = c.get_last_message()
+                if raw and (not want_ams or _has_ams(raw)):
+                    break
     return c.get_last_message()
 
 

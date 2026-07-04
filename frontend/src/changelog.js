@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.113',
+    de: [
+      'App-Hänger behoben („Seite lädt ewig, nur Neustart hilft"): War der Drucker aus oder unerreichbar, versuchte jede Status-Abfrage einen kompletten MQTT-Neuverbindungsaufbau (~6 s) — die Anfragen stauten sich schneller auf, als sie scheitern konnten, blockierten dabei Datenbank-Verbindungen und legten so nach und nach die ganze App lahm. Jetzt: Nach einem fehlgeschlagenen Verbindungsversuch antwortet der Status 20 s lang sofort aus dem Cache (offline), statt erneut zu verbinden; die Status-Anfrage hat zusätzlich eine 10-s-Notbremse. Außerdem gestopft: Ein Verbindungs-Timeout ließ die offene Verbindung liegen (Datei-Handle-Leck — nach Stunden ging gar nichts mehr, bis zum Neustart).',
+    ],
+    en: [
+      'Fixed app freezes (“page loads forever, only a restart helps”): with the printer off or unreachable, every status poll attempted a full MQTT reconnect (~6 s) — requests piled up faster than they could fail, held database connections and gradually froze the whole app. Now: after a failed connection attempt, status responds instantly from cache (offline) for 20 s instead of reconnecting; the status request also has a 10 s emergency timeout. Also plugged: a connection timeout left the open connection behind (file-handle leak — after hours nothing worked until a restart).',
+    ],
+  },
+  {
     version: '1.0.112',
     de: [
       'Standard-Sequenzen nutzen jetzt Printloom-Ops statt Geräte-Macros: Tür öffnen/schließen, Aus Magazin holen, Platte einlegen, Vor Drucker fahren, Auswerfen und Zurücklegen laufen als App-Bausteine über die Drucker-Tab-Geometrie bzw. deinen eigenen G-code mit Platzhaltern — nur so skalieren die Bewegungen korrekt über mehrere Regale (inkl. Magazin-Durchbiegung und Geschwindigkeit pro Operation). Nur OTTOeject homen/Parken bleiben Geräte-Macros (Endstops). Der ⏱-Vorstart unterstützt Printloom-Ops jetzt ebenfalls. Zum Übernehmen: im Sequenz-Editor je Karte „↺ Standard".',

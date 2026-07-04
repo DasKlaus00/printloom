@@ -1216,7 +1216,15 @@ async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
     device = _get_bambu_device(device_id, db)
     loop = asyncio.get_event_loop()
 
-    raw = await loop.run_in_executor(bambu_manager.executor, bambu_manager.fetch_status, device)
+    # Notbremse: Antwort NIE länger als 10 s aufhalten (hängende Status-Requests
+    # hielten sonst DB-Sessions → Pool voll → die ganze App hing). Timeout räumt
+    # noch nicht gestartete Executor-Jobs aus der Warteschlange (Future-Cancel).
+    try:
+        raw = await asyncio.wait_for(
+            loop.run_in_executor(bambu_manager.executor, bambu_manager.fetch_status, device),
+            timeout=10.0)
+    except asyncio.TimeoutError:
+        raw = bambu_manager.last_status(device)
 
     # Fallback: Farm-Live-Cache (Legacy), falls der Manager (noch) nichts hat.
     if raw is None and _LIVE["raw"] is not None and (time.monotonic() - _LIVE["t"]) < _LIVE_TTL \

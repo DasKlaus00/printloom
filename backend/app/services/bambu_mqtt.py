@@ -70,6 +70,13 @@ class BambuLabMQTT:
 
             if not self._connected_event.wait(timeout=wait_timeout):
                 logger.error(f"MQTT connection timeout to {self.device.ip_address}")
+                # Socket wirklich schließen — loop_stop() allein lässt die offene
+                # TCP/TLS-Verbindung liegen (File-Deskriptor-Leck: bei Drucker in
+                # halbtotem Zustand ein fd pro Versuch, bis nichts mehr ging).
+                try:
+                    self.client.disconnect()
+                except Exception:
+                    pass
                 self.client.loop_stop()
                 self._started = False
                 return False
