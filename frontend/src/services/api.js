@@ -136,6 +136,7 @@ export const rackManagerService = {
   getAll:        ()                    => api.get('/rack-manager/'),
   updateConfig:  (data)                => api.put('/rack-manager/config', data),
   refillMagazine:(value)               => api.post('/rack-manager/magazine/refill', value != null ? { value } : {}),
+  takeFromMagazine:(rack)              => api.post('/rack-manager/magazine/take', { rack }),
   updateSlot:    (slotId, data)        => api.put(`/rack-manager/slots/${slotId}`, data),
   clearSlots:    (body)                => api.post('/rack-manager/slots/clear', body ?? {}),
   analyzeFile:   (fileId)              => api.post(`/rack-manager/analyze/${fileId}`),

@@ -218,6 +218,14 @@ const EN_STRINGS = {
   'Wird 1:1 an den OTTOeject gesendet. „Test" fährt genau diesen G-code.':
     'Sent verbatim to the OTTOeject. “Test” runs exactly this G-code.',
   'Platzhalter für Regale/Fächer:': 'Placeholders for racks/slots:',
+  'Magazin:': 'Magazine:',
+  '▶ Magazin R{0}': '▶ Magazine R{0}',
+  'Magazin R{0} — Platte holen…': 'Magazine R{0} — grabbing plate…',
+  '✓ Magazin R{0}': '✓ Magazine R{0}',
+  'Magazin leer — im Rack Manager auffüllen': 'Magazine empty — refill in the Rack Manager',
+  'Platte aus Magazin R{0} holen (NOLIFT, Fach {1})': 'Grab a plate from magazine R{0} (NOLIFT, slot {1})',
+  'Zahl = Platten im Magazin · Entnahme zählt automatisch runter (Z greift je Platte 1 mm tiefer — Durchbiegung)':
+    'Number = plates in the magazine · grabbing decrements automatically (Z grabs 1 mm lower per plate — sag)',
   'EIN G-code fährt so jedes Regal (R1 am Drucker) und Fach korrekt an.':
     'One G-code then reaches every rack (R1 at the printer) and slot correctly.',
   '⚙ Eigenen G-code bearbeiten (Feinjustage)': '⚙ Edit custom G-code (fine-tune)',

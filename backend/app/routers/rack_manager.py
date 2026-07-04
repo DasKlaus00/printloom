@@ -471,6 +471,36 @@ def refill_magazine(body: dict = None):
     }
 
 
+@router.post("/magazine/take")
+def take_from_magazine(body: dict = None):
+    """Eine Platte aus dem Magazin EINES Regals entnehmen (Zähler −1). Wird vom
+    Drucker-Tab nach einem manuellen „Aus Magazin holen" gerufen, damit der Bestand
+    stimmt — auch für die Z-Absenkung der nächsten Entnahme (Durchbiegung: der
+    Stapel liegt pro Platte tiefer). Body: {"rack": N} (1-basiert)."""
+    body = body or {}
+    data = _load()
+    nr = int(data.get("num_racks", DEFAULT_NUM_RACKS))
+    try:
+        rack = int(body.get("rack", 1))
+    except (TypeError, ValueError):
+        rack = 1
+    if not (1 <= rack <= nr):
+        raise HTTPException(400, f"Ungültiges Regal {rack} (1–{nr})")
+    counts = data.get("magazine_counts") or [0] * nr
+    counts = ([max(0, int(c)) for c in counts] + [0] * nr)[:nr]
+    if counts[rack - 1] <= 0:
+        raise HTTPException(400, f"Magazin R{rack} ist leer")
+    counts[rack - 1] -= 1
+    data["magazine_counts"] = counts
+    _save(data)
+    return {
+        "success":         True,
+        "rack":            rack,
+        "magazine_counts": counts,
+        "magazine_count":  sum(counts),
+    }
+
+
 _PLATE_PRESENT = ("done", "printing", "occupied")
 
 def _refill_one(data: dict, slot_id: str):

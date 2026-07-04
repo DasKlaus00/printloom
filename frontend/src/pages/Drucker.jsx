@@ -255,6 +255,7 @@ export default function Drucker() {
       const d = r?.data || {}
       setRackCfg({
         num_racks: d.num_racks ?? 3, slots_per_rack: d.slots_per_rack ?? 6, magazine_slot: d.magazine_slot ?? 7,
+        magazine_counts: Array.isArray(d.magazine_counts) ? d.magazine_counts : [],
       })
     }).catch(() => {})
     load()
@@ -276,6 +277,26 @@ export default function Drucker() {
     }
   }
   const homeOtto = () => sendOp('home', tr('Referenzfahrt…'))
+
+  // Platte aus dem Magazin eines Regals holen (NOLIFT) — danach den Bestand
+  // runterzählen: die nächste Entnahme greift dann automatisch tiefer/höher
+  // richtig (Durchbiegung: Stapel liegt pro Platte ~1 mm tiefer).
+  const grabFromMagazine = async (r) => {
+    if (jog.busy) return
+    setJog({ busy: true, msg: tr('Magazin R{0} — Platte holen…', r), err: false })
+    try {
+      const res = await controlService.runOp({ op: 'grab_magazine', geometry, rack: r })
+      if (res?.data?.script) setLastScript(res.data.script)
+      const t = await rackManagerService.takeFromMagazine(r).catch(() => null)
+      if (Array.isArray(t?.data?.magazine_counts)) {
+        setRackCfg(c => ({ ...c, magazine_counts: t.data.magazine_counts }))
+      }
+      setJog({ busy: false, msg: tr('✓ Magazin R{0}', r), err: false })
+    } catch (e) {
+      const detail = e?.response?.data?.detail || e?.message || tr('Fehler')
+      setJog({ busy: false, msg: detail, err: true })
+    }
+  }
 
   // Geschwindigkeit setzen → M220 sofort an den OTTOeject schicken (und für Ops speichern).
   const applySpeed = (v) => {
@@ -490,6 +511,29 @@ export default function Drucker() {
                   </div>
                 </div>
                 <p className="text-[9px] text-surface-600">{tr('„Anfahren" fährt nur vors Fach (greift nicht). Magazin = oberstes Fach ({0}) wird ohne Anheben gegriffen.', magazineSlot || '—')}</p>
+
+                {/* Magazin je Regal: Platte holen + Restbestand */}
+                {magazineSlot > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-surface-800/50">
+                    <span className="text-[11px] text-surface-400">{tr('Magazin:')}</span>
+                    {Array.from({ length: numRacks }, (_, i) => i + 1).map(r => {
+                      const cnt = Math.max(0, +(rackCfg.magazine_counts?.[r - 1] ?? 0))
+                      return (
+                        <button key={r} onClick={() => grabFromMagazine(r)} disabled={jog.busy || cnt <= 0}
+                          className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 flex items-center gap-1.5"
+                          title={cnt <= 0
+                            ? tr('Magazin leer — im Rack Manager auffüllen')
+                            : tr('Platte aus Magazin R{0} holen (NOLIFT, Fach {1})', r, magazineSlot)}>
+                          <span>{tr('▶ Magazin R{0}', r)}</span>
+                          <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${cnt > 0 ? 'bg-emerald-950/60 text-emerald-300' : 'bg-red-950/60 text-red-400'}`}>{cnt}</span>
+                        </button>
+                      )
+                    })}
+                    <span className="text-[9px] text-surface-600">
+                      {tr('Zahl = Platten im Magazin · Entnahme zählt automatisch runter (Z greift je Platte 1 mm tiefer — Durchbiegung)')}
+                    </span>
+                  </div>
+                )}
 
                 {/* opt-in grab/store */}
                 <div className="grid grid-cols-2 gap-2 pt-1 border-t border-surface-800/50">

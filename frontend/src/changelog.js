@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.107',
+    de: [
+      'Magazin-Durchbiegung kompensiert: Die flach gestapelten Platten hängen durch — der Stapel liegt pro Platte ~1 mm tiefer. „Aus Magazin holen" senkt die Greif-Z jetzt automatisch um 1 mm je Platte im Magazin (6 Platten → Z−6, 4 → Z−4), pro Regal anhand des Magazin-Zählers. Gilt für die berechnete Bewegung UND den {mag_z}-Platzhalter im eigenen G-code. Ohne Zähler bleibt alles wie bisher.',
+      'Drucker-Tab: Neue Magazin-Knöpfe je Regal (skaliert mit der Regalzahl) — ein Klick holt eine Platte aus dem jeweiligen Magazin (NOLIFT), daneben steht live, wie viele Platten noch drin sind. Die Entnahme zählt den Bestand automatisch runter, damit auch die Z-Absenkung der nächsten Entnahme stimmt. Auffüllen wie gehabt im Rack Manager.',
+    ],
+    en: [
+      'Magazine sag compensated: the flat-stacked plates bend — the stack sits ~1 mm lower per plate. “Grab from magazine” now automatically lowers the grab Z by 1 mm per plate in the magazine (6 plates → Z−6, 4 → Z−4), per rack based on the magazine counter. Applies to the computed motion AND the {mag_z} placeholder in custom G-code. Without a counter nothing changes.',
+      'Printer tab: new per-rack magazine buttons (scales with the number of racks) — one click grabs a plate from that rack’s magazine (NOLIFT), with a live count of the plates remaining next to it. Grabbing decrements the counter automatically so the next grab’s Z compensation stays correct. Refill as usual in the Rack Manager.',
+    ],
+  },
+  {
     version: '1.0.106',
     de: [
       'Deutlich weniger CPU-Last: Die X1C-Kamera läuft jetzt über EINEN geteilten Video-Prozess pro Drucker — egal wie viele Ansichten/Geräte zuschauen (vorher: ein eigener ffmpeg PRO Zuschauer, je ~1 CPU-Kern, und da der Drucker nur EINEN Kamera-Zugriff erlaubt, warfen sich mehrere gegenseitig raus → Dauer-Reconnects, hohe Grundlast). Der Prozess stoppt ~5 s nachdem der letzte Zuschauer weg ist. Snapshots bedienen sich am laufenden Stream, statt ihn zu unterbrechen.',

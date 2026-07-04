@@ -44,6 +44,11 @@ DEFAULT_GEOMETRY = {
     "speed_factor": 100,     # globaler M220-Vorschub in % (100 = normal, bis 500 schneller) — Fallback
     "speed_factors": {},     # {op: %} — Vorschub PRO Operation (überschreibt speed_factor); für schnellen, feinjustierten Wechsel
     "gcode_override": {},    # {op: "roher G-code"} — Feinjustage, überschreibt die berechnete Bewegung
+    # Magazin-Durchbiegung: die flach gestapelten Platten hängen durch — der Stapel
+    # liegt pro Platte ~1 mm tiefer. Beim Greifen aus dem Magazin wird Z um
+    # (Plattenzahl × magazine_sag_mm) ABGESENKT: 6 Platten → −6 mm, 4 → −4 mm.
+    # Plattenzahl je Regal kommt live aus der Rack-Konfiguration (magazine_counts).
+    "magazine_sag_mm": 1.0,
 }
 
 
@@ -146,7 +151,28 @@ def apply_rack_config(g: dict, rack_cfg: dict | None) -> dict:
     if ms:
         g["magazine_slot"] = int(ms)
         g["magazine"] = True
+    # Platten pro Magazin (je Regal) — für die Z-Absenkung beim Magazin-Griff
+    # (Durchbiegung, siehe magazine_z_offset). Rack Manager pflegt die Zähler.
+    counts = rack_cfg.get("magazine_counts")
+    if isinstance(counts, list):
+        try:
+            g["magazine_counts"] = [max(0, int(c)) for c in counts]
+        except (TypeError, ValueError):
+            pass
     return g
+
+
+def magazine_z_offset(g: dict, rack: int) -> float:
+    """Z-Absenkung beim Greifen aus dem Magazin: die flach gestapelten Platten biegen
+    sich durch, der Stapel liegt pro Platte ~magazine_sag_mm tiefer. 6 Platten → −6 mm,
+    4 → −4 mm (bei 1 mm/Platte). Zähler je Regal aus magazine_counts; ohne Zähler 0."""
+    try:
+        counts = g.get("magazine_counts") or []
+        cnt = max(0, int(counts[int(rack) - 1]))
+    except (TypeError, ValueError, IndexError):
+        return 0.0
+    sag = _num(g.get("magazine_sag_mm"), 1.0)
+    return -cnt * sag
 
 
 def _printer_x_off(g: dict) -> float:
@@ -176,9 +202,13 @@ def slot_position(g: dict, rack: int, slot: int) -> tuple[float, float, float, f
 # ── Bewegungen (1:1 aus ottoeject_macros.cfg) ───────────────────────────────
 def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
     x_unclamp, y_engage, z_flat, y_pb = slot_position(g, rack, slot)
+    mag = magazine_slot(g)
     if nolift is None:
-        mag = magazine_slot(g)
         nolift = (mag > 0 and int(slot) == mag)
+    # Magazin-Griff: Stapel hängt durch → Z pro Platte im Magazin absenken
+    # (6 Platten → −6 mm). Gilt NUR für das Magazin-Fach, nie für normale Fächer.
+    if mag > 0 and int(slot) == mag:
+        z_flat += magazine_z_offset(g, rack)
     x_mid = x_unclamp - 30
     L = [f"M117 Grab rack {rack} slot {slot}..."]
     if nolift:
@@ -408,7 +438,8 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
         #   fachs · {y_engage}/{y_pullback}=Y-Werte · {rack}/{slot}=Nummern.
         rx, ry, rz, ypb = slot_position(g, rack, slot)
         _mag = magazine_slot(g)
-        magz = slot_position(g, rack, _mag)[2] if _mag > 0 else rz
+        # {mag_z} inkl. Durchbiegungs-Absenkung (pro Platte im Magazin, s. magazine_z_offset)
+        magz = (slot_position(g, rack, _mag)[2] + magazine_z_offset(g, rack)) if _mag > 0 else rz
         s = ov
         for k, v in (
             ("{rack_x}", f"{rx:g}"), ("{slot_z}", f"{rz:g}"), ("{mag_z}", f"{magz:g}"),
