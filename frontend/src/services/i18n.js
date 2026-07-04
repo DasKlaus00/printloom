@@ -955,6 +955,37 @@ const EN_STRINGS = {
   'Vorrat-Stapel (aus Regal-Einstellungen)': 'stock stack (from rack settings)',
   'R1 = Regal am Drucker — RACK=… wird beim Senden automatisch in die Geräte-Zählung übersetzt (Geräte-Macro zählt vom Homing-Punkt rechts)':
     'R1 = rack next to the printer — RACK=… is translated to the device numbering automatically on send (device macros count from the homing point on the right)',
+  'Auf Z200 warten': 'Wait for Z200',
+  'Sendet G28 + schnelles Z200 (F3000) als Mini-Druck — die Datei wird automatisch frisch erzeugt.':
+    'Sends G28 + a fast Z200 (F3000) as a mini print — the file is regenerated automatically.',
+  '⏩ Nicht warten — Drucker homet im Hintergrund, OTTOeject arbeitet parallel weiter (danach Schritt „Auf Z200 warten" einplanen!)':
+    '⏩ Don\'t wait — the printer homes in the background while the OTTOeject keeps working (add a "Wait for Z200" step afterwards!)',
+  'Wartet, bis der im Hintergrund gestartete Homing-Druck fertig ist (Bett wirklich auf Z200) — gehört ans Ende des First Start, wenn beim Homing-Schritt „Nicht warten" aktiv ist.':
+    'Waits until the homing print started in the background has finished (bed truly at Z200) — belongs at the end of First Start when the homing step has "Don\'t wait" enabled.',
+  'Wartet nicht — Drucker homet im Hintergrund („Auf Z200 warten" holt das Ergebnis ab)':
+    'Does not wait — the printer homes in the background ("Wait for Z200" picks up the result)',
+  '▶ First Start — einmal beim Start-Knopf': '▶ First Start — once when you press Start',
+  '↻ Zyklus — jeder Job': '↻ Cycle — every job',
+  'Endet mit Platte im Greifer vor dem Drucker — weiter im Zyklus (der eigene Griff des 1. Jobs wird übersprungen).':
+    'Ends with the plate in the gripper in front of the printer — continues in the cycle (job 1 skips its own grab).',
+  'First Start übergibt hier (Job 1: Griff wird übersprungen)':
+    'First Start hands over here (job 1: grab is skipped)',
+  'First Start hat die Platte schon geholt und wartet vor dem Drucker — dieser Griff wird beim 1. Job übersprungen, der Zyklus macht direkt danach weiter.':
+    'First Start already fetched the plate and waits in front of the printer — this grab is skipped on job 1 and the cycle continues right after it.',
+  'Sendet G28 + schnelles Z200 als Mini-Druck (Datei wird automatisch erzeugt) — mit ⏩ homet der Drucker im Hintergrund weiter':
+    'Sends G28 + a fast Z200 as a mini print (file is generated automatically) — with ⏩ the printer keeps homing in the background',
+  'Holt das Ergebnis des im Hintergrund gestarteten Homings ab — Bett sicher auf Z200, dann geht es weiter':
+    'Picks up the result of the background homing — bed safely at Z200, then the flow continues',
+  'Bett per Roh-G-Code auf Z fahren (schnell, ohne Druck-Vorbereitung)':
+    'Move the bed to Z via raw G-code (fast, no print preparation)',
+  'Vorziehen': 'Run early',
+  'Badge am Schritt: startet ~1 Min vor Druckende (nur im Zyklus wählbar) — z.B. Homen + vor Drucker fahren':
+    'Badge on a step: starts ~1 min before the print ends (cycle only) — e.g. homing + moving to the printer',
+  'Übergabe': 'Handover',
+  'Grüne Marke im Zyklus: hier übergibt der First Start — der Griff des 1. Jobs wird übersprungen (Platte schon im Greifer)':
+    'Green mark in the cycle: First Start hands over here — job 1 skips its grab (plate already in the gripper)',
+  'Schritt gleichzeitig mit dem vorigen Schritt ausführen':
+    'Run this step simultaneously with the previous one',
   'Ungültiges Format — seq_new / seq_next fehlen': 'Invalid format — seq_new / seq_next missing',
   'Ablauf des Auto Farms anpassen — Reihenfolge, Zeiten und Parallelausführung. Änderungen werden sofort gespeichert und beim nächsten Lauf verwendet.':
     'Customize the Auto Farm workflow — order, timings and parallel execution. Changes are saved immediately and used on the next run.',
@@ -963,8 +994,8 @@ const EN_STRINGS = {
   'Alle Sequenzen als JSON-Datei speichern': 'Save all sequences as a JSON file',
   '↓ Export': '↓ Export',
   'First Start (einmal)': 'First Start (once)',
-  'Läuft genau einmal beim Farm-Start: Drucker homen + auf Z200 fahren (positionsgenau).':
-    'Runs exactly once at farm start: home the printer + move to Z200 (position-accurate).',
+  'Läuft genau einmal beim Farm-Start. Standard: Drucker homet im Hintergrund auf Z200, währenddessen holt das OTTOeject schon die erste Platte und wartet vor dem Drucker — der Zyklus überspringt seinen Griff dann automatisch.':
+    'Runs exactly once at farm start. Default: the printer homes to Z200 in the background while the OTTOeject already fetches the first plate and waits in front of the printer — the cycle then skips its own grab automatically.',
   'Zyklus (jeder Job)': 'Cycle (every job)',
   'Wiederkehrender Ablauf für JEDEN Job. ⏱-markierte Schritte starten ~1 Min vor Druckende.':
     'Recurring workflow for EVERY job. ⏱-marked steps start ~1 min before print end.',

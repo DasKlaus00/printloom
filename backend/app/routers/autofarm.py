@@ -89,7 +89,7 @@ _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": Tru
 # ── Homing .3mf generator ────────────────────────────────────
 _HOMING_GCODE = """; Printloom Homing Sequence
 G28 ; Home all axes
-G1 Z200 F600 ; Move bed to loading position
+G1 Z200 F3000 ; Move bed to loading position (fast — same feed as the cycle's Z200 move)
 M400 ; Wait for moves to complete
 """
 _HOMING_CONTENT_TYPES = '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="gcode" ContentType="text/x.gcode"/><Default Extension="config" ContentType="text/xml"/></Types>'
@@ -1654,6 +1654,12 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
 
     elif t == "macro":
         if "GRAB_FROM_RACK" in val or val.startswith("GRAB_FROM_SLOT_"):
+            # First Start hat die Platte schon geholt (wartet vor dem Drucker) →
+            # der Zyklus-Griff des ersten Jobs entfällt, sonst würde doppelt gegriffen.
+            # Buchhaltung (Magazin-Zähler, Fach „printing") lief bereits beim Griff.
+            if not _farm.get("_in_first_start") and _farm.pop("_plate_ready", False):
+                _log("⏭ Platte schon im Greifer (im First Start geholt) — Griff übersprungen")
+                return
             # Pause if magazine is empty — wait for user to refill
             if _magazine_count() <= 0:
                 _log("📦 Magazin leer — Farm pausiert. Platten auffüllen und Zähler anpassen.")
@@ -1686,6 +1692,8 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             _decrement_magazine()
             if job.get("slot") and job["slot"] != "1-0":
                 _rack_update(job["slot"], "printing", job["fileName"])
+            if _farm.get("_in_first_start"):
+                _farm["_plate_ready"] = True   # Zyklus-Griff des ersten Jobs überspringen
         elif "STORE_TO_RACK" in val or val.startswith("STORE_TO_SLOT_"):
             _rack_update(job["slot"], "done",
                          object_height_mm=job.get("object_height_mm"))
@@ -1700,6 +1708,10 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             raise RuntimeError(f"Unbekannte Printloom-Op: {op!r}")
         # grab UND grab_magazine zählen als Greifen (Magazin-Check + Zähler dekrementieren).
         is_grab, is_store = op in ("grab", "grab_magazine"), op == "store"
+        if is_grab and not _farm.get("_in_first_start") and _farm.pop("_plate_ready", False):
+            # First Start hat die Platte schon geholt — Zyklus-Griff des ersten Jobs entfällt.
+            _log("⏭ Platte schon im Greifer (im First Start geholt) — Griff übersprungen")
+            return
         if is_grab:
             # Magazin-Check wie beim macro-Grab (leer → Farm pausiert)
             if _magazine_count() <= 0:
@@ -1723,6 +1735,8 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             _decrement_magazine()
             if job.get("slot") and job["slot"] != "1-0":
                 _rack_update(job["slot"], "printing", job["fileName"])
+            if _farm.get("_in_first_start"):
+                _farm["_plate_ready"] = True   # Zyklus-Griff des ersten Jobs überspringen
         elif is_store:
             _rack_update(job["slot"], "done", object_height_mm=job.get("object_height_mm"))
 
@@ -1736,10 +1750,16 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
 
     elif t == "send_homing_file":
         # Sends the homing .3mf directly via FTP+MQTT — no DB lookup needed.
-        if not os.path.exists(HOMING_3MF_PATH):
-            raise RuntimeError(
-                "Homing-Datei nicht vorhanden — Auto Farm → Einstellungen → 'Erstellen'"
-            )
+        # Die Datei wird bei jedem Senden frisch erzeugt (deterministischer Inhalt) —
+        # so wirken G-code-Änderungen (z. B. schnelleres Z200) sofort, ohne dass der
+        # Nutzer in den Einstellungen „Erstellen" drücken muss. Alte Datei = Fallback.
+        try:
+            with open(HOMING_3MF_PATH, "wb") as f:
+                f.write(_build_homing_3mf())
+        except Exception as e:
+            if not os.path.exists(HOMING_3MF_PATH):
+                raise RuntimeError(f"Homing-Datei konnte nicht erstellt werden: {e}")
+            logger.warning(f"Homing-Datei nicht erneuerbar ({e}) — nutze vorhandene")
         homing_name = "printloom_homing.3mf"
         loop = asyncio.get_event_loop()
         _log("[↑] Homing senden (G28+Z200)…")
@@ -1759,9 +1779,32 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         await asyncio.sleep(2)
         if not ok:
             raise RuntimeError("Homing-Druck Start fehlgeschlagen")
-        _log("✓ Homing gesendet — warte auf FINISH…")
-        # Position-confirmed: wait until the printer reports the homing print done.
-        await _wait_bambu_finish(device, label="Homing (G28+Z200)", timeout=float(step.get("seconds") or 180))
+        timeout = float(step.get("seconds") or 180)
+        if step.get("nowait"):
+            # Nicht blockieren: der Drucker homet im Hintergrund, das OTTOeject kann
+            # währenddessen schon Tür öffnen / Platte holen / vor den Drucker fahren.
+            # Der Monitor-Task läuft ab JETZT mit (sieht RUNNING→FAILED/FINISH sicher,
+            # auch wenn das Homing vor dem Warteschritt fertig wird); der Schritt
+            # „Auf Z200 warten" (wait_homing) holt das Ergebnis später ab.
+            _farm["_homing_task"] = asyncio.create_task(
+                _wait_bambu_finish(device, label="Homing (G28+Z200)", timeout=timeout))
+            _log("✓ Homing gesendet — läuft im Hintergrund (OTTOeject arbeitet parallel weiter)")
+        else:
+            _log("✓ Homing gesendet — warte auf FINISH…")
+            # Position-confirmed: wait until the printer reports the homing print done.
+            await _wait_bambu_finish(device, label="Homing (G28+Z200)", timeout=timeout)
+
+    elif t == "wait_homing":
+        # Wartet auf das Ende des mit „nowait" gestarteten Homing-Drucks (Z200 erreicht).
+        # Der Monitor-Task lief seit dem Senden mit — hier nur noch das Ergebnis abholen.
+        label = step.get("label") or "Auf Z200 warten"
+        task = _farm.pop("_homing_task", None)
+        if task is not None:
+            _log(f"[⏳] {label} — Homing läuft noch…" if not task.done() else f"[⏳] {label}…")
+            await task
+        else:
+            # Ohne vorheriges nowait-Homing (Schritt einzeln verwendet): direkt warten.
+            await _wait_bambu_finish(device, label=label, timeout=float(step.get("seconds") or 180))
 
     elif t == "bambu_move":
         # Raw-G-code Z move: send G1 Z{z} directly to the (idle) printer instead of
@@ -1968,8 +2011,9 @@ def _filter_disabled(steps: list) -> list:
 
 # These step types must ALWAYS stay in the normal flow — pre-positioning them is
 # nonsensical and breaks the cycle. Pulling `wait_print` into prep removes the wait
-# entirely → the cycle ejects mid-print; `send_file` likewise must run in order.
-_PREP_FORBIDDEN = ("wait_print", "send_file")
+# entirely → the cycle ejects mid-print; `send_file` likewise must run in order;
+# `wait_homing` würde während eines echten Drucks endlos auf FINISH warten.
+_PREP_FORBIDDEN = ("wait_print", "send_file", "wait_homing")
 
 
 def _split_prep(steps: list) -> tuple:
@@ -2084,6 +2128,12 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
     completed = 0
     cur_slot: Optional[str] = None
     first_start_done = False
+    # Reste aus einem früheren Lauf entsorgen (Greifer-Merker, Homing-Monitor).
+    _farm.pop("_plate_ready", None)
+    _farm["_in_first_start"] = False
+    _old_task = _farm.pop("_homing_task", None)
+    if _old_task is not None:
+        _old_task.cancel()
 
     try:
         _log("═══ Auto Farm aktiv — wartet auf Jobs ═══")
@@ -2150,7 +2200,11 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 if not first_start_done:
                     if _filter_disabled(seq_new):
                         _log("▶ First Start (einmaliges Homing)…")
-                        await _exec_sequence(seq_new, job, device, use_ams, poll_sec, min_min, [], [])
+                        _farm["_in_first_start"] = True
+                        try:
+                            await _exec_sequence(seq_new, job, device, use_ams, poll_sec, min_min, [], [])
+                        finally:
+                            _farm["_in_first_start"] = False
                     first_start_done = True
 
                 # The recurring cycle runs for EVERY job. Steps flagged `prep` are
@@ -2231,6 +2285,10 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             _rack_update(cur_slot, "free")
 
     finally:
+        # Nie abgeholten Homing-Monitor (nowait ohne wait_homing / Abbruch) beenden.
+        _left_task = _farm.pop("_homing_task", None)
+        if _left_task is not None:
+            _left_task.cancel()
         if completed > 0:
             _log("Abschluss: OTTOeject parken…")
             try:
@@ -2638,6 +2696,8 @@ async def force_reset():
         "seq_step_label":   "",
         "started_at":       None,
         "_last_gcode_time": None,
+        "_plate_ready": False,
+        "_in_first_start": False,
     })
     _task = None
     _log("⚠ Farm-State force-reset")

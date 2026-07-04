@@ -46,6 +46,7 @@ const TYPE_META = {
   gcode:          { label: 'Bambu GCode',      icon: '</>',  color: 'text-blue-400',    bg: 'bg-blue-950/20',    border: 'border-blue-900/40'   },
   bambu_move:     { label: 'Bambu Position Z', icon: '↕',    color: 'text-cyan-400',    bg: 'bg-cyan-950/20',    border: 'border-cyan-900/40'   },
   send_homing_file:{ label: 'Bambu Homing',    icon: '⌂',    color: 'text-indigo-400',  bg: 'bg-indigo-950/20',  border: 'border-indigo-900/40'  },
+  wait_homing:    { label: 'Auf Z200 warten',  icon: '⌂⏳',  color: 'text-indigo-400',  bg: 'bg-indigo-950/20',  border: 'border-indigo-900/40'  },
   send_file:      { label: 'Druckdatei senden',icon: '↑',    color: 'text-emerald-400', bg: 'bg-emerald-950/20', border: 'border-emerald-900/50' },
   wait_print:     { label: 'Auf Druckende warten', icon: '⏳', color: 'text-sky-400',   bg: 'bg-sky-950/20',    border: 'border-sky-900/50'   },
   delay:          { label: 'Wartezeit',        icon: '⏱',   color: 'text-amber-400',   bg: 'bg-amber-950/20',   border: 'border-amber-900/40'  },
@@ -58,11 +59,23 @@ const TYPE_META = {
 }
 
 // Curated building blocks offered in the "+ add step" menu (legacy types omitted).
-const ADD_TYPES = ['macro', 'app_op', 'klipper_gcode', 'gcode', 'bambu_move', 'send_homing_file', 'send_file', 'wait_print', 'delay']
+// First Start: kein send_file/wait_print (das ist Sache des Zyklus), dafür Homing + Z200-Warten.
+// Zyklus: kein Homing-Paar (gehört in den First Start) — hält beide Menüs klar und kurz.
+const ADD_TYPES = ['macro', 'app_op', 'klipper_gcode', 'gcode', 'bambu_move', 'send_homing_file', 'wait_homing', 'send_file', 'wait_print', 'delay']
+const FIRST_ADD_TYPES = ['macro', 'app_op', 'klipper_gcode', 'gcode', 'bambu_move', 'send_homing_file', 'wait_homing', 'delay']
+const CYCLE_ADD_TYPES = ['macro', 'app_op', 'klipper_gcode', 'gcode', 'bambu_move', 'send_file', 'wait_print', 'delay']
+
+// Griff-Schritt (Platte aus Regal/Magazin holen) — für den Übergabe-Marker:
+// holt der First Start bereits eine Platte, überspringt der Zyklus GENAU diesen Schritt beim 1. Job.
+const isGrabStep = (s) => !s.disabled && (
+  (s.type === 'macro' && /GRAB_FROM_RACK|GRAB_FROM_SLOT_/i.test(s.value || '')) ||
+  (s.type === 'app_op' && ['grab', 'grab_magazine'].includes(s.value))
+)
 
 /* ─── Individual step block ──────────────────────────────────── */
 function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, onToggleDisabled,
-                     onDragStart, onDragEnd, onDragOver, onDrop, isDragOver, onRun }) {
+                     onDragStart, onDragEnd, onDragOver, onDrop, isDragOver, onRun,
+                     allowPrep = false, handover = false }) {
   const { tr } = useLanguage()
   const appOps = useAppOps()
   const [open, setOpen] = useState(false)
@@ -79,6 +92,15 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
     >
       {/* Drop indicator line */}
       {isDragOver && <div className="h-0.5 bg-blue-500 rounded-full mx-1 mb-1" />}
+      {/* Handover marker: where First Start hands over into the cycle (job 1) */}
+      {handover && (
+        <div className="flex items-center gap-1.5 px-1 pb-1 text-[9px] font-mono text-emerald-500/90 select-none"
+          title={tr('First Start hat die Platte schon geholt und wartet vor dem Drucker — dieser Griff wird beim 1. Job übersprungen, der Zyklus macht direkt danach weiter.')}>
+          <span className="flex-1 border-t border-dashed border-emerald-800/60" />
+          <span>⇢ {tr('First Start übergibt hier (Job 1: Griff wird übersprungen)')}</span>
+          <span className="w-4 border-t border-dashed border-emerald-800/60" />
+        </div>
+      )}
       <div className={`rounded-lg border transition-colors ${
         isDisabled
           ? 'border-surface-700/50 bg-surface-900/40'
@@ -122,26 +144,21 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
             <span className="text-[10px] text-surface-500 font-mono shrink-0">ID {step.value}</span>
           )}
 
-          {/* Optional badge */}
-          {step.optional && (
-            <span className="text-[9px] font-mono text-amber-600 border border-amber-800/60 px-1 rounded shrink-0 select-none" title={tr('Fehler werden ignoriert')}>opt</span>
-          )}
-
           {/* Parallel badge */}
           {step.parallel && (
             <span className="text-[9px] font-mono text-blue-400 border border-blue-800/60 px-1 rounded shrink-0 select-none">∥</span>
           )}
 
-          {/* Condition badge */}
-          {step.condition?.check && (
-            <span className="text-[9px] font-mono text-violet-400 border border-violet-800/60 px-1 rounded shrink-0 select-none"
-              title={tr('Nur wenn {0} {1} {2}', step.condition.check, step.condition.op, step.condition.value)}>if</span>
-          )}
-
           {/* Pre-position badge (never for wait_print/send_file) */}
-          {step.prep && !['wait_print', 'send_file'].includes(step.type) && (
+          {step.prep && !['wait_print', 'send_file', 'wait_homing'].includes(step.type) && (
             <span className="text-[9px] font-mono text-blue-400 border border-blue-800/60 px-1 rounded shrink-0 select-none"
               title={tr('Wird ~1 Min vor Druckende vorgezogen')}>⏱</span>
+          )}
+
+          {/* Homing runs in the background (nowait) badge */}
+          {step.type === 'send_homing_file' && !!step.nowait && (
+            <span className="text-[9px] font-mono text-indigo-400 border border-indigo-800/60 px-1 rounded shrink-0 select-none"
+              title={tr('Wartet nicht — Drucker homet im Hintergrund („Auf Z200 warten" holt das Ergebnis ab)')}>⏩</span>
           )}
 
           {!fixed && (
@@ -236,8 +253,24 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
             </div>
 
             {step.type === 'send_homing_file' && (
+              <div className="space-y-1 py-1">
+                <p className="text-[10px] text-indigo-600 font-mono">
+                  {tr('Sendet G28 + schnelles Z200 (F3000) als Mini-Druck — die Datei wird automatisch frisch erzeugt.')}
+                </p>
+                <label className="flex items-center gap-1.5 text-[10px] text-surface-500 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!step.nowait}
+                    onChange={e => onChange(step.id, { nowait: e.target.checked })}
+                  />
+                  {tr('⏩ Nicht warten — Drucker homet im Hintergrund, OTTOeject arbeitet parallel weiter (danach Schritt „Auf Z200 warten" einplanen!)')}
+                </label>
+              </div>
+            )}
+
+            {step.type === 'wait_homing' && (
               <p className="text-[10px] text-indigo-600 font-mono py-1">
-                {tr('Verwendet die Homing-Datei aus Auto Farm → Einstellungen. Bambu meldet FINISH wenn G28+Z200 abgeschlossen → danach wait_print.')}
+                {tr('Wartet, bis der im Hintergrund gestartete Homing-Druck fertig ist (Bett wirklich auf Z200) — gehört ans Ende des First Start, wenn beim Homing-Schritt „Nicht warten" aktiv ist.')}
               </p>
             )}
 
@@ -385,24 +418,12 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
               </div>
             )}
 
-            {/* Optional toggle — available for all step types */}
-            <label className="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-surface-800/30">
-              <input
-                type="checkbox"
-                checked={!!step.optional}
-                onChange={e => onChange(step.id, { optional: e.target.checked })}
-                className="accent-amber-500"
-              />
-              <span className="text-[10px] text-surface-500">
-                {tr('Optional — Fehler ignorieren, Schritt gilt immer als fertig')}
-              </span>
-            </label>
-
-            {/* Pre-position toggle — run ~1 min before print end (only meaningful in the cycle).
-                NEVER offered for wait_print/send_file: pre-positioning the "wait for print
-                end" step would pull the wait out of the flow and eject mid-print. */}
-            {!['wait_print', 'send_file'].includes(step.type) && (
-              <label className="flex items-center gap-2 cursor-pointer select-none">
+            {/* Pre-position toggle — run ~1 min before print end. Only offered in the
+                CYCLE card (allowPrep): in First Start there is no print to run ahead of.
+                NEVER for wait_print/send_file/wait_homing: pre-positioning the "wait"
+                steps would pull the wait out of the flow and eject mid-print. */}
+            {allowPrep && !['wait_print', 'send_file', 'wait_homing'].includes(step.type) && (
+              <label className="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-surface-800/30">
                 <input
                   type="checkbox"
                   checked={!!step.prep}
@@ -414,67 +435,6 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
                 </span>
               </label>
             )}
-
-            {/* Conditional step (5.3) — run only if the printer status matches */}
-            <div className="pt-1 border-t border-surface-800/30 space-y-1">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-surface-500 w-14 shrink-0">{tr('Bedingung')}</span>
-                <select
-                  value={step.condition?.check ?? ''}
-                  onChange={e => {
-                    const check = e.target.value
-                    onChange(step.id, {
-                      condition: check
-                        ? { check, op: check === 'gcode_state' ? '==' : '<', value: check === 'gcode_state' ? 'IDLE' : 50 }
-                        : null,
-                    })
-                  }}
-                  className="text-[10px] h-6 py-0 flex-1"
-                >
-                  <option value="">{tr('— immer ausführen —')}</option>
-                  <option value="nozzle_temp">{tr('Düsentemperatur')}</option>
-                  <option value="bed_temp">{tr('Betttemperatur')}</option>
-                  <option value="chamber_temp">{tr('Kammertemperatur')}</option>
-                  <option value="gcode_state">{tr('Druckerstatus')}</option>
-                </select>
-              </div>
-              {step.condition?.check && (
-                <>
-                  <div className="flex items-center gap-1.5 pl-[60px]">
-                    <select
-                      value={step.condition.op}
-                      onChange={e => onChange(step.id, { condition: { ...step.condition, op: e.target.value } })}
-                      className="text-[10px] h-6 py-0 w-16"
-                    >
-                      {step.condition.check === 'gcode_state' ? (
-                        <>
-                          <option value="==">=</option>
-                          <option value="!=">≠</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="<">&lt;</option>
-                          <option value="<=">≤</option>
-                          <option value=">">&gt;</option>
-                          <option value=">=">≥</option>
-                          <option value="==">=</option>
-                        </>
-                      )}
-                    </select>
-                    <input
-                      type={step.condition.check === 'gcode_state' ? 'text' : 'number'}
-                      value={step.condition.value}
-                      onChange={e => onChange(step.id, { condition: { ...step.condition, value: e.target.value } })}
-                      placeholder={step.condition.check === 'gcode_state' ? 'IDLE / RUNNING / PAUSE / FINISH' : '°C'}
-                      className="text-[10px] h-6 py-0 flex-1"
-                    />
-                  </div>
-                  <p className="text-[9px] text-surface-600 pl-[60px]">
-                    {tr('Sonst wird der Schritt übersprungen (bei Lesefehler läuft er sicherheitshalber).')}
-                  </p>
-                </>
-              )}
-            </div>
 
           </div>
         )}
@@ -492,6 +452,7 @@ const TYPE_DEFAULTS = {
   wait_bambu_idle:{ label: 'Warte Z200',            value: '',                 seconds: 50  },
   delay:          { label: 'Wartezeit',            value: '',                 seconds: 5   },
   send_homing_file:{ label: 'Homing senden',       value: '',                 seconds: 180 },
+  wait_homing:    { label: 'Auf Z200 warten (Homing-Ende)', value: '',        seconds: 180 },
   bambu_move:     { label: 'Bambu Position Z',     value: '',  z: 200, feed: 3000, seconds: 120 },
   send_file:      { label: 'Datei senden',         value: '',                 seconds: 0   },
   send_file_fixed:{ label: 'Feste Datei (ID)',     value: '',                 seconds: 0   },
@@ -502,7 +463,8 @@ const TYPE_DEFAULTS = {
 }
 
 /* ─── Sequence card ───────────────────────────────────────────── */
-function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true }) {
+function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true,
+                        allowPrep = false, addTypes = ADD_TYPES, handoverId = null, footer = null }) {
   const { tr } = useLanguage()
   const [draggingId, setDraggingId] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
@@ -628,7 +590,8 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true 
                       onChange={change} onMove={move} onDelete={remove}
                       onTogglePar={togglePar} onToggleDisabled={toggleDisabled}
                       onDragStart={dragStart} onDragEnd={dragEnd} onDragOver={dragOver} onDrop={drop}
-                      isDragOver={dragOverId === step.id} onRun={runStep} />
+                      isDragOver={dragOverId === step.id} onRun={runStep}
+                      allowPrep={allowPrep} handover={step.id === handoverId} />
                   ))}
                 </div>
               </div>
@@ -638,17 +601,20 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true 
                 onChange={change} onMove={move} onDelete={remove}
                 onTogglePar={togglePar} onToggleDisabled={toggleDisabled}
                 onDragStart={dragStart} onDragEnd={dragEnd} onDragOver={dragOver} onDrop={drop}
-                isDragOver={dragOverId === group[0].step.id} onRun={runStep} />
+                isDragOver={dragOverId === group[0].step.id} onRun={runStep}
+                allowPrep={allowPrep} handover={group[0].step.id === handoverId} />
             )}
 
           </div>
         ))}
       </div>
 
+      {footer}
+
       {/* Add step buttons */}
       <div className="flex items-center gap-1.5 flex-wrap border-t border-surface-800/50 pt-2.5">
         <span className="text-[10px] text-surface-700 mr-0.5">{tr('+ Hinzufügen:')}</span>
-        {ADD_TYPES.map(type => {
+        {addTypes.map(type => {
           const meta = TYPE_META[type]
           return (
             <button
@@ -685,16 +651,22 @@ function SequenceEditor() {
 
   useEffect(() => {
     // Migration: strip the prep flag from steps where it's nonsensical (wait_print/
-    // send_file). Cleans up sequences saved before the guard so the ⏱ badge clears
-    // and the data is consistent.
+    // send_file/wait_homing) and drop per-step conditions (Feature entfernt — sie
+    // machten den Ablauf unvorhersehbar). Cleans up sequences saved before.
     const sanitize = (steps) => {
       let changed = false
       const out = steps.map(s => {
-        if (s.prep && ['wait_print', 'send_file'].includes(s.type)) {
+        let t = s
+        if (t.prep && ['wait_print', 'send_file', 'wait_homing'].includes(t.type)) {
           changed = true
-          return { ...s, prep: false }
+          t = { ...t, prep: false }
         }
-        return s
+        if (t.condition) {
+          changed = true
+          const { condition, ...rest } = t
+          t = rest
+        }
+        return t
       })
       return { out, changed }
     }
@@ -741,6 +713,11 @@ function SequenceEditor() {
     a.click()
     URL.revokeObjectURL(url)
   }
+
+  // Übergabe First Start → Zyklus: holt der First Start eine Platte, wird der erste
+  // Griff-Schritt des Zyklus beim 1. Job übersprungen — genau dort sitzt der Marker.
+  const firstStartGrabs = newSteps.some(isGrabStep)
+  const handoverId = firstStartGrabs ? (nextSteps.find(isGrabStep)?.id ?? null) : null
 
   const importConfig = (e) => {
     const file = e.target.files?.[0]
@@ -794,18 +771,27 @@ function SequenceEditor() {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <SequenceCard
-          title={tr('First Start (einmal)')}
-          desc={tr('Läuft genau einmal beim Farm-Start: Drucker homen + auf Z200 fahren (positionsgenau).')}
+          title={tr('▶ First Start — einmal beim Start-Knopf')}
+          desc={tr('Läuft genau einmal beim Farm-Start. Standard: Drucker homet im Hintergrund auf Z200, währenddessen holt das OTTOeject schon die erste Platte und wartet vor dem Drucker — der Zyklus überspringt seinen Griff dann automatisch.')}
           steps={newSteps}
           setSteps={setNewSteps}
           defaults={DEFAULT_SEQ_NEW}
+          addTypes={FIRST_ADD_TYPES}
+          footer={firstStartGrabs ? (
+            <p className="text-[10px] font-mono text-emerald-500/90 -mt-1 select-none">
+              ⇢ {tr('Endet mit Platte im Greifer vor dem Drucker — weiter im Zyklus (der eigene Griff des 1. Jobs wird übersprungen).')}
+            </p>
+          ) : null}
         />
         <SequenceCard
-          title={tr('Zyklus (jeder Job)')}
+          title={tr('↻ Zyklus — jeder Job')}
           desc={tr('Wiederkehrender Ablauf für JEDEN Job. ⏱-markierte Schritte starten ~1 Min vor Druckende.')}
           steps={nextSteps}
           setSteps={setNextSteps}
           defaults={DEFAULT_SEQ_NEXT}
+          addTypes={CYCLE_ADD_TYPES}
+          allowPrep
+          handoverId={handoverId}
         />
       </div>
 
@@ -818,17 +804,14 @@ function SequenceEditor() {
             ['⌘',    'Klipper GCode', 'teal-400',    'Raw GCode an OTTOeject (Klipper) — blockiert bis Position erreicht, kein Delay nötig'],
             ['▶',    'Makro',         'violet-400',  'OTTOeject-Makro — {rack} = Rack-Nr, {slot} = Fach-Nr (z.B. GRAB_FROM_RACK RACK={rack} SLOT={slot})'],
             ['◆',    'Printloom-Op',  'fuchsia-400', 'Printloom-eigene Operation (Tür, Auswurf, Einlegen, Greifen …) aus dem Drucker-Tab — immer als App-G-code, Position & Geschwindigkeit dort einstellbar'],
-            ['◎',    'Warte Z200',    'cyan-400',    'Wartet verbleibende G28-Zeit — Zwischenschritte (Homen, Tür, Platte) werden automatisch abgezogen'],
-            ['⏱',   'Delay',         'amber-400',   'Feste Wartezeit — nur nötig wenn kein synchrones Feedback möglich'],
-            ['⇫',    'Homing',        'indigo-400',  'Konfigurierte Homing-.3mf senden (G28+Z200) — Bambu meldet FINISH → wait_print erkennt Z200 zuverlässig'],
+            ['⌂',    'Bambu Homing',  'indigo-400',  'Sendet G28 + schnelles Z200 als Mini-Druck (Datei wird automatisch erzeugt) — mit ⏩ homet der Drucker im Hintergrund weiter'],
+            ['⌂⏳',  'Auf Z200 warten','indigo-400', 'Holt das Ergebnis des im Hintergrund gestarteten Homings ab — Bett sicher auf Z200, dann geht es weiter'],
+            ['↕',    'Bambu Position Z','cyan-400',  'Bett per Roh-G-Code auf Z fahren (schnell, ohne Druck-Vorbereitung)'],
             ['↑',    'Senden',        'emerald-400', 'Aktuelle Job-Druckdatei an den Bambu Lab senden'],
-            ['⇪',    'Feste Datei',   'indigo-400',  'Beliebige Datei per ID aus der Dateiliste senden'],
             ['⏳',   'Warten',        'sky-400',     'Per MQTT-Polling auf Druckende warten (FINISH) — hier läuft der 1-min Vorstart'],
-            ['⏸',   'Warten (PAUSE)', 'yellow-400',  'Pollt MQTT bis gcode_state=PAUSE (M400 U1 fertig) — Crash-Schutz bei FAILED oder Timeout'],
-            ['✗',   'Warten (FAILED)', 'red-400',    'Per MQTT-Polling auf Druckfehler warten (FAILED) — Sequenz läuft normal weiter'],
-            ['⚠',   'Fehler quit.',    'orange-400', 'Sendet stop-Befehl an Bambu — setzt FAILED zurück auf IDLE, Drucker bereit für nächsten Job'],
-            ['○',    'Optional',      'amber-600',   'Fehler werden ignoriert — Schritt gilt immer als erfolgreich abgeschlossen, Sequenz läuft weiter'],
-            ['∥',    'Parallel',      'blue-400',    'Schritt gleichzeitig mit dem vorigen Schritt ausführen (asyncio.gather)'],
+            ['⏱',   'Vorziehen',     'blue-400',    'Badge am Schritt: startet ~1 Min vor Druckende (nur im Zyklus wählbar) — z.B. Homen + vor Drucker fahren'],
+            ['⇢',    'Übergabe',      'emerald-500', 'Grüne Marke im Zyklus: hier übergibt der First Start — der Griff des 1. Jobs wird übersprungen (Platte schon im Greifer)'],
+            ['∥',    'Parallel',      'blue-400',    'Schritt gleichzeitig mit dem vorigen Schritt ausführen'],
             ['on/off','Aktiv/Inaktiv', 'surface-400', 'on = Schritt aktiv · off = deaktiviert (wird beim Ausführen übersprungen, bleibt in der Liste)'],
             ['⠿',    'Drag-Handle',   'surface-400', 'Rechts am Schritt — Klicken und Ziehen zum freien Verschieben in der Liste'],
           ].map(([icon, label, color, desc]) => (

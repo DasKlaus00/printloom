@@ -1,4 +1,4 @@
-// Step factory. `extra` carries optional flags/fields: { parallel, optional, prep, z, feed }.
+// Step factory. `extra` carries optional flags/fields: { parallel, optional, prep, nowait, z, feed }.
 const s = (id, type, label, value = '', seconds = 0, extra = {}) => ({
   id, type, label,
   value: value ?? '',
@@ -6,14 +6,22 @@ const s = (id, type, label, value = '', seconds = 0, extra = {}) => ({
   parallel: extra.parallel ?? false,
   optional: extra.optional ?? false,
   prep:     extra.prep ?? false,
+  ...(extra.nowait       ? { nowait: true }     : {}),
   ...(extra.z != null    ? { z: extra.z }       : {}),
   ...(extra.feed != null ? { feed: extra.feed } : {}),
 })
 
-// ── First Start: runs exactly ONCE at farm start (one-time homing + Z200). ──
+// ── First Start: runs exactly ONCE at farm start. Homing läuft im Hintergrund
+// (nowait), währenddessen holt das OTTOeject schon die Platte und wartet vor dem
+// Drucker auf Z200. Der Zyklus überspringt seinen Griff dann automatisch
+// („Platte schon im Greifer"). ──
 export const DEFAULT_SEQ_NEW = [
-  s(1, 'macro',            'OTTOeject homen',          'OTTOEJECT_HOME', 0, { optional: true }),
-  s(2, 'send_homing_file', 'Bambu Homing (G28+Z200)',  '',               180),
+  s(1, 'send_homing_file', 'Bambu Homing (G28+Z200, im Hintergrund)', '', 180, { nowait: true }),
+  s(2, 'macro',            'OTTOeject homen',      'OTTOEJECT_HOME', 0, { optional: true }),
+  s(3, 'macro',            'Tür öffnen',           'OPEN_DOOR_BAMBU_X_ONE_C', 0, { optional: true }),
+  s(4, 'macro',            'Platte holen',         'GRAB_FROM_RACK RACK={stack_rack} SLOT={stack_slot}'),
+  s(5, 'macro',            'Vor Drucker fahren',   'MOVE_TO_PRINTER_BAMBU', 0, { optional: true }),
+  s(6, 'wait_homing',      'Auf Z200 warten (Homing-Ende)', '', 180),
 ]
 
 // ── Cycle: runs for EVERY job. ⏱-flagged steps fire ~1 min before print end. ──

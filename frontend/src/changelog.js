@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.109',
+    de: [
+      'Schnellerer Start: Beim Start-Knopf holt das OTTOeject die erste Platte jetzt, WÄHREND der Drucker noch homet — Standard-First-Start: Homing im Hintergrund starten (⏩) → OTTOeject homen → Tür öffnen → Platte holen → vor dem Drucker warten → „Auf Z200 warten". Die Homing-Datei fährt das Bett jetzt schnell auf Z200 (F3000 statt F600) und wird bei jedem Senden automatisch frisch erzeugt (kein „Erstellen" mehr nötig). Der Zyklus erkennt die schon gegriffene Platte und überspringt seinen Griff beim 1. Job automatisch.',
+      'Sequenz-Editor aufgeräumt: klare Karten „First Start — einmal beim Start-Knopf" und „Zyklus — jeder Job", grüner Übergabe-Marker zeigt, wo der First Start in den Zyklus übergibt. ⏱ „Vor Druckende vorziehen" ist nur noch im Zyklus wählbar (dort gehört es hin). Bedingungen an einzelnen Schritten und „Optional/Fehler ignorieren" wurden entfernt — weniger versteckte Logik, vorhersehbarer Ablauf. Passende Schritt-Menüs pro Karte und eine kompakte, aktuelle Legende.',
+    ],
+    en: [
+      'Faster start: when you press Start, the OTTOeject now fetches the first plate WHILE the printer is still homing — default First Start: start homing in the background (⏩) → home OTTOeject → open door → grab plate → wait in front of the printer → “Wait for Z200”. The homing file now moves the bed to Z200 fast (F3000 instead of F600) and is regenerated automatically on every send (no more “Create” needed). The cycle detects the already-grabbed plate and skips its own grab on job 1 automatically.',
+      'Sequence editor cleaned up: clear “First Start — once when you press Start” and “Cycle — every job” cards, a green handover marker shows where First Start hands over into the cycle. ⏱ “run early before print end” is now only offered in the cycle (where it belongs). Per-step conditions and “optional/ignore errors” were removed — less hidden logic, more predictable runs. Matching add menus per card and a compact, up-to-date legend.',
+    ],
+  },
+  {
     version: '1.0.108',
     de: [
       'Regal-Nummerierung jetzt ÜBERALL einheitlich: R1 = Regal direkt am Drucker. Die Klipper-Macros auf dem OTTOeject (GRAB_FROM_RACK/STORE_TO_RACK) zählen intern vom Homing-Punkt rechts — genau andersherum. Printloom übersetzt die RACK=-Nummer jetzt automatisch beim Senden (bei 3 Regalen: R1→3, R2→2, R3→1). Behebt: Anzeige sagte „R1 Fach 1", die Platte landete aber im Regal ganz rechts. Gilt für die Farm, den Sequenz-Test, die Konsole und eigene G-code-Overrides; die Übersetzung steht sichtbar im Farm-Log.',
