@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.111',
+    de: [
+      'Übergabe First Start → Zyklus vervollständigt: Beim 1. Job überspringt der Zyklus jetzt ALLES bis einschließlich seines Griff-Schritts — nicht nur den Griff. Vorher wäre z. B. „Tür öffnen" vor dem Griff nochmal gelaufen, mit der Platte im Greifer (Tür war schon offen — unnötige Fahrt, Kollisionsrisiko). Der grüne Marker im Editor sagt es jetzt genau so; das Farm-Log listet die übersprungenen Schritte auf. Sicherheits-Fallback: steckt der Griff in einer ∥-Gruppe oder liegt ein Datei-/Warteschritt davor, wird wie bisher nur der Griff selbst übersprungen.',
+    ],
+    en: [
+      'First Start → cycle handover completed: on job 1 the cycle now skips EVERYTHING up to and including its grab step — not just the grab. Previously e.g. “open door” before the grab would have run again, with the plate in the gripper (door already open — pointless move, collision risk). The green marker in the editor now says exactly that; the farm log lists the skipped steps. Safety fallback: if the grab sits in a ∥ group or a file/wait step precedes it, only the grab itself is skipped as before.',
+    ],
+  },
+  {
     version: '1.0.110',
     de: [
       'Sequenz-Editor: deutliche Warnung, wenn der Zyklus keinen Griff-Schritt mehr hat (z. B. als vermeintliche „Dopplung" zum First Start gelöscht) — ab Job 2 würde sonst keine neue Platte geholt. Der Übergabe-Marker erklärt jetzt explizit: Job 1 überspringt den Zyklus-Griff automatisch, ab Job 2 greift er normal — er ist KEINE Dopplung.',

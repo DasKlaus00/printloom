@@ -966,14 +966,14 @@ const EN_STRINGS = {
     'Does not wait — the printer homes in the background ("Wait for Z200" picks up the result)',
   '▶ First Start — einmal beim Start-Knopf': '▶ First Start — once when you press Start',
   '↻ Zyklus — jeder Job': '↻ Cycle — every job',
-  'Endet mit Platte im Greifer vor dem Drucker — weiter im Zyklus (der eigene Griff des 1. Jobs wird übersprungen).':
-    'Ends with the plate in the gripper in front of the printer — continues in the cycle (job 1 skips its own grab).',
-  'First Start übergibt hier — Job 1 überspringt diesen Griff, ab Job 2 greift er normal (keine Dopplung)':
-    'First Start hands over here — job 1 skips this grab, from job 2 on it grabs normally (not a duplicate)',
+  'Endet mit Platte im Greifer vor dem Drucker — Job 1 startet im Zyklus direkt HINTER dem Griff (alles davor entfällt).':
+    'Ends with the plate in the gripper in front of the printer — job 1 starts in the cycle right AFTER the grab (everything before it is skipped).',
+  'Job 1 überspringt alles bis inkl. diesem Griff (First Start übergibt) — ab Job 2 läuft der Zyklus komplett':
+    'Job 1 skips everything up to and including this grab (First Start hands over) — from job 2 on the full cycle runs',
   'Kein aktiver Griff-Schritt im Zyklus — ab Job 2 wird KEINE neue Platte geholt! Der Zyklus-Griff ist keine Dopplung zum First Start: Job 1 überspringt ihn automatisch, ab Job 2 holt er die Platte. Bitte „Platte holen" wieder einfügen (Makro GRAB_FROM_RACK oder Printloom-Op „Aus Magazin holen").':
     'No active grab step in the cycle — from job 2 on, NO new plate will be fetched! The cycle grab is not a duplicate of First Start: job 1 skips it automatically, from job 2 on it fetches the plate. Please re-add "grab plate" (macro GRAB_FROM_RACK or Printloom op "Grab from magazine").',
-  'First Start hat die Platte schon geholt und wartet vor dem Drucker — dieser Griff wird beim 1. Job übersprungen, der Zyklus macht direkt danach weiter.':
-    'First Start already fetched the plate and waits in front of the printer — this grab is skipped on job 1 and the cycle continues right after it.',
+  'First Start hat die Platte schon geholt und wartet vor dem Drucker (Tür offen). Beim 1. Job überspringt der Zyklus deshalb alles bis einschließlich diesem Griff und macht direkt danach weiter. Ab Job 2 läuft der Zyklus komplett — der Griff ist KEINE Dopplung.':
+    'First Start already fetched the plate and waits in front of the printer (door open). On job 1 the cycle therefore skips everything up to and including this grab and continues right after it. From job 2 on the full cycle runs — the grab is NOT a duplicate.',
   'Sendet G28 + schnelles Z200 als Mini-Druck (Datei wird automatisch erzeugt) — mit ⏩ homet der Drucker im Hintergrund weiter':
     'Sends G28 + a fast Z200 as a mini print (file is generated automatically) — with ⏩ the printer keeps homing in the background',
   'Holt das Ergebnis des im Hintergrund gestarteten Homings ab — Bett sicher auf Z200, dann geht es weiter':

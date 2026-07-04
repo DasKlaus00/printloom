@@ -95,9 +95,9 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
       {/* Handover marker: where First Start hands over into the cycle (job 1) */}
       {handover && (
         <div className="flex items-center gap-1.5 px-1 pb-1 text-[9px] font-mono text-emerald-500/90 select-none"
-          title={tr('First Start hat die Platte schon geholt und wartet vor dem Drucker — dieser Griff wird beim 1. Job übersprungen, der Zyklus macht direkt danach weiter.')}>
+          title={tr('First Start hat die Platte schon geholt und wartet vor dem Drucker (Tür offen). Beim 1. Job überspringt der Zyklus deshalb alles bis einschließlich diesem Griff und macht direkt danach weiter. Ab Job 2 läuft der Zyklus komplett — der Griff ist KEINE Dopplung.')}>
           <span className="flex-1 border-t border-dashed border-emerald-800/60" />
-          <span>⇢ {tr('First Start übergibt hier — Job 1 überspringt diesen Griff, ab Job 2 greift er normal (keine Dopplung)')}</span>
+          <span>⇢ {tr('Job 1 überspringt alles bis inkl. diesem Griff (First Start übergibt) — ab Job 2 läuft der Zyklus komplett')}</span>
           <span className="w-4 border-t border-dashed border-emerald-800/60" />
         </div>
       )}
@@ -782,7 +782,7 @@ function SequenceEditor() {
           addTypes={FIRST_ADD_TYPES}
           footer={firstStartGrabs ? (
             <p className="text-[10px] font-mono text-emerald-500/90 -mt-1 select-none">
-              ⇢ {tr('Endet mit Platte im Greifer vor dem Drucker — weiter im Zyklus (der eigene Griff des 1. Jobs wird übersprungen).')}
+              ⇢ {tr('Endet mit Platte im Greifer vor dem Drucker — Job 1 startet im Zyklus direkt HINTER dem Griff (alles davor entfällt).')}
             </p>
           ) : null}
         />

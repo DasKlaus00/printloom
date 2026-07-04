@@ -2030,6 +2030,39 @@ def _split_prep(steps: list) -> tuple:
     return normal, prep
 
 
+def _handover_trim(steps: list) -> list:
+    """Übergabe First Start → Zyklus (nur Job 1, wenn `_plate_ready` gesetzt ist):
+    der First Start hat die Platte schon geholt und steht damit vor dem Drucker —
+    der Zyklus startet direkt HINTER seinem ersten Griff-Schritt. Auch die Schritte
+    DAVOR (z. B. „Tür öffnen") entfallen: die Tür ist bereits offen, und der Arm
+    dürfte die Tür-Fahrt nicht mit der Platte im Greifer ausführen.
+
+    Sicherheits-Fallbacks (dann greift der Einzel-Skip im Griff-Schritt selbst):
+    kein Griff vorhanden · Griff steckt in einer ∥-Gruppe · vor dem Griff liegt
+    ein Datei-/Warteschritt (send_file/wait_print …), der nicht entfallen darf."""
+    def _is_grab(s):
+        if s.get("disabled"):
+            return False
+        t, v = s.get("type"), str(s.get("value") or "")
+        if t == "macro":
+            vu = v.upper()
+            return "GRAB_FROM_RACK" in vu or vu.strip().startswith("GRAB_FROM_SLOT_")
+        return t == "app_op" and v.strip().lower() in ("grab", "grab_magazine")
+
+    blockers = {"wait_print", "send_file", "send_homing_file", "send_file_fixed"}
+    for i, s in enumerate(steps):
+        if not _is_grab(s):
+            continue
+        in_group = s.get("parallel") or (i + 1 < len(steps) and steps[i + 1].get("parallel"))
+        if in_group or any(x.get("type") in blockers for x in steps[:i]):
+            return steps
+        _farm.pop("_plate_ready", None)
+        skipped = [x.get("label", x.get("type", "?")) for x in steps[:i + 1] if not x.get("disabled")]
+        _log("⏭ Übergabe vom First Start (Platte schon im Greifer) — übersprungen: " + " · ".join(skipped))
+        return steps[i + 1:]
+    return steps
+
+
 async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
                           poll_sec: int, min_min: int, prep_steps: list, fail_steps: list = []):
     steps = _filter_disabled(steps)
@@ -2211,6 +2244,11 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 # pulled out and handed to _wait_print so they fire ~1 min before
                 # the print ends (pre-positioning) instead of in their normal slot.
                 cycle_normal, cycle_prep = _split_prep(seq_next)
+                # Übergabe: hat der First Start die Platte schon geholt, startet Job 1
+                # direkt hinter dem Zyklus-Griff (inkl. „Tür öffnen" davor — Tür ist
+                # offen, Arm steht mit Platte vor dem Drucker).
+                if _farm.get("_plate_ready"):
+                    cycle_normal = _handover_trim(cycle_normal)
                 # Bergungs-Sequenz für die 'eject'-Strategie bei Druckfehler (Z200 → Tür →
                 # Auswurf → Einlagern der fehlgeschlagenen Platte). Bei Erfolg ungenutzt.
                 eject_recovery = _eject_recovery_steps(seq_next)
