@@ -559,8 +559,18 @@ async def _do_macro(name: str, _recover: bool = True):
     finally:
         db.close()
 
+    # Geräte-Macros zählen Regal 1 = am Homing-Punkt (rechts), Printloom R1 = am
+    # Drucker → RACK=-Nummern erst hier beim Senden spiegeln (mirror_rack_params).
+    send = name
+    try:
+        send = _motion.mirror_rack_params(name, (_rack_load() or {}).get("num_racks"))
+    except Exception:
+        send = name
+    if send != name:
+        _log(f"↔ Geräte-Zählung (Regal 1 = Homing rechts): {send}")
+
     async with httpx.AsyncClient(timeout=120.0) as client:
-        r = await client.post(url, json={"script": name})
+        r = await client.post(url, json={"script": send})
     if r.status_code == 200:
         return
 

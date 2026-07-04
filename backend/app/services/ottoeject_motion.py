@@ -18,6 +18,7 @@ R1→Rn = vom Drucker weg nach rechts (im Bild links→rechts):
 """
 from __future__ import annotations
 import math
+import re
 from copy import deepcopy
 
 SLOT_Z_EXTRA = 30   # effektiver Z-Schritt = slot_gap + 30
@@ -160,6 +161,31 @@ def apply_rack_config(g: dict, rack_cfg: dict | None) -> dict:
         except (TypeError, ValueError):
             pass
     return g
+
+
+# Regal-Nr. in GERÄTE-Macro-Aufrufen (RACK=…) spiegeln: Printloom zählt seit v1.0.103
+# R1 = Regal DIREKT am Drucker, die Klipper-Macros auf dem OTTOeject (slots.cfg vom
+# alten Konfigurator) zählen Regal 1 = am Homing-Punkt (ganz rechts) — genau andersherum.
+# Deshalb wird JEDE RACK=-Angabe erst beim Senden ans Gerät übersetzt:
+# Geräte-Nr. = Regalzahl − Nr. + 1 (3 Regale: R1→3, R2→2, R3→1; 1 Regal = unverändert).
+# Anzeige, Logs, Fach-Buchhaltung und Printloom-eigener G-code bleiben in
+# Printloom-Zählung — Nummern außerhalb 1…Regalzahl werden nicht angefasst.
+_RACK_PARAM_RE = re.compile(r"\bRACK=(\d+)", re.IGNORECASE)
+
+
+def mirror_rack_params(script: str, racks) -> str:
+    try:
+        nr = int(racks or 1)
+    except (TypeError, ValueError):
+        return script
+    if nr <= 1 or not script or "rack=" not in script.lower():
+        return script
+
+    def _sub(m):
+        r = int(m.group(1))
+        return f"RACK={nr - r + 1}" if 1 <= r <= nr else m.group(0)
+
+    return _RACK_PARAM_RE.sub(_sub, script)
 
 
 def magazine_z_offset(g: dict, rack: int) -> float:

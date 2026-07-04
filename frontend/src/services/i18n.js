@@ -953,6 +953,8 @@ const EN_STRINGS = {
   '+ Hinzufügen:': '+ Add:',
   'Ziel-Fach des Jobs': "job's target slot",
   'Vorrat-Stapel (aus Regal-Einstellungen)': 'stock stack (from rack settings)',
+  'R1 = Regal am Drucker — RACK=… wird beim Senden automatisch in die Geräte-Zählung übersetzt (Geräte-Macro zählt vom Homing-Punkt rechts)':
+    'R1 = rack next to the printer — RACK=… is translated to the device numbering automatically on send (device macros count from the homing point on the right)',
   'Ungültiges Format — seq_new / seq_next fehlen': 'Invalid format — seq_new / seq_next missing',
   'Ablauf des Auto Farms anpassen — Reihenfolge, Zeiten und Parallelausführung. Änderungen werden sofort gespeichert und beim nächsten Lauf verwendet.':
     'Customize the Auto Farm workflow — order, timings and parallel execution. Changes are saved immediately and used on the next run.',

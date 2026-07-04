@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.108',
+    de: [
+      'Regal-Nummerierung jetzt ÜBERALL einheitlich: R1 = Regal direkt am Drucker. Die Klipper-Macros auf dem OTTOeject (GRAB_FROM_RACK/STORE_TO_RACK) zählen intern vom Homing-Punkt rechts — genau andersherum. Printloom übersetzt die RACK=-Nummer jetzt automatisch beim Senden (bei 3 Regalen: R1→3, R2→2, R3→1). Behebt: Anzeige sagte „R1 Fach 1", die Platte landete aber im Regal ganz rechts. Gilt für die Farm, den Sequenz-Test, die Konsole und eigene G-code-Overrides; die Übersetzung steht sichtbar im Farm-Log.',
+    ],
+    en: [
+      'Rack numbering is now consistent EVERYWHERE: R1 = the rack right next to the printer. The Klipper macros on the OTTOeject (GRAB_FROM_RACK/STORE_TO_RACK) internally count from the homing point on the right — exactly the other way round. Printloom now translates the RACK= number automatically on send (with 3 racks: R1→3, R2→2, R3→1). Fixes: the display said “R1 slot 1” but the plate ended up in the rightmost rack. Applies to the farm, sequence tests, the console and custom G-code overrides; the translation is shown in the farm log.',
+    ],
+  },
+  {
     version: '1.0.107',
     de: [
       'Magazin-Durchbiegung kompensiert: Die flach gestapelten Platten hängen durch — der Stapel liegt pro Platte ~1 mm tiefer. „Aus Magazin holen" senkt die Greif-Z jetzt automatisch um 1 mm je Platte im Magazin (6 Platten → Z−6, 4 → Z−4), pro Regal anhand des Magazin-Zählers. Gilt für die berechnete Bewegung UND den {mag_z}-Platzhalter im eigenen G-code. Ohne Zähler bleibt alles wie bisher.',

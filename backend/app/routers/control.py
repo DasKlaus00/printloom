@@ -203,6 +203,10 @@ async def send_klipper_gcode(request: dict, db: Session = Depends(get_db)):
     if not klipper:
         raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
 
+    # RACK=-Nummern in die Geräte-Zählung spiegeln (Printloom R1 = am Drucker,
+    # Geräte-Macro Regal 1 = am Homing-Punkt rechts) — siehe mirror_rack_params.
+    gcode = _mirror_for_device(gcode)
+
     url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
     running = await _fire_moonraker_script(url, gcode)
     return {"success": True, "gcode": gcode, "running": running}
@@ -418,6 +422,16 @@ def _rack_config() -> dict | None:
         return None
 
 
+def _mirror_for_device(script: str) -> str:
+    """RACK=-Nummern für das Gerät spiegeln: Printloom zählt R1 = Regal am Drucker,
+    die Klipper-Macros auf dem OTTOeject zählen Regal 1 = am Homing-Punkt (rechts).
+    Übersetzung passiert IMMER erst beim Senden — Anzeige bleibt Printloom-Zählung."""
+    try:
+        return _motion.mirror_rack_params(script, (_rack_config() or {}).get("num_racks"))
+    except Exception:
+        return script
+
+
 def _load_geometry() -> dict:
     g = _motion.merge_defaults(_storage.read_json(GEOMETRY_PATH, None))
     return _motion.apply_rack_config(g, _rack_config())
@@ -471,6 +485,8 @@ async def run_ottoeject_op(request: dict, db: Session = Depends(get_db)):
     klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
     if not klipper:
         raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
+    # Falls ein gcode_override ein Geräte-Macro mit RACK=… aufruft: Nummer spiegeln.
+    script = _mirror_for_device(script)
     url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
     running = await _fire_moonraker_script(url, script)
     return {"success": True, "op": op, "script": script, "running": running}
@@ -492,4 +508,5 @@ async def preview_ottoeject_op(request: dict):
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return {"success": True, "op": op, "script": script}
+    # Vorschau zeigt exakt das, was gesendet würde (inkl. gespiegelter RACK=-Nummern).
+    return {"success": True, "op": op, "script": _mirror_for_device(script)}

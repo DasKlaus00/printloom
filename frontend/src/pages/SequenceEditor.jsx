@@ -666,6 +666,7 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true 
       {showSlot && (
         <p className="text-[10px] text-surface-700 font-mono -mt-1">
           {'{rack}'}/{'{slot}'} → {tr('Ziel-Fach des Jobs')} &nbsp;·&nbsp; {'{stack_rack}'}/{'{stack_slot}'} → {tr('Vorrat-Stapel (aus Regal-Einstellungen)')}
+          <br />{tr('R1 = Regal am Drucker — RACK=… wird beim Senden automatisch in die Geräte-Zählung übersetzt (Geräte-Macro zählt vom Homing-Punkt rechts)')}
         </p>
       )}
     </div>
