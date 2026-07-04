@@ -97,7 +97,7 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
         <div className="flex items-center gap-1.5 px-1 pb-1 text-[9px] font-mono text-emerald-500/90 select-none"
           title={tr('First Start hat die Platte schon geholt und wartet vor dem Drucker — dieser Griff wird beim 1. Job übersprungen, der Zyklus macht direkt danach weiter.')}>
           <span className="flex-1 border-t border-dashed border-emerald-800/60" />
-          <span>⇢ {tr('First Start übergibt hier (Job 1: Griff wird übersprungen)')}</span>
+          <span>⇢ {tr('First Start übergibt hier — Job 1 überspringt diesen Griff, ab Job 2 greift er normal (keine Dopplung)')}</span>
           <span className="w-4 border-t border-dashed border-emerald-800/60" />
         </div>
       )}
@@ -716,7 +716,10 @@ function SequenceEditor() {
 
   // Übergabe First Start → Zyklus: holt der First Start eine Platte, wird der erste
   // Griff-Schritt des Zyklus beim 1. Job übersprungen — genau dort sitzt der Marker.
+  // Fehlt der Zyklus-Griff dagegen ganz (oder ist er deaktiviert), holt die Farm ab
+  // Job 2 KEINE neue Platte mehr → deutliche Warnung statt Marker.
   const firstStartGrabs = newSteps.some(isGrabStep)
+  const cycleGrabs = nextSteps.some(isGrabStep)
   const handoverId = firstStartGrabs ? (nextSteps.find(isGrabStep)?.id ?? null) : null
 
   const importConfig = (e) => {
@@ -792,6 +795,11 @@ function SequenceEditor() {
           addTypes={CYCLE_ADD_TYPES}
           allowPrep
           handoverId={handoverId}
+          footer={!cycleGrabs ? (
+            <p className="text-[10px] font-mono text-amber-400 bg-amber-950/20 border border-amber-900/40 rounded px-2 py-1.5 -mt-1">
+              ⚠ {tr('Kein aktiver Griff-Schritt im Zyklus — ab Job 2 wird KEINE neue Platte geholt! Der Zyklus-Griff ist keine Dopplung zum First Start: Job 1 überspringt ihn automatisch, ab Job 2 holt er die Platte. Bitte „Platte holen" wieder einfügen (Makro GRAB_FROM_RACK oder Printloom-Op „Aus Magazin holen").')}
+            </p>
+          ) : null}
         />
       </div>
 

@@ -968,8 +968,10 @@ const EN_STRINGS = {
   '↻ Zyklus — jeder Job': '↻ Cycle — every job',
   'Endet mit Platte im Greifer vor dem Drucker — weiter im Zyklus (der eigene Griff des 1. Jobs wird übersprungen).':
     'Ends with the plate in the gripper in front of the printer — continues in the cycle (job 1 skips its own grab).',
-  'First Start übergibt hier (Job 1: Griff wird übersprungen)':
-    'First Start hands over here (job 1: grab is skipped)',
+  'First Start übergibt hier — Job 1 überspringt diesen Griff, ab Job 2 greift er normal (keine Dopplung)':
+    'First Start hands over here — job 1 skips this grab, from job 2 on it grabs normally (not a duplicate)',
+  'Kein aktiver Griff-Schritt im Zyklus — ab Job 2 wird KEINE neue Platte geholt! Der Zyklus-Griff ist keine Dopplung zum First Start: Job 1 überspringt ihn automatisch, ab Job 2 holt er die Platte. Bitte „Platte holen" wieder einfügen (Makro GRAB_FROM_RACK oder Printloom-Op „Aus Magazin holen").':
+    'No active grab step in the cycle — from job 2 on, NO new plate will be fetched! The cycle grab is not a duplicate of First Start: job 1 skips it automatically, from job 2 on it fetches the plate. Please re-add "grab plate" (macro GRAB_FROM_RACK or Printloom op "Grab from magazine").',
   'First Start hat die Platte schon geholt und wartet vor dem Drucker — dieser Griff wird beim 1. Job übersprungen, der Zyklus macht direkt danach weiter.':
     'First Start already fetched the plate and waits in front of the printer — this grab is skipped on job 1 and the cycle continues right after it.',
   'Sendet G28 + schnelles Z200 als Mini-Druck (Datei wird automatisch erzeugt) — mit ⏩ homet der Drucker im Hintergrund weiter':

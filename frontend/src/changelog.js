@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.110',
+    de: [
+      'Sequenz-Editor: deutliche Warnung, wenn der Zyklus keinen Griff-Schritt mehr hat (z. B. als vermeintliche „Dopplung" zum First Start gelöscht) — ab Job 2 würde sonst keine neue Platte geholt. Der Übergabe-Marker erklärt jetzt explizit: Job 1 überspringt den Zyklus-Griff automatisch, ab Job 2 greift er normal — er ist KEINE Dopplung.',
+    ],
+    en: [
+      'Sequence editor: clear warning when the cycle has no grab step left (e.g. deleted as a supposed “duplicate” of First Start) — from job 2 on, no new plate would be fetched. The handover marker now states explicitly: job 1 skips the cycle grab automatically, from job 2 on it grabs normally — it is NOT a duplicate.',
+    ],
+  },
+  {
     version: '1.0.109',
     de: [
       'Schnellerer Start: Beim Start-Knopf holt das OTTOeject die erste Platte jetzt, WÄHREND der Drucker noch homet — Standard-First-Start: Homing im Hintergrund starten (⏩) → OTTOeject homen → Tür öffnen → Platte holen → vor dem Drucker warten → „Auf Z200 warten". Die Homing-Datei fährt das Bett jetzt schnell auf Z200 (F3000 statt F600) und wird bei jedem Senden automatisch frisch erzeugt (kein „Erstellen" mehr nötig). Der Zyklus erkennt die schon gegriffene Platte und überspringt seinen Griff beim 1. Job automatisch.',
