@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.117',
+    de: [
+      'Drucker-Tab: neue Zeile zum direkten Senden von G-code an den OTTOeject (für die Kalibrierung) — Befehl eintippen, Enter oder „▶ Senden", Ergebnis erscheint in der Statuszeile und unter „Gesendeter G-code". RACK=-Nummern werden dabei automatisch in die Geräte-Zählung übersetzt.',
+    ],
+    en: [
+      'Printer tab: new line to send G-code directly to the OTTOeject (for calibration) — type a command, press Enter or “▶ Send”, the result shows in the status line and under “Sent G-code”. RACK= numbers are translated to the device numbering automatically.',
+    ],
+  },
+  {
     version: '1.0.116',
     de: [
       'Kompletter Stabilitäts-Scan nach den gemeldeten Hängern — drei Ursachen gefunden und behoben: 1) Der Live-Kanal (WebSocket) konnte an EINEM halbtoten Client (eingeschlafenes Handy/Tab) hängenbleiben — alle anderen Ansichten bekamen dann keine Updates mehr und die App wirkte eingefroren; Sendevorgänge haben jetzt ein Timeout und tote Clients fliegen raus. 2) Die Farm-Warteschleifen forderten über Stunden alle ~2 s einen Vollreport vom Drucker an — unnötige Dauerlast auf der MQTT-Verbindung (der X1C meldet Änderungen von selbst); jetzt höchstens alle 5 s. 3) Push-Benachrichtigungen ohne Timeout konnten die Farm im Moment einer Meldung unbegrenzt anhalten — jetzt max. 10 s.',

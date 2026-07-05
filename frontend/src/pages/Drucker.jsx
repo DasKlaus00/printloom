@@ -167,6 +167,7 @@ export default function Drucker() {
   const [jog, setJog] = useState({ busy: false, msg: '', err: false })
   const [lastScript, setLastScript] = useState('')
   const [showScript, setShowScript] = useState(false)
+  const [gcodeLine, setGcodeLine] = useState('')
 
   const hasDoor = enclosed && !!(doorOpen && doorClose)
   const yPullback = plate === '220' ? 30 : 5
@@ -298,6 +299,23 @@ export default function Drucker() {
     }
   }
 
+  // G-code-Zeile direkt an den OTTOeject senden (Kalibrierung). Läuft über
+  // /klipper/gcode → RACK=-Nummern werden automatisch in die Geräte-Zählung
+  // gespiegelt; die Antwort kommt beim Bewegungsstart zurück.
+  const sendGcodeLine = async () => {
+    const g = gcodeLine.trim()
+    if (!g || jog.busy) return
+    setJog({ busy: true, msg: tr('G-code senden…'), err: false })
+    try {
+      const r = await controlService.sendKlipperGcode(g)
+      if (r?.data?.gcode) setLastScript(r.data.gcode)
+      setJog({ busy: false, msg: tr('✓ Gesendet: {0}', g), err: false })
+    } catch (e) {
+      const detail = e?.response?.data?.detail || e?.message || tr('Fehler')
+      setJog({ busy: false, msg: detail, err: true })
+    }
+  }
+
   // Geschwindigkeit setzen → M220 sofort an den OTTOeject schicken (und für Ops speichern).
   const applySpeed = (v) => {
     setSpeedFactor(v)
@@ -380,6 +398,25 @@ export default function Drucker() {
                   className={`text-[11px] px-2 py-1 rounded border transition-colors disabled:opacity-50 ${(+speedFactor || 100) === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>{v}%</button>
               ))}
               <span className="text-[9px] text-surface-600">{tr('M220-Fallback · pro Operation oben eigene Geschwindigkeit einstellbar')}</span>
+            </div>
+            {/* Direkter G-code an den OTTOeject (Kalibrierung) */}
+            <div className="pt-1 border-t border-surface-800/50 space-y-1">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={gcodeLine}
+                  onChange={e => setGcodeLine(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') sendGcodeLine() }}
+                  placeholder={tr('G-code direkt an den OTTOeject — z. B. G1 X100 F6000')}
+                  className="flex-1 font-mono text-[11px] h-8 py-0 px-2"
+                  disabled={jog.busy}
+                />
+                <button onClick={sendGcodeLine} disabled={jog.busy || !gcodeLine.trim()}
+                  className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 shrink-0">{tr('▶ Senden')}</button>
+              </div>
+              <p className="text-[9px] text-surface-600">
+                {tr('Wird 1:1 an Klipper geschickt (Enter = Senden). Vorher homen; RACK=-Nummern werden automatisch in die Geräte-Zählung übersetzt.')}
+              </p>
             </div>
             {jog.msg && (
               <p className={`text-[11px] font-mono ${jog.err ? 'text-red-400' : jog.busy ? 'text-amber-400' : 'text-emerald-400'}`}>{jog.msg}</p>

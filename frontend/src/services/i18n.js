@@ -187,6 +187,12 @@ const EN_STRINGS = {
   'Speed: global': 'Speed: global', 'Geschwindigkeit dieser Operation (M220)': 'Speed for this operation (M220)',
   'Geschwindigkeit (global)': 'Speed (global)',
   'M220-Fallback · pro Operation oben eigene Geschwindigkeit einstellbar': 'M220 fallback · set a per-operation speed above',
+  'G-code direkt an den OTTOeject — z. B. G1 X100 F6000': 'G-code straight to the OTTOeject — e.g. G1 X100 F6000',
+  '▶ Senden': '▶ Send',
+  'G-code senden…': 'Sending G-code…',
+  '✓ Gesendet: {0}': '✓ Sent: {0}',
+  'Wird 1:1 an Klipper geschickt (Enter = Senden). Vorher homen; RACK=-Nummern werden automatisch in die Geräte-Zählung übersetzt.':
+    'Sent 1:1 to Klipper (Enter = send). Home first; RACK= numbers are translated to the device numbering automatically.',
   'Platte holen': 'Grab from rack', 'Platte ablegen': 'Store to rack',
   // Sequenz-Editor: Printloom-Op (app_op)
   'Printloom-Op': 'Printloom op', 'Printloom-Operation': 'Printloom operation',
