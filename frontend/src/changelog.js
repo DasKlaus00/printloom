@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.114',
+    de: [
+      'Warteschlange aufgeräumt: Jobs zeigen jetzt fest ihr Produkt (kein Datei-Dropdown mehr am Job — die Datei eines Jobs ändert man nicht, man legt Jobs in der Datei-Bibliothek an; dort geht dasselbe Produkt beliebig oft in die Queue: mehrfach „+ Queue" klicken oder über die Auswahl-Leiste mit Menge). Der ⚡-Smart-Sortier-Knopf wurde entfernt.',
+    ],
+    en: [
+      'Queue cleaned up: jobs now show their product as fixed text (no more file dropdown on the job — you don’t change a job’s file, you create jobs in the file library; there the same product can be queued any number of times: click “+ Queue” repeatedly or use the selection bar with quantity). The ⚡ smart-sort button was removed.',
+    ],
+  },
+  {
     version: '1.0.113',
     de: [
       'App-Hänger behoben („Seite lädt ewig, nur Neustart hilft"): War der Drucker aus oder unerreichbar, versuchte jede Status-Abfrage einen kompletten MQTT-Neuverbindungsaufbau (~6 s) — die Anfragen stauten sich schneller auf, als sie scheitern konnten, blockierten dabei Datenbank-Verbindungen und legten so nach und nach die ganze App lahm. Jetzt: Nach einem fehlgeschlagenen Verbindungsversuch antwortet der Status 20 s lang sofort aus dem Cache (offline), statt erneut zu verbinden; die Status-Anfrage hat zusätzlich eine 10-s-Notbremse. Außerdem gestopft: Ein Verbindungs-Timeout ließ die offene Verbindung liegen (Datei-Handle-Leck — nach Stunden ging gar nichts mehr, bis zum Neustart).',

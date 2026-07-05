@@ -1389,11 +1389,7 @@ const EN_STRINGS = {
   'Template exportieren lädt eine JSON-Vorlage mit allen deutschen Strings und englischen Referenz-Übersetzungen. Einfach einer KI geben: „Übersetze alle Werte auf Französisch" — dann code + name anpassen und importieren.':
     'Export template downloads a JSON template with all German strings and English reference translations. Just hand it to an AI: "Translate all values to French" — then adjust code + name and import.',
 
-  // ── Smart-Sortierung & Planer (B.1 / B.3) ──
-  '⚡ Smart': '⚡ Smart',
-  'Wartende Jobs nach Filament gruppieren → weniger AMS-Wechsel': 'Group waiting jobs by filament → fewer AMS changes',
-  'Bereits optimal gruppiert ({0} Filament-Gruppen)': 'Already optimally grouped ({0} filament groups)',
-  'Nach Filament sortiert — {0} Gruppen, weniger AMS-Wechsel': 'Sorted by filament — {0} groups, fewer AMS changes',
+  // ── Planer (B.3) ──
   '🗓 Planer': '🗓 Planner',
   'Zeitplan der Warteschlange anzeigen (Was-wäre-wenn)': 'Show queue schedule (what-if)',
   '· 📊 {0} aus Historie': '· 📊 {0} from history',

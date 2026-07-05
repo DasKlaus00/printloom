@@ -1319,13 +1319,6 @@ function AutoFarm() {
     setTemplates(all)
   }
 
-  const changeFile = (jobId, fileId) => {
-    const f = gcodeFiles.find(x => x.id === +fileId)
-    if (!f) return
-    setJobField(jobId, { fileId: +fileId, fileName: f.original_filename, objectHeight: null, heightLoading: true })
-    analyzeFile(jobId, +fileId)
-  }
-
   const removeJob = async (id) => {
     if (running) {
       const job = jobs.find(j => j.id === id)
@@ -1398,40 +1391,6 @@ function AutoFarm() {
       return updated
     })
   }
-
-  /* ── B.1 Smart-Sortierung ─────────────────────────────────────
-     Gruppiert wartende Jobs nach Filament-Signatur (Material+Farbe bzw. AMS-
-     Belegung), damit gleichartige Jobs nacheinander laufen → minimiert AMS-/
-     Spulen-Wechsel. Laufende/fertige Jobs bleiben an ihrer Position. */
-  const jobFilamentKey = (j) => {
-    if (j.filaments?.length)
-      return j.filaments.map(f => `${(f.type || '').toUpperCase()}|${(f.color || '').toUpperCase().replace('#', '')}`).sort().join('+')
-    if ((j.amsMap || '').trim()) return `ams:${j.amsMap.trim()}`
-    return `file:${j.fileId}`
-  }
-
-  const smartSort = () => setJobs(prev => {
-    const pending = prev.filter(j => j.status === 'pending')
-    if (pending.length < 2) return prev
-    const order = []
-    const groups = {}
-    pending.forEach(j => {
-      const k = jobFilamentKey(j)
-      if (!groups[k]) { groups[k] = []; order.push(k) }
-      groups[k].push(j)
-    })
-    const sorted = order.flatMap(k => groups[k])
-    // No change? Don't churn state.
-    if (sorted.every((j, i) => j.id === pending[i].id)) {
-      showFeedback(tr('Bereits optimal gruppiert ({0} Filament-Gruppen)', order.length))
-      return prev
-    }
-    let pi = 0
-    const next = prev.map(j => j.status === 'pending' ? sorted[pi++] : j)
-    syncReorder(next)   // pushes new order to the backend while running; debounced save otherwise
-    showFeedback(tr('Nach Filament sortiert — {0} Gruppen, weniger AMS-Wechsel', order.length))
-    return next
-  })
 
   // Persist the external webcam URL (shared with the Steuerung page via device settings)
   const saveWebcamUrl = useCallback(async (url) => {
@@ -1887,14 +1846,6 @@ function AutoFarm() {
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* B.1 Smart-Sortierung */}
-              {pendingJobs.length > 1 && (
-                <button
-                  onClick={smartSort}
-                  className="btn btn-ghost btn-sm shrink-0"
-                  title={tr('Wartende Jobs nach Filament gruppieren → weniger AMS-Wechsel')}
-                >{tr('⚡ Smart')}</button>
-              )}
               {/* B.3 Planer */}
               {activeJobs.length > 0 && (
                 <button
@@ -2079,15 +2030,11 @@ function AutoFarm() {
                       </div>
                     )}
 
-                    {/* ── File selector ── */}
-                    <select
-                      value={job.fileId}
-                      disabled={running}
-                      onChange={e => changeFile(job.id, e.target.value)}
-                      className="w-full"
-                    >
-                      {gcodeFiles.map(f => <option key={f.id} value={f.id}>{f.original_filename}</option>)}
-                    </select>
+                    {/* ── Produkt (fest — Jobs entstehen nur in der Datei-Bibliothek) ── */}
+                    <div
+                      className="w-full text-sm px-3 py-2 rounded-lg bg-surface-800/50 border border-surface-700/60 text-surface-200 truncate"
+                      title={job.fileName}
+                    >{job.fileName}</div>
 
                     {/* ── Manuelle AMS-Festlegung — nur wenn die Farm wirklich darauf
                            wartet (sonst kein AMS-Block, hält die Karte kompakt) ── */}
