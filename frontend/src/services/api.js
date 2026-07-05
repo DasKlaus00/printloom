@@ -123,6 +123,9 @@ export const printerService = {
   getSnapshots:         ()                 => api.get('/printer/snapshots'),
   getSendDiagnostics:   ()                 => api.get('/printer/send-diagnostics'),
   clearSendDiagnostics: ()                 => api.delete('/printer/send-diagnostics'),
+  amsLoad:              (deviceId, tray)          => api.post(`/printer/ams/${deviceId}/load`, { tray }),
+  amsUnload:            (deviceId)                => api.post(`/printer/ams/${deviceId}/unload`),
+  amsReadSlot:          (deviceId, amsId, slotId) => api.post(`/printer/ams/${deviceId}/read`, { ams_id: amsId, slot_id: slotId }),
 }
 
 export const deviceSettingsService = {

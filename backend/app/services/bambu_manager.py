@@ -182,6 +182,14 @@ def set_chamber_light(device, on: bool = True) -> bool:
     return get_client(device).set_chamber_light(on)
 
 
+def publish_command(device, command: dict) -> bool:
+    """Beliebigen MQTT-Befehl über die persistente Verbindung publishen
+    (z. B. AMS-Befehle wie ams_change_filament/unload_filament/ams_get_rfid)."""
+    if not ensure(device):
+        return False
+    return get_client(device).publish_command(command)
+
+
 def send_gcode(device, gcode: str) -> bool:
     if not ensure(device):
         return False

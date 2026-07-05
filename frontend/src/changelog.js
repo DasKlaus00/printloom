@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.118',
+    de: [
+      'Steuerung: AMS-Aktionen direkt im Panel — je Slot „⟳" (Slot neu einlesen, wenn die Spule nicht erkannt wurde) und „⬆" (dieses Filament in den Extruder laden), oben „⬇ Entladen" (aktuelles Filament zurück ins AMS). Laden nutzt automatisch die Düsentemperatur der Spule; während eines laufenden Drucks sind Laden/Entladen gesperrt (Pause ist ok).',
+    ],
+    en: [
+      'Control: AMS actions directly in the panel — per slot “⟳” (re-read the slot when the spool was not recognized) and “⬆” (load this filament into the extruder), plus “⬇ Unload” at the top (current filament back into the AMS). Loading automatically uses the spool’s nozzle temperature; loading/unloading is blocked while a print is running (pause is fine).',
+    ],
+  },
+  {
     version: '1.0.117',
     de: [
       'Drucker-Tab: neue Zeile zum direkten Senden von G-code an den OTTOeject (für die Kalibrierung) — Befehl eintippen, Enter oder „▶ Senden", Ergebnis erscheint in der Statuszeile und unter „Gesendeter G-code". RACK=-Nummern werden dabei automatisch in die Geräte-Zählung übersetzt.',

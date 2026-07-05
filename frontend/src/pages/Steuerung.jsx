@@ -65,12 +65,40 @@ function TempGauge({ label, current, target }) {
   )
 }
 
-function AmsPanel({ units, activeSlot }) {
+function AmsPanel({ units, activeSlot, deviceId }) {
   const { tr } = useLanguage()
+  const [busy, setBusy] = useState(false)
+  const [msg,  setMsg]  = useState(null)   // { text, err }
   if (!units?.length) return null
+
+  const run = async (label, fn) => {
+    if (busy || !deviceId) return
+    setBusy(true); setMsg({ text: label, err: false })
+    try {
+      const r = await fn()
+      setMsg({ text: `✓ ${r?.data?.message || label}`, err: false })
+    } catch (e) {
+      setMsg({ text: e?.response?.data?.detail || e?.message || tr('Fehler'), err: true })
+    } finally { setBusy(false) }
+  }
+  const loadSlot = (gid) =>
+    run(tr('Filament S{0} laden…', gid + 1), () => printerService.amsLoad(deviceId, gid))
+  const unload = () =>
+    run(tr('Filament entladen…'), () => printerService.amsUnload(deviceId))
+  const readSlot = (unitId, slotId) =>
+    run(tr('Slot S{0} neu einlesen…', unitId * 4 + slotId + 1),
+        () => printerService.amsReadSlot(deviceId, unitId, slotId))
+
   return (
     <div className="card">
-      <p className="section-label mb-2">AMS</p>
+      <div className="flex items-center justify-between mb-2">
+        <p className="section-label mb-0">AMS</p>
+        <button onClick={unload} disabled={busy || !deviceId}
+          className="btn btn-ghost btn-sm text-[11px] disabled:opacity-40"
+          title={tr('Aktuelles Filament aus dem Extruder zurück ins AMS entladen')}>
+          {tr('⬇ Entladen')}
+        </button>
+      </div>
       <div className="space-y-3">
         {units.map(unit => (
           <div key={unit.id}>
@@ -85,7 +113,7 @@ function AmsPanel({ units, activeSlot }) {
                 const empty    = !slot.type
                 return (
                   <div key={slot.id} className={`rounded-lg border p-2 flex flex-col items-center gap-1 transition-all ${
-                    isActive ? 'border-blue-500 bg-blue-950/30' : empty ? 'border-surface-800 bg-surface-950 opacity-30' : 'border-surface-700 bg-surface-900'
+                    isActive ? 'border-blue-500 bg-blue-950/30' : empty ? 'border-surface-800 bg-surface-950 opacity-60' : 'border-surface-700 bg-surface-900'
                   }`}>
                     <div className="w-5 h-5 rounded-full border-2 flex-shrink-0"
                          style={{ backgroundColor: cssColor ?? 'transparent', borderColor: cssColor ?? '#374151' }} />
@@ -97,6 +125,16 @@ function AmsPanel({ units, activeSlot }) {
                       </div>
                     )}
                     {isActive && <span className="text-[8px] text-blue-400 animate-pulse">{tr('aktiv')}</span>}
+                    <div className="flex items-center gap-1 pt-0.5">
+                      <button onClick={() => readSlot(unit.id, slot.id)} disabled={busy || !deviceId}
+                        className="w-5 h-5 flex items-center justify-center rounded border border-surface-700 text-[10px] text-surface-400 hover:text-surface-100 hover:border-surface-500 disabled:opacity-30 transition-colors"
+                        title={tr('Slot neu einlesen (RFID) — wenn die Spule nicht erkannt wurde')}>⟳</button>
+                      {!empty && !isActive && (
+                        <button onClick={() => loadSlot(gid)} disabled={busy || !deviceId}
+                          className="w-5 h-5 flex items-center justify-center rounded border border-surface-700 text-[10px] text-surface-400 hover:text-emerald-300 hover:border-emerald-700 disabled:opacity-30 transition-colors"
+                          title={tr('Dieses Filament in den Extruder laden')}>⬆</button>
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -104,6 +142,12 @@ function AmsPanel({ units, activeSlot }) {
           </div>
         ))}
       </div>
+      {msg && (
+        <p className={`mt-2 text-[10px] font-mono ${msg.err ? 'text-red-400' : 'text-emerald-400'}`}>{msg.text}</p>
+      )}
+      <p className="mt-1 text-[9px] text-surface-600">
+        {tr('Laden/Entladen heizt die Düse und dauert ~1 Minute — Fortschritt am Drucker. Während eines Drucks gesperrt (Pause ist ok).')}
+      </p>
     </div>
   )
 }
@@ -640,7 +684,7 @@ export default function Steuerung() {
           </div>
 
           {/* AMS */}
-          {amsUnits.length > 0 && <AmsPanel units={amsUnits} activeSlot={trayActive} />}
+          {amsUnits.length > 0 && <AmsPanel units={amsUnits} activeSlot={trayActive} deviceId={bambuDevice?.id} />}
 
           {/* Drucker Homing + Z-Achse (via Bambu GCode) */}
           <div className="card space-y-3">

@@ -1325,6 +1325,85 @@ async def get_send_diagnostics():
     return {"sessions": _diag_sessions}
 
 
+# ── AMS-Aktionen (Steuerung): Slot neu einlesen, Filament laden/entladen ─────
+
+def _ams_guard_not_printing(device):
+    """Laden/Entladen nur, wenn gerade kein Druck läuft (PAUSE ist ok — da ist
+    Filamentwechsel am Gerät ausdrücklich erlaubt)."""
+    raw = bambu_manager.last_status(device) or {}
+    state = (raw.get("print", {}) or {}).get("gcode_state", "")
+    if state in ("RUNNING", "PREPARE", "SLICING"):
+        raise HTTPException(409, f"Drucker druckt gerade ({state}) — Filamentwechsel nicht möglich")
+
+
+async def _ams_publish(device, cmd: dict) -> None:
+    loop = asyncio.get_event_loop()
+    ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.publish_command, device, cmd)
+    if not ok:
+        raise HTTPException(502, "Keine MQTT-Verbindung zum Drucker")
+
+
+@router.post("/ams/{device_id}/load")
+async def ams_load_filament(device_id: int, body: dict, db: Session = Depends(get_db)):
+    """Filament aus einem AMS-Fach in den Extruder laden (ams_change_filament).
+    Zieltemperatur aus den Tray-Infos (nozzle_temp_max), Fallback 240 °C."""
+    device = _get_bambu_device(device_id, db)
+    try:
+        tray = int(body.get("tray", -1))
+    except (TypeError, ValueError):
+        tray = -1
+    if not 0 <= tray <= 15:
+        raise HTTPException(400, "tray (0–15) fehlt")
+    _ams_guard_not_printing(device)
+    temp = 240
+    raw = bambu_manager.last_status(device) or {}
+    for unit in ((raw.get("print", {}).get("ams", {}) or {}).get("ams") or []):
+        for t in (unit.get("tray") or []):
+            try:
+                if int(unit.get("id", 0)) * 4 + int(t.get("id", 0)) == tray and t.get("nozzle_temp_max"):
+                    temp = int(float(t["nozzle_temp_max"]))
+            except (TypeError, ValueError):
+                pass
+    await _ams_publish(device, {"print": {
+        "sequence_id": str(int(time.time())), "command": "ams_change_filament",
+        "target": tray, "curr_temp": temp, "tar_temp": temp,
+    }})
+    return {"success": True, "tray": tray, "temp": temp,
+            "message": f"Laden aus Slot {tray + 1} gestartet ({temp} °C) — dauert ~1 Minute"}
+
+
+@router.post("/ams/{device_id}/unload")
+async def ams_unload_filament(device_id: int, db: Session = Depends(get_db)):
+    """Aktuelles Filament aus dem Extruder zurück ins AMS entladen."""
+    device = _get_bambu_device(device_id, db)
+    _ams_guard_not_printing(device)
+    await _ams_publish(device, {"print": {
+        "sequence_id": str(int(time.time())), "command": "unload_filament",
+    }})
+    return {"success": True, "message": "Entladen gestartet — dauert ~1 Minute"}
+
+
+@router.post("/ams/{device_id}/read")
+async def ams_read_slot(device_id: int, body: dict, db: Session = Depends(get_db)):
+    """Einen AMS-Slot neu einlesen (RFID, ams_get_rfid) — z. B. wenn eine Spule
+    nicht erkannt wurde. Danach einen Vollreport anstoßen, damit die UI das
+    Ergebnis zeitnah sieht."""
+    device = _get_bambu_device(device_id, db)
+    try:
+        ams_id, slot_id = int(body.get("ams_id", -1)), int(body.get("slot_id", -1))
+    except (TypeError, ValueError):
+        ams_id = slot_id = -1
+    if not (0 <= ams_id <= 3 and 0 <= slot_id <= 3):
+        raise HTTPException(400, "ams_id/slot_id (0–3) fehlt")
+    # Beide sequence-Schreibweisen mitschicken — die Doku nennt für ams_get_rfid
+    # ausnahmsweise "sequenceId"; ein überzähliges Feld ignoriert die Firmware.
+    await _ams_publish(device, {"print": {
+        "sequence_id": str(int(time.time())), "sequenceId": str(int(time.time())),
+        "command": "ams_get_rfid", "ams_id": ams_id, "slot_id": slot_id,
+    }})
+    return {"success": True, "message": f"Slot A{ams_id + 1}-{slot_id + 1} wird neu eingelesen"}
+
+
 @router.delete("/send-diagnostics")
 async def clear_send_diagnostics():
     """Diagnose-Log zurücksetzen."""
