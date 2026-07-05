@@ -25,7 +25,7 @@ from app.services.bambu_ftp import BambuFTP
 from app.services import storage
 from app.services import bambu_manager
 from app.services import ottoeject_motion as _motion
-from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _expand_mapping_to_slots, _get_plate_gcode_param, _ams_match_confident, _ams_slots_from_raw, capture_snapshot, publish_live_status
+from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _expand_mapping_to_slots, _get_plate_gcode_param, _list_plates, _repack_single_plate, _ams_match_confident, _ams_slots_from_raw, capture_snapshot, publish_live_status
 from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _load as _rack_load
 from app.services import hms
 from app.services.rack_logic import (
@@ -730,12 +730,37 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
                 _log(f"AMS-Mapping auf Slicer-Slots gehoben (unbenutzte = -1): {expanded}")
                 ams_mapping = expanded
 
+        # Multi-Plate: gewählte Platte als Einzel-Platten-.3mf umpacken — der X1C
+        # parst sonst das GESAMTE Projekt (z. B. 16 Platten ≈ 38 MB → minutenlang
+        # „Vorbereitung 100 %"). Bambu Studio schickt selbst auch nur EINE Platte.
+        upload_path, repack_tmp, plate_param = file.file_path, None, ""
+        if file.file_type == '.3mf':
+            plates = _list_plates(file.file_path)
+            if len(plates) > 1:
+                target = int(job.get("plate") or plates[0])
+                try:
+                    upload_path = await loop.run_in_executor(None, _repack_single_plate, file.file_path, target)
+                    repack_tmp = upload_path
+                    plate_param = "Metadata/plate_1.gcode"
+                    _log(f"📦 Multi-Plate ({len(plates)} Platten) — Platte {target} einzeln umgepackt "
+                         f"({os.path.getsize(upload_path) / 1e6:.1f} statt {os.path.getsize(file.file_path) / 1e6:.1f} MB)")
+                except Exception as e:
+                    _log(f"⚠ Umpacken fehlgeschlagen ({e}) — sende Originaldatei")
+                    upload_path, repack_tmp = file.file_path, None
+                    plate_param = _get_plate_gcode_param(file.file_path, job.get("plate"))
+            else:
+                plate_param = _get_plate_gcode_param(file.file_path, job.get("plate"))
+
         ftp = BambuFTP(device.ip_address, device.access_code)
-        up = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, file.file_path, print_name)
+        up = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, upload_path, print_name)
+        if repack_tmp:
+            try:
+                os.remove(repack_tmp)
+            except OSError:
+                pass
         if not up:
             raise RuntimeError("FTP-Upload fehlgeschlagen")
 
-        plate_param = _get_plate_gcode_param(file.file_path, job.get("plate")) if file.file_type == '.3mf' else ""
         _log(f"Plate-GCode: {plate_param or 'n/a'}")
 
         await asyncio.sleep(5)

@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.119',
+    de: [
+      'Multi-Plate-Dateien: minutenlange „Vorbereitung 100 %" am Drucker behoben. Printloom schickte bisher das komplette Projekt (z. B. 16 Platten ≈ 38 MB) — der X1C musste alles auspacken und parsen. Jetzt wird beim Senden nur die gewählte Platte in eine kleine Einzel-Platten-.3mf umgepackt (wie Bambu Studio es macht): G-code unverändert, Filament-/AMS-Infos der Platte bleiben erhalten, Upload-Größe typisch ~3 MB statt 38 MB. Gilt für Farm-Jobs (je Platte) und Direktsenden.',
+    ],
+    en: [
+      'Multi-plate files: fixed the minutes-long “preparing 100%” on the printer. Printloom used to send the whole project (e.g. 16 plates ≈ 38 MB) — the X1C had to unpack and parse all of it. Now only the selected plate is repacked into a small single-plate .3mf when sending (like Bambu Studio does): G-code unchanged, the plate’s filament/AMS info is preserved, upload size typically ~3 MB instead of 38 MB. Applies to farm jobs (per plate) and direct send.',
+    ],
+  },
+  {
     version: '1.0.118',
     de: [
       'Steuerung: AMS-Aktionen direkt im Panel — je Slot „⟳" (Slot neu einlesen, wenn die Spule nicht erkannt wurde) und „⬆" (dieses Filament in den Extruder laden), oben „⬇ Entladen" (aktuelles Filament zurück ins AMS). Laden nutzt automatisch die Düsentemperatur der Spule; während eines laufenden Drucks sind Laden/Entladen gesperrt (Pause ist ok).',

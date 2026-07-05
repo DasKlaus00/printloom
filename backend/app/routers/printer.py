@@ -54,6 +54,95 @@ def _get_plate_gcode_param(file_path: str, plate: int | None = None) -> str:
     return "Metadata/plate_1.gcode"
 
 
+def _repack_single_plate(src_path: str, plate: int) -> str:
+    """Aus einer Multi-Plate-.3mf eine Einzel-Platten-.3mf bauen (wie Bambu Studio
+    beim Plattendruck): plate_N wird zu plate_1, Metadaten passend umgeschrieben.
+    Grund: Der X1C bekommt sonst das KOMPLETTE Projekt (hier z. B. 16 Platten,
+    ~38 MB) und hängt beim Auspacken/Parsen in „Vorbereitung 100 %" — Bambu Studio
+    schickt deshalb selbst immer nur die gewählte Platte als eigene Datei.
+    Rückgabe: Pfad einer Temp-.3mf — der Aufrufer löscht sie nach dem Upload."""
+    import tempfile
+    import xml.etree.ElementTree as ET
+    with zipfile.ZipFile(src_path, 'r') as src:
+        names = set(src.namelist())
+        if f"Metadata/plate_{plate}.gcode" not in names:
+            raise ValueError(f"Platte {plate} hat keinen G-code in der Datei")
+
+        # slice_info.config: nur die gewählte Platte behalten, index → 1
+        # (Filament-Infos/AMS-Anzeige am Drucker bleiben damit korrekt).
+        slice_info = None
+        if "Metadata/slice_info.config" in names:
+            try:
+                root = ET.fromstring(src.read("Metadata/slice_info.config").decode("utf-8", errors="ignore"))
+                keep = None
+                for pl in root.iter("plate"):
+                    idx = next((m.get("value") for m in pl.findall("metadata") if m.get("key") == "index"), None)
+                    if idx is not None and str(idx).strip() == str(plate):
+                        keep = pl
+                        break
+                if keep is not None:
+                    for m in keep.findall("metadata"):
+                        if m.get("key") == "index":
+                            m.set("value", "1")
+                    new_root = ET.Element("config")
+                    hdr = root.find("header")
+                    if hdr is not None:
+                        new_root.append(hdr)
+                    new_root.append(keep)
+                    slice_info = ET.tostring(new_root, encoding="unicode")
+            except Exception as e:
+                logger.warning(f"repack: slice_info umschreiben fehlgeschlagen: {e}")
+
+        model_settings = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <plate>\n'
+            '    <metadata key="plater_id" value="1"/>\n'
+            '    <metadata key="plater_name" value=""/>\n'
+            '    <metadata key="locked" value="false"/>\n'
+            '    <metadata key="gcode_file" value="Metadata/plate_1.gcode"/>\n'
+            '    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>\n'
+            '    <metadata key="pattern_bbox_file" value="Metadata/plate_1.json"/>\n'
+            '  </plate>\n</config>\n'
+        )
+
+        fd, out_path = tempfile.mkstemp(suffix=".3mf", prefix="printloom_plate_")
+        os.close(fd)
+        try:
+            with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as dst:
+                for name in ("[Content_Types].xml", "_rels/.rels", "3D/3dmodel.model",
+                             "Metadata/project_settings.config"):
+                    if name in names:
+                        dst.writestr(name, src.read(name))
+                # Platten-Dateien der gewählten Platte → plate_1-Namen
+                for suffix in (".gcode", ".gcode.md5", ".json", ".png", "_small.png"):
+                    n = f"Metadata/plate_{plate}{suffix}"
+                    if n in names:
+                        dst.writestr(f"Metadata/plate_1{suffix}", src.read(n))
+                for pat in ("plate_no_light_{n}.png", "top_{n}.png", "pick_{n}.png"):
+                    n = "Metadata/" + pat.format(n=plate)
+                    if n in names:
+                        dst.writestr("Metadata/" + pat.format(n=1), src.read(n))
+                if "Metadata/filament_sequence.json" in names:
+                    try:
+                        seq = json.loads(src.read("Metadata/filament_sequence.json").decode("utf-8", errors="ignore"))
+                        if f"plate_{plate}" in seq:
+                            dst.writestr("Metadata/filament_sequence.json",
+                                         json.dumps({"plate_1": seq[f"plate_{plate}"]}))
+                    except Exception:
+                        pass
+                dst.writestr("Metadata/model_settings.config", model_settings)
+                if slice_info:
+                    dst.writestr("Metadata/slice_info.config", slice_info)
+        except Exception:
+            try:
+                os.remove(out_path)
+            except OSError:
+                pass
+            raise
+    logger.info(f"Multi-Plate repack: Platte {plate} aus {os.path.basename(src_path)} "
+                f"→ {os.path.getsize(out_path) / 1e6:.1f} MB Einzel-Platten-.3mf")
+    return out_path
+
+
 def _extract_filament_type(filepath: str, file_type: str) -> str | None:
     """Extract required filament type string from .gcode header comments or .3mf metadata."""
     try:
@@ -1145,9 +1234,36 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
             ams_mapping = expanded
     _diag_add(sess, "AMS-Mapping bestimmen", diag_mapping)
 
+    # ── Multi-Plate: gewählte Platte als Einzel-Platten-.3mf umpacken ────
+    # Der X1C parst sonst das GESAMTE Projekt (16 Platten ≈ 38 MB → ~5 min
+    # „Vorbereitung 100 %"). Bambu Studio schickt selbst auch nur die eine Platte.
+    upload_path, repack_tmp, plate_param = file.file_path, None, ""
+    if file.file_type == '.3mf':
+        plates = _list_plates(file.file_path)
+        if len(plates) > 1:
+            try:
+                upload_path = await loop.run_in_executor(None, _repack_single_plate, file.file_path, plates[0])
+                repack_tmp = upload_path
+                plate_param = "Metadata/plate_1.gcode"
+                _diag_add(sess, "Multi-Plate umpacken", [
+                    f"{len(plates)} Platten in der Datei → Platte {plates[0]} als Einzel-.3mf",
+                    f"Upload-Größe: {os.path.getsize(upload_path) / 1e6:.1f} MB (statt {os.path.getsize(file.file_path) / 1e6:.1f} MB)",
+                ])
+            except Exception as e:
+                _diag_add(sess, "Multi-Plate umpacken", [f"Fehlgeschlagen ({e}) — sende Originaldatei"], ok=False)
+                upload_path, repack_tmp = file.file_path, None
+                plate_param = _get_plate_gcode_param(file.file_path)
+        else:
+            plate_param = _get_plate_gcode_param(file.file_path)
+
     # ── FTP-Upload ───────────────────────────────────────────────
     ftp = BambuFTP(device.ip_address, device.access_code)
-    upload_ok = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, file.file_path, print_name)
+    upload_ok = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, upload_path, print_name)
+    if repack_tmp:
+        try:
+            os.remove(repack_tmp)
+        except OSError:
+            pass
     if not upload_ok:
         _diag_add(sess, "FTP-Upload", [f"Dateiname: {print_name}", "FEHLGESCHLAGEN"], ok=False)
         _diag_finish(sess, "error")
@@ -1156,7 +1272,6 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
 
     # ── Druckstart (über die persistente Verbindung) ─────────────
     await asyncio.sleep(3)
-    plate_param = _get_plate_gcode_param(file.file_path) if file.file_type == '.3mf' else ""
     print_ok = await loop.run_in_executor(
         bambu_manager.executor,
         lambda: bambu_manager.start_print(device, print_name, use_ams=use_ams,
