@@ -34,10 +34,17 @@ export function getCachedMeta(fileId) {
   return _metaCache[fileId] ?? null
 }
 
-/* Beste reine Druckzeit (Sekunden) eines Jobs aus Live/Historie/Slicer.
-   `src` meldet zurück, woher der Wert stammt ('live'|'hist'|'slicer'|'none'). */
+/* Beste reine Druckzeit (Sekunden) eines Jobs aus Live/Platten-Zeit/Historie/Slicer.
+   `src` meldet zurück, woher der Wert stammt ('live'|'slicer'|'hist'|'none').
+   Platten-Jobs: die Slicer-Zeit DER Platte (meta.plate_times) schlägt die Historie —
+   die ist pro Datei gemittelt und damit bei unterschiedlich langen Platten falsch
+   (vorher bekam jede Platte die Zeit der ersten → 16 × „3 h 20 min"). */
 export function jobPrintSec(job, meta, hist) {
   if (PRINTING.has(job.status) && job.remaining > 0) return { sec: job.remaining * 60, src: 'live' }
+  if (job.plate != null) {
+    const p = meta?.plate_times?.[job.plate] ?? meta?.plate_times?.[String(job.plate)] ?? 0
+    if (p > 0) return { sec: p, src: 'slicer' }
+  }
   const h = hist?.[job.fileId] ?? hist?.[String(job.fileId)]
   if (h?.avg_min > 0) return { sec: Math.round(h.avg_min * 60), src: 'hist' }
   const est = meta?.time_seconds || 0

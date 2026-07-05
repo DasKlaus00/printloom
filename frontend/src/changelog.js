@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.121',
+    de: [
+      'Planer/ETA: Multi-Plate-Jobs rechnen jetzt mit der Slicer-Zeit IHRER Platte statt pauschal mit der Zeit der ersten Platte (vorher: 16 × „3 h 20 min", obwohl die Platten 1,3–4,5 h brauchen). Die Zeiten pro Platte kommen aus der Datei (slice_info „prediction"); der laufende Job nutzt weiter die Live-Restzeit. Gesamtzeit und Fertig-Uhrzeit der Warteschlange stimmen damit deutlich genauer.',
+    ],
+    en: [
+      'Planner/ETA: multi-plate jobs now use the slicer time of THEIR plate instead of blanket-using the first plate’s time (before: 16 × “3 h 20 min” although the plates take 1.3–4.5 h). Per-plate times come from the file (slice_info “prediction”); the running job keeps using the live remaining time. Queue total and finish time are much more accurate now.',
+    ],
+  },
+  {
     version: '1.0.120',
     de: [
       'Warteschlange: „neue Jobs erscheinen erst nach F5" behoben. Ursache war ein Wettlauf zwischen dem Hinzufügen aus der Datei-Bibliothek und dem automatischen Speichern der Auto-Farm-Seite: deren verzögerter Speichervorgang konnte die frisch geschriebene Server-Queue mit dem alten Stand überschreiben. Beim Queue-Änderungs-Signal wird der anstehende Auto-Save jetzt verworfen; zusätzlich lädt die Auto-Farm-Seite die Queue neu, sobald der Tab wieder in den Vordergrund kommt (F5 nicht mehr nötig).',

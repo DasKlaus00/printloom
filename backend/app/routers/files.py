@@ -285,6 +285,34 @@ def _qmeta_sig(path: str):
     return (path, st.st_size, int(st.st_mtime))
 
 
+def _plate_predictions(zf) -> dict:
+    """{Platten-Nr (str): Sekunden} aus slice_info.config (<metadata key="prediction">).
+    Multi-Plate-Dateien haben PRO Platte eine eigene Slicer-Zeit — der Header der
+    ersten Platte gilt sonst fälschlich für alle Jobs (Planer/ETA)."""
+    try:
+        name = next((n for n in zf.namelist() if n.lower().endswith('slice_info.config')), None)
+        if not name:
+            return {}
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(zf.read(name).decode('utf-8', errors='ignore'))
+        out = {}
+        for pl in root.iter('plate'):
+            idx = pred = None
+            for m in pl.findall('metadata'):
+                if m.get('key') == 'index':
+                    idx = m.get('value')
+                elif m.get('key') == 'prediction':
+                    pred = m.get('value')
+            try:
+                if idx is not None and pred is not None and int(float(pred)) > 0:
+                    out[str(int(idx))] = int(float(pred))
+            except (TypeError, ValueError):
+                pass
+        return out
+    except Exception:
+        return {}
+
+
 @router.get("/{file_id}/quick-meta")
 async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
     """Druckzeit und Filamentverbrauch schnell aus Datei-Header lesen."""
@@ -303,9 +331,11 @@ async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
     except OSError:
         sig = None
     try:
+        plate_times = {}
         if file.file_type == '.3mf':
             with zipfile.ZipFile(file.file_path, 'r') as zf:
                 names = zf.namelist()
+                plate_times = _plate_predictions(zf)
                 plate_gcodes = sorted(
                     [n for n in names if re.match(r'Metadata/plate_\d+\.gcode$', n, re.IGNORECASE)],
                     key=lambda n: int(re.search(r'plate_(\d+)', n).group(1))
@@ -328,6 +358,9 @@ async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
             "filament_m":     parsed.get("total_filament_m"),
             "max_z_mm":       parsed.get("max_z_mm"),
             "layer_count":    parsed.get("layer_count"),
+            # Multi-Plate: Slicer-Zeit je Platte ({"1": sec, …}) — der Planer/die ETA
+            # rechnen sonst für JEDE Platte mit der Zeit der ersten.
+            "plate_times":    plate_times,
         }
         if sig:
             _QMETA_CACHE[file_id] = (sig, result)
