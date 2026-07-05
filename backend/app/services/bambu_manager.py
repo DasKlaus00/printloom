@@ -132,11 +132,24 @@ def _has_ams(raw: dict) -> bool:
     return bool((((raw or {}).get("print", {}) or {}).get("ams", {}) or {}).get("ams"))
 
 
+# pushall-Dedupe: die Farm-Wait-Loops fragen sonst über Stunden alle ~2 s einen
+# Vollreport an. Der X1C pusht Zustandsänderungen von selbst als Deltas (der Cache
+# merged sie) — das Dauerfeuer ist unnötige Last auf der einen Verbindung und
+# provoziert Abbrüche. Häufigere Aufrufe sind daher no-ops (Cache ist ohnehin frisch).
+_PUSHALL_MIN_INTERVAL_S = 5.0
+
+
 def request_pushall(device) -> bool:
-    """Vollreport anfordern (füllt AMS/Status). Nutzt die persistente Verbindung."""
+    """Vollreport anfordern (füllt AMS/Status). Nutzt die persistente Verbindung;
+    höchstens alle _PUSHALL_MIN_INTERVAL_S wirklich gesendet."""
     if not ensure(device):
         return False
-    return get_client(device).request_status()
+    c = get_client(device)
+    now = time.monotonic()
+    if now - getattr(c, "_pushall_ts", 0.0) < _PUSHALL_MIN_INTERVAL_S:
+        return True
+    c._pushall_ts = now
+    return c.request_status()
 
 
 def fetch_status(device, want_ams: bool = True, max_wait: float = 4.0) -> Optional[dict]:

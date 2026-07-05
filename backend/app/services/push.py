@@ -120,6 +120,9 @@ def send_to_all(title: str, body: str = "", url: str = "/") -> dict:
                 data=payload,
                 vapid_private_key=VAPID_PEM_PATH,
                 vapid_claims={"sub": VAPID_CLAIM_SUB},
+                # Ohne Timeout wartet requests unbegrenzt auf einen hängenden
+                # Push-Dienst — _notify awaitet das und die FARM stand dann still.
+                timeout=10,
             )
             sent += 1
         except WebPushException as e:

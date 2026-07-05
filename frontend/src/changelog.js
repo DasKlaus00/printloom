@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.116',
+    de: [
+      'Kompletter Stabilitäts-Scan nach den gemeldeten Hängern — drei Ursachen gefunden und behoben: 1) Der Live-Kanal (WebSocket) konnte an EINEM halbtoten Client (eingeschlafenes Handy/Tab) hängenbleiben — alle anderen Ansichten bekamen dann keine Updates mehr und die App wirkte eingefroren; Sendevorgänge haben jetzt ein Timeout und tote Clients fliegen raus. 2) Die Farm-Warteschleifen forderten über Stunden alle ~2 s einen Vollreport vom Drucker an — unnötige Dauerlast auf der MQTT-Verbindung (der X1C meldet Änderungen von selbst); jetzt höchstens alle 5 s. 3) Push-Benachrichtigungen ohne Timeout konnten die Farm im Moment einer Meldung unbegrenzt anhalten — jetzt max. 10 s.',
+    ],
+    en: [
+      'Full stability scan after the reported freezes — found and fixed three causes: 1) The live channel (WebSocket) could stall on ONE half-dead client (sleeping phone/tab) — all other views then stopped receiving updates and the app appeared frozen; sends now have a timeout and dead clients are dropped. 2) The farm wait loops requested a full report from the printer every ~2 s for hours — needless constant load on the MQTT connection (the X1C reports changes on its own); now at most every 5 s. 3) Push notifications without a timeout could halt the farm indefinitely at the moment of a message — now max. 10 s.',
+    ],
+  },
+  {
     version: '1.0.115',
     de: [
       'AMS-Fehler am Drucker behoben, wenn eine Datei nicht mit Filament 1 gesliced wurde: Der X1C erwartet die AMS-Zuordnung pro Slicer-Filament-Nummer — druckt eine Datei z. B. nur mit Filament 3, hieß das gesendete Mapping bisher trotzdem „[Spule]" (= Zuordnung für Filament 1, Filament 3 blieb leer) → der Drucker meldete eine unpassende AMS-Zuordnung und blieb beim Aufheizen stehen. Jetzt wird das Mapping auf die richtigen Slot-Positionen gehoben (unbenutzte Filamente = -1, wie Bambu Studio). Gilt für Farm, Direktsenden und manuelle Zuordnungen.',

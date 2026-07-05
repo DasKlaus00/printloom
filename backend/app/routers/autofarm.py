@@ -2691,6 +2691,21 @@ def _ws_snapshot() -> str:
     return json.dumps(data, default=str, ensure_ascii=False)
 
 
+def _ws_drop(ws):
+    """Client aus dem Verteiler nehmen und best-effort schließen (eigener Task,
+    damit auch ein hängendes close() den Broadcaster nicht aufhält)."""
+    _ws_clients.discard(ws)
+    async def _close():
+        try:
+            await asyncio.wait_for(ws.close(), timeout=2.0)
+        except Exception:
+            pass
+    try:
+        asyncio.get_event_loop().create_task(_close())
+    except Exception:
+        pass
+
+
 async def _ws_broadcaster():
     global _ws_task, _ws_last_payload
     try:
@@ -2699,10 +2714,14 @@ async def _ws_broadcaster():
             if payload != _ws_last_payload:
                 _ws_last_payload = payload
                 for ws in list(_ws_clients):
+                    # Send-Timeout: ein halbtoter Client (eingeschlafenes Handy/Tab,
+                    # gestalltes TCP) blockierte sonst den EINEN Broadcaster — alle
+                    # anderen Clients bekamen nichts mehr und die UI wirkte
+                    # eingefroren, obwohl das Backend normal lief.
                     try:
-                        await ws.send_text(payload)
+                        await asyncio.wait_for(ws.send_text(payload), timeout=3.0)
                     except Exception:
-                        _ws_clients.discard(ws)
+                        _ws_drop(ws)
             await asyncio.sleep(1.0)
     finally:
         _ws_task = None
