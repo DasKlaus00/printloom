@@ -1056,13 +1056,18 @@ function AutoFarm() {
   }, [])
 
   // Jobs are added from the Datei-Bibliothek now — reload the queue when it
-  // signals a change (or when the tab regains focus), unless the farm is running.
+  // signals a change or when the tab regains focus, unless the farm is running.
   useEffect(() => {
     const reload = () => {
       // While running the in-memory farm queue is the source of truth; don't reload
       // (it would clobber live state). Just refresh the status so the merge picks up
       // mid-run additions immediately instead of waiting for the next 5s poll.
       if (runningRef.current) { fetchStatus(); return }
+      // Anstehenden Debounce-Auto-Save VERWERFEN: er würde sonst die veraltete
+      // lokale Liste ÜBER die frisch geschriebene Server-Queue speichern (Race:
+      // Bibliothek fügt hinzu → Event → 800-ms-Save aus altem Zustand feuert
+      // dazwischen → neue Jobs „verschwinden" bzw. erscheinen erst nach F5).
+      clearTimeout(queueSaveRef.current)
       autofarmService.getQueue()
         .then(r => {
           const loaded = (r.data ?? []).map(j => ({ ...j, heightLoading: false, progress: j.progress ?? 0, remaining: j.remaining ?? 0 }))
@@ -1072,8 +1077,15 @@ function AutoFarm() {
         })
         .catch(() => {})
     }
+    const onFocus = () => { if (document.visibilityState === 'visible') reload() }
     window.addEventListener('printloom:queueChanged', reload)
-    return () => window.removeEventListener('printloom:queueChanged', reload)
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      window.removeEventListener('printloom:queueChanged', reload)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
   }, [fetchStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

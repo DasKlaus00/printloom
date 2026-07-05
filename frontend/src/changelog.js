@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.120',
+    de: [
+      'Warteschlange: „neue Jobs erscheinen erst nach F5" behoben. Ursache war ein Wettlauf zwischen dem Hinzufügen aus der Datei-Bibliothek und dem automatischen Speichern der Auto-Farm-Seite: deren verzögerter Speichervorgang konnte die frisch geschriebene Server-Queue mit dem alten Stand überschreiben. Beim Queue-Änderungs-Signal wird der anstehende Auto-Save jetzt verworfen; zusätzlich lädt die Auto-Farm-Seite die Queue neu, sobald der Tab wieder in den Vordergrund kommt (F5 nicht mehr nötig).',
+    ],
+    en: [
+      'Queue: fixed “new jobs only appear after F5”. Cause was a race between adding from the file library and the Auto Farm page’s debounced auto-save: the delayed save could overwrite the freshly written server queue with the old state. The pending auto-save is now discarded on the queue-change signal; additionally the Auto Farm page reloads the queue whenever the tab regains focus (no more F5 needed).',
+    ],
+  },
+  {
     version: '1.0.119',
     de: [
       'Multi-Plate-Dateien: minutenlange „Vorbereitung 100 %" am Drucker behoben. Printloom schickte bisher das komplette Projekt (z. B. 16 Platten ≈ 38 MB) — der X1C musste alles auspacken und parsen. Jetzt wird beim Senden nur die gewählte Platte in eine kleine Einzel-Platten-.3mf umgepackt (wie Bambu Studio es macht): G-code unverändert, Filament-/AMS-Infos der Platte bleiben erhalten, Upload-Größe typisch ~3 MB statt 38 MB. Gilt für Farm-Jobs (je Platte) und Direktsenden.',
