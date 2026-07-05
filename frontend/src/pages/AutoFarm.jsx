@@ -1953,6 +1953,12 @@ function AutoFarm() {
                 const displayH = job.computedHeight ?? job.objectHeight
                 const slotsUsed = (displayH > 0) ? slotsNeeded(displayH, slotH, slotTol) : 0
                 const pending = job.status === 'pending'
+                // Zeit je Job: gemessene Schätzung (Laufzeit) → Slicer-Prognose DIESER
+                // Platte (plate_times) → Datei-Slicer-Zeit. Jede Platte einzeln.
+                const jobMeta = getCachedMeta(job.fileId)
+                const jobEstSec = (job.estimatedMinutes > 0 ? job.estimatedMinutes * 60 : 0)
+                  || (job.plate != null ? (jobMeta?.plate_times?.[job.plate] ?? jobMeta?.plate_times?.[String(job.plate)] ?? 0) : 0)
+                  || (jobMeta?.time_seconds ?? 0)
 
                 // '1-0' has two meanings: a real "rack full" result from the
                 // preflight autoSlot() preview (only while NOT running), OR the
@@ -1986,8 +1992,9 @@ function AutoFarm() {
                           {job.progress}%{job.remaining > 0 ? ` · ~${job.remaining} min` : ''}
                         </span>
                       )}
-                      {pending && job.estimatedMinutes && (
-                        <span className="text-[10px] text-surface-700 font-mono shrink-0">~{job.estimatedMinutes} min</span>
+                      {pending && jobEstSec > 0 && (
+                        <span className="text-[10px] text-surface-700 font-mono shrink-0"
+                          title={tr('Slicer-Prognose dieser Platte')}>~{fmtDur(jobEstSec)}</span>
                       )}
                       <div className="flex-1" />
                       {/* oben rechts: Höhe + Fächer-Bedarf */}

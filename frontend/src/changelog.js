@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.122',
+    de: [
+      'Warteschlangen-Karten zeigen jetzt bei jedem wartenden Job die Slicer-Prognose seiner Platte (z. B. „~1 h 22 min" bei kurzen, „~4 h 32 min" bei langen Platten) — vorher stand dort bei wartenden Jobs gar keine Zeit. Ergänzt die Planer-/ETA-Korrektur aus v1.0.121: die Zeit pro Platte steht damit überall einzeln.',
+    ],
+    en: [
+      'Queue cards now show the slicer prediction of each waiting job’s plate (e.g. “~1 h 22 min” for short, “~4 h 32 min” for long plates) — previously waiting jobs showed no time at all. Complements the planner/ETA fix from v1.0.121: the per-plate time now appears individually everywhere.',
+    ],
+  },
+  {
     version: '1.0.121',
     de: [
       'Planer/ETA: Multi-Plate-Jobs rechnen jetzt mit der Slicer-Zeit IHRER Platte statt pauschal mit der Zeit der ersten Platte (vorher: 16 × „3 h 20 min", obwohl die Platten 1,3–4,5 h brauchen). Die Zeiten pro Platte kommen aus der Datei (slice_info „prediction"); der laufende Job nutzt weiter die Live-Restzeit. Gesamtzeit und Fertig-Uhrzeit der Warteschlange stimmen damit deutlich genauer.',

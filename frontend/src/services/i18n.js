@@ -189,6 +189,7 @@ const EN_STRINGS = {
   'M220-Fallback · pro Operation oben eigene Geschwindigkeit einstellbar': 'M220 fallback · set a per-operation speed above',
   'G-code direkt an den OTTOeject — z. B. G1 X100 F6000': 'G-code straight to the OTTOeject — e.g. G1 X100 F6000',
   '⬇ Entladen': '⬇ Unload',
+  'Slicer-Prognose dieser Platte': 'Slicer prediction for this plate',
   'Aktuelles Filament aus dem Extruder zurück ins AMS entladen': 'Unload the current filament from the extruder back into the AMS',
   'Filament S{0} laden…': 'Loading filament S{0}…',
   'Filament entladen…': 'Unloading filament…',
