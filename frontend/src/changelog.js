@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.115',
+    de: [
+      'AMS-Fehler am Drucker behoben, wenn eine Datei nicht mit Filament 1 gesliced wurde: Der X1C erwartet die AMS-Zuordnung pro Slicer-Filament-Nummer — druckt eine Datei z. B. nur mit Filament 3, hieß das gesendete Mapping bisher trotzdem „[Spule]" (= Zuordnung für Filament 1, Filament 3 blieb leer) → der Drucker meldete eine unpassende AMS-Zuordnung und blieb beim Aufheizen stehen. Jetzt wird das Mapping auf die richtigen Slot-Positionen gehoben (unbenutzte Filamente = -1, wie Bambu Studio). Gilt für Farm, Direktsenden und manuelle Zuordnungen.',
+    ],
+    en: [
+      'Fixed the AMS error on the printer when a file was not sliced with filament 1: the X1C expects the AMS mapping indexed by slicer filament number — if a file prints only with filament 3, the sent mapping was still “[tray]” (= assignment for filament 1, filament 3 left unmapped) → the printer reported a mismatched AMS mapping and stalled while heating. The mapping is now lifted to the correct slot positions (unused filaments = -1, like Bambu Studio). Applies to farm, direct send and manual assignments.',
+    ],
+  },
+  {
     version: '1.0.114',
     de: [
       'Warteschlange aufgeräumt: Jobs zeigen jetzt fest ihr Produkt (kein Datei-Dropdown mehr am Job — die Datei eines Jobs ändert man nicht, man legt Jobs in der Datei-Bibliothek an; dort geht dasselbe Produkt beliebig oft in die Queue: mehrfach „+ Queue" klicken oder über die Auswahl-Leiste mit Menge). Der ⚡-Smart-Sortier-Knopf wurde entfernt.',

@@ -222,6 +222,63 @@ def _read_filament_info(filepath: str, file_type: str, plate: int | None = None)
     return types, colors
 
 
+def _used_filament_slot_ids(filepath: str, file_type: str, plate: int | None = None) -> list:
+    """1-basierte Slicer-Slot-Nummern (`<filament id="…">`) der pro Platte WIRKLICH
+    benutzten Filamente aus slice_info.config — selbe Reihenfolge wie
+    _read_filament_info. Leer, wenn nicht lesbar (.gcode / kein slice_info)."""
+    if file_type != '.3mf':
+        return []
+    try:
+        with zipfile.ZipFile(filepath, 'r') as z:
+            name = next((n for n in z.namelist() if n.lower().endswith('slice_info.config')), None)
+            if not name:
+                return []
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(z.read(name).decode('utf-8', errors='ignore'))
+            plates = list(root.iter('plate'))
+            if not plates:
+                return []
+            chosen = None
+            if plate is not None:
+                for pl in plates:
+                    idx = next((m.get('value') for m in pl.findall('metadata') if m.get('key') == 'index'), None)
+                    if idx and str(idx).strip() == str(plate).strip():
+                        chosen = pl
+                        break
+            if chosen is None:
+                chosen = plates[0]
+            ids = []
+            for fil in chosen.findall('filament'):
+                try:
+                    ids.append(int(fil.get('id')))
+                except (TypeError, ValueError):
+                    return []   # eine unlesbare id → Zuordnung nicht mehr sicher
+            return ids
+    except Exception as e:
+        logger.warning(f"slice_info filament ids read failed: {e}")
+        return []
+
+
+def _expand_mapping_to_slots(mapping: list, filepath: str, file_type: str, plate: int | None = None) -> list:
+    """ams_mapping vom Format „ein Eintrag pro BENUTZTEM Filament" auf die vom
+    Drucker erwarteten Slicer-Slot-Positionen heben. Der X1C indexiert ams_mapping
+    über die Filament-Nummer des Slicers (1-basiert): druckt eine Datei nur mit
+    Filament 3, muss das Mapping [-1, -1, Tray] heißen — [Tray] allein würde
+    Filament 1 zuordnen und Filament 3 leer lassen → „AMS-Zuordnung passt nicht"
+    am Drucker. Unbenutzte Slots bekommen -1 (wie Bambu Studio)."""
+    ids = _used_filament_slot_ids(filepath, file_type, plate)
+    if not ids or len(ids) != len(mapping) or min(ids) < 1 or max(ids) > 64 \
+            or len(set(ids)) != len(ids):
+        return mapping
+    if ids == list(range(1, len(ids) + 1)):
+        return mapping           # Filamente 1..n → schon positionsrichtig
+    full = [-1] * max(ids)
+    for slot_id, tray in zip(ids, mapping):
+        full[slot_id - 1] = tray
+    logger.info(f"ams_mapping auf Slicer-Slots {ids} gehoben: {mapping} → {full}")
+    return full
+
+
 def _color_dist(hex1: str, hex2: str) -> float:
     """Euclidean RGB distance (0=identical)."""
     def _p(h):
@@ -1080,6 +1137,12 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
                 _refuse(f"Druck abgebrochen — passendes Filament fehlt im AMS: {desc}. Richtige Spule laden, im Datei-Browser zuordnen, oder über Auto Farm drucken.")
             ams_mapping = _match_ams_live(f_types, f_colors, ams_raw)
             diag_mapping.append(f"Live-Match (Material+Farbe, nie materialübergreifend): {ams_mapping}")
+        # Auf Slicer-Slot-Positionen heben (Datei druckt z. B. nur mit Filament 3
+        # → [-1, -1, Tray]); no-op wenn die Filamente ohnehin 1..n sind.
+        expanded = _expand_mapping_to_slots(ams_mapping, file.file_path, file.file_type)
+        if expanded != ams_mapping:
+            diag_mapping.append(f"Auf Slicer-Slots gehoben (unbenutzte = -1): {expanded}")
+            ams_mapping = expanded
     _diag_add(sess, "AMS-Mapping bestimmen", diag_mapping)
 
     # ── FTP-Upload ───────────────────────────────────────────────

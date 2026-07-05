@@ -25,7 +25,7 @@ from app.services.bambu_ftp import BambuFTP
 from app.services import storage
 from app.services import bambu_manager
 from app.services import ottoeject_motion as _motion
-from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _get_plate_gcode_param, _ams_match_confident, _ams_slots_from_raw, capture_snapshot, publish_live_status
+from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _expand_mapping_to_slots, _get_plate_gcode_param, _ams_match_confident, _ams_slots_from_raw, capture_snapshot, publish_live_status
 from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _load as _rack_load
 from app.services import hms
 from app.services.rack_logic import (
@@ -717,6 +717,18 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
                     None, _get_ams_mapping, file.file_path, file.file_type, None
                 )
                 _log(f"AMS-Mapping (Datei): {ams_mapping}")
+
+        if use_ams and ams_mapping:
+            # Auf Slicer-Slot-Positionen heben: druckt die Datei z. B. nur mit
+            # Filament 3, erwartet der X1C [-1, -1, Tray] — ein Eintrag pro
+            # BENUTZTEM Filament ordnet sonst Filament 1 zu und lässt Filament 3
+            # leer („AMS-Zuordnung passt nicht"). No-op bei Filamenten 1..n.
+            expanded = await loop.run_in_executor(
+                None, _expand_mapping_to_slots, ams_mapping, file.file_path, file.file_type, job.get("plate")
+            )
+            if expanded != ams_mapping:
+                _log(f"AMS-Mapping auf Slicer-Slots gehoben (unbenutzte = -1): {expanded}")
+                ams_mapping = expanded
 
         ftp = BambuFTP(device.ip_address, device.access_code)
         up = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, file.file_path, print_name)
