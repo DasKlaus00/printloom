@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { filamentService, deviceService, printerService } from '../services/api'
 import { learnFromAms } from '../services/amsLearn'
+import { useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 
@@ -123,7 +124,9 @@ export default function FilamentLibrary() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  // Lädt beim (Wieder-)Aktivwerden der Seite neu (statt nur einmal beim Mount) —
+  // z. B. nach AMS-Lernen im Hintergrund; kein F5 mehr nötig.
+  useAutoRefresh(load, 0)
 
   useEffect(() => {
     if (!feedback) return

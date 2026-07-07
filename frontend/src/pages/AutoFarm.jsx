@@ -7,7 +7,7 @@ import { colorLabel } from '../services/colorNames'
 import { useQueueEta, fmtDur, jobPrintSec, ensureMeta, getCachedMeta, CHANGEOVER_SEC } from '../services/useQueueEta'
 import { gateStart } from '../services/operatingHours'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
-import { usePageActive } from '../services/useAutoRefresh'
+import { usePageActive, useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
 
 /* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
@@ -1168,6 +1168,10 @@ function AutoFarm() {
       setAddFileId(prev => prev ?? files[0]?.id ?? null)
     }
   }, [])
+
+  // Beim (Wieder-)Aktivwerden der Seite Rack + Dateiliste auffrischen — kein F5
+  // mehr nötig, wenn sich zwischenzeitlich etwas geändert hat (kein Polling).
+  useAutoRefresh(refreshLiveData, 0)
 
   // Load live AMS slots up front so the queue can flag filament mismatches
   // ("manuelle AMS-Festlegung notwendig") before the farm is even started.

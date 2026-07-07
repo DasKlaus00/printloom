@@ -3,7 +3,7 @@ import { controlService, printerService, deviceService, deviceSettingsService, k
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
-import { usePageActive } from '../services/useAutoRefresh'
+import { usePageActive, useAutoRefresh } from '../services/useAutoRefresh'
 
 /* ── Drucker-Profile ───────────────────────────────────────── */
 const PRINTER_PROFILES = [
@@ -360,7 +360,8 @@ export default function Steuerung() {
 
   useEffect(() => { loadDevices() }, [loadDevices])
   useEffect(() => { if (bambuDevice) fetchStatus(bambuDevice.id) }, [bambuDevice, fetchStatus])
-  useEffect(() => { fetchPos() }, [fetchPos])
+  // OTTOeject-Position beim (Wieder-)Aktivwerden auffrischen — kein F5 nötig.
+  useAutoRefresh(fetchPos, 0)
 
   useEffect(() => {
     // pageActive: versteckte Seite pollt nicht (App hält Seiten gemountet).

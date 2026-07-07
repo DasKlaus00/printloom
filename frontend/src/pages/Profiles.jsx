@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { profileService } from '../services/api'
 import { useLanguage } from '../services/i18n'
+import { useAutoRefresh } from '../services/useAutoRefresh'
 
 const PRINTER_MODELS = [
   ['BBL_X1C',     'Bambu Lab X1 Carbon'],
@@ -226,7 +227,8 @@ function Profiles() {
   const loadLibrary = useCallback(() => {
     profileService.listLocal().then(r => setLibrary(r.data || [])).catch(() => {})
   }, [])
-  useEffect(() => { loadLibrary() }, [loadLibrary])
+  // Beim (Wieder-)Aktivwerden neu laden — kein F5 nötig, wenn sich die Bibliothek ändert.
+  useAutoRefresh(loadLibrary, 0)
 
   const addComponent    = () => setComponents(p => [...p, { name: '', instructions: '', url: '' }])
   const updateComponent = (i, k, v) => setComponents(p => p.map((c, j) => j === i ? { ...c, [k]: v } : c))

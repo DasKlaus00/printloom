@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db, SessionLocal
 from app.models.models import Device, PrinterType, UploadedFile
 from app.services.bambu_ftp import BambuFTP
-from app.services import storage, bambu_camera, rtsp_camera, bambu_manager
+from app.services import storage, rtsp_camera, bambu_manager
 
 
 def _make_print_name(original: str) -> str:

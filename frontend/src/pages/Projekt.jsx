@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { fileService, projectService, autofarmService, deviceService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
+import { useAutoRefresh } from '../services/useAutoRefresh'
 
 const ACTIVE_KEY = 'printloom_active_project'
 const IN_FLIGHT  = ['pending', 'sending', 'running', 'printing']
@@ -30,15 +31,20 @@ function Projekt() {
       .then(r => setProjects(Array.isArray(r.data?.projects) ? r.data.projects : []))
       .catch(() => {})
 
-  useEffect(() => {
-    Promise.all([fileService.listFiles(), projectService.list()])
+  // Läuft beim Mount UND bei jedem (Wieder-)Aktivwerden der Seite — kein F5 nötig.
+  // Projekte nur neu laden, wenn kein Speichern aussteht (sonst würden die letzten
+  // Eingaben vom Server-Stand überschrieben, bevor der Debounce-Save gefeuert hat).
+  const reloadAll = useCallback(() => {
+    const savePending = saveRef.current != null
+    Promise.all([fileService.listFiles(), savePending ? null : projectService.list()])
       .then(([fr, pr]) => {
         setFiles((fr.data.files ?? []).filter(f => ['.3mf', '.gcode'].includes(f.file_type)))
-        setProjects(Array.isArray(pr.data?.projects) ? pr.data.projects : [])
+        if (pr) setProjects(Array.isArray(pr.data?.projects) ? pr.data.projects : [])
       })
       .catch(() => {})
       .finally(() => setLoaded(true))
   }, [])
+  useAutoRefresh(reloadAll, 0)
 
   /* ── Live farm status (für „in Arbeit" + Abhaken) ─────────── */
   useFarmStatusStream(s => setFarmJobs(Array.isArray(s?.jobs) ? s.jobs : []))
@@ -60,7 +66,10 @@ function Projekt() {
   const scheduleSave = (proj) => {
     clearTimeout(saveRef.current)
     const pid = proj.id, body = { name: proj.name, items: proj.items }
-    saveRef.current = setTimeout(() => projectService.update(pid, body).catch(() => {}), 700)
+    saveRef.current = setTimeout(() => {
+      saveRef.current = null   // Reload-Guard freigeben (reloadAll wartet auf ausstehende Saves)
+      projectService.update(pid, body).catch(() => {})
+    }, 700)
   }
   // Lokale Bearbeitung des aktiven Projekts + Speichern.
   const patchActive = (updater) => setProjects(prev => {

@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.125',
+    de: [
+      'Kein F5 mehr nötig: Alle Seiten frischen ihre Daten jetzt automatisch auf, sobald sie wieder in den Vordergrund kommen (Seitenwechsel, Tab-Fokus, PWA wieder geöffnet) — Auto-Farm-Regal & Dateiliste, Filament-Bibliothek, Profile, Projekte und die OTTOeject-Position in der Steuerung. Formulareingaben werden dabei nicht überschrieben (ausstehende Speicherungen haben Vorrang).',
+      'Aufgeräumt: alter, ungenutzter Code entfernt (Alt-Queue-Router samt UI-Panel, verwaister MQTT-Queue-Manager, Legacy-Port-6000-Kamera) — keine Funktionsänderung, weniger Ballast.',
+    ],
+    en: [
+      'No more F5: all pages now refresh their data automatically when they come back to the foreground (page switch, tab focus, PWA reopen) — Auto Farm rack & file list, filament library, profiles, projects and the OTTOeject position in Control. Form input is never clobbered (pending saves take precedence).',
+      'Cleanup: removed old unused code (legacy queue router incl. UI panel, orphaned MQTT queue manager, legacy port-6000 camera) — no functional change, less ballast.',
+    ],
+  },
+  {
     version: '1.0.124',
     de: [
       'Warteschlange räumt sich mit dem Regal auf: Fertige Jobs bleiben sichtbar, solange ihre Platte im Regal liegt — wird das Fach geleert (✓, ↻ oder „Alle entnehmen"), verschwindet der zugehörige fertige Job auch aus der Warteschlange. Unten stehen damit nur noch aktive/wartende Jobs und die fertigen, deren Platte noch im Regal ist.',

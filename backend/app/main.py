@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pathlib import Path
 
-from app.routers import config, queue, files, devices, control, printer, calibration, rack_manager, system, autofarm, project, profiles, filaments, push, folders
+from app.routers import config, files, devices, control, printer, calibration, rack_manager, system, autofarm, project, profiles, filaments, push, folders
 from app.db.database import init_db
 import logging
 
@@ -36,7 +36,6 @@ app.add_middleware(
 app.include_router(config.router,        prefix="/api/config",       tags=["Configuration"])
 app.include_router(devices.router,       prefix="/api/devices",       tags=["Devices"])
 app.include_router(files.router,         prefix="/api/files",         tags=["File Management"])
-app.include_router(queue.router,         prefix="/api/queue",         tags=["Print Queue"])
 app.include_router(control.router,       prefix="/api/control",       tags=["Control"])
 app.include_router(printer.router,       prefix="/api/printer",       tags=["Printer"])
 app.include_router(calibration.router,   prefix="/api/calibration",   tags=["Calibration"])

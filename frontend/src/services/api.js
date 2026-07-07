@@ -63,13 +63,6 @@ export const folderService = {
   remove: (id)       => api.delete(`/folders/${id}`),
 }
 
-export const queueService = {
-  getQueue:         ()              => api.get('/queue/'),
-  addToQueue:       (data)          => api.post('/queue/add', data),
-  removeFromQueue:  (jobId)         => api.delete(`/queue/remove/${jobId}`),
-  updateJobStatus:  (jobId, data)   => api.put(`/queue/job/${jobId}/status`, data),
-}
-
 export const controlService = {
   executeMacro:        (data)  => api.post('/control/macro', data),
   listMacros:          ()      => api.get('/control/macros'),
