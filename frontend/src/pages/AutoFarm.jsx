@@ -1445,11 +1445,26 @@ function AutoFarm() {
   }
 
   /* ── Rack management ─────────────────────────────────────── */
+  // Fertige Jobs verschwinden aus der Warteschlange, sobald ihre Platte aus dem
+  // Regal entnommen wird — unten bleiben nur aktive/wartende Jobs und die
+  // fertigen, deren Platte noch im Regal liegt. Bei laufender Farm zusätzlich
+  // im Backend entfernen (sonst fügt der Live-Status sie wieder hinzu).
+  const removeDoneJobsForSlots = (slotKeys) => {
+    const keys = new Set(slotKeys)
+    setJobs(prev => {
+      const gone = prev.filter(j => j.status === 'done' && keys.has(j.slot))
+      if (!gone.length) return prev
+      if (runningRef.current) gone.forEach(j => autofarmService.removeJob(j.id).catch(() => {}))
+      return prev.filter(j => !(j.status === 'done' && keys.has(j.slot)))
+    })
+  }
+
   const clearRackSlot = async (slotId) => {
     try {
       await rackManagerService.updateSlot(slotId, { status: 'free', file_id: null, file_name: null })
       const r = await rackManagerService.getAll()
       setRackData(r.data)
+      removeDoneJobsForSlots([slotId])
     } catch {
       showFeedback(tr('Fach konnte nicht geleert werden'), false)
     }
@@ -1460,6 +1475,7 @@ function AutoFarm() {
       await rackManagerService.updateSlot(slotKey, { status: 'free', file_id: null, file_name: null })
       const r = await rackManagerService.getAll()
       setRackData(r.data)
+      removeDoneJobsForSlots([slotKey])
       const pendingJob = jobs.find(j => j.status === 'pending')
       if (pendingJob) {
         setJobs(prev => {
@@ -1483,6 +1499,7 @@ function AutoFarm() {
       const res = await rackManagerService.clearSlots({ slot_ids: done.map(([n]) => n) })
       const r = await rackManagerService.getAll()
       setRackData(r.data)
+      removeDoneJobsForSlots(done.map(([n]) => n))
       const n = res.data?.cleared ?? done.length
       showFeedback(tr('{0} Fach/Fächer geleert', n))
     } catch {

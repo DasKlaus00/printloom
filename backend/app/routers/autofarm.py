@@ -2689,7 +2689,9 @@ async def remove_job_from_farm(job_id: int):
     job = next((j for j in _farm["jobs"] if j["id"] == job_id), None)
     if not job:
         raise HTTPException(404, "Job nicht gefunden")
-    if job["status"] not in ("pending", "error"):
+    # done ist entfernbar: fertige Jobs verschwinden aus der Queue, sobald ihre
+    # Platte aus dem Regal entnommen wird (Frontend ruft das beim Fach-Leeren).
+    if job["status"] not in ("pending", "error", "done"):
         raise HTTPException(400, "Laufende Jobs können nicht entfernt werden")
     _farm["jobs"] = [j for j in _farm["jobs"] if j["id"] != job_id]
     _log(f"[-] {job['fileName']} entfernt")

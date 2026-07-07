@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.124',
+    de: [
+      'Warteschlange räumt sich mit dem Regal auf: Fertige Jobs bleiben sichtbar, solange ihre Platte im Regal liegt — wird das Fach geleert (✓, ↻ oder „Alle entnehmen"), verschwindet der zugehörige fertige Job auch aus der Warteschlange. Unten stehen damit nur noch aktive/wartende Jobs und die fertigen, deren Platte noch im Regal ist.',
+    ],
+    en: [
+      'Queue cleans up with the rack: finished jobs stay visible while their plate sits in the rack — once the slot is cleared (✓, ↻ or “Remove all”), the corresponding finished job disappears from the queue as well. What remains below are only active/waiting jobs and the finished ones whose plate is still in the rack.',
+    ],
+  },
+  {
     version: '1.0.123',
     de: [
       'Magazin leer: Der OTTOeject PARKT jetzt (statt vor dem Regal stehen zu bleiben), die Farm pausiert; nach dem Auffüllen + Fortsetzen homt er neu und holt die Platte aus dem JETZT aktiven Magazin. Behebt auch den Fehler, dass er nach dem Auffüllen zum falschen Regal fuhr (z. B. R3 statt R1): das Magazin-Regal wurde vor der Leer-Pause festgelegt und bei „alle leer" auf das letzte Regal gesetzt — jetzt wird es nach dem Auffüllen frisch bestimmt.',
