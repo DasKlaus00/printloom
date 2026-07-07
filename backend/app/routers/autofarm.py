@@ -796,11 +796,43 @@ def _stack_vars() -> tuple[str, str]:
                 for i, cnt in enumerate(counts):
                     if int(cnt) > 0:
                         return str(i + 1), mag_slot
-                return str(len(counts)), mag_slot
+                # Alle leer → R1 als neutraler Fallback. Vorher stand hier das LETZTE
+                # Regal — ein vor der Leer-Pause aufgelöster Griff fuhr dann nach dem
+                # Auffüllen zu R3, obwohl nur R1 Platten hatte.
+                return "1", mag_slot
             return str(d.get("stack_rack", "1")), str(d.get("stack_slot", mag_slot))
     except Exception:
         pass
     return "1", "7"
+
+
+async def _magazine_gate() -> tuple:
+    """Vor einem Griff: Magazin leer → OTTOeject PARKEN, Farm pausieren und auf
+    Auffüllen + Fortsetzen warten; danach neu HOMEN. Gibt das DANN aktive Magazin
+    (stack_rack, stack_slot) zurück — nach dem Auffüllen kann ein ANDERES Regal
+    aktiv sein als vor der Pause (der vorab aufgelöste Wert schickte den Arm
+    sonst z. B. zu R3, obwohl nur R1 aufgefüllt wurde)."""
+    was_empty = False
+    if _magazine_count() <= 0:
+        was_empty = True
+        _log("📦 Magazin leer — OTTOeject parkt. Platten auffüllen, Magazin-Zähler setzen, dann fortsetzen.")
+        try:
+            await _do_macro("PARK_OTTOEJECT")
+        except Exception as e:
+            _log(f"⚠ Parken fehlgeschlagen ({e}) — pausiere trotzdem")
+        _farm["paused"] = True
+        _farm["error"]  = "Magazin leer — Platten auffüllen, Zähler anpassen, dann fortsetzen"
+    while _farm["paused"] and not _farm["stopping"]:
+        await asyncio.sleep(0.5)
+    if _farm["stopping"]:
+        raise RuntimeError("Gestoppt")
+    if _magazine_count() <= 0:
+        raise RuntimeError("Magazin leer — abgebrochen")
+    _farm["error"] = None
+    if was_empty:
+        _log("📦 Magazin aufgefüllt — Referenzfahrt vor dem Griff…")
+        await _do_macro("OTTOEJECT_HOME")
+    return _stack_vars()
 
 
 def _decrement_magazine():
@@ -1710,18 +1742,12 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             if not _farm.get("_in_first_start") and _farm.pop("_plate_ready", False):
                 _log("⏭ Platte schon im Greifer (im First Start geholt) — Griff übersprungen")
                 return
-            # Pause if magazine is empty — wait for user to refill
-            if _magazine_count() <= 0:
-                _log("📦 Magazin leer — Farm pausiert. Platten auffüllen und Zähler anpassen.")
-                _farm["paused"] = True
-                _farm["error"]  = "Magazin leer — Platten auffüllen, Zähler anpassen, dann fortsetzen"
-            while _farm["paused"] and not _farm["stopping"]:
-                await asyncio.sleep(0.5)
-            if _farm["stopping"]:
-                raise RuntimeError("Gestoppt")
-            if _magazine_count() <= 0:
-                raise RuntimeError("Magazin leer — abgebrochen")
-            _farm["error"] = None
+            # Magazin-Gate: leer → parken/pausieren, nach Auffüllen homen. Liefert das
+            # DANN aktive Magazin → Macro-String mit den FRISCHEN Werten neu aufbauen
+            # (der vorab substituierte fuhr sonst zum vor der Pause gemerkten Regal).
+            stack_rack, stack_slot = await _magazine_gate()
+            val = (step.get("value") or "").replace("{rack}", rack_num).replace("{slot}", slot_num) \
+                .replace("{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot)
         # Opt-in: bekannte Drucker-/Regal-Macros können als Printloom-G-code laufen
         # (geometry.use_gcode[op] = true). Standard aus → Geräte-Macro wie bisher.
         # Die Magazin-/Fach-Buchhaltung unten prüft weiter val (Macro-Name, unverändert).
@@ -1763,18 +1789,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             _log("⏭ Platte schon im Greifer (im First Start geholt) — Griff übersprungen")
             return
         if is_grab:
-            # Magazin-Check wie beim macro-Grab (leer → Farm pausiert)
-            if _magazine_count() <= 0:
-                _log("📦 Magazin leer — Farm pausiert. Platten auffüllen und Zähler anpassen.")
-                _farm["paused"] = True
-                _farm["error"]  = "Magazin leer — Platten auffüllen, Zähler anpassen, dann fortsetzen"
-            while _farm["paused"] and not _farm["stopping"]:
-                await asyncio.sleep(0.5)
-            if _farm["stopping"]:
-                raise RuntimeError("Gestoppt")
-            if _magazine_count() <= 0:
-                raise RuntimeError("Magazin leer — abgebrochen")
-            _farm["error"] = None
+            # Magazin-Gate: leer → parken/pausieren, nach Auffüllen homen. Liefert das
+            # DANN aktive Magazin (kann nach dem Auffüllen ein anderes Regal sein).
+            stack_rack, stack_slot = await _magazine_gate()
         rk, sl = (int(stack_rack), int(stack_slot)) if is_grab else \
                  (int(rack_num), int(slot_num)) if is_store else (1, 1)
         geom = _farm.get("geometry") or _load_farm_geometry()
@@ -2636,6 +2653,11 @@ async def reorder_jobs(payload: ReorderPayload):
     non_pending  = [j for j in _farm["jobs"] if j["status"] != "pending"]
     new_pending  = [id_to_job[i] for i in payload.job_ids if i in id_to_job and id_to_job[i]["status"] == "pending"]
     _farm["jobs"] = non_pending + new_pending
+    # Sichtbar bestätigen — so lässt sich im Farm-Log prüfen, dass eine Umsortierung
+    # bei der LAUFENDEN Farm angekommen ist (und nicht nur in der UI).
+    order = " → ".join(
+        (j.get("fileName", "?") + (f" P{j['plate']}" if j.get("plate") else "")) for j in new_pending[:5])
+    _log(f"↕ Warteschlange umsortiert: {order}" + (" …" if len(new_pending) > 5 else ""))
     return {"success": True}
 
 

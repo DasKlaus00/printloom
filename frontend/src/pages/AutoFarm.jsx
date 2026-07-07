@@ -1354,10 +1354,13 @@ function AutoFarm() {
   }
 
   const syncReorder = (updatedJobs) => {
-    if (running) {
-      const pendingIds = updatedJobs.filter(j => j.status === 'pending').map(j => j.id)
-      autofarmService.reorderJobs(pendingIds).catch(() => {})
-    }
+    // IMMER an die laufende Farm melden — `running` kann kurz veraltet sein
+    // (WS-Aussetzer/Backend-Neustart); dann ging die Umsortierung nur in die
+    // gespeicherte Datei, die die LAUFENDE Farm nie wieder liest → UI zeigte
+    // die neue Reihenfolge, gedruckt wurde die alte. Läuft die Farm nicht,
+    // antwortet das Backend 400 (harmlos) und der Debounce-Save persistiert.
+    const pendingIds = updatedJobs.filter(j => j.status === 'pending').map(j => j.id)
+    autofarmService.reorderJobs(pendingIds).catch(() => {})
   }
 
   const moveJobUp = (id) => setJobs(prev => {
@@ -1393,6 +1396,25 @@ function AutoFarm() {
       syncReorder(next)
       return next
     })
+  }
+
+  // ── Magazin je Regal: Bestand direkt in der Regal-Ansicht setzen (nach dem
+  //    Auffüllen einzelner Magazine, ohne den Umweg über die Konfiguration). ──
+  const [magEdit, setMagEdit] = useState({})
+  const saveMagCount = async (ri, v) => {
+    const n = Math.max(0, parseInt(v, 10) || 0)
+    const cur = rackDataRef.current?.magazine_counts ?? []
+    if (n === (cur[ri] ?? 0)) { setMagEdit(m => { const x = { ...m }; delete x[ri]; return x }); return }
+    const counts = Array.from({ length: numRacks }, (_, i) => (i === ri ? n : (cur[i] ?? 0)))
+    try {
+      await rackManagerService.updateConfig({ magazine_counts: counts })
+      setRackData(d => d ? { ...d, magazine_counts: counts, magazine_count: counts.reduce((a, b) => a + b, 0) } : d)
+      window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
+      showFeedback(tr('Magazin R{0}: {1} Platten', ri + 1, n))
+    } catch {
+      showFeedback(tr('Magazin-Zähler speichern fehlgeschlagen'), false)
+    }
+    setMagEdit(m => { const x = { ...m }; delete x[ri]; return x })
   }
 
   const resetJob = (id) => {
@@ -2145,9 +2167,26 @@ function AutoFarm() {
               <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${numRacks}, 1fr)` }}>
                 {Array.from({length: numRacks}, (_, ri) => (
                   <div key={ri+1}>
-                    <p className="text-[9px] text-center font-mono text-surface-600 mb-1.5 tracking-wide">
+                    <p className="text-[9px] text-center font-mono text-surface-600 mb-1 tracking-wide">
                       R{ri+1}
                     </p>
+                    {/* Magazin dieses Regals: Bestand anzeigen + direkt setzen (Enter/Blur) */}
+                    <div
+                      className="flex items-center justify-center gap-1 mb-1.5"
+                      title={tr('Magazin R{0} — Bestand nach dem Auffüllen hier setzen', ri + 1)}
+                    >
+                      <span className={`text-[10px] ${(rackData?.magazine_counts?.[ri] ?? 0) === 0 ? 'opacity-100' : 'opacity-60'}`}>📦</span>
+                      <input
+                        type="number" min="0"
+                        value={magEdit[ri] ?? (rackData?.magazine_counts?.[ri] ?? 0)}
+                        onChange={e => setMagEdit(m => ({ ...m, [ri]: e.target.value }))}
+                        onBlur={e => { if (magEdit[ri] != null) saveMagCount(ri, e.target.value) }}
+                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                        className={`w-11 h-5 text-[10px] font-mono text-center py-0 px-0.5 ${
+                          (magEdit[ri] ?? (rackData?.magazine_counts?.[ri] ?? 0)) == 0 ? 'text-red-400 border-red-900/60' : ''
+                        }`}
+                      />
+                    </div>
                     <div className="space-y-1">
                       {Array.from({length: slotsPerRack}, (_, si) => {
                         const si2          = slotsPerRack - 1 - si  // visual: 6→1 top to bottom

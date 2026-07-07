@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.123',
+    de: [
+      'Magazin leer: Der OTTOeject PARKT jetzt (statt vor dem Regal stehen zu bleiben), die Farm pausiert; nach dem Auffüllen + Fortsetzen homt er neu und holt die Platte aus dem JETZT aktiven Magazin. Behebt auch den Fehler, dass er nach dem Auffüllen zum falschen Regal fuhr (z. B. R3 statt R1): das Magazin-Regal wurde vor der Leer-Pause festgelegt und bei „alle leer" auf das letzte Regal gesetzt — jetzt wird es nach dem Auffüllen frisch bestimmt.',
+      'Regal-Ansicht: Jedes Regal zeigt jetzt sein Magazin (📦 mit Bestand) — die Zahl lässt sich direkt dort setzen (Enter/Klick daneben), z. B. nach dem Auffüllen eines einzelnen Magazins.',
+      'Umsortieren bei laufender Farm zuverlässig: Die neue Reihenfolge wird jetzt IMMER an die laufende Farm gemeldet (vorher konnte sie bei kurz veraltetem Verbindungsstatus nur in der gespeicherten Datei landen — die UI zeigte die neue Reihenfolge, gedruckt wurde die alte). Das Farm-Log bestätigt jede Umsortierung mit einer „↕"-Zeile.',
+    ],
+    en: [
+      'Empty magazine: the OTTOeject now PARKS (instead of idling in front of the rack) and the farm pauses; after refilling + resume it re-homes and grabs from the magazine that is active NOW. Also fixes it driving to the wrong rack after refilling (e.g. R3 instead of R1): the magazine rack was resolved before the empty-pause and defaulted to the last rack when all were empty — it is now re-resolved after refilling.',
+      'Rack view: each rack now shows its magazine (📦 with stock) — the number can be set right there (Enter/click away), e.g. after refilling a single magazine.',
+      'Reordering while the farm runs is reliable now: the new order is ALWAYS reported to the running farm (previously, with a briefly stale connection status, it could end up only in the saved file — the UI showed the new order, but the old one was printed). The farm log confirms every reorder with a “↕” line.',
+    ],
+  },
+  {
     version: '1.0.122',
     de: [
       'Warteschlangen-Karten zeigen jetzt bei jedem wartenden Job die Slicer-Prognose seiner Platte (z. B. „~1 h 22 min" bei kurzen, „~4 h 32 min" bei langen Platten) — vorher stand dort bei wartenden Jobs gar keine Zeit. Ergänzt die Planer-/ETA-Korrektur aus v1.0.121: die Zeit pro Platte steht damit überall einzeln.',
