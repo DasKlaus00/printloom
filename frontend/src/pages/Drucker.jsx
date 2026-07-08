@@ -61,12 +61,13 @@ function SpeedSelect({ value, onChange }) {
 /* Operations-Karte (Modul-Ebene → Eingabefelder verlieren beim Tippen nicht den Fokus).
    Entweder X/Y/Z-Werte ODER (Feinjustage) ein eigener, editierbarer G-code. */
 function OpCard({ op, icon, title, fields = [], extra, note, busy, gcodeOn, onTest, onToggle,
-                 overrideVal, canOverride, onLoadGcode, onChangeGcode, onClearGcode, effHint,
+                 overrideVal, canOverride, gcodeOnly, onLoadGcode, onChangeGcode, onClearGcode, effHint,
                  speedVal, onSpeed }) {
   const { tr } = useLanguage()
-  const hasOverride = typeof overrideVal === 'string'
+  const showGcode = gcodeOnly || typeof overrideVal === 'string'
+  const gval = overrideVal ?? ''
   return (
-    <div className={`card p-3 space-y-2.5 ${hasOverride ? 'border-blue-700/50' : ''}`}>
+    <div className={`card p-3 space-y-2.5 ${showGcode ? 'border-blue-700/50' : ''}`}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium text-surface-200 min-w-0 truncate">{icon} {title}</p>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -76,13 +77,18 @@ function OpCard({ op, icon, title, fields = [], extra, note, busy, gcodeOn, onTe
         </div>
       </div>
 
-      {hasOverride ? (
+      {showGcode ? (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-blue-300">{tr('⚙ Eigener G-code — Werte werden ignoriert')}</span>
-            <button onClick={() => onClearGcode(op)} className="text-[10px] text-surface-500 hover:text-surface-300">{tr('✕ zurück zu Werten')}</button>
+            <span className="text-[10px] text-blue-300">
+              {gcodeOnly ? tr('⚙ G-code dieser Operation') : tr('⚙ Eigener G-code — Werte werden ignoriert')}
+            </span>
+            {gcodeOnly
+              ? <button onClick={() => onLoadGcode(op, extra)} className="text-[10px] text-surface-500 hover:text-surface-300">{tr('⤓ Vorlage laden')}</button>
+              : <button onClick={() => onClearGcode(op)} className="text-[10px] text-surface-500 hover:text-surface-300">{tr('✕ zurück zu Werten')}</button>}
           </div>
-          <textarea value={overrideVal} onChange={e => onChangeGcode(op, e.target.value)} spellCheck={false} rows={8}
+          <textarea value={gval} onChange={e => onChangeGcode(op, e.target.value)} spellCheck={false} rows={8}
+            placeholder={gcodeOnly ? tr('Eigener G-code für diese Operation … („Vorlage laden" füllt einen Startpunkt)') : ''}
             className="w-full text-[11px] leading-snug font-mono bg-surface-900/70 border border-surface-700/60 rounded-lg p-2 whitespace-pre" />
           <p className="text-[9px] text-surface-600">{tr('Wird 1:1 an den OTTOeject gesendet. „Test" fährt genau diesen G-code.')}</p>
           <p className="text-[9px] text-blue-400/80 leading-relaxed">
@@ -114,7 +120,9 @@ function OpCard({ op, icon, title, fields = [], extra, note, busy, gcodeOn, onTe
       <label className="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-surface-800/50">
         <Toggle on={!!gcodeOn} onClick={() => onToggle(op)} color="bg-emerald-600" />
         <span className={`text-[11px] ${gcodeOn ? 'text-emerald-300' : 'text-surface-500'}`}>
-          {gcodeOn ? tr('Farm nutzt diese Position ✓') : tr('Farm nutzt diese Position (aus → Geräte-Macro)')}
+          {gcodeOnly
+            ? (gcodeOn ? tr('Farm nutzt diesen G-code ✓') : tr('Farm nutzt diesen G-code (aus → Geräte-Macro)'))
+            : (gcodeOn ? tr('Farm nutzt diese Position ✓') : tr('Farm nutzt diese Position (aus → Geräte-Macro)'))}
         </span>
       </label>
     </div>
@@ -336,6 +344,14 @@ export default function Drucker() {
   }
 
   const activeCount = OPS.filter(o => useGcode[o]).length
+  // „Custom Printer" = ausschließlich eigener G-code je Operation, KEINE Start-Positionen.
+  // Named Printer = nur Positions-Werte (fein justierbar), KEIN G-code-Editor.
+  const isCustom = printerId === CUSTOM_PRINTER.id
+  // G-code-Editor je Op nur beim Custom Printer; bei den Named Printern gibt es
+  // keinen Override (Positions-Werte sind maßgeblich, siehe Backend-Gate).
+  const opGcodeProps = (op) => isCustom
+    ? { gcodeOnly: true, overrideVal: gcodeOverride[op] ?? '', onLoadGcode: loadGcodeForEdit, onChangeGcode: setGcodeText, onClearGcode: clearGcode }
+    : {}
   // Drucker sitzt hinter dem letzten Regal → eject/load/Tür-X wandern mit der Regalzahl.
   const xOff = numRacks > 1 ? (numRacks - 1) * num(rackGap) : 0
   // Drucker-nahe Ops (Tür, eject, place, move_to_printer): X wird als ABSOLUTER
@@ -380,7 +396,9 @@ export default function Drucker() {
               <span className="shrink-0 opacity-80"><PrinterBadge enclosed={p.enclosed} size={26} /></span>
               <span className="min-w-0">
                 <span className="block truncate">{p.name}</span>
-                <span className="block text-[9px] text-surface-600">{p.door ? tr('geschlossen · mit Tür') : tr('offen · ohne Tür')}</span>
+                <span className="block text-[9px] text-surface-600">
+                  {p.custom ? tr('nur eigener G-code') : (p.door ? tr('geschlossen · mit Tür') : tr('offen · ohne Tür'))}
+                </span>
               </span>
             </button>
           ))}
@@ -397,16 +415,22 @@ export default function Drucker() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-surface-200 truncate">{printerName}</p>
                 <p className="text-[10px] text-surface-600">
-                  {activeCount === 0
-                    ? tr('Farm nutzt aktuell die Geräte-Macros (keine App-Position aktiv).')
-                    : tr('Farm nutzt {0} App-Position(en). Rest über Geräte-Macros.', activeCount)}
+                  {isCustom
+                    ? (activeCount === 0
+                        ? tr('Custom Printer: eigener G-code je Operation — noch keine Op für die Farm aktiv.')
+                        : tr('Custom Printer: Farm nutzt {0} eigene G-code-Operation(en). Rest über Geräte-Macros.', activeCount))
+                    : (activeCount === 0
+                        ? tr('Farm nutzt aktuell die Geräte-Macros (keine App-Position aktiv).')
+                        : tr('Farm nutzt {0} App-Position(en). Rest über Geräte-Macros.', activeCount))}
                 </p>
               </div>
               <button onClick={homeOtto} disabled={jog.busy}
                 className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 shrink-0">{tr('⌂ Referenzfahrt')}</button>
             </div>
             <p className="text-[10px] text-surface-600">
-              {tr('Immer erst Referenzfahrt (OTTOEJECT_HOME), dann eine Operation testen. Printloom sendet den G-code direkt aus den Werten unten.')}
+              {isCustom
+                ? tr('Immer erst Referenzfahrt (OTTOEJECT_HOME), dann eine Operation testen. Custom Printer: jede Operation fährt ausschließlich deinen eigenen G-code unten — keine Start-Positionen.')
+                : tr('Immer erst Referenzfahrt (OTTOEJECT_HOME), dann eine Operation testen. Printloom sendet den G-code direkt aus den Werten unten.')}
             </p>
             <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-surface-800/50">
               <span className="text-[11px] text-surface-400">{tr('Geschwindigkeit (global)')}</span>
@@ -456,7 +480,7 @@ export default function Drucker() {
               <OpCard op="open_door" icon="🚪" title={tr('Tür öffnen')}
                 busy={jog.busy} gcodeOn={useGcode.open_door} onTest={sendOp} onToggle={toggleGcode}
                 speedVal={speedFactors.open_door ?? ''} onSpeed={setOpSpeed}
-                overrideVal={gcodeOverride.open_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
+                {...opGcodeProps('open_door')}
                 effHint={absHint(doorOpen)}
                 fields={[
                   absXField(doorOpen, setDoorOpen),
@@ -469,7 +493,7 @@ export default function Drucker() {
               <OpCard op="close_door" icon="🚪" title={tr('Tür schließen')}
                 busy={jog.busy} gcodeOn={useGcode.close_door} onTest={sendOp} onToggle={toggleGcode}
                 speedVal={speedFactors.close_door ?? ''} onSpeed={setOpSpeed}
-                overrideVal={gcodeOverride.close_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
+                {...opGcodeProps('close_door')}
                 effHint={absHint(doorClose)}
                 fields={[
                   absXField(doorClose, setDoorClose),
@@ -481,14 +505,14 @@ export default function Drucker() {
             <OpCard op="move_to_printer" icon="➡" title={tr('Vor Drucker fahren')}
               busy={jog.busy} gcodeOn={useGcode.move_to_printer} onTest={sendOp} onToggle={toggleGcode}
               speedVal={speedFactors.move_to_printer ?? ''} onSpeed={setOpSpeed}
-              overrideVal={gcodeOverride.move_to_printer} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
+              {...opGcodeProps('move_to_printer')}
               effHint={absHint(eject)}
               note={tr('Sichere Anfahrt vor den Drucker — nutzt die Auswurf-Position (Start-X/Y/Z von „Platte auswerfen") als Bezug. Eigene Geschwindigkeit für einen schnellen Wechsel.')}
               fields={[]} />
             <OpCard op="eject" icon="⬆" title={tr('Platte auswerfen')}
               busy={jog.busy} gcodeOn={useGcode.eject} onTest={sendOp} onToggle={toggleGcode}
               speedVal={speedFactors.eject ?? ''} onSpeed={setOpSpeed}
-              overrideVal={gcodeOverride.eject} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
+              {...opGcodeProps('eject')}
               effHint={absHint(eject)}
               fields={[
                 absXField(eject, setEject),
@@ -498,7 +522,7 @@ export default function Drucker() {
             <OpCard op="place" icon="⬇" title={tr('Platte einlegen (Place)')}
               busy={jog.busy} gcodeOn={useGcode.place} onTest={sendOp} onToggle={toggleGcode}
               speedVal={speedFactors.place ?? ''} onSpeed={setOpSpeed}
-              overrideVal={gcodeOverride.place} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
+              {...opGcodeProps('place')}
               effHint={absHint(load)}
               fields={[
                 absXField(load, setLoad),

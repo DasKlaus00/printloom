@@ -454,9 +454,12 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
         s = _speed_prefix(g)
         return (s or "M220 S100\n").rstrip() + "\nM400"
     speed = _speed_prefix(g, op)   # Vorschub PRO Operation (Fallback global)
-    # Eigener G-code (Feinjustage im Drucker-Tab) hat Vorrang — 1:1 senden.
+    # Eigener G-code hat Vorrang — aber NUR beim „Custom Printer". Named Printer
+    # fahren immer aus ihren Positions-Werten (kein G-code-Editor), damit dort kein
+    # alter Override versehentlich greift.
+    is_custom = str(g.get("printer_id", "")).strip().lower() == "custom"
     ov = (g.get("gcode_override") or {}).get(op)
-    if isinstance(ov, str) and ov.strip():
+    if is_custom and isinstance(ov, str) and ov.strip():
         # Platzhalter, damit EIN eigener G-code über alle Regale/Fächer skaliert — statt fixer
         # Koordinaten, die jedes Regal an denselben Punkt schicken. Werte aus der Kalibrierung
         # (x_unclamp/rack_x_gap/first_z_flat/slot_gap); R1 = druckerseitig (siehe slot_position):

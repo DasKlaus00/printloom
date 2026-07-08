@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.129',
+    de: [
+      'Klare Trennung im Drucker-Tab: Bei den Modell-Druckern (X1C, P1S, …) stellst du nur noch die Start-Positionen je Operation ein und justierst sie — der G-code-Editor („Eigenen G-code bearbeiten") ist dort entfernt. Für vollständig eigene Abläufe gibt es den neuen „Custom Printer": jede Operation (Tür auf/zu, vor Drucker, auswerfen, einlegen) wird ausschließlich über deinen eigenen G-code gefahren, ganz ohne Start-Positionen. „⤓ Vorlage laden" füllt einen Startpunkt zum Bearbeiten; Platzhalter wie {rack_x}/{slot_z} skalieren weiter über Regale/Fächer.',
+    ],
+    en: [
+      'Clear split in the printer tab: for the model printers (X1C, P1S, …) you now only set and adjust the start positions per operation — the G-code editor (“Edit custom G-code”) is removed there. For fully custom motion there’s the new “Custom Printer”: every operation (door open/close, move to printer, eject, place) runs exclusively from your own G-code, with no start positions at all. “⤓ Load template” fills a starting point to edit; placeholders like {rack_x}/{slot_z} still scale across racks/slots.',
+    ],
+  },
+  {
     version: '1.0.128',
     de: [
       'Drucker-Tab: Auch „Vor Drucker fahren", „Platte auswerfen" und „Platte einlegen" nehmen den Start-X jetzt als absoluten Maschinenwert (wie zuvor die Tür) — du tippst genau die Position ein, die die OTTOeject anfährt; der Regal-Versatz wird intern verrechnet, ein Hinweis zeigt Basis + Versatz. Y und Start-Z waren schon immer absolut. „Vor Drucker fahren" nutzt weiterhin die Auswurf-Position als Bezug.',

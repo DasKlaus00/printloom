@@ -266,6 +266,19 @@ const EN_STRINGS = {
   'Start-Z': 'Start Z',
   'Absoluter Start-X an der Maschine · Basis {0} + Regal-Versatz {1}':
     'Absolute start X at the machine · base {0} + rack offset {1}',
+  '⚙ G-code dieser Operation': '⚙ G-code for this operation',
+  '⤓ Vorlage laden': '⤓ Load template',
+  'Eigener G-code für diese Operation … („Vorlage laden" füllt einen Startpunkt)':
+    'Custom G-code for this operation … (“Load template” fills a starting point)',
+  'Farm nutzt diesen G-code ✓': 'Farm uses this G-code ✓',
+  'Farm nutzt diesen G-code (aus → Geräte-Macro)': 'Farm uses this G-code (off → device macro)',
+  'nur eigener G-code': 'custom G-code only',
+  'Custom Printer: eigener G-code je Operation — noch keine Op für die Farm aktiv.':
+    'Custom Printer: custom G-code per operation — no op active for the farm yet.',
+  'Custom Printer: Farm nutzt {0} eigene G-code-Operation(en). Rest über Geräte-Macros.':
+    'Custom Printer: farm uses {0} custom G-code operation(s). Rest via device macros.',
+  'Immer erst Referenzfahrt (OTTOEJECT_HOME), dann eine Operation testen. Custom Printer: jede Operation fährt ausschließlich deinen eigenen G-code unten — keine Start-Positionen.':
+    'Always home first (OTTOEJECT_HOME), then test an operation. Custom Printer: every operation runs only your own G-code below — no start positions.',
   'Drucker & Regal einrichten → fertige Klipper-Config für die OTTOeject':
     'Set up printer & rack → ready-made Klipper config for the OTTOeject',
   '1 · Drucker': '1 · Printer',

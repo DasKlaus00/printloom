@@ -14,8 +14,11 @@ export const PRINTERS = [
   { id: 'ad5x',  name: 'Flashforge AD5X',        enclosed:true,  eject:{x:422,y:316,z:10},   load:{x:422,y:316,z:10},   door:null },
 ]
 
+// Custom Printer = ausschließlich eigener G-code je Operation (keine Start-Positionen).
+// eject/load/door bleiben als unschädliche Platzhalter (werden im Custom-Modus ignoriert),
+// damit der Geometrie-Speicher/„Vorlage laden" ein gültiges Grundgerüst hat.
 export const CUSTOM_PRINTER = {
-  id: 'custom', name: 'Anderer Drucker', enclosed: true,
+  id: 'custom', name: 'Custom Printer', enclosed: true, custom: true,
   eject: { x: 420, y: 335, z: 15 }, load: { x: 420, y: 335, z: 15 },
   door: { open: { x: 100, y: 315, z: 120, d: 375 }, close: { x: 100, y: 315, z: 120, d: 375 } },
 }
