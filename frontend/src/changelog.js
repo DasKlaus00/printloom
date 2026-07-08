@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.126',
+    de: [
+      'Drucker-Tab → Regal & Greifen: Die X-Position jedes Regals lässt sich jetzt einzeln setzen. Standard bleibt Start-X + Regal-Versatz; ein geänderter Wert wird als Δ-Korrektur pro Regal gespeichert (✕ = zurück auf Standard) und gilt für alle Fächer, das Magazin und den eigenen G-code des Regals. Pro Regal gibt es einen „→"-Test (Fach 1 anfahren, ohne zu greifen) — praktisch, wenn die Regale nicht exakt im gleichmäßigen Raster stehen.',
+    ],
+    en: [
+      'Printer tab → rack & grabbing: each rack’s X position can now be set individually. Default remains start X + rack offset; a changed value is stored as a Δ correction per rack (✕ = back to default) and applies to all slots, the magazine and the rack’s custom G-code. Each rack has a “→” test (approach slot 1 without grabbing) — handy when the racks don’t sit on a perfectly even grid.',
+    ],
+  },
+  {
     version: '1.0.125',
     de: [
       'Kein F5 mehr nötig: Alle Seiten frischen ihre Daten jetzt automatisch auf, sobald sie wieder in den Vordergrund kommen (Seitenwechsel, Tab-Fokus, PWA wieder geöffnet) — Auto-Farm-Regal & Dateiliste, Filament-Bibliothek, Profile, Projekte und die OTTOeject-Position in der Steuerung. Formulareingaben werden dabei nicht überschrieben (ausstehende Speicherungen haben Vorrang).',

@@ -163,6 +163,7 @@ export default function Drucker() {
 
   const [testRack, setTestRack] = useState(1)
   const [testSlot, setTestSlot] = useState(1)
+  const [rackXTrim, setRackXTrim] = useState({})   // {"2": -1.5, …} X-Korrektur je Regal (mm)
   const [regalOpen, setRegalOpen] = useState(false)
   const [jog, setJog] = useState({ busy: false, msg: '', err: false })
   const [lastScript, setLastScript] = useState('')
@@ -202,9 +203,10 @@ export default function Drucker() {
       gcode_override: gcodeOverride,
       speed_factor: num(speedFactor, 100) || 100,
       speed_factors: { ...speedFactors },
+      rack_x_trim: { ...rackXTrim },
     }
   }, [printerId, printerName, enclosed, xUnclamp, yEngage,
-      firstZ, gap, yPullback, rackGap, eject, load, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor, speedFactors])
+      firstZ, gap, yPullback, rackGap, eject, load, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor, speedFactors, rackXTrim])
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
   const hydrated = useRef(false)
@@ -229,6 +231,7 @@ export default function Drucker() {
         setDoorClose(p.door?.close || null)
         if (g.speed_factor != null) setSpeedFactor(g.speed_factor)
         if (g.speed_factors) setSpeedFactors(g.speed_factors)
+        if (g.rack_x_trim) setRackXTrim(g.rack_x_trim)
         if (g.use_gcode) {
           // Migration: die Einlege-Op hieß früher „load", jetzt „place" (Alias) —
           // alte Aktivierung übernehmen, damit die Farm-Position nicht still ausgeht.
@@ -521,6 +524,57 @@ export default function Drucker() {
                       className={`text-[11px] px-2 py-1 rounded border ${plate === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500'}`}>{lbl}</button>
                   ))}
                 </div>
+
+                {/* ── X-Position je Regal: absolute Werte, gespeichert als Korrektur (rack_x_trim) ── */}
+                {numRacks > 1 && (
+                  <div className="pt-1 border-t border-surface-800/50 space-y-1.5">
+                    <p className="text-[11px] text-surface-400">{tr('X-Position je Regal (mm)')}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Array.from({ length: numRacks }, (_, i) => i + 1).map(r => {
+                        const base = num(xUnclamp) + (numRacks - r) * num(rackGap)
+                        const trim = +(rackXTrim[String(r)] ?? 0) || 0
+                        const eff  = Math.round((base + trim) * 10) / 10
+                        return (
+                          <label key={r} className="block">
+                            <span className="text-[10px] text-surface-500 font-mono flex items-center gap-1">
+                              R{r}{r === 1 ? tr(' · am Drucker') : ''}
+                              {trim !== 0 && (
+                                <>
+                                  <span className="text-blue-400">Δ{trim > 0 ? '+' : ''}{trim}</span>
+                                  <button
+                                    onClick={() => setRackXTrim(m => { const n = { ...m }; delete n[String(r)]; return n })}
+                                    title={tr('Korrektur zurücksetzen (wieder Standard-Berechnung)')}
+                                    className="text-surface-600 hover:text-red-400">✕</button>
+                                </>
+                              )}
+                            </span>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <input type="number" step="0.5" value={eff}
+                                onChange={e => {
+                                  const v = parseFloat(e.target.value)
+                                  if (Number.isNaN(v)) return
+                                  const t = Math.round((v - base) * 10) / 10
+                                  setRackXTrim(m => {
+                                    if (t === 0) { const n = { ...m }; delete n[String(r)]; return n }
+                                    return { ...m, [String(r)]: t }
+                                  })
+                                }}
+                                className={`w-24 text-sm font-mono ${trim !== 0 ? 'border-blue-700/60' : ''}`} />
+                              <button
+                                onClick={() => sendOp('approach', tr('R{0} anfahren…', r), { rack: r, slot: 1 })}
+                                disabled={jog.busy}
+                                title={tr('Fach 1 dieses Regals anfahren (greift nicht)')}
+                                className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">→</button>
+                            </div>
+                          </label>
+                        )
+                      })}
+                    </div>
+                    <p className="text-[9px] text-surface-600">
+                      {tr('Standard = Start-X + Regal-Versatz. Ein geänderter Wert wird als Δ-Korrektur pro Regal gespeichert und gilt für alle Fächer & das Magazin dieses Regals — auch im eigenen G-code über den Platzhalter für die Regal-X-Position. Ändert sich Start-X/Versatz, wandert die Korrektur mit.')}
+                    </p>
+                  </div>
+                )}
 
                 {/* Test Greifen / Ablegen */}
                 <div className="flex flex-wrap items-end gap-2 pt-1 border-t border-surface-800/50">

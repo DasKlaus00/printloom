@@ -188,6 +188,13 @@ const EN_STRINGS = {
   'Geschwindigkeit (global)': 'Speed (global)',
   'M220-Fallback · pro Operation oben eigene Geschwindigkeit einstellbar': 'M220 fallback · set a per-operation speed above',
   'G-code direkt an den OTTOeject — z. B. G1 X100 F6000': 'G-code straight to the OTTOeject — e.g. G1 X100 F6000',
+  'X-Position je Regal (mm)': 'X position per rack (mm)',
+  ' · am Drucker': ' · at printer',
+  'Korrektur zurücksetzen (wieder Standard-Berechnung)': 'Reset correction (back to standard calculation)',
+  'R{0} anfahren…': 'Approaching R{0}…',
+  'Fach 1 dieses Regals anfahren (greift nicht)': 'Approach slot 1 of this rack (does not grab)',
+  'Standard = Start-X + Regal-Versatz. Ein geänderter Wert wird als Δ-Korrektur pro Regal gespeichert und gilt für alle Fächer & das Magazin dieses Regals — auch im eigenen G-code über den Platzhalter für die Regal-X-Position. Ändert sich Start-X/Versatz, wandert die Korrektur mit.':
+    'Default = start X + rack offset. A changed value is stored as a Δ correction per rack and applies to all slots & the magazine of that rack — also in custom G-code via the rack-X placeholder. If start X/offset change, the correction moves along.',
   '⬇ Entladen': '⬇ Unload',
   'Slicer-Prognose dieser Platte': 'Slicer prediction for this plate',
   'Magazin R{0}: {1} Platten': 'Magazine R{0}: {1} plates',
