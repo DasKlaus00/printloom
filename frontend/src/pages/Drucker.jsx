@@ -340,6 +340,20 @@ export default function Drucker() {
   const xOff = numRacks > 1 ? (numRacks - 1) * num(rackGap) : 0
   const effHintFor = (b) => xOff ? tr('→ effektiv X{0} (Drucker hinter Regal {1})', Math.round(num(b) + xOff), numRacks) : null
 
+  // Tür: X wird als ABSOLUTER Maschinenwert eingegeben (inkl. Regal-Versatz). Gespeichert
+  // wird die Basis (Wert − Versatz), damit die Bewegung bei anderer Regalzahl stimmt.
+  const r1 = (n) => Math.round(n * 10) / 10
+  const doorXField = (st, setSt) => ({
+    label: tr('Start-X'),
+    value: xOff ? r1(num(st.x) + xOff) : st.x,
+    onChange: xOff
+      ? (v => { const e = parseFloat(v); if (Number.isNaN(e)) return; setSt({ ...st, x: r1(e - xOff) }) })
+      : (v => setSt({ ...st, x: v })),
+  })
+  const doorAbsHint = (st) => xOff
+    ? tr('Absoluter Start-X an der Maschine · Basis {0} + Regal-Versatz {1}', Math.round(num(st.x)), Math.round(xOff))
+    : null
+
   return (
     <div className="space-y-5">
       <div>
@@ -443,11 +457,11 @@ export default function Drucker() {
                 busy={jog.busy} gcodeOn={useGcode.open_door} onTest={sendOp} onToggle={toggleGcode}
                 speedVal={speedFactors.open_door ?? ''} onSpeed={setOpSpeed}
                 overrideVal={gcodeOverride.open_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
-                effHint={effHintFor(doorOpen.x)}
+                effHint={doorAbsHint(doorOpen)}
                 fields={[
-                  { label: tr('Start-X'), value: doorOpen.x, onChange: v => setDoorOpen({ ...doorOpen, x: v }) },
+                  doorXField(doorOpen, setDoorOpen),
                   { label: tr('Y'), value: doorOpen.y, onChange: v => setDoorOpen({ ...doorOpen, y: v }) },
-                  { label: tr('Z'), step: 0.5, value: doorOpen.z, onChange: v => setDoorOpen({ ...doorOpen, z: v }) },
+                  { label: tr('Start-Z'), step: 0.5, value: doorOpen.z, onChange: v => setDoorOpen({ ...doorOpen, z: v }) },
                   { label: tr('Pin-Abst.'), hint: tr('d_to_pin'), value: doorOpen.d, onChange: v => setDoorOpen({ ...doorOpen, d: v }) },
                 ]} />
             )}
@@ -456,11 +470,11 @@ export default function Drucker() {
                 busy={jog.busy} gcodeOn={useGcode.close_door} onTest={sendOp} onToggle={toggleGcode}
                 speedVal={speedFactors.close_door ?? ''} onSpeed={setOpSpeed}
                 overrideVal={gcodeOverride.close_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
-                effHint={effHintFor(doorClose.x)}
+                effHint={doorAbsHint(doorClose)}
                 fields={[
-                  { label: tr('Start-X'), value: doorClose.x, onChange: v => setDoorClose({ ...doorClose, x: v }) },
+                  doorXField(doorClose, setDoorClose),
                   { label: tr('Y'), value: doorClose.y, onChange: v => setDoorClose({ ...doorClose, y: v }) },
-                  { label: tr('Z'), step: 0.5, value: doorClose.z, onChange: v => setDoorClose({ ...doorClose, z: v }) },
+                  { label: tr('Start-Z'), step: 0.5, value: doorClose.z, onChange: v => setDoorClose({ ...doorClose, z: v }) },
                   { label: tr('Pin-Abst.'), hint: tr('d_to_pin'), value: doorClose.d, onChange: v => setDoorClose({ ...doorClose, d: v }) },
                 ]} />
             )}

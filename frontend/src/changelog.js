@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.127',
+    de: [
+      'Drucker-Tab → Tür öffnen/schließen: Start-X und Start-Z werden jetzt als absolute Maschinenwerte eingegeben — du tippst genau die Position ein, die die OTTOeject anfährt. Kein verwirrender „effektiv X…"-Unterschied mehr: der Regal-Versatz wird intern verrechnet (ein kleiner Hinweis zeigt Basis + Versatz), sodass die Türbewegung auch bei anderer Regalzahl stimmt.',
+    ],
+    en: [
+      'Printer tab → open/close door: start X and start Z are now entered as absolute machine values — you type exactly the position the OTTOeject moves to. No more confusing “effective X…” gap: the rack offset is handled internally (a small hint shows base + offset), so the door motion stays correct even with a different rack count.',
+    ],
+  },
+  {
     version: '1.0.126',
     de: [
       'Drucker-Tab → Regal & Greifen: Die X-Position jedes Regals lässt sich jetzt einzeln setzen. Standard bleibt Start-X + Regal-Versatz; ein geänderter Wert wird als Δ-Korrektur pro Regal gespeichert (✕ = zurück auf Standard) und gilt für alle Fächer, das Magazin und den eigenen G-code des Regals. Pro Regal gibt es einen „→"-Test (Fach 1 anfahren, ohne zu greifen) — praktisch, wenn die Regale nicht exakt im gleichmäßigen Raster stehen.',
