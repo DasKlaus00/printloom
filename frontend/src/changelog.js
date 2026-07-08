@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.128',
+    de: [
+      'Drucker-Tab: Auch „Vor Drucker fahren", „Platte auswerfen" und „Platte einlegen" nehmen den Start-X jetzt als absoluten Maschinenwert (wie zuvor die Tür) — du tippst genau die Position ein, die die OTTOeject anfährt; der Regal-Versatz wird intern verrechnet, ein Hinweis zeigt Basis + Versatz. Y und Start-Z waren schon immer absolut. „Vor Drucker fahren" nutzt weiterhin die Auswurf-Position als Bezug.',
+    ],
+    en: [
+      'Printer tab: “Move to printer”, “Eject plate” and “Place plate” now also take start X as an absolute machine value (like the door) — you type exactly the position the OTTOeject moves to; the rack offset is handled internally, a hint shows base + offset. Y and start Z were always absolute. “Move to printer” still uses the eject position as its reference.',
+    ],
+  },
+  {
     version: '1.0.127',
     de: [
       'Drucker-Tab → Tür öffnen/schließen: Start-X und Start-Z werden jetzt als absolute Maschinenwerte eingegeben — du tippst genau die Position ein, die die OTTOeject anfährt. Kein verwirrender „effektiv X…"-Unterschied mehr: der Regal-Versatz wird intern verrechnet (ein kleiner Hinweis zeigt Basis + Versatz), sodass die Türbewegung auch bei anderer Regalzahl stimmt.',

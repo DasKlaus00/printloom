@@ -338,19 +338,19 @@ export default function Drucker() {
   const activeCount = OPS.filter(o => useGcode[o]).length
   // Drucker sitzt hinter dem letzten Regal → eject/load/Tür-X wandern mit der Regalzahl.
   const xOff = numRacks > 1 ? (numRacks - 1) * num(rackGap) : 0
-  const effHintFor = (b) => xOff ? tr('→ effektiv X{0} (Drucker hinter Regal {1})', Math.round(num(b) + xOff), numRacks) : null
-
-  // Tür: X wird als ABSOLUTER Maschinenwert eingegeben (inkl. Regal-Versatz). Gespeichert
-  // wird die Basis (Wert − Versatz), damit die Bewegung bei anderer Regalzahl stimmt.
+  // Drucker-nahe Ops (Tür, eject, place, move_to_printer): X wird als ABSOLUTER
+  // Maschinenwert eingegeben (inkl. Regal-Versatz). Gespeichert wird die Basis
+  // (Wert − Versatz), damit die Bewegung bei anderer Regalzahl stimmt. Y/Z sind
+  // ohnehin absolut (Backend nutzt sie 1:1).
   const r1 = (n) => Math.round(n * 10) / 10
-  const doorXField = (st, setSt) => ({
+  const absXField = (st, setSt) => ({
     label: tr('Start-X'),
     value: xOff ? r1(num(st.x) + xOff) : st.x,
     onChange: xOff
       ? (v => { const e = parseFloat(v); if (Number.isNaN(e)) return; setSt({ ...st, x: r1(e - xOff) }) })
       : (v => setSt({ ...st, x: v })),
   })
-  const doorAbsHint = (st) => xOff
+  const absHint = (st) => xOff
     ? tr('Absoluter Start-X an der Maschine · Basis {0} + Regal-Versatz {1}', Math.round(num(st.x)), Math.round(xOff))
     : null
 
@@ -457,9 +457,9 @@ export default function Drucker() {
                 busy={jog.busy} gcodeOn={useGcode.open_door} onTest={sendOp} onToggle={toggleGcode}
                 speedVal={speedFactors.open_door ?? ''} onSpeed={setOpSpeed}
                 overrideVal={gcodeOverride.open_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
-                effHint={doorAbsHint(doorOpen)}
+                effHint={absHint(doorOpen)}
                 fields={[
-                  doorXField(doorOpen, setDoorOpen),
+                  absXField(doorOpen, setDoorOpen),
                   { label: tr('Y'), value: doorOpen.y, onChange: v => setDoorOpen({ ...doorOpen, y: v }) },
                   { label: tr('Start-Z'), step: 0.5, value: doorOpen.z, onChange: v => setDoorOpen({ ...doorOpen, z: v }) },
                   { label: tr('Pin-Abst.'), hint: tr('d_to_pin'), value: doorOpen.d, onChange: v => setDoorOpen({ ...doorOpen, d: v }) },
@@ -470,9 +470,9 @@ export default function Drucker() {
                 busy={jog.busy} gcodeOn={useGcode.close_door} onTest={sendOp} onToggle={toggleGcode}
                 speedVal={speedFactors.close_door ?? ''} onSpeed={setOpSpeed}
                 overrideVal={gcodeOverride.close_door} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
-                effHint={doorAbsHint(doorClose)}
+                effHint={absHint(doorClose)}
                 fields={[
-                  doorXField(doorClose, setDoorClose),
+                  absXField(doorClose, setDoorClose),
                   { label: tr('Y'), value: doorClose.y, onChange: v => setDoorClose({ ...doorClose, y: v }) },
                   { label: tr('Start-Z'), step: 0.5, value: doorClose.z, onChange: v => setDoorClose({ ...doorClose, z: v }) },
                   { label: tr('Pin-Abst.'), hint: tr('d_to_pin'), value: doorClose.d, onChange: v => setDoorClose({ ...doorClose, d: v }) },
@@ -482,28 +482,28 @@ export default function Drucker() {
               busy={jog.busy} gcodeOn={useGcode.move_to_printer} onTest={sendOp} onToggle={toggleGcode}
               speedVal={speedFactors.move_to_printer ?? ''} onSpeed={setOpSpeed}
               overrideVal={gcodeOverride.move_to_printer} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
-              effHint={effHintFor(eject.x)}
-              note={tr('Sichere Anfahrt vor den Drucker — nutzt die Auswurf-Position als Bezug. Eigene Geschwindigkeit für einen schnellen Wechsel.')}
+              effHint={absHint(eject)}
+              note={tr('Sichere Anfahrt vor den Drucker — nutzt die Auswurf-Position (Start-X/Y/Z von „Platte auswerfen") als Bezug. Eigene Geschwindigkeit für einen schnellen Wechsel.')}
               fields={[]} />
             <OpCard op="eject" icon="⬆" title={tr('Platte auswerfen')}
               busy={jog.busy} gcodeOn={useGcode.eject} onTest={sendOp} onToggle={toggleGcode}
               speedVal={speedFactors.eject ?? ''} onSpeed={setOpSpeed}
               overrideVal={gcodeOverride.eject} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
-              effHint={effHintFor(eject.x)}
+              effHint={absHint(eject)}
               fields={[
-                { label: tr('Start-X'), value: eject.x, onChange: v => setEject({ ...eject, x: v }) },
+                absXField(eject, setEject),
                 { label: tr('Y'), value: eject.y, onChange: v => setEject({ ...eject, y: v }) },
-                { label: tr('Z'), step: 0.5, value: eject.z, onChange: v => setEject({ ...eject, z: v }) },
+                { label: tr('Start-Z'), step: 0.5, value: eject.z, onChange: v => setEject({ ...eject, z: v }) },
               ]} />
             <OpCard op="place" icon="⬇" title={tr('Platte einlegen (Place)')}
               busy={jog.busy} gcodeOn={useGcode.place} onTest={sendOp} onToggle={toggleGcode}
               speedVal={speedFactors.place ?? ''} onSpeed={setOpSpeed}
               overrideVal={gcodeOverride.place} canOverride onLoadGcode={loadGcodeForEdit} onChangeGcode={setGcodeText} onClearGcode={clearGcode}
-              effHint={effHintFor(load.x)}
+              effHint={absHint(load)}
               fields={[
-                { label: tr('Start-X'), value: load.x, onChange: v => setLoad({ ...load, x: v }) },
+                absXField(load, setLoad),
                 { label: tr('Y'), value: load.y, onChange: v => setLoad({ ...load, y: v }) },
-                { label: tr('Z'), step: 0.5, value: load.z, onChange: v => setLoad({ ...load, z: v }) },
+                { label: tr('Start-Z'), step: 0.5, value: load.z, onChange: v => setLoad({ ...load, z: v }) },
               ]} />
           </div>
 
