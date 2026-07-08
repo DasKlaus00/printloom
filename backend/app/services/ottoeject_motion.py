@@ -386,7 +386,10 @@ def open_door(g: dict) -> list[str]:
 
 
 def close_door(g: dict) -> list[str]:
-    door = (g["printer"].get("door") or {}).get("close")
+    # „Tür schließen" zieht die Position automatisch von „Tür öffnen" (open) —
+    # der Nutzer stellt nur EINE Türposition ein. Fallback auf close (Altbestand).
+    doors = g["printer"].get("door") or {}
+    door = doors.get("open") or doors.get("close")
     if not door:
         return ["M117 (no door macro)"]
     off = _printer_x_off(g)

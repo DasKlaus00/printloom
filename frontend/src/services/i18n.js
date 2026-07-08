@@ -266,6 +266,9 @@ const EN_STRINGS = {
   'Start-Z': 'Start Z',
   'Absoluter Start-X an der Maschine · Basis {0} + Regal-Versatz {1}':
     'Absolute start X at the machine · base {0} + rack offset {1}',
+  'Diese Position steuert auch „Tür schließen".': 'This position also drives “Close door”.',
+  'Position wird automatisch von „Tür öffnen" übernommen — hier nichts einzustellen. Nur „Test" & eigene Geschwindigkeit.':
+    'Position is taken automatically from “Open door” — nothing to set here. Only “Test” & own speed.',
   '⚙ G-code dieser Operation': '⚙ G-code for this operation',
   '⤓ Vorlage laden': '⤓ Load template',
   'Eigener G-code für diese Operation … („Vorlage laden" füllt einen Startpunkt)':

@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.130',
+    de: [
+      'Tür: Du stellst nur noch EINE Türposition ein — bei „Tür öffnen". „Tür schließen" übernimmt Start-X/Y/Z und Pin-Abstand jetzt automatisch daraus; die Eingabefelder dort sind weg (nur noch Test & eigene Geschwindigkeit). Weniger doppelte Kalibrierung, keine auseinanderlaufenden Auf/Zu-Werte mehr.',
+    ],
+    en: [
+      'Door: you now set only ONE door position — at “Open door”. “Close door” takes start X/Y/Z and pin distance from it automatically; its input fields are gone (only Test & own speed remain). Less double calibration, no more drifting open/close values.',
+    ],
+  },
+  {
     version: '1.0.129',
     de: [
       'Klare Trennung im Drucker-Tab: Bei den Modell-Druckern (X1C, P1S, …) stellst du nur noch die Start-Positionen je Operation ein und justierst sie — der G-code-Editor („Eigenen G-code bearbeiten") ist dort entfernt. Für vollständig eigene Abläufe gibt es den neuen „Custom Printer": jede Operation (Tür auf/zu, vor Drucker, auswerfen, einlegen) wird ausschließlich über deinen eigenen G-code gefahren, ganz ohne Start-Positionen. „⤓ Vorlage laden" füllt einen Startpunkt zum Bearbeiten; Platzhalter wie {rack_x}/{slot_z} skalieren weiter über Regale/Fächer.',
