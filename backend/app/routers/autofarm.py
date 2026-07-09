@@ -569,6 +569,13 @@ async def _do_macro(name: str, _recover: bool = True):
     if send != name:
         _log(f"↔ Geräte-Zählung (Regal 1 = Homing rechts): {send}")
 
+    # Absolute Positionierung erzwingen: Die Geräte-Macros (EJECT_FROM…/GRAB_FROM_RACK…)
+    # setzen selbst KEIN G90 — steht der OTTOeject nach Homing/Jog relativ (G91), fahren
+    # ihre internen G1-Moves als Offset ab Ist-Position → out of range / falsches Z.
+    # G90 vor JEDEM Send (idempotent, kein Doppel-G90 wenn schon vorhanden).
+    if not send.lstrip().upper().startswith("G90"):
+        send = "G90\n" + send
+
     async with httpx.AsyncClient(timeout=120.0) as client:
         r = await client.post(url, json={"script": send})
     if r.status_code == 200:

@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.138',
+    de: [
+      'Wichtiger Fix (absolute Bewegungen, überarbeitet): G90 wird jetzt zentral vor JEDEM G-code erzwungen, der an den OTTOeject/Klipper geht — nicht nur bei den App-Ops, sondern auch bei den Geräte-Macros (EJECT_FROM…/GRAB_FROM_RACK…), der direkten G-code-Zeile und allen Farm-Schritten. Ursache des „fährt raus, obwohl alles stimmt": Die Geräte-Macros setzen selbst kein G90 — stand der OTTOeject nach Homing/Jog relativ, liefen ihre Bewegungen als Versatz ab der Ist-Position (z. B. falsche Z-Höhe beim zweiten Tür-Schieben, Move out of range). Jetzt sind ALLE Bewegungen verlässlich absolute Maschinen-Koordinaten.',
+    ],
+    en: [
+      'Important fix (absolute moves, reworked): G90 is now enforced centrally before EVERY G-code sent to the OTTOeject/Klipper — not just app ops, but also the device macros (EJECT_FROM…/GRAB_FROM_RACK…), the direct G-code line and all farm steps. Root cause of “drives out of range although everything is correct”: the device macros set no G90 themselves — if the OTTOeject was left relative after homing/jog, their moves ran as offsets from the current position (e.g. wrong Z on the second door push, move out of range). Now ALL moves are reliably absolute machine coordinates.',
+    ],
+  },
+  {
     version: '1.0.137',
     de: [
       '„Vor Drucker fahren" endet jetzt zurückgezogen bei Y = Pullback (5) statt vorne an der Druckerfront: sichere Höhe → auf y=5 zurückziehen → auf Drucker-X ausrichten (Y bleibt 5). Auswerfen/Einlegen fahren selbst aus dieser Position an die Front.',

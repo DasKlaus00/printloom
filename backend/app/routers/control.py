@@ -171,10 +171,21 @@ async def resume_operations(db: Session = Depends(get_db)):
 _MOONRAKER_TRIGGER_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
 
 
+def _force_absolute(script: str) -> str:
+    """G90 (absolute Positionierung) VOR jedem Klipper-Script erzwingen. Der OTTOeject
+    kann nach Homing/manuellem Jog relativ (G91) stehen; auch die Geräte-Macros
+    (EJECT_FROM…/GRAB_FROM_RACK…) setzen selbst kein G90 → ihre internen G1-Moves liefen
+    dann als Offset ab Ist-Position und fahren aus dem Bereich. Idempotent (kein Doppel-G90,
+    falls das Script — z. B. aus build_op — bereits mit G90 beginnt)."""
+    s = (script or "").lstrip()
+    return script if s.upper().startswith("G90") else "G90\n" + script
+
+
 async def _fire_moonraker_script(url: str, script: str) -> bool:
     """POST a G-code script to Moonraker and wait briefly. Returns True if the move is
     still running when the wait window elapsed, False if it already finished. Raises
     HTTPException on a real failure (Klipper rejected it, or the host is unreachable)."""
+    script = _force_absolute(script)
     try:
         async with httpx.AsyncClient(timeout=_MOONRAKER_TRIGGER_TIMEOUT) as client:
             r = await client.post(url, json={"script": script})
