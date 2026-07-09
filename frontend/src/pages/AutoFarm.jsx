@@ -1474,6 +1474,23 @@ function AutoFarm() {
     }
   }
 
+  // Fach manuell als „belegt" markieren (Status 'locked') → der Farm-Slot-Finder
+  // überspringt es (nur free/ready werden belegt), der Roboter legt dort nichts ab.
+  // 'locked' zählt NICHT als Platte (kein Magazin-Nachzählen beim Freigeben).
+  const toggleSlotBlocked = async (slotId) => {
+    const block = rackData?.slots?.[slotId]?.status !== 'locked'
+    try {
+      await rackManagerService.updateSlot(slotId, block
+        ? { status: 'locked' }
+        : { status: 'free', file_name: null })
+      const r = await rackManagerService.getAll()
+      setRackData(r.data)
+      showFeedback(block ? tr('Fach {0} als belegt markiert', slotId) : tr('Fach {0} freigegeben', slotId))
+    } catch {
+      showFeedback(tr('Fach konnte nicht geändert werden'), false)
+    }
+  }
+
   const assignJobToSlot = async (slotKey) => {
     try {
       await rackManagerService.updateSlot(slotKey, { status: 'free', file_id: null, file_name: null })
@@ -2234,7 +2251,10 @@ function AutoFarm() {
                         const isOther      = !occupied && !isGhost && slot.status !== 'free'
                         // Leeren-Knopf für JEDES belegte, nicht gerade aktiv druckende Fach,
                         // damit sich auch hängende Fächer immer zurücksetzen lassen.
-                        const canClear     = !isActive && slot.status !== 'free'
+                        // 'locked' (manuell belegt) bekommt stattdessen den 🔓-Freigabe-Knopf.
+                        const canClear     = !isActive && slot.status !== 'free' && !isLocked
+                        // 🔒 nur auf wirklich freien, nicht reservierten Fächern anbieten.
+                        const canBlock     = !occupied && !isGhost && !isOther && slot.status === 'free'
 
                         return (
                           <div
@@ -2242,7 +2262,7 @@ function AutoFarm() {
                             className={`flex items-center gap-1 px-1.5 py-1.5 rounded-lg border text-xs transition-colors ${
                               isDone   ? 'border-amber-800/40 bg-amber-950/10' :
                               isActive ? 'border-blue-800/40 bg-blue-950/10' :
-                              isLocked ? 'border-red-900/40 bg-red-950/10' :
+                              isLocked ? 'border-surface-600/50 bg-surface-800/50 opacity-70' :
                               topJob   ? 'border-surface-700/50 bg-surface-900' :
                               isGhost  ? 'border-dashed border-surface-700/40 bg-surface-800/15' :
                               'border-surface-800/20 bg-transparent'
@@ -2252,7 +2272,7 @@ function AutoFarm() {
                             <span className={`dot shrink-0 ${
                               isDone   ? 'dot-amber' :
                               isActive ? 'dot-blue animate-pulse' :
-                              isLocked ? 'dot-red' :
+                              isLocked ? 'dot-gray opacity-60' :
                               topJob   ? (S[topJob.status]?.dot ?? 'dot-gray') :
                               isGhost  ? 'dot-gray opacity-50' :
                               isOther  ? 'dot-amber opacity-70' :
@@ -2268,7 +2288,7 @@ function AutoFarm() {
                               ) : isOther ? (
                                 <p className="text-[9px] text-amber-600/80 truncate leading-tight" title={tr('Hängendes Fach (Status: {0}) — ✓ zum Leeren', slot.status)}>{slot.file_name?.replace(/\.[^.]+$/, '') || tr('belegt')}</p>
                               ) : (
-                                <p className="text-[9px] text-surface-800">{isLocked ? tr('Sperr') : ''}</p>
+                                <p className={`text-[9px] ${isLocked ? 'text-surface-400' : 'text-surface-800'}`}>{isLocked ? tr('🔒 Belegt') : ''}</p>
                               )}
                             </div>
                             {(heightPct > 0 || isGhost) && (
@@ -2286,6 +2306,14 @@ function AutoFarm() {
                                   <button onClick={() => assignJobToSlot(key)} title={tr('Leeren + nächsten Job zuweisen')} className="text-[9px] text-blue-500 hover:text-blue-300">↻</button>
                                 )}
                               </div>
+                            )}
+                            {canBlock && (
+                              <button onClick={() => toggleSlotBlocked(key)} title={tr('Fach als belegt markieren — der Roboter legt hier nichts ab')}
+                                className="text-[9px] text-surface-700 hover:text-surface-300 shrink-0 ml-0.5">🔒</button>
+                            )}
+                            {isLocked && (
+                              <button onClick={() => toggleSlotBlocked(key)} title={tr('Fach wieder freigeben')}
+                                className="text-[9px] text-surface-500 hover:text-emerald-300 shrink-0 ml-0.5">🔓</button>
                             )}
                           </div>
                         )
@@ -2307,6 +2335,9 @@ function AutoFarm() {
                 </span>
                 <span className="text-[9px] text-surface-700 flex items-center gap-1">
                   <span className="dot dot-gray w-1.5 h-1.5 opacity-30" /> {tr('Leer')}
+                </span>
+                <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                  🔒 {tr('Belegt')}
                 </span>
                 <span className="flex-1 text-right text-[9px] text-surface-700 font-mono">
                   {tr('{0} mm/Fach', slotH)}

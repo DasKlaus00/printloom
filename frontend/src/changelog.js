@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.131',
+    de: [
+      'Auto Farm: Einzelne Regal-Fächer lassen sich jetzt direkt im Regal als „belegt" markieren (🔒) — sie werden ausgegraut und der Roboter legt dort nichts ab (die Platzsuche überspringt sie). Mit 🔓 gibst du sie wieder frei. Praktisch für Fächer, in denen schon etwas von Hand steht. Zählt nicht als Platte (kein Einfluss aufs Magazin).',
+    ],
+    en: [
+      'Auto Farm: individual rack slots can now be marked “occupied” right in the rack (🔒) — they grey out and the robot places nothing there (slot search skips them). Release again with 🔓. Handy for slots you’ve filled by hand. Does not count as a plate (no effect on the magazine).',
+    ],
+  },
+  {
     version: '1.0.130',
     de: [
       'Tür: Du stellst nur noch EINE Türposition ein — bei „Tür öffnen". „Tür schließen" übernimmt Start-X/Y/Z und Pin-Abstand jetzt automatisch daraus; die Eingabefelder dort sind weg (nur noch Test & eigene Geschwindigkeit). Weniger doppelte Kalibrierung, keine auseinanderlaufenden Auf/Zu-Werte mehr.',
