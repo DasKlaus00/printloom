@@ -462,6 +462,12 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
         s = _speed_prefix(g)
         return (s or "M220 S100\n").rstrip() + "\nM400"
     speed = _speed_prefix(g, op)   # Vorschub PRO Operation (Fallback global)
+    # Absolute Positionierung ERZWINGEN: Der OTTOeject/Klipper kann durch manuelles
+    # Jog in Mainsail im relativen Modus (G91) stehen — dann würde „G1 X1020" als
+    # +1020 ab Ist-Position ausgeführt → „Move out of range". G90 macht ALLE
+    # Op-Koordinaten verlässlich absolut (Maschinen-Koordinaten), unabhängig vom
+    # vorherigen Zustand. Betrifft value-basierte UND Custom-G-code-Ops.
+    speed = speed + "G90\n"
     # Eigener G-code hat Vorrang — aber NUR beim „Custom Printer". Named Printer
     # fahren immer aus ihren Positions-Werten (kein G-code-Editor), damit dort kein
     # alter Override versehentlich greift.

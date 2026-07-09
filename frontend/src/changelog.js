@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.133',
+    de: [
+      'Wichtiger Fix: Alle OTTOeject-Operationen erzwingen jetzt absolute Positionierung (G90). Stand der OTTOeject durch manuelles Jog in Mainsail im relativen Modus, wurde z. B. „G1 X1020" als +1020 ab Ist-Position gefahren → „Move out of range" (obwohl die Koordinaten korrekt waren). Jetzt sind alle Op-Koordinaten verlässlich absolute Maschinen-Koordinaten — betrifft Vor Drucker fahren, Auswerfen, Einlegen, Tür, Greifen/Ablegen und eigenen G-code gleichermaßen.',
+    ],
+    en: [
+      'Important fix: all OTTOeject operations now force absolute positioning (G90). If the OTTOeject was left in relative mode by a manual Mainsail jog, e.g. “G1 X1020” ran as +1020 from the current position → “Move out of range” (even though the coordinates were correct). Now every op coordinate is reliably an absolute machine coordinate — applies to move to printer, eject, place, door, grab/store and custom G-code alike.',
+    ],
+  },
+  {
     version: '1.0.132',
     de: [
       'Drucker-Tab → „Vor Drucker fahren" hat jetzt eine eigene, einstellbare Start-Position (absolutes X wie bei den anderen Ops, plus Y/Start-Z) statt fest die Auswurf-Position zu übernehmen. Standard bleibt die Auswurf-Position; wer die Anfahrt separat feinjustieren will, kann es hier. Bestehende Setups ohne eigenen Wert fahren unverändert wie die Auswurf-Position.',
