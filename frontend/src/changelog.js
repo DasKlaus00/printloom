@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.136',
+    de: [
+      'Tür-Bewegung exakt nach dem Original-OTTOeject-Macro nachgebaut (Öffnen & Schließen). Die eingebaute Version war früher handjustiert und wich vom Original ab (Tür schloss/öffnete nicht sauber). Jetzt gibst du nur den Startpunkt an (Start-X/Y/Z + Pin-Abstand) und der komplette Ablauf — Bogen und Andrücken — wird 1:1 wie im Original daraus berechnet. Nichts mehr an einzelnen Werten nachbessern.',
+    ],
+    en: [
+      'Door motion rebuilt to exactly match the original OTTOeject macro (open & close). The built-in version had drifted from the original due to hand-tuning (door didn’t open/close cleanly). Now you only set the start point (start X/Y/Z + pin distance) and the whole sequence — arc and pressing — is computed from it 1:1 like the original. No more tweaking individual values.',
+    ],
+  },
+  {
     version: '1.0.135',
     de: [
       'Drucker-Tab: Neuer Knopf „🖨 Druckerbett → Z" — fährt das Bett des verbundenen Bambu-Druckers (X1C) absolut auf die Ziel-Z. Standard Z200 (Ladeposition für den Platten-Wechsel), Z frei einstellbar. Praktisch beim Kalibrieren: erst Bett auf Z200, dann OTTOeject-Operationen testen. Drucker muss idle sein.',

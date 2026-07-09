@@ -360,6 +360,9 @@ def _door_arc_x(x_start, d, y_arc, y_start):
 
 
 def open_door(g: dict) -> list[str]:
+    # 1:1 nachgebaut aus dem Original-Macro `_OPEN_DOOR` (ottoeject_macros.cfg).
+    # Eingabe = Startpunkt der Tür (x/y/z_engage + Pin-Abstand d); alles Weitere leitet
+    # sich daraus ab (Bogen G3, Andrück-Offsets). Keine handjustierten Abweichungen mehr.
     door = (g["printer"].get("door") or {}).get("open")
     if not door:
         return ["M117 (no door macro)"]
@@ -370,6 +373,7 @@ def open_door(g: dict) -> list[str]:
     y_arc_temp = y_max - (d + gantry_gap)
     y_arc = (y_arc_temp + y_limit) if y_arc_temp > 10 else y_limit
     x_arc = _door_arc_x(x_start, d, y_arc, y_start)
+    i_value, j_value = d, 0
     return [
         "M117 Opening door...",
         f"G1 Z{_n(z_engage-40)} F1000", "M400",
@@ -377,13 +381,14 @@ def open_door(g: dict) -> list[str]:
         f"G1 Y{_n(y_start+5)} F3000", "M400",
         f"G1 Z{_n(z_engage)} F1000", "M400",
         f"G1 X{_n(x_start)} Y{_n(y_start)} F500", "M400",
-        f"G3 X{_n(x_arc)} Y{_n(y_arc)} I{_n(d)} J0 F3000", "M400",
-        f"G1 X{_n(x_arc-12)} Y{_n(y_arc+15)} F500", "M400",
+        f"G3 X{_n(x_arc)} Y{_n(y_arc)} I{_n(i_value)} J{_n(j_value)} F3000", "M400",
+        f"G1 X{_n(x_arc-8)} Y{_n(y_arc+15)} F500", "M400",
         f"G1 Z{_n(z_engage-40)} F500", "M400",
         f"G1 X{_n(x_arc-120)} Y{_n(y_arc+110)} F3000", "M400",
-        f"G1 X{_n(x_arc-106)} Y{_n(y_arc+95)} F3000",
-        f"G1 Z{_n(z_engage+15)} F1000",
-        f"G1 X{_n(x_arc+145)} Y{_n(y_arc)} F1000", "M400",
+        f"G1 Z{_n(z_engage)} F1000", "M400",
+        f"G1 X{_n(x_arc-63)} Y{_n(y_arc+110)} F1000",
+        f"G1 X{_n(x_arc+55)} Y{_n(y_arc+5)} F2000", "M400",
+        f"G1 X{_n(x_arc+140)} Y{_n(y_arc)} F2000", "M400",
         f"G1 X{_n(x_arc+110)} F300", "M400",
         f"G1 X{_n(x_arc-20)} F3000", "M400",
         "M117 Door opened",
@@ -391,8 +396,10 @@ def open_door(g: dict) -> list[str]:
 
 
 def close_door(g: dict) -> list[str]:
-    # „Tür schließen" hat wieder eine EIGENE Position; Fallback auf open (Altbestand
-    # ohne separate close-Werte), damit nichts leer bleibt.
+    # 1:1 nachgebaut aus dem Original-Macro `_CLOSE_DOOR` (ottoeject_macros.cfg).
+    # Eigene Startposition; Fallback auf open (Altbestand ohne separate close-Werte).
+    # WICHTIG (wie im Original): x_arc wird mit dem if/else-y_arc berechnet, DANACH
+    # wird y_arc auf den finalen Wert überschrieben.
     doors = g["printer"].get("door") or {}
     door = doors.get("close") or doors.get("open")
     if not door:
@@ -401,22 +408,25 @@ def close_door(g: dict) -> list[str]:
     x_start = float(door["x"]) + off
     y_start, z_engage, d = float(door["y"]), float(door["z"]), float(door["d"])
     gantry_gap, y_limit, y_max = 35, 10, 372 + 35
-    y_arc = (y_max - (d + gantry_gap)) + y_limit
+    y_arc_temp = y_max - (d + gantry_gap)
+    y_arc = (y_arc_temp + y_limit) if y_arc_temp > 10 else y_limit
     x_arc = _door_arc_x(x_start, d, y_arc, y_start)
+    y_arc = (y_max - (d + gantry_gap)) + y_limit
+    i_value, j_value = 85, d
     return [
         "M117 Closing door...",
         f"G1 Z{_n(z_engage-40)} F1000", "M400",
-        f"G1 X{_n(x_arc+120)} Y{_n(y_arc+27)} F3000", "M400",
-        f"G1 X{_n(x_arc+175)} F1000", "M400",
+        f"G1 X{_n(x_arc+120)} Y{_n(y_arc+6)} F3000", "M400",
+        f"G1 X{_n(x_arc+155)} F1000", "M400",
         f"G1 Z{_n(z_engage)} F1000", "M400",
-        f"G1 X{_n(x_arc+140)} Y{_n(y_arc+32)} F1000", "M400",
-        f"G2 X{_n(x_start+23)} Y{_n(y_start-36)} I85 J{_n(d)} F3000", "M400",
-        f"G1 X{_n(x_start+28)} Y{_n(y_start-48)} F800", "M400",
+        f"G1 X{_n(x_arc+125)} Y{_n(y_arc+1)} F1000", "M400",
+        f"G2 X{_n(x_start+8)} Y{_n(y_start-30)} I{_n(i_value)} J{_n(j_value)} F3000", "M400",
+        f"G1 X{_n(x_start+9)} Y{_n(y_start-27)} F800", "M400",
         f"G1 Z{_n(z_engage-40)} F1000", "M400",
-        f"G1 X{_n(x_start+69)} Y{_n(y_start-245)} F3000", "M400",
+        f"G1 X{_n(x_start+35)} Y{_n(y_start-180)} F3000", "M400",
         f"G1 Z{_n(z_engage)} F1000", "M400",
-        f"G1 Y{_n(y_start-158)} F2000", "M400",
-        f"G1 Y{_n(y_start-78)} X{_n(x_start+15)} F2000", "M400",
+        f"G1 Y{_n(y_start-130)} F2000", "M400",
+        f"G1 Y{_n(y_start-50)} X{_n(x_start+15)} F2000", "M400",
         f"G1 Y{_n(y_start-19)} F800", "M400",
         f"G1 Y{_n(y_start-60)} F3000", "M400",
         "M117 Door closed",
