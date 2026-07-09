@@ -137,6 +137,7 @@ export default function Drucker() {
   const [enclosed, setEnclosed] = useState(true)
   const [eject, setEject] = useState({ x: 425, y: 340, z: 17.5 })
   const [load,  setLoad]  = useState({ x: 425, y: 340, z: 17.5 })
+  const [moveTo, setMoveTo] = useState({ x: 425, y: 340, z: 17.5 })  // „Vor Drucker fahren" — eigene Anfahr-Position (Fallback: eject)
   const [doorOpen,  setDoorOpen]  = useState({ x: 104, y: 319, z: 105, d: 370 })
   const [doorClose, setDoorClose] = useState({ x: 103, y: 322, z: 105, d: 375 })
 
@@ -186,6 +187,7 @@ export default function Drucker() {
   const pickPrinter = (p) => {
     setPrinterId(p.id); setPrinterName(p.name); setEnclosed(p.enclosed)
     setEject({ ...p.eject }); setLoad({ ...p.load })
+    setMoveTo(p.move ? { ...p.move } : { ...p.eject })   // Anfahr-Position: Preset oder = eject
     // Ohne Tür-Preset (z. B. AD5X) die Tür leeren, sonst blieben alte Werte → falsche Tür-Karten.
     setDoorOpen(p.door ? { ...p.door.open } : null)
     setDoorClose(p.door ? { ...p.door.close } : null)
@@ -205,6 +207,7 @@ export default function Drucker() {
       printer: {
         eject: { x: num(eject.x), y: num(eject.y), z: num(eject.z) },
         load:  { x: num(load.x),  y: num(load.y),  z: num(load.z) },
+        move:  { x: num(moveTo.x), y: num(moveTo.y), z: num(moveTo.z) },
         // „Tür schließen" zieht die Position automatisch von „Tür öffnen" → close = open.
         door: hasDoor ? { open: nd(doorOpen), close: nd(doorOpen) } : null,
       },
@@ -215,7 +218,7 @@ export default function Drucker() {
       rack_x_trim: { ...rackXTrim },
     }
   }, [printerId, printerName, enclosed, xUnclamp, yEngage,
-      firstZ, gap, yPullback, rackGap, eject, load, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor, speedFactors, rackXTrim])
+      firstZ, gap, yPullback, rackGap, eject, load, moveTo, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor, speedFactors, rackXTrim])
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
   const hydrated = useRef(false)
@@ -235,6 +238,8 @@ export default function Drucker() {
         const p = g.printer || {}
         if (p.eject) setEject(p.eject)
         if (p.load) setLoad(p.load)
+        // Eigene Anfahr-Position; Altbestand ohne „move" → von eject seeden.
+        setMoveTo(p.move ? { ...p.move } : (p.eject ? { ...p.eject } : { x: 425, y: 340, z: 17.5 }))
         // Tür aus dem Speicher übernehmen; fehlt sie (offener/türloser Drucker) → leeren.
         setDoorOpen(p.door?.open || null)
         setDoorClose(p.door?.close || null)
@@ -503,9 +508,13 @@ export default function Drucker() {
               busy={jog.busy} gcodeOn={useGcode.move_to_printer} onTest={sendOp} onToggle={toggleGcode}
               speedVal={speedFactors.move_to_printer ?? ''} onSpeed={setOpSpeed}
               {...opGcodeProps('move_to_printer')}
-              effHint={absHint(eject)}
-              note={tr('Sichere Anfahrt vor den Drucker — nutzt die Auswurf-Position (Start-X/Y/Z von „Platte auswerfen") als Bezug. Eigene Geschwindigkeit für einen schnellen Wechsel.')}
-              fields={[]} />
+              effHint={absHint(moveTo)}
+              note={tr('Sichere Anfahrt vor den Drucker — eigene Start-Position. Standard = Auswurf-Position; hier fein justierbar.')}
+              fields={[
+                absXField(moveTo, setMoveTo),
+                { label: tr('Y'), value: moveTo.y, onChange: v => setMoveTo({ ...moveTo, y: v }) },
+                { label: tr('Start-Z'), step: 0.5, value: moveTo.z, onChange: v => setMoveTo({ ...moveTo, z: v }) },
+              ]} />
             <OpCard op="eject" icon="⬆" title={tr('Platte auswerfen')}
               busy={jog.busy} gcodeOn={useGcode.eject} onTest={sendOp} onToggle={toggleGcode}
               speedVal={speedFactors.eject ?? ''} onSpeed={setOpSpeed}

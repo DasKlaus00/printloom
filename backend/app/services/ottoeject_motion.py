@@ -105,6 +105,11 @@ def _sanitize_geometry(g: dict) -> dict:
         node = p.setdefault(key, {})
         for k, dv in d["printer"][key].items():
             node[k] = _num(node.get(k), dv)
+    # „move" (Anfahr-Position) NUR sanitisieren, wenn vorhanden — nicht anlegen,
+    # sonst bräche der Fallback move_to_printer → eject für Altbestand ohne „move".
+    if isinstance(p.get("move"), dict):
+        for k, dv in d["printer"]["eject"].items():
+            p["move"][k] = _num(p["move"].get(k), dv)
     door = p.get("door")
     if isinstance(door, dict):
         for kind in ("open", "close"):
@@ -285,9 +290,9 @@ def store_to_rack(g: dict, rack: int, slot: int) -> list[str]:
 def move_to_printer(g: dict) -> list[str]:
     """Nur VOR den Drucker fahren (sichere Anfahrt) — greift/wirft nicht.
     Eigene Operation für einen schnellen, feinjustierbaren Wechsel: erst hierher fahren,
-    dann eject bzw. place mit eigener Geschwindigkeit. Bezugspunkt ist die eject-Position
-    (Drucker sitzt hinter dem letzten Regal → +printer_x_off)."""
-    p = g["printer"]["eject"]
+    dann eject bzw. place mit eigener Geschwindigkeit. Eigene Anfahr-Position `move`
+    (Fallback: eject-Position); Drucker sitzt hinter dem letzten Regal → +printer_x_off."""
+    p = g["printer"].get("move") or g["printer"]["eject"]
     off = _printer_x_off(g)
     x = float(p["x"]) + off
     y_engage, z_flat = float(p["y"]), float(p["z"])

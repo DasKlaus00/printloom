@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.132',
+    de: [
+      'Drucker-Tab → „Vor Drucker fahren" hat jetzt eine eigene, einstellbare Start-Position (absolutes X wie bei den anderen Ops, plus Y/Start-Z) statt fest die Auswurf-Position zu übernehmen. Standard bleibt die Auswurf-Position; wer die Anfahrt separat feinjustieren will, kann es hier. Bestehende Setups ohne eigenen Wert fahren unverändert wie die Auswurf-Position.',
+    ],
+    en: [
+      'Printer tab → “Move to printer” now has its own adjustable start position (absolute X like the other ops, plus Y/start Z) instead of always borrowing the eject position. Default stays the eject position; tune the approach separately here if you want. Existing setups without a value keep moving exactly like the eject position.',
+    ],
+  },
+  {
     version: '1.0.131',
     de: [
       'Auto Farm: Einzelne Regal-Fächer lassen sich jetzt direkt im Regal als „belegt" markieren (🔒) — sie werden ausgegraut und der Roboter legt dort nichts ab (die Platzsuche überspringt sie). Mit 🔓 gibst du sie wieder frei. Praktisch für Fächer, in denen schon etwas von Hand steht. Zählt nicht als Platte (kein Einfluss aufs Magazin).',
