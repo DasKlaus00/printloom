@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.139',
+    de: [
+      'Neuer „Andruck-Weg (mm)" im Drucker-Tab (Regal & Greifen): der bisher fest verdrahtete ±30-mm-Klemm-Andruck ist jetzt einstellbar. Der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Platten-Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original bleibt 30. Auf 0 stellen, wenn der Greifer genau bei deinem Start-X fassen soll — behebt den ~30er-Versatz (1065 statt 1035).',
+    ],
+    en: [
+      'New “Push distance (mm)” in the printer tab (rack & grabbing): the previously hard-wired ±30 mm clamp push is now adjustable. On grab/place the arm moves this far beyond X to press the gripper into the plate bracket (eject/place: +, grab/store: −). Default stays 30. Set to 0 for the gripper to engage exactly at your start X — fixes the ~30 offset (1065 instead of 1035).',
+    ],
+  },
+  {
     version: '1.0.138',
     de: [
       'Wichtiger Fix (absolute Bewegungen, überarbeitet): G90 wird jetzt zentral vor JEDEM G-code erzwungen, der an den OTTOeject/Klipper geht — nicht nur bei den App-Ops, sondern auch bei den Geräte-Macros (EJECT_FROM…/GRAB_FROM_RACK…), der direkten G-code-Zeile und allen Farm-Schritten. Ursache des „fährt raus, obwohl alles stimmt": Die Geräte-Macros setzen selbst kein G90 — stand der OTTOeject nach Homing/Jog relativ, liefen ihre Bewegungen als Versatz ab der Ist-Position (z. B. falsche Z-Höhe beim zweiten Tür-Schieben, Move out of range). Jetzt sind ALLE Bewegungen verlässlich absolute Maschinen-Koordinaten.',

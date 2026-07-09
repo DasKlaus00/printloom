@@ -50,6 +50,11 @@ DEFAULT_GEOMETRY = {
     # (Plattenzahl × magazine_sag_mm) ABGESENKT: 6 Platten → −6 mm, 4 → −4 mm.
     # Plattenzahl je Regal kommt live aus der Rack-Konfiguration (magazine_counts).
     "magazine_sag_mm": 1.0,
+    # Klemm-Andruck: der Arm fährt beim Greifen/Ablegen um diesen Weg über die Fach-/
+    # Drucker-X hinaus, um den Greifer in die Platten-Halterung zu drücken bzw. die Platte
+    # abzuschieben. Drucker-Seite (eject/load) = +push, Regal-Seite (grab/store) = −push.
+    # Im Original fix 30 mm; jetzt einstellbar (0 = ohne Andruck, Greifpunkt = Start-X).
+    "clamp_push_mm": 30.0,
 }
 
 
@@ -91,7 +96,7 @@ def _sanitize_geometry(g: dict) -> dict:
     """Alle Zahlenfelder robust machen (None/NaN/leer → Default), damit ein
     halbfertiges Eingabefeld keine 500 auslöst."""
     d = DEFAULT_GEOMETRY
-    for k in ("racks", "storage_slots", "magazine_slot", "speed_factor"):
+    for k in ("racks", "storage_slots", "magazine_slot", "speed_factor", "clamp_push_mm"):
         if g.get(k) is not None:
             g[k] = _num(g.get(k), d.get(k, 0))
     sf = g.get("speed_factors")
@@ -230,6 +235,11 @@ def slot_position(g: dict, rack: int, slot: int) -> tuple[float, float, float, f
     return x, float(s["y_engage"]), z, float(s["y_pullback_limit"])
 
 
+def _clamp_push(g: dict) -> float:
+    """Klemm-Andruck-Weg (mm) — konfigurierbar, Default 30 (Original). 0 = ohne Andruck."""
+    return _num(g.get("clamp_push_mm", 30), 30)
+
+
 # ── Bewegungen (1:1 aus ottoeject_macros.cfg) ───────────────────────────────
 def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
     x_unclamp, y_engage, z_flat, y_pb = slot_position(g, rack, slot)
@@ -240,7 +250,7 @@ def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
     # (6 Platten → −6 mm). Gilt NUR für das Magazin-Fach, nie für normale Fächer.
     if mag > 0 and int(slot) == mag:
         z_flat += magazine_z_offset(g, rack)
-    x_mid = x_unclamp - 30
+    x_mid = x_unclamp - _clamp_push(g)
     L = [f"M117 Grab rack {rack} slot {slot}..."]
     if nolift:
         L += [
@@ -271,7 +281,7 @@ def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
 
 def store_to_rack(g: dict, rack: int, slot: int) -> list[str]:
     x_unclamp, y_engage, z_flat, y_pb = slot_position(g, rack, slot)
-    x_mid = x_unclamp - 30
+    x_mid = x_unclamp - _clamp_push(g)
     return [
         f"M117 Store rack {rack} slot {slot}...",
         f"G1 X{_n(x_mid)} Y{_n(y_pb)} Z{_n(z_flat+35)} F4000", "M400",
@@ -312,7 +322,7 @@ def eject_from_printer(g: dict) -> list[str]:
     x_unclamp = float(p["x"]) + off
     y_engage, z_flat = float(p["y"]), float(p["z"])
     y_pb = float(g["storage"]["y_pullback_limit"])
-    x_mid = x_unclamp + 30
+    x_mid = x_unclamp + _clamp_push(g)
     return [
         f"M117 Removing build plate from {g.get('printer_name','printer')}...",
         f"G1 Z{_n(z_flat)} Y{_n(y_engage-90)} F3000", "M400",
@@ -338,7 +348,7 @@ def load_onto_printer(g: dict) -> list[str]:
     x_unclamp = float(p["x"]) + off
     y_engage, z_flat = float(p["y"]), float(p["z"])
     y_pb = float(g["storage"]["y_pullback_limit"])
-    x_mid = x_unclamp + 30
+    x_mid = x_unclamp + _clamp_push(g)
     return [
         f"M117 Moving build plate to {g.get('printer_name','printer')}...",
         f"G1 Z{_n(z_flat+55)} Y{_n(y_pb)} F1000", "M400",

@@ -269,6 +269,10 @@ const EN_STRINGS = {
   'Diese Position steuert auch „Tür schließen".': 'This position also drives “Close door”.',
   'Position wird automatisch von „Tür öffnen" übernommen — hier nichts einzustellen. Nur „Test" & eigene Geschwindigkeit.':
     'Position is taken automatically from “Open door” — nothing to set here. Only “Test” & own speed.',
+  'Andruck-Weg (mm)': 'Push distance (mm)',
+  'Greifer-Andruck · 0 = Greifpunkt = Start-X': 'Gripper push · 0 = grab point = start X',
+  'Andruck-Weg: der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original 30. Auf 0 stellen, wenn der Greifer genau bei Start-X fassen soll.':
+    'Push distance: on grab/place the arm moves this far beyond X to press the gripper into the bracket (eject/place: +, grab/store: −). Original 30. Set to 0 for the gripper to engage exactly at start X.',
   '🖨 Druckerbett': '🖨 Print bed',
   '▶ Bett fahren': '▶ Move bed',
   '= Z200': '= Z200',

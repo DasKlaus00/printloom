@@ -148,6 +148,7 @@ export default function Drucker() {
   const [gap, setGap]     = useState(25)
   const [rackGap, setRackGap] = useState(250)
   const [plate, setPlate] = useState('256')          // 256 → pullback 5, 220 → 30
+  const [clampPush, setClampPush] = useState(30)      // Klemm-Andruck-Weg (mm): eject/load +push, grab/store −push
   const [speedFactor, setSpeedFactor] = useState(100) // globaler M220-Vorschub in % (100–500) — Fallback
   const [speedFactors, setSpeedFactors] = useState({}) // { op: % } — Geschwindigkeit PRO Operation
   const setOpSpeed = (op, v) => setSpeedFactors(m => {
@@ -217,9 +218,10 @@ export default function Drucker() {
       speed_factor: num(speedFactor, 100) || 100,
       speed_factors: { ...speedFactors },
       rack_x_trim: { ...rackXTrim },
+      clamp_push_mm: num(clampPush, 30),
     }
   }, [printerId, printerName, enclosed, xUnclamp, yEngage,
-      firstZ, gap, yPullback, rackGap, eject, load, moveTo, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor, speedFactors, rackXTrim])
+      firstZ, gap, yPullback, rackGap, eject, load, moveTo, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor, speedFactors, rackXTrim, clampPush])
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
   const hydrated = useRef(false)
@@ -247,6 +249,7 @@ export default function Drucker() {
         if (g.speed_factor != null) setSpeedFactor(g.speed_factor)
         if (g.speed_factors) setSpeedFactors(g.speed_factors)
         if (g.rack_x_trim) setRackXTrim(g.rack_x_trim)
+        if (g.clamp_push_mm != null) setClampPush(g.clamp_push_mm)
         if (g.use_gcode) {
           // Migration: die Einlege-Op hieß früher „load", jetzt „place" (Alias) —
           // alte Aktivierung übernehmen, damit die Farm-Position nicht still ausgeht.
@@ -608,7 +611,11 @@ export default function Drucker() {
                   <NumField label={tr('Höhe Fach 1 (mm)')} hint={tr('first_z_flat')} step={0.5} value={firstZ} onChange={setFirstZ} />
                   <NumField label={tr('Fach-Abstand (mm)')} hint={tr('Z-Schritt = +30')} value={gap} onChange={setGap} />
                   <NumField label={tr('Regal-Versatz X (mm)')} hint={tr('rack_x_gap · pro Regal')} value={rackGap} onChange={setRackGap} />
+                  <NumField label={tr('Andruck-Weg (mm)')} hint={tr('Greifer-Andruck · 0 = Greifpunkt = Start-X')} value={clampPush} onChange={setClampPush} />
                 </div>
+                <p className="text-[9px] text-surface-600">
+                  {tr('Andruck-Weg: der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original 30. Auf 0 stellen, wenn der Greifer genau bei Start-X fassen soll.')}
+                </p>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[11px] text-surface-400">{tr('Platte')}</span>
                   {[['256', '256'], ['220', '220']].map(([v, lbl]) => (
