@@ -264,6 +264,10 @@ const EN_STRINGS = {
     'Physical rack positions (mm). Rack count ({0}), slots/rack ({1}) & magazine slot ({2}) come globally from Configuration → Rack Configuration.',
   '→ effektiv X{0} (Drucker hinter Regal {1})': '→ effective X{0} (printer behind rack {1})',
   'Start-Y': 'Start Y',
+  'Start-X/Y/Z = ERSTER Fahrpunkt der Bewegung. Der Rest der Türbewegung folgt daraus (Pin = Bogenradius).':
+    'Start X/Y/Z = the FIRST travel point of the motion. The rest of the door motion follows from it (pin = arc radius).',
+  'Start-X/Y/Z = ERSTER Fahrpunkt (dort greift der Arm die OFFENE Tür — Bogen-Seite, z. B. X~1036 Y~18). Die Schließform folgt automatisch (Pin = Bogenradius).':
+    'Start X/Y/Z = the FIRST travel point (where the arm grabs the OPEN door — arc side, e.g. X~1036 Y~18). The closing shape follows automatically (pin = arc radius).',
   'Start-Z': 'Start Z',
   'Absoluter Start-X an der Maschine · Basis {0} + Regal-Versatz {1}':
     'Absolute start X at the machine · base {0} + rack offset {1}',

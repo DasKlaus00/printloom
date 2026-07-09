@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.141',
+    de: [
+      'Tür (öffnen & schließen): Start-X/Y/Z sind jetzt der ERSTE Fahrpunkt der Bewegung — der Punkt, den der Arm zuerst anfährt. Die restliche Türbewegung (Bogen, Andrücken) folgt automatisch daraus, der Pin-Abstand ist der Bogenradius. Die Bewegung selbst bleibt dieselbe Form. ACHTUNG — Werte neu setzen: Da sich die Bedeutung der Felder geändert hat, trag den gewünschten ersten Fahrpunkt neu ein (aus dem „gesendeten G-code" ablesbar). Bei „Tür schließen" liegt der erste Punkt auf der Bogen-Seite (z. B. X~1036 / Y~18), nicht bei der geschlossenen Position. Immer zuerst mit „Test" prüfen.',
+      'Aufgeräumt: G90 (absolute Positionierung) steht jetzt EINMAL ganz vorne im G-code (vorher kosmetisch doppelt). G90 ist korrekt und muss bleiben — es erzwingt absolute Koordinaten; das relative G91 ist das, was Probleme macht.',
+    ],
+    en: [
+      'Door (open & close): start X/Y/Z are now the FIRST travel point of the motion — the point the arm moves to first. The rest of the door motion (arc, pressing) follows automatically, the pin distance is the arc radius. The motion shape stays the same. NOTE — re-enter values: since the meaning of the fields changed, enter your desired first travel point anew (readable from the “sent G-code”). For “close door” the first point is on the arc side (e.g. X~1036 / Y~18), not at the closed position. Always check with “Test” first.',
+      'Cleanup: G90 (absolute positioning) now appears ONCE at the very front of the G-code (previously cosmetically doubled). G90 is correct and must stay — it forces absolute coordinates; the relative G91 is what causes problems.',
+    ],
+  },
+  {
     version: '1.0.140',
     de: [
       'Kleinigkeit: Das Y-Feld heißt jetzt „Start-Y" (statt nur „Y") — konsistent zu Start-X und Start-Z. Es ist der Y-Wert des Greif-/Startpunkts, den du direkt bestimmst.',

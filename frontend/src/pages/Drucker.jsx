@@ -535,6 +535,7 @@ export default function Drucker() {
                 speedVal={speedFactors.open_door ?? ''} onSpeed={setOpSpeed}
                 {...opGcodeProps('open_door')}
                 effHint={absHint(doorOpen)}
+                note={tr('Start-X/Y/Z = ERSTER Fahrpunkt der Bewegung. Der Rest der Türbewegung folgt daraus (Pin = Bogenradius).')}
                 fields={[
                   absXField(doorOpen, setDoorOpen),
                   { label: tr('Start-Y'), value: doorOpen.y, onChange: v => setDoorOpen({ ...doorOpen, y: v }) },
@@ -548,6 +549,7 @@ export default function Drucker() {
                 speedVal={speedFactors.close_door ?? ''} onSpeed={setOpSpeed}
                 {...opGcodeProps('close_door')}
                 effHint={absHint(doorClose)}
+                note={tr('Start-X/Y/Z = ERSTER Fahrpunkt (dort greift der Arm die OFFENE Tür — Bogen-Seite, z. B. X~1036 Y~18). Die Schließform folgt automatisch (Pin = Bogenradius).')}
                 fields={[
                   absXField(doorClose, setDoorClose),
                   { label: tr('Start-Y'), value: doorClose.y, onChange: v => setDoorClose({ ...doorClose, y: v }) },

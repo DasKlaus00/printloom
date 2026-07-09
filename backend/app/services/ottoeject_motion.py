@@ -372,14 +372,18 @@ def _door_arc_x(x_start, d, y_arc, y_start):
 
 def open_door(g: dict) -> list[str]:
     # 1:1 nachgebaut aus dem Original-Macro `_OPEN_DOOR` (ottoeject_macros.cfg).
-    # Eingabe = Startpunkt der Tür (x/y/z_engage + Pin-Abstand d); alles Weitere leitet
-    # sich daraus ab (Bogen G3, Andrück-Offsets). Keine handjustierten Abweichungen mehr.
+    # FELDER = ERSTER FAHRPUNKT (Nutzerwahl): die eingegebenen X/Y/Z sind der erste Move
+    # (Anfahrt), NICHT der interne Greif-Bezug. Bewegung identisch — nur intern zurück-
+    # gerechnet: erster Move = (x_start+5, y_start−30, z_engage−40) → also x_start = X−5,
+    # y_start = Y+30, z_engage = Z+40.
     door = (g["printer"].get("door") or {}).get("open")
     if not door:
         return ["M117 (no door macro)"]
     off = _printer_x_off(g)
-    x_start = float(door["x"]) + off
-    y_start, z_engage, d = float(door["y"]), float(door["z"]), float(door["d"])
+    x_start = float(door["x"]) + off - 5
+    y_start = float(door["y"]) + 30
+    z_engage = float(door["z"]) + 40
+    d = float(door["d"])
     gantry_gap, y_limit, y_max = 35, 10, 372 + 35
     y_arc_temp = y_max - (d + gantry_gap)
     y_arc = (y_arc_temp + y_limit) if y_arc_temp > 10 else y_limit
@@ -407,39 +411,47 @@ def open_door(g: dict) -> list[str]:
 
 
 def close_door(g: dict) -> list[str]:
-    # 1:1 nachgebaut aus dem Original-Macro `_CLOSE_DOOR` (ottoeject_macros.cfg).
-    # Eigene Startposition; Fallback auf open (Altbestand ohne separate close-Werte).
-    # WICHTIG (wie im Original): x_arc wird mit dem if/else-y_arc berechnet, DANACH
-    # wird y_arc auf den finalen Wert überschrieben.
+    # FELDER = ERSTER FAHRPUNKT (Nutzerwahl): X/Y/Z sind der erste Move — dort, wo der Arm
+    # die OFFENE Tür greift (Bogen-Seite). Da dieser Punkt am ANDEREN Ende des Bogens liegt,
+    # nutze ich die Original-Schwenkform als BEZUG (Standard-Schließposition ref_ys) und
+    # VERSCHIEBE die ganze Bewegung (dx/dy) so, dass der erste Move exakt (X,Y) trifft.
+    # Arc-sicher: Start, Ende & Mittelpunkt (I/J relativ) wandern gleich mit → G2 gültig.
+    # Bewegung/Schwenkform bleiben identisch; Pin (d) = Bogenradius. Fallback open (Altbestand).
     doors = g["printer"].get("door") or {}
     door = doors.get("close") or doors.get("open")
     if not door:
         return ["M117 (no door macro)"]
     off = _printer_x_off(g)
-    x_start = float(door["x"]) + off
-    y_start, z_engage, d = float(door["y"]), float(door["z"]), float(door["d"])
+    Fx = float(door["x"]) + off      # erster Move X (absolut)
+    Fy = float(door["y"])            # erster Move Y
+    Fz = float(door["z"])            # erster Move Z
+    d = float(door["d"])
+    z_engage = Fz + 40
+    ref_ys = 322.0                   # Standard-Schließ-Y (Original-Proportion der Schwenkform)
     gantry_gap, y_limit, y_max = 35, 10, 372 + 35
     y_arc_temp = y_max - (d + gantry_gap)
     y_arc = (y_arc_temp + y_limit) if y_arc_temp > 10 else y_limit
-    x_arc = _door_arc_x(x_start, d, y_arc, y_start)
+    x_arc = _door_arc_x(0.0, d, y_arc, ref_ys)   # Bezug x_start=0
     y_arc = (y_max - (d + gantry_gap)) + y_limit
+    dx = Fx - (x_arc + 120)          # Verschiebung: erster Move X → Fx
+    dy = Fy - (y_arc + 6)            # Verschiebung: erster Move Y → Fy
     i_value, j_value = 85, d
     return [
         "M117 Closing door...",
         f"G1 Z{_n(z_engage-40)} F1000", "M400",
-        f"G1 X{_n(x_arc+120)} Y{_n(y_arc+6)} F3000", "M400",
-        f"G1 X{_n(x_arc+155)} F1000", "M400",
+        f"G1 X{_n(x_arc+120+dx)} Y{_n(y_arc+6+dy)} F3000", "M400",
+        f"G1 X{_n(x_arc+155+dx)} F1000", "M400",
         f"G1 Z{_n(z_engage)} F1000", "M400",
-        f"G1 X{_n(x_arc+125)} Y{_n(y_arc+1)} F1000", "M400",
-        f"G2 X{_n(x_start+8)} Y{_n(y_start-30)} I{_n(i_value)} J{_n(j_value)} F3000", "M400",
-        f"G1 X{_n(x_start+9)} Y{_n(y_start-27)} F800", "M400",
+        f"G1 X{_n(x_arc+125+dx)} Y{_n(y_arc+1+dy)} F1000", "M400",
+        f"G2 X{_n(8+dx)} Y{_n(ref_ys-30+dy)} I{_n(i_value)} J{_n(j_value)} F3000", "M400",
+        f"G1 X{_n(9+dx)} Y{_n(ref_ys-27+dy)} F800", "M400",
         f"G1 Z{_n(z_engage-40)} F1000", "M400",
-        f"G1 X{_n(x_start+35)} Y{_n(y_start-180)} F3000", "M400",
+        f"G1 X{_n(35+dx)} Y{_n(ref_ys-180+dy)} F3000", "M400",
         f"G1 Z{_n(z_engage)} F1000", "M400",
-        f"G1 Y{_n(y_start-130)} F2000", "M400",
-        f"G1 Y{_n(y_start-50)} X{_n(x_start+15)} F2000", "M400",
-        f"G1 Y{_n(y_start-19)} F800", "M400",
-        f"G1 Y{_n(y_start-60)} F3000", "M400",
+        f"G1 Y{_n(ref_ys-130+dy)} F2000", "M400",
+        f"G1 Y{_n(ref_ys-50+dy)} X{_n(15+dx)} F2000", "M400",
+        f"G1 Y{_n(ref_ys-19+dy)} F800", "M400",
+        f"G1 Y{_n(ref_ys-60+dy)} F3000", "M400",
         "M117 Door closed",
     ]
 
@@ -482,13 +494,12 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
     if op == "speed":   # nur den globalen Vorschubfaktor live setzen
         s = _speed_prefix(g)
         return (s or "M220 S100\n").rstrip() + "\nM400"
-    speed = _speed_prefix(g, op)   # Vorschub PRO Operation (Fallback global)
-    # Absolute Positionierung ERZWINGEN: Der OTTOeject/Klipper kann durch manuelles
-    # Jog in Mainsail im relativen Modus (G91) stehen — dann würde „G1 X1020" als
-    # +1020 ab Ist-Position ausgeführt → „Move out of range". G90 macht ALLE
-    # Op-Koordinaten verlässlich absolut (Maschinen-Koordinaten), unabhängig vom
-    # vorherigen Zustand. Betrifft value-basierte UND Custom-G-code-Ops.
-    speed = speed + "G90\n"
+    # Absolute Positionierung ERZWINGEN, G90 ZUERST: Der OTTOeject/Klipper kann durch
+    # manuelles Jog in Mainsail im relativen Modus (G91) stehen — dann würde „G1 X1020"
+    # als +1020 ab Ist-Position ausgeführt → „Move out of range". G90 macht ALLE
+    # Op-Koordinaten verlässlich absolut. G90 an den ANFANG (vor M220), damit der
+    # Transport-Guard (startswith G90) es erkennt und kein zweites G90 voranstellt.
+    speed = "G90\n" + _speed_prefix(g, op)   # Vorschub PRO Operation (Fallback global)
     # Eigener G-code hat Vorrang — aber NUR beim „Custom Printer". Named Printer
     # fahren immer aus ihren Positions-Werten (kein G-code-Editor), damit dort kein
     # alter Override versehentlich greift.
