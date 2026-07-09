@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.140',
+    de: [
+      'Kleinigkeit: Das Y-Feld heißt jetzt „Start-Y" (statt nur „Y") — konsistent zu Start-X und Start-Z. Es ist der Y-Wert des Greif-/Startpunkts, den du direkt bestimmst.',
+    ],
+    en: [
+      'Small fix: the Y field is now labeled “Start-Y” (instead of just “Y”) — consistent with Start-X and Start-Z. It’s the Y of the grab/start point that you set directly.',
+    ],
+  },
+  {
     version: '1.0.139',
     de: [
       'Neuer „Andruck-Weg (mm)" im Drucker-Tab (Regal & Greifen): der bisher fest verdrahtete ±30-mm-Klemm-Andruck ist jetzt einstellbar. Der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Platten-Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original bleibt 30. Auf 0 stellen, wenn der Greifer genau bei deinem Start-X fassen soll — behebt den ~30er-Versatz (1065 statt 1035).',

@@ -537,7 +537,7 @@ export default function Drucker() {
                 effHint={absHint(doorOpen)}
                 fields={[
                   absXField(doorOpen, setDoorOpen),
-                  { label: tr('Y'), value: doorOpen.y, onChange: v => setDoorOpen({ ...doorOpen, y: v }) },
+                  { label: tr('Start-Y'), value: doorOpen.y, onChange: v => setDoorOpen({ ...doorOpen, y: v }) },
                   { label: tr('Start-Z'), step: 0.5, value: doorOpen.z, onChange: v => setDoorOpen({ ...doorOpen, z: v }) },
                   { label: tr('Pin-Abst.'), hint: tr('d_to_pin'), value: doorOpen.d, onChange: v => setDoorOpen({ ...doorOpen, d: v }) },
                 ]} />
@@ -550,7 +550,7 @@ export default function Drucker() {
                 effHint={absHint(doorClose)}
                 fields={[
                   absXField(doorClose, setDoorClose),
-                  { label: tr('Y'), value: doorClose.y, onChange: v => setDoorClose({ ...doorClose, y: v }) },
+                  { label: tr('Start-Y'), value: doorClose.y, onChange: v => setDoorClose({ ...doorClose, y: v }) },
                   { label: tr('Start-Z'), step: 0.5, value: doorClose.z, onChange: v => setDoorClose({ ...doorClose, z: v }) },
                   { label: tr('Pin-Abst.'), hint: tr('d_to_pin'), value: doorClose.d, onChange: v => setDoorClose({ ...doorClose, d: v }) },
                 ]} />
@@ -563,7 +563,7 @@ export default function Drucker() {
               note={tr('Sichere Anfahrt vor den Drucker — eigene Start-Position. Standard = Auswurf-Position; hier fein justierbar.')}
               fields={[
                 absXField(moveTo, setMoveTo),
-                { label: tr('Y'), value: moveTo.y, onChange: v => setMoveTo({ ...moveTo, y: v }) },
+                { label: tr('Start-Y'), value: moveTo.y, onChange: v => setMoveTo({ ...moveTo, y: v }) },
                 { label: tr('Start-Z'), step: 0.5, value: moveTo.z, onChange: v => setMoveTo({ ...moveTo, z: v }) },
               ]} />
             <OpCard op="eject" icon="⬆" title={tr('Platte auswerfen')}
@@ -573,7 +573,7 @@ export default function Drucker() {
               effHint={absHint(eject)}
               fields={[
                 absXField(eject, setEject),
-                { label: tr('Y'), value: eject.y, onChange: v => setEject({ ...eject, y: v }) },
+                { label: tr('Start-Y'), value: eject.y, onChange: v => setEject({ ...eject, y: v }) },
                 { label: tr('Start-Z'), step: 0.5, value: eject.z, onChange: v => setEject({ ...eject, z: v }) },
               ]} />
             <OpCard op="place" icon="⬇" title={tr('Platte einlegen (Place)')}
@@ -583,7 +583,7 @@ export default function Drucker() {
               effHint={absHint(load)}
               fields={[
                 absXField(load, setLoad),
-                { label: tr('Y'), value: load.y, onChange: v => setLoad({ ...load, y: v }) },
+                { label: tr('Start-Y'), value: load.y, onChange: v => setLoad({ ...load, y: v }) },
                 { label: tr('Start-Z'), step: 0.5, value: load.z, onChange: v => setLoad({ ...load, z: v }) },
               ]} />
           </div>
