@@ -208,8 +208,7 @@ export default function Drucker() {
         eject: { x: num(eject.x), y: num(eject.y), z: num(eject.z) },
         load:  { x: num(load.x),  y: num(load.y),  z: num(load.z) },
         move:  { x: num(moveTo.x), y: num(moveTo.y), z: num(moveTo.z) },
-        // „Tür schließen" zieht die Position automatisch von „Tür öffnen" → close = open.
-        door: hasDoor ? { open: nd(doorOpen), close: nd(doorOpen) } : null,
+        door: hasDoor ? { open: nd(doorOpen), close: nd(doorClose) } : null,
       },
       use_gcode: { ...useGcode },
       gcode_override: gcodeOverride,
@@ -488,7 +487,6 @@ export default function Drucker() {
                 speedVal={speedFactors.open_door ?? ''} onSpeed={setOpSpeed}
                 {...opGcodeProps('open_door')}
                 effHint={absHint(doorOpen)}
-                note={tr('Diese Position steuert auch „Tür schließen".')}
                 fields={[
                   absXField(doorOpen, setDoorOpen),
                   { label: tr('Y'), value: doorOpen.y, onChange: v => setDoorOpen({ ...doorOpen, y: v }) },
@@ -501,8 +499,13 @@ export default function Drucker() {
                 busy={jog.busy} gcodeOn={useGcode.close_door} onTest={sendOp} onToggle={toggleGcode}
                 speedVal={speedFactors.close_door ?? ''} onSpeed={setOpSpeed}
                 {...opGcodeProps('close_door')}
-                note={tr('Position wird automatisch von „Tür öffnen" übernommen — hier nichts einzustellen. Nur „Test" & eigene Geschwindigkeit.')}
-                fields={[]} />
+                effHint={absHint(doorClose)}
+                fields={[
+                  absXField(doorClose, setDoorClose),
+                  { label: tr('Y'), value: doorClose.y, onChange: v => setDoorClose({ ...doorClose, y: v }) },
+                  { label: tr('Start-Z'), step: 0.5, value: doorClose.z, onChange: v => setDoorClose({ ...doorClose, z: v }) },
+                  { label: tr('Pin-Abst.'), hint: tr('d_to_pin'), value: doorClose.d, onChange: v => setDoorClose({ ...doorClose, d: v }) },
+                ]} />
             )}
             <OpCard op="move_to_printer" icon="➡" title={tr('Vor Drucker fahren')}
               busy={jog.busy} gcodeOn={useGcode.move_to_printer} onTest={sendOp} onToggle={toggleGcode}

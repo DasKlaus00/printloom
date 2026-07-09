@@ -391,10 +391,10 @@ def open_door(g: dict) -> list[str]:
 
 
 def close_door(g: dict) -> list[str]:
-    # „Tür schließen" zieht die Position automatisch von „Tür öffnen" (open) —
-    # der Nutzer stellt nur EINE Türposition ein. Fallback auf close (Altbestand).
+    # „Tür schließen" hat wieder eine EIGENE Position; Fallback auf open (Altbestand
+    # ohne separate close-Werte), damit nichts leer bleibt.
     doors = g["printer"].get("door") or {}
-    door = doors.get("open") or doors.get("close")
+    door = doors.get("close") or doors.get("open")
     if not door:
         return ["M117 (no door macro)"]
     off = _printer_x_off(g)

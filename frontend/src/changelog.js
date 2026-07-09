@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.134',
+    de: [
+      '„Tür schließen" hat wieder eigene, einstellbare Start-Koordinaten (Start-X absolut, Y, Start-Z, Pin-Abstand) — unabhängig von „Tür öffnen". Standard/Fallback bleibt die Öffnen-Position, wenn keine eigenen Werte gesetzt sind. Der Hinweis „übernimmt Position von Tür öffnen" entfällt.',
+    ],
+    en: [
+      '“Close door” has its own adjustable start coordinates again (absolute start X, Y, start Z, pin distance) — independent of “Open door”. Default/fallback stays the open position when no own values are set. The “taken from Open door” note is gone.',
+    ],
+  },
+  {
     version: '1.0.133',
     de: [
       'Wichtiger Fix: Alle OTTOeject-Operationen erzwingen jetzt absolute Positionierung (G90). Stand der OTTOeject durch manuelles Jog in Mainsail im relativen Modus, wurde z. B. „G1 X1020" als +1020 ab Ist-Position gefahren → „Move out of range" (obwohl die Koordinaten korrekt waren). Jetzt sind alle Op-Koordinaten verlässlich absolute Maschinen-Koordinaten — betrifft Vor Drucker fahren, Auswerfen, Einlegen, Tür, Greifen/Ablegen und eigenen G-code gleichermaßen.',
