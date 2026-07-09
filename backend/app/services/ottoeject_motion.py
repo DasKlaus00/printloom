@@ -299,9 +299,10 @@ def move_to_printer(g: dict) -> list[str]:
     y_pb = float(g["storage"]["y_pullback_limit"])
     return [
         f"M117 Moving to {g.get('printer_name','printer')}...",
-        f"G1 Z{_n(z_flat)} Y{_n(y_pb)} F3000", "M400",   # sichere Höhe, zurückziehen
-        f"G1 X{_n(x)} F3000", "M400",                     # auf Drucker-X ausrichten
-        f"G1 Y{_n(y_engage-90)} F3000", "M400",           # vor die Druckerfront
+        f"G1 Z{_n(z_flat)} Y{_n(y_pb)} F3000", "M400",   # sichere Höhe + auf y_pullback zurückziehen (=5)
+        f"G1 X{_n(x)} F3000", "M400",                     # auf Drucker-X ausrichten; Y bleibt bei y_pullback
+        # ENDET bei Y=y_pullback (5) — NICHT vorne an der Druckerfront (Nutzerwunsch):
+        # eject/place fahren selbst aus dieser zurückgezogenen Position an die Front.
     ]
 
 

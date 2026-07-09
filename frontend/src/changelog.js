@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.137',
+    de: [
+      '„Vor Drucker fahren" endet jetzt zurückgezogen bei Y = Pullback (5) statt vorne an der Druckerfront: sichere Höhe → auf y=5 zurückziehen → auf Drucker-X ausrichten (Y bleibt 5). Auswerfen/Einlegen fahren selbst aus dieser Position an die Front.',
+    ],
+    en: [
+      '“Move to printer” now ends retracted at Y = pullback (5) instead of at the printer front: safe height → retract to y=5 → align to printer X (Y stays 5). Eject/place move to the front themselves from there.',
+    ],
+  },
+  {
     version: '1.0.136',
     de: [
       'Tür-Bewegung exakt nach dem Original-OTTOeject-Macro nachgebaut (Öffnen & Schließen). Die eingebaute Version war früher handjustiert und wich vom Original ab (Tür schloss/öffnete nicht sauber). Jetzt gibst du nur den Startpunkt an (Start-X/Y/Z + Pin-Abstand) und der komplette Ablauf — Bogen und Andrücken — wird 1:1 wie im Original daraus berechnet. Nichts mehr an einzelnen Werten nachbessern.',
