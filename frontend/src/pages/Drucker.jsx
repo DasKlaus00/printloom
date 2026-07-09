@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useLanguage } from '../services/i18n'
-import { controlService, rackManagerService } from '../services/api'
+import { controlService, rackManagerService, deviceService, printerService } from '../services/api'
 import { PRINTERS, CUSTOM_PRINTER } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
 
@@ -178,6 +178,8 @@ export default function Drucker() {
   const [lastScript, setLastScript] = useState('')
   const [showScript, setShowScript] = useState(false)
   const [gcodeLine, setGcodeLine] = useState('')
+  const [bambuId, setBambuId] = useState(null)   // verbundener Bambu-Drucker (für „Bett → Z")
+  const [bedZ, setBedZ] = useState(200)          // Ziel-Z des Druckerbetts (Ladeposition = 200)
 
   const hasDoor = enclosed && !!(doorOpen && doorClose)
   const yPullback = plate === '220' ? 30 : 5
@@ -332,6 +334,27 @@ export default function Drucker() {
     }
   }
 
+  // Verbundenen Bambu-Drucker ermitteln (für „Bett → Z" — bewegt den X1C, nicht den OTTOeject).
+  useEffect(() => {
+    deviceService.listDevices()
+      .then(r => { const b = (r?.data || []).find(d => d.device_type === 'bambu_lab'); if (b) setBambuId(b.id) })
+      .catch(() => {})
+  }, [])
+
+  // Druckerbett auf Ziel-Z fahren (absolut). Z200 = Ladeposition für den Platten-Wechsel.
+  const moveBedZ = async () => {
+    if (bambuId == null || jog.busy) return
+    const z = Math.round(num(bedZ, 200))
+    setJog({ busy: true, msg: tr('Drucker-Bett → Z{0}…', z), err: false })
+    try {
+      await printerService.sendGcode(bambuId, `G90\nG1 Z${z} F3000`)
+      setJog({ busy: false, msg: tr('✓ Bett → Z{0}', z), err: false })
+    } catch (e) {
+      const detail = e?.response?.data?.detail || e?.message || tr('Fehler')
+      setJog({ busy: false, msg: detail, err: true })
+    }
+  }
+
   // Geschwindigkeit setzen → M220 sofort an den OTTOeject schicken (und für Ops speichern).
   const applySpeed = (v) => {
     setSpeedFactor(v)
@@ -462,6 +485,28 @@ export default function Drucker() {
               </div>
               <p className="text-[9px] text-surface-600">
                 {tr('Wird 1:1 an Klipper geschickt (Enter = Senden). Vorher homen; RACK=-Nummern werden automatisch in die Geräte-Zählung übersetzt.')}
+              </p>
+            </div>
+            {/* Druckerbett (Bambu) auf Ziel-Z fahren — Z200 = Ladeposition für den Platten-Wechsel */}
+            <div className="pt-1 border-t border-surface-800/50 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] text-surface-400">{tr('🖨 Druckerbett')}</span>
+                <label className="flex items-center gap-1">
+                  <span className="text-[10px] text-surface-500">Z</span>
+                  <input type="number" step="10" value={bedZ} onChange={e => setBedZ(e.target.value)}
+                    disabled={jog.busy || bambuId == null}
+                    className="w-16 font-mono text-[11px] h-8 py-0 px-2" />
+                </label>
+                <button onClick={moveBedZ} disabled={jog.busy || bambuId == null}
+                  className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 shrink-0">{tr('▶ Bett fahren')}</button>
+                <button onClick={() => { setBedZ(200); }} disabled={jog.busy}
+                  title={tr('Auf Ladeposition Z200 setzen')}
+                  className="text-[10px] text-blue-400 hover:text-blue-300">{tr('= Z200')}</button>
+              </div>
+              <p className="text-[9px] text-surface-600">
+                {bambuId == null
+                  ? tr('Kein Bambu-Drucker verbunden — Bett-Fahrt nicht verfügbar.')
+                  : tr('Fährt das Druckerbett (X1C) absolut auf die Ziel-Z (G90/G1 Z). Z200 = Ladeposition für den Platten-Wechsel. Drucker muss idle sein.')}
               </p>
             </div>
             {jog.msg && (

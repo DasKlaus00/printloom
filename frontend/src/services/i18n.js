@@ -269,6 +269,15 @@ const EN_STRINGS = {
   'Diese Position steuert auch „Tür schließen".': 'This position also drives “Close door”.',
   'Position wird automatisch von „Tür öffnen" übernommen — hier nichts einzustellen. Nur „Test" & eigene Geschwindigkeit.':
     'Position is taken automatically from “Open door” — nothing to set here. Only “Test” & own speed.',
+  '🖨 Druckerbett': '🖨 Print bed',
+  '▶ Bett fahren': '▶ Move bed',
+  '= Z200': '= Z200',
+  'Auf Ladeposition Z200 setzen': 'Set to loading position Z200',
+  'Drucker-Bett → Z{0}…': 'Print bed → Z{0}…',
+  '✓ Bett → Z{0}': '✓ Bed → Z{0}',
+  'Kein Bambu-Drucker verbunden — Bett-Fahrt nicht verfügbar.': 'No Bambu printer connected — bed move unavailable.',
+  'Fährt das Druckerbett (X1C) absolut auf die Ziel-Z (G90/G1 Z). Z200 = Ladeposition für den Platten-Wechsel. Drucker muss idle sein.':
+    'Moves the print bed (X1C) to the target Z in absolute terms (G90/G1 Z). Z200 = loading position for the plate swap. Printer must be idle.',
   '⚙ G-code dieser Operation': '⚙ G-code for this operation',
   '⤓ Vorlage laden': '⤓ Load template',
   'Eigener G-code für diese Operation … („Vorlage laden" füllt einen Startpunkt)':

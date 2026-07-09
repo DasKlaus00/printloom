@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.135',
+    de: [
+      'Drucker-Tab: Neuer Knopf „🖨 Druckerbett → Z" — fährt das Bett des verbundenen Bambu-Druckers (X1C) absolut auf die Ziel-Z. Standard Z200 (Ladeposition für den Platten-Wechsel), Z frei einstellbar. Praktisch beim Kalibrieren: erst Bett auf Z200, dann OTTOeject-Operationen testen. Drucker muss idle sein.',
+    ],
+    en: [
+      'Printer tab: new button “🖨 Print bed → Z” — moves the connected Bambu printer’s bed (X1C) to the target Z in absolute terms. Default Z200 (loading position for the plate swap), Z freely adjustable. Handy for calibration: bed to Z200 first, then test OTTOeject operations. Printer must be idle.',
+    ],
+  },
+  {
     version: '1.0.134',
     de: [
       '„Tür schließen" hat wieder eigene, einstellbare Start-Koordinaten (Start-X absolut, Y, Start-Z, Pin-Abstand) — unabhängig von „Tür öffnen". Standard/Fallback bleibt die Öffnen-Position, wenn keine eigenen Werte gesetzt sind. Der Hinweis „übernimmt Position von Tür öffnen" entfällt.',
