@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.143',
+    de: [
+      'Drucker-Tab (Regal & Greifen): In der Reihe „X-Position je Regal" gibt es jetzt ganz links ein Feld „🖨 Drucker". Damit setzt du die Start-X von „Vor Drucker fahren", „Platte auswerfen" und „Platte einlegen" gemeinsam an einer Stelle (absoluter Maschinen-X, inkl. Regal-Versatz). Der „→"-Knopf daneben fährt zum Testen vor den Drucker. (Die Reihe erscheint ab 2 Regalen.)',
+    ],
+    en: [
+      'Printer tab (Rack & grab): the “X per rack” row now has a “🖨 Printer” field on the far left. It sets the start X of “Move to printer”, “Eject plate” and “Place plate” together in one place (absolute machine X, incl. rack offset). The “→” button next to it drives in front of the printer to test. (The row shows with 2+ racks.)',
+    ],
+  },
+  {
     version: '1.0.142',
     de: [
       'Drucker-Tab: Bei JEDEM benannten Drucker (nicht nur „Custom Printer") lässt sich für die fünf Wechsel-Operationen — Tür öffnen, Tür schließen, Vor Drucker fahren, Platte auswerfen, Platte einlegen — wieder ein eigener G-code hinterlegen. Unter den Positions-Feldern gibt es den Knopf „⚙ Eigenen G-code bearbeiten (Feinjustage)": er lädt den aus deinen Werten berechneten G-code als Vorlage in ein Editorfeld, das du frei anpassen kannst. „Test" fährt exakt diesen G-code, die Farm nutzt ihn bei aktivem Op-Schalter. „✕ zurück zu Werten" entfernt den Override wieder. Ohne Override bleibt alles positionsbasiert (unverändert).',

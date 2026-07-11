@@ -637,6 +637,34 @@ export default function Drucker() {
                   <div className="pt-1 border-t border-surface-800/50 space-y-1.5">
                     <p className="text-[11px] text-surface-400">{tr('X-Position je Regal (mm)')}</p>
                     <div className="flex flex-wrap gap-2">
+                      {/* Drucker ganz links: setzt Auswurf-/Einlege-/Anfahr-Start-X gemeinsam
+                          (absoluter Maschinen-X inkl. Regal-Versatz, wie in den Op-Karten). */}
+                      <label className="block">
+                        <span className="text-[10px] text-blue-300 font-mono flex items-center gap-1">
+                          🖨 {tr('Drucker')}
+                        </span>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <input type="number" step="0.5"
+                            value={r1(num(eject.x) + xOff)}
+                            onChange={e => {
+                              const v = parseFloat(e.target.value)
+                              if (Number.isNaN(v)) return
+                              const b = r1(v - xOff)
+                              setEject(s => ({ ...s, x: b }))
+                              setLoad(s => ({ ...s, x: b }))
+                              setMoveTo(s => ({ ...s, x: b }))
+                            }}
+                            title={tr('Drucker-X — setzt „Vor Drucker fahren“, „Platte auswerfen“ und „Platte einlegen“ gemeinsam')}
+                            className="w-24 text-sm font-mono border-blue-700/50" />
+                          <button
+                            onClick={() => sendOp('move_to_printer', tr('Vor Drucker fahren…'))}
+                            disabled={jog.busy}
+                            title={tr('Vor den Drucker fahren (Test)')}
+                            className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">→</button>
+                        </div>
+                      </label>
+                      {/* schmaler Trenner zwischen Drucker und Regalen */}
+                      <div className="w-px self-stretch bg-surface-700/50 mx-0.5" aria-hidden="true" />
                       {Array.from({ length: numRacks }, (_, i) => i + 1).map(r => {
                         const base = num(xUnclamp) + (numRacks - r) * num(rackGap)
                         const trim = +(rackXTrim[String(r)] ?? 0) || 0
@@ -678,7 +706,7 @@ export default function Drucker() {
                       })}
                     </div>
                     <p className="text-[9px] text-surface-600">
-                      {tr('Standard = Start-X + Regal-Versatz. Ein geänderter Wert wird als Δ-Korrektur pro Regal gespeichert und gilt für alle Fächer & das Magazin dieses Regals — auch im eigenen G-code über den Platzhalter für die Regal-X-Position. Ändert sich Start-X/Versatz, wandert die Korrektur mit.')}
+                      {tr('🖨 Drucker (ganz links) = Start-X von „Vor Drucker fahren“, „Platte auswerfen“ und „Platte einlegen“ gemeinsam (absoluter Maschinen-X). Regale: Standard = Start-X + Regal-Versatz; ein geänderter Wert wird als Δ-Korrektur pro Regal gespeichert und gilt für alle Fächer & das Magazin dieses Regals — auch im eigenen G-code über den Platzhalter für die Regal-X-Position. Ändert sich Start-X/Versatz, wandert die Korrektur mit.')}
                     </p>
                   </div>
                 )}
