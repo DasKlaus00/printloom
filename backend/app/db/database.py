@@ -1,11 +1,11 @@
 import sqlite3
-from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import os
 
-# Create database directory if it doesn't exist
-DB_DIR = Path("/app/db") if os.path.exists("/app") else Path("backend/db")
+from app.paths import DB_DIR
+
+# Datenordner sicherstellen (zentral über app.paths aufgelöst: Docker=/app/db,
+# nativ=%APPDATA%/Printloom/db, Dev=backend/db).
 DB_DIR.mkdir(parents=True, exist_ok=True)
 
 

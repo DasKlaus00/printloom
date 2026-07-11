@@ -419,8 +419,9 @@ async def get_control_status(db: Session = Depends(get_db)):
 # Statt Klipper-Macros erzeugt Printloom die G-code-Sequenzen aus dieser Geometrie.
 from app.services import storage as _storage
 from app.services import ottoeject_motion as _motion
+from app.paths import db_path
 
-GEOMETRY_PATH = "/app/db/ottoeject_geometry.json"
+GEOMETRY_PATH = db_path("ottoeject_geometry.json")
 
 
 def _rack_config() -> dict | None:

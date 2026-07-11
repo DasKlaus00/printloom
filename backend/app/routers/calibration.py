@@ -7,11 +7,12 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import Device, PrinterType
 from app.services import storage
+from app.paths import db_path
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = "/app/db/macro_configs.json"
+CONFIG_PATH = db_path("macro_configs.json")
 
 # ── Default values from printer_calibration_variables.cfg ──────────────
 DEFAULTS = {

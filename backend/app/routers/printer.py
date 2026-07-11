@@ -690,7 +690,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # ── AMS Send-Diagnostics ─────────────────────────────────────────────────────
-SEND_DIAG_PATH = "/app/db/send_diagnostics.json"
+from app.paths import db_path, UPLOADS_DIR
+SEND_DIAG_PATH = db_path("send_diagnostics.json")
 _diag_sessions: list = []
 
 
@@ -732,7 +733,7 @@ def _diag_finish(sess: dict, result: str):
 
 _diag_load()
 
-HISTORY_PATH = "/app/db/print_history.json"
+HISTORY_PATH = db_path("print_history.json")
 
 def _append_history(entry: dict):
     try:
@@ -756,7 +757,7 @@ def get_history():
 
 # ── Snapshots ────────────────────────────────────────────────────────────────
 
-SNAP_DIR = Path("/app/uploads/snapshots")
+SNAP_DIR = UPLOADS_DIR / "snapshots"
 
 def _device_settings(db: Session, device_id: int) -> dict:
     from app.models.models import SystemConfig

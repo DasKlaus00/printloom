@@ -6,7 +6,12 @@ from pathlib import Path
 
 from app.routers import config, files, devices, control, printer, calibration, rack_manager, system, autofarm, project, profiles, filaments, push, folders
 from app.db.database import init_db
+from app import paths
 import logging
+
+# Datenordner (db/, uploads/) früh sicherstellen — nativ liegen sie im
+# Nutzerverzeichnis, in Docker unter /app (siehe app.paths).
+paths.ensure_dirs()
 
 # INFO statt DEBUG: DEBUG ließ uvicorn + alle Bibliotheken (MQTT/HTTP/FTP) sehr
 # viel protokollieren — unnötige CPU-/IO-Last und ein endlos wachsendes Log. Die
@@ -53,8 +58,9 @@ app.include_router(folders.router,       prefix="/api/folders",         tags=["F
 async def health_check():
     return {"status": "healthy"}
 
-# Serve static frontend files
-frontend_path = Path("/app/frontend/dist")
+# Serve static frontend files (zentral aufgelöst: Docker=/app/frontend/dist,
+# nativ=Bundle, Dev=frontend/dist)
+frontend_path = paths.frontend_dir()
 
 if frontend_path.exists():
     # Mount static assets (JS, CSS, images)
@@ -104,5 +110,9 @@ else:
         return {"message": "Printloom API Server running. Frontend not available in development mode."}
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Nativ bindet die Desktop-Hülle an 127.0.0.1; Docker weiter an 0.0.0.0.
+    host = os.getenv("PRINTLOOM_HOST", "0.0.0.0")
+    port = int(os.getenv("PRINTLOOM_PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)

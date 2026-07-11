@@ -179,6 +179,15 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
     setError(null)
     onUpdatePhase?.('running')
     try {
+      // Native Desktop-App: der Server lädt den Installer und startet ihn; die App
+      // wird vom Installer geschlossen → NICHT auf Neustart warten / neu laden.
+      if (info?.runtime === 'native') {
+        const r = await systemService.triggerUpdate(channel)
+        if (r.data?.reason === 'up_to_date') { setPhase(null); setUpdating(false); return }
+        setPhase('native-launched')
+        onUpdatePhase?.(null)
+        return
+      }
       await systemService.triggerUpdate(channel)
       await waitForRestart()
       setPhase('done')
@@ -247,6 +256,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
 
   const canUpdate = !updating && !checking
   const isBeta = channel === 'beta'
+  const isNative = info?.runtime === 'native'   // native Desktop-App (Windows/macOS) statt Docker
 
   const switchChannel = (ch) => {
     setChannel(ch)
@@ -295,12 +305,20 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
             <span className="text-[11px] text-surface-500 text-center">{tr('Aktive Entwicklung')}</span>
           </button>
         </div>
-        {isBeta && (
+        {isBeta && !isNative && (
           <div className="flex items-start gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
             <span className="text-blue-400 text-sm mt-0.5">ℹ</span>
             <p className="text-blue-300 text-xs">
               {tr('Beta-Kanal aktiv — neue Features vor dem stabilen Release. Docker-Image-Tag:')}
               {' '}<span className="font-mono bg-blue-950/50 px-1 rounded">:beta</span>
+            </p>
+          </div>
+        )}
+        {isBeta && isNative && (
+          <div className="flex items-start gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
+            <span className="text-blue-400 text-sm mt-0.5">ℹ</span>
+            <p className="text-blue-300 text-xs">
+              {tr('Beta-Kanal aktiv — neue Features vor dem stabilen Release (Prerelease-Installer von GitHub).')}
             </p>
           </div>
         )}
@@ -372,6 +390,14 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
             <span className="text-emerald-400 text-sm">{tr('Fertig — Seite wird neu geladen…')}</span>
           </div>
         )}
+        {phase === 'native-launched' && (
+          <div className="flex items-start gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
+            <span className="text-blue-400 text-sm mt-0.5">⬇</span>
+            <p className="text-blue-300 text-sm">
+              {tr('Installer wurde gestartet. Printloom wird geschlossen und aktualisiert — folge dem Installer und starte die App danach neu.')}
+            </p>
+          </div>
+        )}
         {phase === 'no-watchtower' && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-4 space-y-3">
             <p className="text-amber-300 text-sm font-medium">{tr('Weder Docker-Socket noch Watchtower verfügbar — manuell:')}</p>
@@ -388,8 +414,9 @@ docker compose up -d`}
           </div>
         )}
 
-        {/* No Docker socket → one-click update can't work; tell the user up front. */}
-        {info && info.docker_available === false && !['done', 'running'].includes(phase) && (
+        {/* No Docker socket → one-click update can't work; tell the user up front.
+            Nicht in der nativen App (dort ist Docker erwartungsgemäß nicht vorhanden). */}
+        {info && info.docker_available === false && !isNative && !['done', 'running'].includes(phase) && (
           <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
             <span className="text-amber-400 text-sm mt-0.5">⚠</span>
             <p className="text-amber-300 text-xs">
@@ -445,10 +472,16 @@ docker compose up -d`}
           </div>
         )}
 
-        <p className="text-[11px] text-surface-600">
-          {tr('Updates laufen')} <span className="text-surface-400">{tr('nur auf Knopfdruck')}</span> {tr('— kein automatisches Update im Hintergrund. Ein Klick zieht das gewählte Kanal-Image (')}<span className="font-mono">:latest</span>{tr(' bzw.')}
-          <span className="font-mono"> :beta</span>{tr(') und startet die App neu (auch der Kanalwechsel). Voraussetzung: Docker-Socket gemountet (siehe Compose).')}
-        </p>
+        {isNative ? (
+          <p className="text-[11px] text-surface-600">
+            {tr('Updates laufen')} <span className="text-surface-400">{tr('nur auf Knopfdruck')}</span> {tr('— kein automatisches Update im Hintergrund. Ein Klick lädt den passenden Installer vom GitHub-Release und startet ihn; die App wird geschlossen und aktualisiert.')}
+          </p>
+        ) : (
+          <p className="text-[11px] text-surface-600">
+            {tr('Updates laufen')} <span className="text-surface-400">{tr('nur auf Knopfdruck')}</span> {tr('— kein automatisches Update im Hintergrund. Ein Klick zieht das gewählte Kanal-Image (')}<span className="font-mono">:latest</span>{tr(' bzw.')}
+            <span className="font-mono"> :beta</span>{tr(') und startet die App neu (auch der Kanalwechsel). Voraussetzung: Docker-Socket gemountet (siehe Compose).')}
+          </p>
+        )}
 
         {/* Patchnotes der letzten Updates — ganz unten, damit die Backup-Warnung
             direkt am Installieren-Knopf bleibt (Sprache folgt der Auswahl unten links) */}

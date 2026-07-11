@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Create uploads directory if it doesn't exist
-UPLOAD_DIR = Path("/app/uploads") if os.path.exists("/app") else Path("backend/uploads")
+# Create uploads directory if it doesn't exist (zentral über app.paths aufgelöst)
+from app.paths import UPLOADS_DIR as UPLOAD_DIR
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".3mf", ".stl", ".gcode"}

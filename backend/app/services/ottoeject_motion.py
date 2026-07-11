@@ -500,12 +500,12 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
     # Op-Koordinaten verlässlich absolut. G90 an den ANFANG (vor M220), damit der
     # Transport-Guard (startswith G90) es erkennt und kein zweites G90 voranstellt.
     speed = "G90\n" + _speed_prefix(g, op)   # Vorschub PRO Operation (Fallback global)
-    # Eigener G-code hat Vorrang — aber NUR beim „Custom Printer". Named Printer
-    # fahren immer aus ihren Positions-Werten (kein G-code-Editor), damit dort kein
-    # alter Override versehentlich greift.
-    is_custom = str(g.get("printer_id", "")).strip().lower() == "custom"
+    # Eigener G-code hat Vorrang, sobald für DIESE Operation ein Override gesetzt ist —
+    # beim „Custom Printer" ist das der einzige Modus, bei benannten Druckern eine
+    # optionale Feinjustage pro Op (Tür/Move/Eject/Place). Kein Override → berechnete
+    # Bewegung aus den Positions-Werten.
     ov = (g.get("gcode_override") or {}).get(op)
-    if is_custom and isinstance(ov, str) and ov.strip():
+    if isinstance(ov, str) and ov.strip():
         # Platzhalter, damit EIN eigener G-code über alle Regale/Fächer skaliert — statt fixer
         # Koordinaten, die jedes Regal an denselben Punkt schicken. Werte aus der Kalibrierung
         # (x_unclamp/rack_x_gap/first_z_flat/slot_gap); R1 = druckerseitig (siehe slot_position):

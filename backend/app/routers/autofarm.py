@@ -37,22 +37,24 @@ from app.services.rack_logic import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-SLOTS_PATH    = "/app/db/rack_slots.json"
-SEQ_PATH      = "/app/db/farm_sequences.json"
-SETTINGS_PATH = "/app/db/farm_settings.json"
-QUEUE_PATH    = "/app/db/farm_queue.json"
-LOG_PATH      = "/app/db/farm_log.txt"
-STATS_PATH    = "/app/db/farm_stats.json"
-HISTORY_PATH  = "/app/db/farm_history.json"
-TIMELINE_PATH = "/app/db/farm_timeline.json"
+from app.paths import db_path
+
+SLOTS_PATH    = db_path("rack_slots.json")
+SEQ_PATH      = db_path("farm_sequences.json")
+SETTINGS_PATH = db_path("farm_settings.json")
+QUEUE_PATH    = db_path("farm_queue.json")
+LOG_PATH      = db_path("farm_log.txt")
+STATS_PATH    = db_path("farm_stats.json")
+HISTORY_PATH  = db_path("farm_history.json")
+TIMELINE_PATH = db_path("farm_timeline.json")
 TIMELINE_MAX  = 1000  # keep the most recent N events
 HISTORY_KEEP  = 8     # rolling samples per file for the duration average
 
 SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
 
-HOMING_3MF_PATH = "/app/db/printloom_homing.3mf"
-FILE_AMSMAP_PATH = "/app/db/file_ams_map.json"   # pro Datei manuell gewählte AMS-Slots {file_id: "gid,gid"}
-GEOMETRY_PATH = "/app/db/ottoeject_geometry.json"  # Drucker-Geometrie (Drucker-Tab) — opt-in App-G-code
+HOMING_3MF_PATH = db_path("printloom_homing.3mf")
+FILE_AMSMAP_PATH = db_path("file_ams_map.json")   # pro Datei manuell gewählte AMS-Slots {file_id: "gid,gid"}
+GEOMETRY_PATH = db_path("ottoeject_geometry.json")  # Drucker-Geometrie (Drucker-Tab) — opt-in App-G-code
 
 _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": True,
                      "hms_ignore": ["0C00-0100-0001-0004"],
@@ -115,7 +117,7 @@ def _build_homing_3mf() -> bytes:
 
 def _move_3mf_path(z: int, feed: int) -> str:
     """Cached one-shot move .3mf for `G1 Z{z} F{feed}` + M400 (position-confirmed)."""
-    path = f"/app/db/move_z{int(z)}_f{int(feed)}.3mf"
+    path = db_path(f"move_z{int(z)}_f{int(feed)}.3mf")
     if not os.path.exists(path):
         gcode = (
             "; Printloom Position Move\n"

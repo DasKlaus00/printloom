@@ -364,10 +364,14 @@ export default function Drucker() {
     sendOp('speed', tr('Geschwindigkeit {0}%', v), {}, { ...geometry, speed_factor: v })
   }
 
-  // G-code der Operation aus den aktuellen Werten laden → Startpunkt zum Bearbeiten.
+  // G-code der Operation aus den aktuellen WERTEN laden → Startpunkt zum Bearbeiten.
+  // Den evtl. schon gesetzten Override dieser Op vorher entfernen, damit die Vorlage
+  // immer die berechnete Bewegung ist (sonst käme der bestehende Override zurück).
   const loadGcodeForEdit = async (op, extra = {}) => {
     try {
-      const r = await controlService.previewOp({ op, geometry, ...extra })
+      const { [op]: _drop, ...restOv } = gcodeOverride
+      const geo = { ...geometry, gcode_override: restOv }
+      const r = await controlService.previewOp({ op, geometry: geo, ...extra })
       setGcodeOverride(m => ({ ...m, [op]: r?.data?.script || '' }))
     } catch {
       setGcodeOverride(m => ({ ...m, [op]: '' }))
@@ -376,13 +380,15 @@ export default function Drucker() {
 
   const activeCount = OPS.filter(o => useGcode[o]).length
   // „Custom Printer" = ausschließlich eigener G-code je Operation, KEINE Start-Positionen.
-  // Named Printer = nur Positions-Werte (fein justierbar), KEIN G-code-Editor.
+  // Named Printer = Positions-Werte MIT optionalem eigenem G-code je Op (Feinjustage).
   const isCustom = printerId === CUSTOM_PRINTER.id
-  // G-code-Editor je Op nur beim Custom Printer; bei den Named Printern gibt es
-  // keinen Override (Positions-Werte sind maßgeblich, siehe Backend-Gate).
+  // Custom Printer: reiner G-code-Editor je Op. Named Printer: Positions-Felder +
+  // Knopf „Eigenen G-code bearbeiten"; sobald ein Override existiert, zeigt die Karte
+  // den Editor (Override hat dann Vorrang, siehe Backend). „✕ zurück zu Werten" löscht ihn.
   const opGcodeProps = (op) => isCustom
     ? { gcodeOnly: true, overrideVal: gcodeOverride[op] ?? '', onLoadGcode: loadGcodeForEdit, onChangeGcode: setGcodeText, onClearGcode: clearGcode }
-    : {}
+    : { canOverride: true, overrideVal: (op in gcodeOverride) ? (gcodeOverride[op] ?? '') : undefined,
+        onLoadGcode: loadGcodeForEdit, onChangeGcode: setGcodeText, onClearGcode: clearGcode }
   // Drucker sitzt hinter dem letzten Regal → eject/load/Tür-X wandern mit der Regalzahl.
   const xOff = numRacks > 1 ? (numRacks - 1) * num(rackGap) : 0
   // Drucker-nahe Ops (Tür, eject, place, move_to_printer): X wird als ABSOLUTER

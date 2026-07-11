@@ -6,23 +6,15 @@ the farm loop / health checks are safe. The token is a user-supplied bearer
 token; it is intentionally kept out of the Docker image and git (db/ is mounted
 at runtime and gitignored).
 """
-import os
 from pathlib import Path
 
 from app.services import storage
-
-_DB_CANDIDATES = [
-    Path("/app/db"),
-    Path(os.path.join(os.path.dirname(__file__), "../../db")),
-]
+from app.paths import DB_DIR
 
 
 def _db_dir() -> Path:
-    for p in _DB_CANDIDATES:
-        if p.exists():
-            return p
-    _DB_CANDIDATES[-1].mkdir(parents=True, exist_ok=True)
-    return _DB_CANDIDATES[-1]
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+    return DB_DIR
 
 
 def _marketplace_file() -> str:

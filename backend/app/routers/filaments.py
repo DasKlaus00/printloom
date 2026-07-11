@@ -2,10 +2,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from app.services import storage
+from app.paths import db_path
 
 router = APIRouter()
 
-CUSTOM_PATH = "/app/db/filaments_custom.json"
+CUSTOM_PATH = db_path("filaments_custom.json")
 
 # ── Bambu Lab built-in catalog ─────────────────────────────────────────────
 BUILTIN_CATALOG = [

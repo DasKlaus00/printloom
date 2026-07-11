@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.142',
+    de: [
+      'Drucker-Tab: Bei JEDEM benannten Drucker (nicht nur „Custom Printer") lässt sich für die fünf Wechsel-Operationen — Tür öffnen, Tür schließen, Vor Drucker fahren, Platte auswerfen, Platte einlegen — wieder ein eigener G-code hinterlegen. Unter den Positions-Feldern gibt es den Knopf „⚙ Eigenen G-code bearbeiten (Feinjustage)": er lädt den aus deinen Werten berechneten G-code als Vorlage in ein Editorfeld, das du frei anpassen kannst. „Test" fährt exakt diesen G-code, die Farm nutzt ihn bei aktivem Op-Schalter. „✕ zurück zu Werten" entfernt den Override wieder. Ohne Override bleibt alles positionsbasiert (unverändert).',
+    ],
+    en: [
+      'Printer tab: every named printer (not only “Custom Printer”) can again have its own G-code for the five swap operations — open door, close door, move to printer, eject plate, place plate. Below the position fields there is an “⚙ Edit custom G-code (fine-tuning)” button: it loads the G-code computed from your values as a template into an editor you can freely adjust. “Test” runs exactly that G-code, and the farm uses it when the op’s toggle is on. “✕ back to values” removes the override. Without an override everything stays position-based (unchanged).',
+    ],
+  },
+  {
     version: '1.0.141',
     de: [
       'Tür (öffnen & schließen): Start-X/Y/Z sind jetzt der ERSTE Fahrpunkt der Bewegung — der Punkt, den der Arm zuerst anfährt. Die restliche Türbewegung (Bogen, Andrücken) folgt automatisch daraus, der Pin-Abstand ist der Bogenradius. Die Bewegung selbst bleibt dieselbe Form. ACHTUNG — Werte neu setzen: Da sich die Bedeutung der Felder geändert hat, trag den gewünschten ersten Fahrpunkt neu ein (aus dem „gesendeten G-code" ablesbar). Bei „Tür schließen" liegt der erste Punkt auf der Bogen-Seite (z. B. X~1036 / Y~18), nicht bei der geschlossenen Position. Immer zuerst mit „Test" prüfen.',

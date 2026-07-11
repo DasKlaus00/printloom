@@ -17,11 +17,12 @@ from app.db.database import get_db
 from app.models.models import UploadedFile, RackConfiguration
 from app.services import storage
 from app.services.rack_logic import DEFAULT_SLOT_TOLERANCE_MM
+from app.paths import db_path
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-SLOTS_PATH = "/app/db/rack_slots.json"
+SLOTS_PATH = db_path("rack_slots.json")
 
 DEFAULT_NUM_RACKS      = 3
 DEFAULT_SLOTS_PER_RACK = 6
@@ -350,7 +351,7 @@ def analyze_gcode_height(file_path: str) -> dict:
             "layer_height_mm": layer_height, "source": "gcode_move_scan"}
 
 
-RACKS_PATH = "/app/db/racks.json"
+RACKS_PATH = db_path("racks.json")
 
 
 def _load_racks() -> list:

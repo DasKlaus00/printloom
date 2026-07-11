@@ -11,12 +11,13 @@ import logging
 import os
 
 from app.services import storage
+from app.paths import db_path
 
 logger = logging.getLogger(__name__)
 
-VAPID_META_PATH = "/app/db/vapid.json"          # {"public_key": "<urlsafe b64>"}
-VAPID_PEM_PATH  = "/app/db/vapid_private.pem"    # PKCS8 PEM private key (for pywebpush)
-SUBS_PATH       = "/app/db/push_subs.json"       # [subscription_info, ...]
+VAPID_META_PATH = db_path("vapid.json")          # {"public_key": "<urlsafe b64>"}
+VAPID_PEM_PATH  = db_path("vapid_private.pem")    # PKCS8 PEM private key (for pywebpush)
+SUBS_PATH       = db_path("push_subs.json")       # [subscription_info, ...]
 # Apple Web Push validates the VAPID `sub` claim and rejects unreachable values
 # like a ".local" address. Use a plausible mailto; overridable via env so it can
 # be fixed without a rebuild if a provider is picky.

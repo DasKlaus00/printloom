@@ -26,7 +26,24 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Iterator, Optional
 
+from app.paths import resolve_ffmpeg
+
 logger = logging.getLogger(__name__)
+
+
+def _ffmpeg_bin() -> str:
+    """ffmpeg-Aufrufpfad: nativ die gebündelte Binärdatei, sonst PATH ("ffmpeg")."""
+    return resolve_ffmpeg()
+
+
+# In der fensterlosen Desktop-App (PyInstaller console=False) öffnet jeder
+# ffmpeg-Subprozess sonst kurz ein Konsolenfenster — bei Kamera-Retries flackert
+# es dauerhaft. CREATE_NO_WINDOW unterdrückt das (nur Windows; sonst leeres Dict).
+def _no_window_kwargs() -> dict:
+    import sys as _sys
+    if _sys.platform == "win32":
+        return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
+    return {}
 
 RTSP_PORT = 322
 _MAX_FRAME = 8_000_000      # sanity cap (8 MB) for a single JPEG
@@ -47,7 +64,7 @@ def _cmd(ip: str, access_code: str, single: bool, fps: int = 6) -> list:
     # RTSP demuxer rejects unknown ones ("Error opening input files: Option not
     # found"). A connect/first-frame timeout is enforced with a watchdog instead.
     cmd = [
-        "ffmpeg", "-loglevel", "error", "-nostdin",
+        _ffmpeg_bin(), "-loglevel", "error", "-nostdin",
         "-rtsp_transport", "tcp",
         "-i", _url(ip, access_code),
         "-an",                                 # X1C stream has no audio
@@ -113,6 +130,7 @@ class _Hub:
         self.proc = subprocess.Popen(
             _cmd(self.ip, self.code, single=False),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+            **_no_window_kwargs(),
         )
         threading.Thread(target=self._reader, daemon=True,
                          name=f"cam-hub-{self.ip}").start()
@@ -268,6 +286,7 @@ def _single_frame_oneshot(ip: str, access_code: str,
     proc = subprocess.Popen(
         _cmd(ip, access_code, single=True),
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+        **_no_window_kwargs(),
     )
     got_first = threading.Event()
     def _watchdog():

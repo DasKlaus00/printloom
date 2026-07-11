@@ -16,9 +16,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services import storage
+from app.paths import db_path
 
 router = APIRouter()
-PROJECT_PATH = "/app/db/project.json"
+PROJECT_PATH = db_path("project.json")
 
 
 def _new_id(prefix: str) -> str:

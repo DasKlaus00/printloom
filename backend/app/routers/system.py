@@ -13,6 +13,7 @@ from app.services import storage
 from app.db.database import SessionLocal
 from app.models.models import Device, PrinterType, SystemConfig
 from app.services import bambu_manager
+from app import paths
 
 router = APIRouter(tags=["System"])
 logger = logging.getLogger(__name__)
@@ -24,18 +25,9 @@ GITHUB_REPO      = os.getenv("GITHUB_REPO", "DasKlaus00/printloom")
 IMAGE_BASE       = os.getenv("PRINTLOOM_IMAGE", "ghcr.io/dasklaus00/printloom")
 CONTAINER_NAME   = os.getenv("PRINTLOOM_CONTAINER", "printloom-app")
 
-_DB_CANDIDATES = [
-    Path("/app/db"),
-    Path(os.path.join(os.path.dirname(__file__), "../../../db")),
-]
-
-
 def _db_dir() -> Path:
-    for p in _DB_CANDIDATES:
-        if p.exists():
-            return p
-    _DB_CANDIDATES[-1].mkdir(parents=True, exist_ok=True)
-    return _DB_CANDIDATES[-1]
+    paths.DB_DIR.mkdir(parents=True, exist_ok=True)
+    return paths.DB_DIR
 
 
 def _notif_file() -> Path:
@@ -66,7 +58,7 @@ async def _send_telegram(token: str, chat_id: str, text: str) -> bool:
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
 def _get_current_version() -> str:
-    for path in ["/app/version.txt", os.path.join(os.path.dirname(__file__), "../../../version.txt")]:
+    for path in [paths.version_file(), Path(os.path.dirname(__file__)) / "../../../version.txt"]:
         try:
             with open(path) as f:
                 return f.read().strip()
@@ -180,14 +172,23 @@ def _docker_available() -> bool:
 
 @router.get("/version")
 async def get_version(channel: str = "latest"):
-    """Update check for the selected channel: stable (git tags) or beta (:beta image)."""
+    """Update check for the selected channel: stable (git tags) or beta (:beta image).
+
+    Native Desktop-App: prüft GitHub-Releases auf einen Installer statt Docker/ghcr."""
     current = _get_current_version()
+    if paths.RUNTIME == "native":
+        from app.services import native_update
+        result = await native_update.check(current, channel or "latest")
+        result["docker_available"] = False
+        result["runtime"] = "native"
+        return result
     if (channel or "").lower() == "beta":
         result = await _check_beta(current)
     else:
         result = await _check_stable(current)
     # Whether one-click update is even possible (Docker socket mounted).
     result["docker_available"] = _docker_available()
+    result["runtime"] = paths.RUNTIME
     return result
 
 
@@ -267,11 +268,39 @@ async def _check_stable(current: str) -> dict:
 
 class UpdateIn(BaseModel):
     channel: Optional[str] = None
+    download_url: Optional[str] = None
+    asset_name: Optional[str] = None
 
 
 @router.post("/update")
 async def trigger_update(body: UpdateIn = UpdateIn()):
     """Update to / switch onto the chosen channel.
+
+    Native Desktop-App: lädt das Installer-Asset des passenden GitHub-Release und
+    startet es (der Installer schließt die App und ersetzt die Dateien)."""
+    if paths.RUNTIME == "native":
+        from app.services import native_update
+        url = body.download_url
+        asset = body.asset_name
+        if not url:
+            info = await native_update.check(_get_current_version(), (body.channel or "latest"))
+            if info.get("error"):
+                raise HTTPException(502, info["error"])
+            if not info.get("update_available"):
+                return {"success": False, "reason": "up_to_date", "current": info.get("current")}
+            url, asset = info.get("download_url"), info.get("asset_name")
+            if not url:
+                raise HTTPException(502, "Kein Installer-Asset im Release gefunden")
+        try:
+            res = await asyncio.to_thread(native_update.download_and_launch, url, asset)
+        except Exception as e:
+            raise HTTPException(502, f"Installer-Download/Start fehlgeschlagen: {e}")
+        return {"success": True, "method": "native", **res}
+    return await _trigger_update_docker(body)
+
+
+async def _trigger_update_docker(body: "UpdateIn"):
+    """Docker/Watchtower-Update (unverändert) — nur im Container-Betrieb.
 
     Preferred path uses the Docker socket: it pulls ghcr.io/.../printloom:<tag> and
     recreates the app container — this handles BOTH 'update within channel' and

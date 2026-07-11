@@ -5,6 +5,7 @@ build/
 __pycache__/
 .Python
 venv/
+.venv-build/
 env/
 ENV/
 *.egg-info/
@@ -39,3 +40,9 @@ htmlcov/
 # Extrahierte OTTOmat3D-Anleitung (riesig, gehoert nicht ins Repo)
 mk01/
 *.zip
+
+# Native-Desktop-Build-Artefakte (nicht ins Repo):
+#   vendor/ = gebuendelte ffmpeg.exe (~144 MB), Output/ = fertiger Installer.
+desktop/vendor/
+desktop/Output/
+desktop/build/
