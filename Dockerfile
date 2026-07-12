@@ -1,5 +1,7 @@
-# Build stage
-FROM node:20-alpine AS frontend-build
+# Build stage — läuft IMMER nativ auf der Build-Maschine ($BUILDPLATFORM):
+# der Vite-Build erzeugt architektur-unabhängiges JS/CSS; ihn unter QEMU für
+# arm64 zu emulieren würde den Multi-Arch-CI-Build nur unnötig verlangsamen.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-build
 
 WORKDIR /app/frontend
 

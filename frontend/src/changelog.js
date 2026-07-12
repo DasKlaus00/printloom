@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.145',
+    de: [
+      'Docker-Image jetzt auch für Raspberry Pi: Das Image wird als Multi-Arch gebaut (amd64 + arm64) — dasselbe :latest/:beta-Tag läuft damit unverändert auf PC/Proxmox UND auf einem Raspberry Pi 3/4/5 mit 64-bit Raspberry Pi OS. Jeder Host zieht automatisch die passende Architektur; an bestehenden Installationen ändert sich nichts. Hinweis: 32-bit-Systeme werden nicht unterstützt; für den Kamera-Stream empfiehlt sich ein Pi 4 oder 5.',
+    ],
+    en: [
+      'Docker image now also for Raspberry Pi: the image is built multi-arch (amd64 + arm64) — the same :latest/:beta tag runs unchanged on PC/Proxmox AND on a Raspberry Pi 3/4/5 with 64-bit Raspberry Pi OS. Each host automatically pulls its architecture; existing installations are unaffected. Note: 32-bit systems are not supported; a Pi 4 or 5 is recommended for the camera stream.',
+    ],
+  },
+  {
     version: '1.0.144',
     de: [
       'Auto Farm — Regal: Alle Fächer haben jetzt eine FESTE Zeilenhöhe. Leere, belegte, fertige und reservierte Fächer (↑ hineinragende Teile) sind exakt gleich groß — die Regale R1/R2/R3 bleiben immer auf gleicher Höhe ausgerichtet und nichts verrutscht mehr.',
