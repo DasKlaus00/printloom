@@ -346,6 +346,34 @@ async def _trigger_update_docker(body: "UpdateIn"):
             f"Kanalwechsel/Update nicht möglich: {e}")
 
 
+# ─── Kamera (global an/aus — Energiesparmodus für schwache Geräte) ──────────
+
+class CameraSettingsIn(BaseModel):
+    disabled: Optional[bool] = None
+
+
+@router.get("/camera")
+async def get_camera_settings():
+    """Globale Kamera-Einstellung: disabled=True → kein ffmpeg (Stream + Snapshots aus)."""
+    from app.services import appsettings
+    return appsettings.read_camera()
+
+
+@router.post("/camera")
+async def save_camera_settings(body: CameraSettingsIn):
+    from app.services import appsettings
+    cfg = appsettings.write_camera({"disabled": body.disabled} if body.disabled is not None else {})
+    if cfg.get("disabled"):
+        # Laufende ffmpeg-Hubs SOFORT beenden — der Nutzer schaltet gerade wegen
+        # der CPU-Last ab, nicht erst beim nächsten Leerlauf.
+        try:
+            from app.services import rtsp_camera
+            rtsp_camera.stop_all()
+        except Exception:
+            pass
+    return {"success": True, **cfg}
+
+
 # ─── Notification endpoints ──────────────────────────────────────────────────
 
 class NotifConfigIn(BaseModel):

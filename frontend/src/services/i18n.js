@@ -808,6 +808,15 @@ const EN_STRINGS = {
     '⚠ The file contains credentials (printer access code, HA/Telegram token). Keep it safe and do not share it.',
   '↑ Backup importieren': '↑ Import backup',
 
+  /* ── System: Kamera-Energiesparmodus ── */
+  'Kamera': 'Camera',
+  'Kamera komplett deaktivieren (Energiesparmodus)': 'Disable camera completely (power-saving mode)',
+  'Kamera ist komplett deaktiviert (Energiesparmodus)': 'Camera is completely disabled (power-saving mode)',
+  'Schaltet den Kamera-Transcoder (ffmpeg) vollständig ab — Live-Bild und Drucker-Snapshots sind dann aus. Empfohlen für schwache Geräte wie Raspberry Pi: der Live-Stream kostet sonst mehrere CPU-Kerne. Externe Webcams (HTTP-URL) funktionieren weiter.':
+    'Completely turns off the camera transcoder (ffmpeg) — live view and printer snapshots are then off. Recommended for low-power devices like a Raspberry Pi: the live stream otherwise costs several CPU cores. External webcams (HTTP URL) keep working.',
+  'Ein bereits laufender Kamera-Stream wird sofort beendet. Das Kamera-Panel im Auto-Farm-Dashboard zeigt einen Hinweis statt des Livebilds.':
+    'An already running camera stream is stopped immediately. The camera panel on the Auto Farm dashboard shows a notice instead of the live view.',
+
   /* ── Configuration ── */
   'Geräte': 'Devices',
   'Kameras': 'Cameras',

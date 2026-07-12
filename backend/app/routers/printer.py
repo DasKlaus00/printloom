@@ -807,6 +807,11 @@ async def capture_snapshot(device_id: int) -> Optional[str]:
                 r.raise_for_status()
                 img_bytes = r.content
         elif ip and code:
+            # Kamera global deaktiviert (Energiesparmodus) → kein ffmpeg-Snapshot,
+            # auch das Kammerlicht nicht anfassen. Externe webcam_url oben bleibt.
+            from app.services import appsettings
+            if appsettings.camera_disabled():
+                return None
             loop = asyncio.get_event_loop()
             if device:
                 _ensure_chamber_light_async(device)
@@ -858,6 +863,10 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(404, "Gerät nicht gefunden")
+    # Global deaktiviert (System → Kamera): klare Meldung VOR Licht/ffmpeg.
+    from app.services import appsettings
+    if appsettings.camera_disabled():
+        raise HTTPException(503, "Kamera in Printloom deaktiviert (System → Kamera) — Energiesparmodus")
     ip, code = device.ip_address, device.access_code
     boundary = "ottoframe"
 
@@ -908,6 +917,9 @@ def camera_frame(device_id: int, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(404, "Gerät nicht gefunden")
+    from app.services import appsettings
+    if appsettings.camera_disabled():
+        raise HTTPException(503, "Kamera in Printloom deaktiviert (System → Kamera) — Energiesparmodus")
     _ensure_chamber_light_async(device)
     try:
         img = rtsp_camera.single_frame(device.ip_address, device.access_code)

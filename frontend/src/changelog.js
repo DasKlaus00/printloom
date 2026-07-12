@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.146',
+    de: [
+      'Neuer Energiesparmodus für schwache Geräte (z. B. Raspberry Pi): Unter System → „Kamera" lässt sich die Kamera komplett deaktivieren. Dann startet nie ein ffmpeg-Transcoder (Live-Stream UND Drucker-Snapshots aus) — das spart mehrere CPU-Kerne und ~150 MB RAM. Ein gerade laufender Stream wird beim Umschalten sofort beendet. Externe Webcams (HTTP-URL) funktionieren weiter. Standard: Kamera an (nichts ändert sich ohne Zutun).',
+    ],
+    en: [
+      'New power-saving mode for low-power devices (e.g. Raspberry Pi): under System → “Camera” the camera can be disabled completely. No ffmpeg transcoder is ever started then (live stream AND printer snapshots off) — saving several CPU cores and ~150 MB RAM. A currently running stream is stopped immediately when toggled. External webcams (HTTP URL) keep working. Default: camera on (nothing changes unless you flip it).',
+    ],
+  },
+  {
     version: '1.0.145',
     de: [
       'Docker-Image jetzt auch für Raspberry Pi: Das Image wird als Multi-Arch gebaut (amd64 + arm64) — dasselbe :latest/:beta-Tag läuft damit unverändert auf PC/Proxmox UND auf einem Raspberry Pi 3/4/5 mit 64-bit Raspberry Pi OS. Jeder Host zieht automatisch die passende Architektur; an bestehenden Installationen ändert sich nichts. Hinweis: 32-bit-Systeme werden nicht unterstützt; für den Kamera-Stream empfiehlt sich ein Pi 4 oder 5.',

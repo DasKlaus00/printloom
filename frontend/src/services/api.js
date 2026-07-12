@@ -164,6 +164,8 @@ export const systemService = {
   getDashboardLayout:  () => api.get('/system/dashboard-layout'),
   saveDashboardLayout: (data) => api.put('/system/dashboard-layout', data),
   resetDashboardLayout:() => api.delete('/system/dashboard-layout'),
+  getCameraSettings:   () => api.get('/system/camera'),
+  saveCameraSettings:  (data) => api.post('/system/camera', data),
 }
 
 export const autofarmService = {

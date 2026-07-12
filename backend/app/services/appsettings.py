@@ -21,6 +21,44 @@ def _marketplace_file() -> str:
     return str(_db_dir() / "marketplace.json")
 
 
+# ── Kamera (global) ──────────────────────────────────────────────────────────
+# disabled=True schaltet den ffmpeg-Kamerapfad KOMPLETT ab (Live-Stream +
+# RTSPS-Snapshots) — für schwache Geräte (z. B. Raspberry Pi), wo der
+# MJPEG-Transcode sonst alle Kerne auslastet. Externe Webcams (HTTP-URL)
+# bleiben bewusst funktionsfähig (kostet keine CPU).
+
+CAMERA_DEFAULTS = {"disabled": False}
+
+
+def _camera_file() -> str:
+    return str(_db_dir() / "camera_settings.json")
+
+
+def read_camera() -> dict:
+    cfg = dict(CAMERA_DEFAULTS)
+    stored = storage.read_json(_camera_file(), {}) or {}
+    if isinstance(stored, dict):
+        cfg.update({k: v for k, v in stored.items() if k in CAMERA_DEFAULTS})
+    cfg["disabled"] = bool(cfg.get("disabled"))
+    return cfg
+
+
+def write_camera(cfg: dict) -> dict:
+    merged = read_camera()
+    if isinstance(cfg, dict) and "disabled" in cfg:
+        merged["disabled"] = bool(cfg["disabled"])
+    storage.write_json(_camera_file(), merged)
+    return merged
+
+
+def camera_disabled() -> bool:
+    """Fail-soft: bei Lesefehlern gilt die Kamera als AKTIV (kein Funktionsverlust)."""
+    try:
+        return bool(read_camera().get("disabled"))
+    except Exception:
+        return False
+
+
 MARKETPLACE_DEFAULTS = {
     "server_url": "https://marketplace.alexsz.de",
     "token": "",

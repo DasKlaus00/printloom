@@ -157,6 +157,23 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
   const [backupFeedback, setBackupFeedback] = useState(null)
   const importRef = useRef(null)
 
+  // Kamera global aus (Energiesparmodus, z. B. Raspberry Pi) — null = lädt noch
+  const [camDisabled, setCamDisabled] = useState(null)
+  useEffect(() => {
+    systemService.getCameraSettings()
+      .then(r => setCamDisabled(!!r.data?.disabled))
+      .catch(() => setCamDisabled(false))
+  }, [])
+  const toggleCamera = async () => {
+    const next = !camDisabled
+    setCamDisabled(next)
+    try {
+      await systemService.saveCameraSettings({ disabled: next })
+    } catch {
+      setCamDisabled(!next)   // Speichern fehlgeschlagen → zurückrollen
+    }
+  }
+
   const checkVersion = useCallback(async (silent = false) => {
     if (!silent) setChecking(true)
     setError(null)
@@ -508,6 +525,33 @@ docker compose up -d`}
       <div className="card p-6 space-y-3">
         <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Einrichtungs-Status')}</h2>
         <SetupHealth />
+      </div>
+
+      {/* Kamera — globaler Aus-Schalter (Energiesparmodus für schwache Geräte) */}
+      <div className="card p-6 space-y-3">
+        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Kamera')}</h2>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleCamera}
+            disabled={camDisabled === null}
+            aria-pressed={!!camDisabled}
+            title={tr('Kamera komplett deaktivieren (Energiesparmodus)')}
+            className={`w-10 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${camDisabled ? 'bg-red-600' : 'bg-surface-700'}`}
+          >
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${camDisabled ? 'left-[18px]' : 'left-0.5'}`} />
+          </button>
+          <span className={`text-sm ${camDisabled ? 'text-red-300' : 'text-surface-300'}`}>
+            {camDisabled ? tr('Kamera ist komplett deaktiviert (Energiesparmodus)') : tr('Kamera komplett deaktivieren (Energiesparmodus)')}
+          </span>
+        </div>
+        <p className="text-xs text-surface-500">
+          {tr('Schaltet den Kamera-Transcoder (ffmpeg) vollständig ab — Live-Bild und Drucker-Snapshots sind dann aus. Empfohlen für schwache Geräte wie Raspberry Pi: der Live-Stream kostet sonst mehrere CPU-Kerne. Externe Webcams (HTTP-URL) funktionieren weiter.')}
+        </p>
+        {camDisabled && (
+          <p className="text-[11px] text-amber-500/90">
+            {tr('Ein bereits laufender Kamera-Stream wird sofort beendet. Das Kamera-Panel im Auto-Farm-Dashboard zeigt einen Hinweis statt des Livebilds.')}
+          </p>
+        )}
       </div>
 
       {/* Backup & Restore */}

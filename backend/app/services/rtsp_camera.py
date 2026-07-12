@@ -272,10 +272,41 @@ def _get_hub(ip: str, access_code: str, first_frame_timeout: float) -> _Hub:
     return hub
 
 
+def _raise_if_disabled() -> None:
+    """Globaler Kamera-Aus-Schalter (System-Seite): auf schwachen Geräten (z. B.
+    Raspberry Pi) frisst der RTSPS→MJPEG-Transcode alle Kerne — dann darf hier
+    NIE ein ffmpeg starten. Zentral an beiden Einstiegen (stream/single_frame),
+    damit auch künftige Aufrufer automatisch abgedeckt sind."""
+    from app.services import appsettings
+    if appsettings.camera_disabled():
+        raise ConnectionError(
+            "Kamera in Printloom deaktiviert (System → Kamera) — Energiesparmodus")
+
+
+def stop_all() -> None:
+    """Alle laufenden Kamera-Hubs SOFORT beenden (z. B. wenn die Kamera global
+    deaktiviert wird): ffmpeg killen, Zuschauer-Iteratoren enden — nicht erst
+    auf den Leerlauf-Stopp warten."""
+    with _hubs_lock:
+        hubs = list(_hubs.values())
+    for hub in hubs:
+        try:
+            with hub.cond:
+                hub.dead = True
+                if not hub.error:
+                    hub.error = "Kamera deaktiviert"
+                hub.cond.notify_all()
+            hub._kill()
+            _drop_hub(hub)
+        except Exception:
+            pass
+
+
 def stream(ip: str, access_code: str, read_timeout: float = 15.0) -> Iterator[bytes]:
     """JPEG-Frames für einen Live-Zuschauer — über den geteilten Hub (EIN ffmpeg
     pro Drucker, egal wie viele Zuschauer). Wirft ConnectionError, wenn die Kamera
     nicht erreichbar ist (echter ffmpeg-Fehlertext)."""
+    _raise_if_disabled()
     return _get_hub(ip, access_code, read_timeout).frames_iter()
 
 
@@ -328,6 +359,7 @@ def _single_frame_oneshot(ip: str, access_code: str,
 def single_frame(ip: str, access_code: str) -> Optional[bytes]:
     """Ein JPEG-Frame (Snapshots). Läuft gerade ein Hub, wird dessen aktuelles
     Frame genommen (kein zweiter RTSP-Zugriff); sonst kurzer One-Shot-ffmpeg."""
+    _raise_if_disabled()
     with _hubs_lock:
         hub = _hubs.get((ip, access_code))
     if hub is not None and not hub.dead:
