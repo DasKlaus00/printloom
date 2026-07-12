@@ -274,6 +274,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
   const canUpdate = !updating && !checking
   const isBeta = channel === 'beta'
   const isNative = info?.runtime === 'native'   // native Desktop-App (Windows/macOS) statt Docker
+  const isNativeLinux = info?.runtime === 'native-linux'   // nativer Linux-Dienst (systemd, ohne Docker)
 
   const switchChannel = (ch) => {
     setChannel(ch)
@@ -432,8 +433,8 @@ docker compose up -d`}
         )}
 
         {/* No Docker socket → one-click update can't work; tell the user up front.
-            Nicht in der nativen App (dort ist Docker erwartungsgemäß nicht vorhanden). */}
-        {info && info.docker_available === false && !isNative && !['done', 'running'].includes(phase) && (
+            Nicht in den nativen Betriebsarten (dort ist Docker erwartungsgemäß nicht da). */}
+        {info && info.docker_available === false && !isNative && !isNativeLinux && !['done', 'running'].includes(phase) && (
           <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
             <span className="text-amber-400 text-sm mt-0.5">⚠</span>
             <p className="text-amber-300 text-xs">
@@ -453,7 +454,7 @@ docker compose up -d`}
           >
             {checking ? tr('Prüfe…') : tr('Auf Updates prüfen')}
           </button>
-          {!confirmUpdate && !['done', 'running'].includes(phase) && (
+          {!confirmUpdate && !isNativeLinux && !['done', 'running'].includes(phase) && (
             <button
               onClick={() => setConfirmUpdate(true)}
               disabled={!canUpdate}
@@ -489,7 +490,14 @@ docker compose up -d`}
           </div>
         )}
 
-        {isNative ? (
+        {isNativeLinux ? (
+          <div className="space-y-1.5">
+            <p className="text-[11px] text-surface-600">
+              {tr('Native Installation ohne Docker — Updates laufen per SSH-Befehl auf dem Gerät:')}
+            </p>
+            <pre className="bg-surface-900 rounded-lg px-3 py-2 text-xs font-mono text-emerald-300 select-all overflow-x-auto">bash ~/printloom/scripts/update-native.sh</pre>
+          </div>
+        ) : isNative ? (
           <p className="text-[11px] text-surface-600">
             {tr('Updates laufen')} <span className="text-surface-400">{tr('nur auf Knopfdruck')}</span> {tr('— kein automatisches Update im Hintergrund. Ein Klick lädt den passenden Installer vom GitHub-Release und startet ihn; die App wird geschlossen und aktualisiert.')}
           </p>

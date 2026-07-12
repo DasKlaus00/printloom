@@ -55,6 +55,12 @@ def _user_data_base() -> Path:
 
 
 def _resolve_runtime() -> str:
+    # Expliziter Override — der native Linux-Dienst (systemd, ohne Docker) setzt
+    # PRINTLOOM_RUNTIME=native-linux; Daten/Frontend lösen dann wie im Dev-Checkout
+    # auf (Repo-Verzeichnis), aber System-Seite/Update wissen um den Betriebsmodus.
+    env = (os.environ.get("PRINTLOOM_RUNTIME") or "").strip().lower()
+    if env:
+        return env
     if os.path.exists("/app"):
         return "docker"
     if _is_frozen():

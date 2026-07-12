@@ -61,3 +61,42 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ── Natives (Docker-loses) Installieren: fertiges Frontend als rollierendes
+  #    Release-Asset. Schwache Geräte (Raspberry Pi Zero 2 W, 512 MB) können den
+  #    Vite-Build nicht selbst ausführen — install-native.sh/update-native.sh
+  #    laden stattdessen dieses Tarball (Tag native-latest bzw. native-beta). ──
+  native-dist:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/beta')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
+
+      - name: Pack dist
+        run: tar czf printloom-frontend-dist.tar.gz -C frontend dist
+
+      - name: Publish rolling native release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: native-${{ github.ref_name == 'main' && 'latest' || 'beta' }}
+          name: Native install assets (${{ github.ref_name == 'main' && 'latest' || 'beta' }})
+          prerelease: ${{ github.ref_name != 'main' }}
+          make_latest: false
+          body: |
+            Rolling asset for the native (no-Docker) installation — updated on every ${{ github.ref_name }} push.
+            Not meant for manual download; used by `scripts/install-native.sh` / `scripts/update-native.sh`.
+          files: printloom-frontend-dist.tar.gz

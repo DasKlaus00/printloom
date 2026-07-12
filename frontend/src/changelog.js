@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.147',
+    de: [
+      'Neue native Installation OHNE Docker (systemd-Dienst) — für schwache Geräte wie den Raspberry Pi Zero 2 W (512 MB), auf denen Docker zu viel RAM kostet, und generell für alle, die ohne Docker arbeiten wollen (arm64 & amd64, Debian/Ubuntu/Raspberry Pi OS). Ein Befehl installiert alles: curl -fsSL https://raw.githubusercontent.com/DasKlaus00/printloom/main/scripts/install-native.sh | bash — inkl. fertigem Frontend (Vite-Build kommt als Release-Artefakt, schwache Geräte müssen nichts bauen), automatischen Speichergrenzen auf 512-MB-Geräten (schützt z. B. Klipper auf demselben Gerät) und ffmpeg nur bei genug RAM. Updates: bash ~/printloom/scripts/update-native.sh (auch für den Kanalwechsel). Die System-Seite erkennt den nativen Betrieb und zeigt den passenden Update-Weg. Doku: docs/INSTALL-NATIVE.md.',
+    ],
+    en: [
+      'New native installation WITHOUT Docker (systemd service) — for low-power devices like the Raspberry Pi Zero 2 W (512 MB) where Docker costs too much RAM, and generally for anyone who prefers no Docker (arm64 & amd64, Debian/Ubuntu/Raspberry Pi OS). One command installs everything: curl -fsSL https://raw.githubusercontent.com/DasKlaus00/printloom/main/scripts/install-native.sh | bash — including a prebuilt frontend (the Vite build ships as a release artifact, weak devices build nothing), automatic memory limits on 512 MB devices (protects e.g. Klipper on the same machine) and ffmpeg only with enough RAM. Updates: bash ~/printloom/scripts/update-native.sh (also switches channels). The System page detects native mode and shows the matching update path. Docs: docs/INSTALL-NATIVE.md.',
+    ],
+  },
+  {
     version: '1.0.146',
     de: [
       'Neuer Energiesparmodus für schwache Geräte (z. B. Raspberry Pi): Unter System → „Kamera" lässt sich die Kamera komplett deaktivieren. Dann startet nie ein ffmpeg-Transcoder (Live-Stream UND Drucker-Snapshots aus) — das spart mehrere CPU-Kerne und ~150 MB RAM. Ein gerade laufender Stream wird beim Umschalten sofort beendet. Externe Webcams (HTTP-URL) funktionieren weiter. Standard: Kamera an (nichts ändert sich ohne Zutun).',

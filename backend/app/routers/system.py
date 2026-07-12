@@ -170,6 +170,31 @@ def _docker_available() -> bool:
         return False
 
 
+async def _check_native_linux(current: str, channel: str) -> dict:
+    """Nativer Linux-Betrieb (systemd, ohne Docker): die neueste Version des
+    gewählten Kanals steht als version.txt im jeweiligen Branch — direkt lesen.
+    Update selbst läuft über scripts/update-native.sh (git pull + dist-Asset)."""
+    branch = "beta" if (channel or "").lower() == "beta" else "main"
+    result = {
+        "current": current, "channel": channel, "latest": None,
+        "update_available": False, "runtime": "native-linux",
+        "token_configured": bool(GITHUB_TOKEN), "error": None,
+    }
+    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{branch}/backend/version.txt"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(url)
+        if r.status_code == 200:
+            latest = r.text.strip()
+            result["latest"] = latest
+            result["update_available"] = _is_newer(latest, current)
+        else:
+            result["error"] = f"GitHub raw HTTP {r.status_code}"
+    except Exception as e:
+        result["error"] = f"GitHub nicht erreichbar: {str(e)[:120]}"
+    return result
+
+
 @router.get("/version")
 async def get_version(channel: str = "latest"):
     """Update check for the selected channel: stable (git tags) or beta (:beta image).
@@ -181,6 +206,10 @@ async def get_version(channel: str = "latest"):
         result = await native_update.check(current, channel or "latest")
         result["docker_available"] = False
         result["runtime"] = "native"
+        return result
+    if paths.RUNTIME == "native-linux":
+        result = await _check_native_linux(current, channel or "latest")
+        result["docker_available"] = False
         return result
     if (channel or "").lower() == "beta":
         result = await _check_beta(current)
@@ -278,6 +307,11 @@ async def trigger_update(body: UpdateIn = UpdateIn()):
 
     Native Desktop-App: lädt das Installer-Asset des passenden GitHub-Release und
     startet es (der Installer schließt die App und ersetzt die Dateien)."""
+    if paths.RUNTIME == "native-linux":
+        raise HTTPException(
+            501,
+            "Native Installation ohne Docker — Update per SSH ausführen: "
+            "bash ~/printloom/scripts/update-native.sh")
     if paths.RUNTIME == "native":
         from app.services import native_update
         url = body.download_url

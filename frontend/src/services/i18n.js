@@ -808,6 +808,10 @@ const EN_STRINGS = {
     '⚠ The file contains credentials (printer access code, HA/Telegram token). Keep it safe and do not share it.',
   '↑ Backup importieren': '↑ Import backup',
 
+  /* ── System: native Linux-Installation ── */
+  'Native Installation ohne Docker — Updates laufen per SSH-Befehl auf dem Gerät:':
+    'Native installation without Docker — updates run via SSH command on the device:',
+
   /* ── System: Kamera-Energiesparmodus ── */
   'Kamera': 'Camera',
   'Kamera komplett deaktivieren (Energiesparmodus)': 'Disable camera completely (power-saving mode)',
