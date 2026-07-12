@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.144',
+    de: [
+      'Auto Farm — Regal: Alle Fächer haben jetzt eine FESTE Zeilenhöhe. Leere, belegte, fertige und reservierte Fächer (↑ hineinragende Teile) sind exakt gleich groß — die Regale R1/R2/R3 bleiben immer auf gleicher Höhe ausgerichtet und nichts verrutscht mehr.',
+      'Auto Farm — Hinweise verschieben nichts mehr: Meldungen wie „Pausiert", „Wartet auf neue Jobs", Erfolg/Fehler-Feedback oder „Kein Gerät konfiguriert" erscheinen jetzt als schwebende Pille ganz oben mittig über dem Header (Overlay) statt im Seiteninhalt. Das Dashboard springt dadurch nicht mehr nach unten.',
+    ],
+    en: [
+      'Auto Farm — rack: all slots now have a FIXED row height. Empty, occupied, done and reserved slots (↑ overhanging parts) are exactly the same size — racks R1/R2/R3 always stay vertically aligned, nothing shifts anymore.',
+      'Auto Farm — notices no longer push content: messages like “Paused”, “Waiting for jobs”, success/error feedback or “No device configured” now appear as a floating pill at the top center over the header (overlay) instead of inside the page. The dashboard no longer jumps down.',
+    ],
+  },
+  {
     version: '1.0.143',
     de: [
       'Drucker-Tab (Regal & Greifen): In der Reihe „X-Position je Regal" gibt es jetzt ganz links ein Feld „🖨 Drucker". Damit setzt du die Start-X von „Vor Drucker fahren", „Platte auswerfen" und „Platte einlegen" gemeinsam an einer Stelle (absoluter Maschinen-X, inkl. Regal-Versatz). Der „→"-Knopf daneben fährt zum Testen vor den Drucker. (Die Reihe erscheint ab 2 Regalen.)',

@@ -1737,31 +1737,44 @@ function AutoFarm() {
     <div className="space-y-4" ref={rootRef}>
 
       {/* Feedback */}
-      {feedback && (
-        <div className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm border ${
-          feedback.ok
-            ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300'
-            : 'bg-red-950/40 border-red-800 text-red-300'
-        }`}>
-          <span className={`dot ${feedback.ok ? 'dot-green' : 'dot-red'}`} />
-          {feedback.msg}
-        </div>
-      )}
-
-      {!bambuId && (
-        <div className="px-4 py-3 rounded-lg bg-amber-950/40 border border-amber-800 text-amber-300 text-sm flex items-center gap-2">
-          <span className="dot dot-amber" /> {tr('Kein Bambu Lab Gerät konfiguriert — bitte erst unter Configuration einrichten')}
-        </div>
-      )}
-
-      {running && !curJobId && !pendingJobs.length && (
-        <div className="px-4 py-3 rounded-lg bg-surface-800/60 border border-surface-700 text-surface-400 text-sm flex items-center gap-2">
-          <span className="dot dot-gray animate-pulse" /> {tr('Wartet auf neue Jobs — "+ Datei" klicken um fortzufahren')}
-        </div>
-      )}
-      {running && !jobs.find(j => j.id === curJobId) && !!curJobId && (
-        <div className="px-4 py-3 rounded-lg bg-blue-950/40 border border-blue-800 text-blue-300 text-sm flex items-center gap-2">
-          <span className="dot dot-blue animate-pulse" /> {tr('Auto Farm läuft im Server — Status wird live aktualisiert')}
+      {/* ── Schwebende Hinweise: FIXED oben mittig über dem Header (z-50 > Header z-40).
+             Bewusst KEIN Element im Layoutfluss — ein auftauchender Hinweis darf das
+             Dashboard nicht mehr nach unten schieben. pageActive-Gate: die Seite bleibt
+             versteckt gemountet, das Overlay darf nur auf der aktiven Seite erscheinen. ── */}
+      {pageActive && (feedback || !bambuId || paused
+        || (running && !curJobId && !pendingJobs.length)
+        || (running && !!curJobId && !jobs.find(j => j.id === curJobId))) && (
+        <div className="fixed top-2 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-1.5 max-w-[92vw] pointer-events-none">
+          {feedback && (
+            <div className={`pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full text-sm border shadow-xl backdrop-blur-md ${
+              feedback.ok
+                ? 'bg-emerald-950/85 border-emerald-800 text-emerald-300'
+                : 'bg-red-950/85 border-red-800 text-red-300'
+            }`}>
+              <span className={`dot shrink-0 ${feedback.ok ? 'dot-green' : 'dot-red'}`} />
+              <span className="truncate">{feedback.msg}</span>
+            </div>
+          )}
+          {!bambuId && (
+            <div className="pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/85 border border-amber-800 text-amber-300 text-sm shadow-xl backdrop-blur-md">
+              <span className="dot dot-amber shrink-0" /> <span className="truncate">{tr('Kein Bambu Lab Gerät konfiguriert — bitte erst unter Configuration einrichten')}</span>
+            </div>
+          )}
+          {paused && (
+            <div className="pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/85 border border-amber-800 text-amber-300 text-sm shadow-xl backdrop-blur-md">
+              <span className="dot dot-amber animate-pulse shrink-0" /> <span className="truncate">{tr('Pausiert — warte auf Fortsetzen…')}</span>
+            </div>
+          )}
+          {running && !curJobId && !pendingJobs.length && (
+            <div className="pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-800/90 border border-surface-700 text-surface-400 text-sm shadow-xl backdrop-blur-md">
+              <span className="dot dot-gray animate-pulse shrink-0" /> <span className="truncate">{tr('Wartet auf neue Jobs — "+ Datei" klicken um fortzufahren')}</span>
+            </div>
+          )}
+          {running && !jobs.find(j => j.id === curJobId) && !!curJobId && (
+            <div className="pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-950/85 border border-blue-800 text-blue-300 text-sm shadow-xl backdrop-blur-md">
+              <span className="dot dot-blue animate-pulse shrink-0" /> <span className="truncate">{tr('Auto Farm läuft im Server — Status wird live aktualisiert')}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1855,13 +1868,6 @@ function AutoFarm() {
           )}
         </div>
       </div>
-
-      {/* Paused banner */}
-      {paused && (
-        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm border bg-amber-950/40 border-amber-800 text-amber-300">
-          <span className="dot dot-amber animate-pulse" /> {tr('Pausiert — warte auf Fortsetzen…')}
-        </div>
-      )}
 
       {/* ── Bearbeiten-Leiste: Panels ein-/ausblenden ── */}
       {editingDash && (
@@ -2259,7 +2265,7 @@ function AutoFarm() {
                         return (
                           <div
                             key={key}
-                            className={`flex items-center gap-1 px-1.5 py-1.5 rounded-lg border text-xs transition-colors ${
+                            className={`flex items-center gap-1 px-1.5 h-8 rounded-lg border text-xs transition-colors ${
                               isDone   ? 'border-amber-800/40 bg-amber-950/10' :
                               isActive ? 'border-blue-800/40 bg-blue-950/10' :
                               isLocked ? 'border-surface-600/50 bg-surface-800/50 opacity-70' :
