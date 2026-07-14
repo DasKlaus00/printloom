@@ -26,12 +26,29 @@ def _marketplace_file() -> str:
 # RTSPS-Snapshots) — für schwache Geräte (z. B. Raspberry Pi), wo der
 # MJPEG-Transcode sonst alle Kerne auslastet. Externe Webcams (HTTP-URL)
 # bleiben bewusst funktionsfähig (kostet keine CPU).
+# Seit v1.0.150 ist die Kamera bei NEUINSTALLATIONEN standardmäßig deaktiviert;
+# bestehende Installationen friert init_camera_default() auf „aktiv" ein.
 
-CAMERA_DEFAULTS = {"disabled": False}
+CAMERA_DEFAULTS = {"disabled": True}
 
 
 def _camera_file() -> str:
     return str(_db_dir() / "camera_settings.json")
+
+
+def init_camera_default() -> None:
+    """Einmal beim App-Start VOR init_db() aufrufen (main.py). Existiert noch
+    keine camera_settings.json, aber schon eine Datenbank (= bestehende
+    Installation, die gerade updated), wird die Kamera explizit auf AKTIV
+    festgeschrieben — der neue Default „deaktiviert" gilt nur für echte
+    Neuinstallationen."""
+    try:
+        if Path(_camera_file()).exists():
+            return
+        if (_db_dir() / "printloom.db").exists():
+            write_camera({"disabled": False})
+    except Exception:
+        pass
 
 
 def read_camera() -> dict:

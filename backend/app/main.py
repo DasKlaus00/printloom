@@ -22,6 +22,12 @@ logging.getLogger("app").setLevel(logging.INFO)
 for _noisy in ("uvicorn.access", "httpx", "httpcore", "paho", "paho.mqtt", "watchfiles"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
+# Kamera-Default festlegen BEVOR init_db() die Datenbank anlegt: nur eine echte
+# Neuinstallation (keine printloom.db) bekommt den neuen Default „Kamera aus";
+# bestehende Installationen werden auf „aktiv" eingefroren (kein Funktionsverlust).
+from app.services import appsettings as _appsettings
+_appsettings.init_camera_default()
+
 # Initialize database
 init_db()
 

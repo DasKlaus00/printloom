@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.150',
+    de: [
+      'Auto-Farm-Warteschlange: Bei benannten Platten zeigt das Badge jetzt Name UND Plattenzahl („Name · 1/12") statt nur des Namens.',
+      'Der Schalter „Kamera komplett deaktivieren" (Energiesparmodus) ist von System zu Konfiguration & Kameras (Tab „Kameras") umgezogen. NEU: Bei Neuinstallationen ist die Kamera jetzt standardmäßig komplett deaktiviert (kein ffmpeg) — wer das Live-Bild will, schaltet sie dort einmalig ein. Bestehende Installationen behalten beim Update ihren bisherigen Stand (Kamera bleibt an).',
+    ],
+    en: [
+      'Auto Farm queue: for named plates the badge now shows name AND plate count (“name · 1/12”) instead of the name alone.',
+      'The “disable camera completely” switch (power-saving mode) moved from System to Configuration & Cameras (“Cameras” tab). NEW: on fresh installations the camera is now completely disabled by default (no ffmpeg) — enable it there once if you want the live view. Existing installations keep their current state on update (camera stays on).',
+    ],
+  },
+  {
     version: '1.0.149',
     de: [
       'Multi-Plate-.3mf: Die im Slicer vergebenen PLATTEN-NAMEN (Orca/Bambu „Platte benennen") werden jetzt überall angezeigt statt nur „Platte 1/2": in der Platten-Liste des Datei-Browsers und auf den Karten der Auto-Farm-Warteschlange (Plattennummer weiterhin im Tooltip). Neue Jobs übernehmen den Namen automatisch — sowohl beim Einreihen einzelner Platten als auch beim Expandieren einer Mehr-Platten-Datei.',

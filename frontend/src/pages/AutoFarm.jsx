@@ -2067,10 +2067,10 @@ function AutoFarm() {
                       <div className="flex-1" />
                       {/* oben rechts: Höhe + Fächer-Bedarf */}
                       {job.plate != null && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300 shrink-0 max-w-[11rem] truncate"
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300 shrink-0 max-w-[13rem] truncate"
                           title={tr('Platte {0} aus Multi-Plate-.3mf', job.plate) + (job.plateName ? ` — ${job.plateName}` : '')}>
                           {job.plateName
-                            ? job.plateName
+                            ? `${job.plateName} · ${job.plate}${job.plateTotal ? `/${job.plateTotal}` : ''}`
                             : (job.plateTotal > 1 ? tr('Platte {0}/{1}', job.plate, job.plateTotal) : tr('Platte {0}', job.plate))}
                         </span>
                       )}
