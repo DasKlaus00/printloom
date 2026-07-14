@@ -312,10 +312,53 @@ function ColHeader({ label, width, sortable, sortActive, sortDir, onSort, values
   )
 }
 
+// Aufklappbare Platten-Liste einer Multi-Plate-.3mf: Zeit/Höhe/Filament JE Platte
+// (plattengenau vom Server gelesen) + Einzeldruck / einzeln in die Queue.
+function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sending }) {
+  const { tr } = useLanguage()
+  const [plates, setPlates] = useState(null)   // null = lädt
+  useEffect(() => {
+    let alive = true
+    fileService.getPlatesMeta(file.id)
+      .then(r => { if (alive) setPlates(r.data?.plates ?? []) })
+      .catch(() => { if (alive) setPlates([]) })
+    return () => { alive = false }
+  }, [file.id])
+  const fmt = (s) => {
+    if (!s) return '—'
+    const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60)
+    return h ? `${h}h ${m}m` : `${m}m`
+  }
+  if (plates === null) return <p className="text-[10px] text-surface-600 mt-1.5">{tr('Lade Platten…')}</p>
+  if (!plates.length)  return <p className="text-[10px] text-surface-600 mt-1.5">{tr('Keine Platten-Infos in der Datei gefunden')}</p>
+  return (
+    <div className="mt-1.5 space-y-1 border-t border-surface-800/50 pt-1.5">
+      {plates.map(p => (
+        <div key={p.plate} className="flex items-center gap-2 text-[11px]">
+          <span className="font-mono text-blue-300 w-16 shrink-0">{tr('Platte {0}', p.plate)}</span>
+          <span className="font-mono text-surface-400 w-16 shrink-0" title={tr('Druckzeit dieser Platte')}>⏱ {fmt(p.time_seconds)}</span>
+          <span className="font-mono text-surface-400 w-20 shrink-0" title={tr('Objekthöhe dieser Platte')}>↕ {p.max_z_mm ? `${p.max_z_mm} mm` : '—'}</span>
+          {p.filament_g != null && p.filament_g !== '' && (
+            <span className="font-mono text-surface-600 w-16 shrink-0 hidden sm:inline">{p.filament_g} g</span>
+          )}
+          <span className="flex-1" />
+          <button onClick={() => onQueuePlate(file, p.plate, plates.length)} disabled={enqueuing}
+            className="btn btn-ghost btn-sm text-[10px] disabled:opacity-50"
+            title={tr('Nur diese Platte in die Auto-Farm-Queue legen')}>{tr('+ Queue')}</button>
+          <button onClick={() => onSendPlate(file, p.plate)} disabled={!bambuId || sending === file.id}
+            className="btn btn-ghost btn-sm text-[10px] text-cyan-400 disabled:opacity-50"
+            title={bambuId ? tr('Nur diese Platte sofort drucken') : tr('Kein Bambu-Gerät konfiguriert')}>{tr('▶ Drucken')}</button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function FileRow({ file, meta, folderOptions, folderById, searching, selected, onToggleSelect,
                   onSaveField, onMoveFolder, onDelete, onQueue, onSend, bambuId, sending, enqueuing,
-                  amsSlots, catalog }) {
+                  amsSlots, catalog, onQueuePlate, onSendPlate }) {
   const { tr } = useLanguage()
+  const [showPlates, setShowPlates] = useState(false)
   const [name, setName]         = useState(file.original_filename || '')
   const [pn, setPn]             = useState(file.part_number || '')
   const [material, setMaterial] = useState(file.material || '')
@@ -374,11 +417,25 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] text-surface-600 font-mono">{(file.file_size / 1024).toFixed(1)} KB · ID {file.id}</span>
             {isPrintable && <MetaChips meta={meta} />}
+            {/* Multi-Plate-Badge: aufklappen → Platten einzeln (Zeit/Höhe/Druck/Queue) */}
+            {isPrintable && (meta?.plate_count ?? 0) > 1 && (
+              <button onClick={() => setShowPlates(s => !s)}
+                className={`text-[10px] px-1.5 py-0.5 rounded border font-mono transition-colors ${
+                  showPlates ? 'border-blue-600 bg-blue-950/50 text-blue-200'
+                             : 'border-blue-800/50 bg-blue-950/30 text-blue-300 hover:border-blue-600'}`}
+                title={tr('Diese Datei enthält {0} Platten — aufklappen für Einzeldruck', meta.plate_count)}>
+                🗂 {tr('{0} Platten', meta.plate_count)} {showPlates ? '▴' : '▾'}
+              </button>
+            )}
             {searching && file.folder_id != null && folderById[file.folder_id] && (
               <span className="text-[10px] text-surface-600">📁 {folderById[file.folder_id].name}</span>
             )}
           </div>
           {isPrintable && <FileFilaments fileId={file.id} amsSlots={amsSlots} />}
+          {showPlates && (
+            <PlateList file={file} onQueuePlate={onQueuePlate} onSendPlate={onSendPlate}
+              bambuId={bambuId} enqueuing={enqueuing} sending={sending} />
+          )}
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -731,15 +788,46 @@ function FileLibrary() {
     loadFolders()
   }
 
-  const handleSend = async (file) => {
+  const handleSend = async (file, plate = null) => {
     if (!bambuId) return showFeedback(tr('Kein Bambu Lab Gerät konfiguriert'), false)
     setSending(file.id)
     try {
-      const r = await printerService.sendFile(bambuId, file.id, useAms)
-      showFeedback(r.data.message)
+      const r = await printerService.sendFile(bambuId, file.id, useAms, null, plate)
+      showFeedback(plate != null ? tr('Platte {0}: {1}', plate, r.data.message ?? '✓') : r.data.message)
     } catch (e) {
       showFeedback(e.response?.data?.detail ?? tr('Senden fehlgeschlagen'), false)
     } finally { setSending(null) }
+  }
+
+  // Genau EINE Platte einer Multi-Plate-.3mf in die Queue (aus dem Platten-Dropdown).
+  const enqueuePlate = async (file, plate, plateTotal) => {
+    setEnqueuing(true)
+    try {
+      const [statusRes, queueRes] = await Promise.all([
+        autofarmService.getStatus(true).catch(() => ({ data: {} })),
+        autofarmService.getQueue().catch(() => ({ data: [] })),
+      ])
+      const running = !!statusRes.data?.running
+      const cur = queueRes.data ?? []
+      const id = cur.length ? Math.max(...cur.map(j => j.id ?? 0)) + 1 : 1
+      const j = {
+        id, fileId: file.id, fileName: file.original_filename,
+        slot: null, amsMap: '', status: 'pending', plate, plateTotal,
+        objectHeight: null, progress: 0, remaining: 0,
+      }
+      if (running) {
+        await autofarmService.enqueue({
+          id: j.id, fileId: j.fileId, fileName: j.fileName,
+          slot: '1-0', amsMap: '', plate, plateTotal,
+        })
+      } else {
+        await autofarmService.saveQueue([...cur, j])
+      }
+      window.dispatchEvent(new CustomEvent('printloom:queueChanged'))
+      showFeedback(tr('Platte {0} in die Queue gelegt', plate))
+    } catch {
+      showFeedback(tr('In die Queue legen fehlgeschlagen'), false)
+    } finally { setEnqueuing(false) }
   }
 
   const toggleAms = (v) => { setUseAms(v); localStorage.setItem('ottomat3d_use_ams', String(v)) }
@@ -1052,6 +1140,8 @@ function FileLibrary() {
                 onDelete={handleDelete}
                 onQueue={enqueueFiles}
                 onSend={handleSend}
+                onQueuePlate={enqueuePlate}
+                onSendPlate={(file, plate) => handleSend(file, plate)}
                 bambuId={bambuId}
                 sending={sending}
                 enqueuing={enqueuing}

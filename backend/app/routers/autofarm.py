@@ -2621,7 +2621,9 @@ async def enqueue_job(job: EnqueueRequest):
         finally:
             db.close()
         if f and os.path.exists(f.file_path) and f.file_type in (".3mf", ".gcode"):
-            result = analyze_3mf_height(f.file_path) if f.file_type == ".3mf" else analyze_gcode_height(f.file_path)
+            # Plattengenau: Multi-Plate-Jobs bekommen die Höhe IHRER Platte,
+            # nicht die der ersten (falsche Fach-Reservierung sonst).
+            result = analyze_3mf_height(f.file_path, job.plate) if f.file_type == ".3mf" else analyze_gcode_height(f.file_path)
             lc = result.get("layer_count", 0)
             lh = result.get("layer_height_mm", 0.0)
             mz = result.get("max_z_mm", 0.0)

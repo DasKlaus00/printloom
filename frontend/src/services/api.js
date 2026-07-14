@@ -53,6 +53,7 @@ export const fileService = {
   getAmsInfo:   (id)       => api.get(`/files/${id}/ams-info`),
   deepAnalyze:  (id)       => api.get(`/files/${id}/deep-analyze`),
   getQuickMeta: (id)       => api.get(`/files/${id}/quick-meta`),
+  getPlatesMeta:(id)       => api.get(`/files/${id}/plates-meta`),
   thumbnailUrl: (id)       => `/api/files/${id}/thumbnail`,
 }
 
@@ -103,7 +104,7 @@ function _getPrinterStatus(deviceId) {
 }
 
 export const printerService = {
-  sendFile:             (deviceId, fileId, useAms = true, amsSlot = null) => api.post(`/printer/send/${deviceId}/${fileId}`, null, { params: { use_ams: useAms, ...(amsSlot !== null && amsSlot !== undefined && { ams_slot: amsSlot }) } }),
+  sendFile:             (deviceId, fileId, useAms = true, amsSlot = null, plate = null) => api.post(`/printer/send/${deviceId}/${fileId}`, null, { params: { use_ams: useAms, ...(amsSlot !== null && amsSlot !== undefined && { ams_slot: amsSlot }), ...(plate !== null && plate !== undefined && { plate }) } }),
   sendGcode:            (deviceId, gcode)  => api.post(`/printer/gcode/${deviceId}`, null, { params: { gcode } }),
   getStatus:            (deviceId)         => _getPrinterStatus(deviceId),
   cameraStreamUrl:      (deviceId)         => `/api/printer/camera/${deviceId}`,
@@ -135,7 +136,7 @@ export const rackManagerService = {
   takeFromMagazine:(rack)              => api.post('/rack-manager/magazine/take', { rack }),
   updateSlot:    (slotId, data)        => api.put(`/rack-manager/slots/${slotId}`, data),
   clearSlots:    (body)                => api.post('/rack-manager/slots/clear', body ?? {}),
-  analyzeFile:   (fileId)              => api.post(`/rack-manager/analyze/${fileId}`),
+  analyzeFile:   (fileId, plate = null) => api.post(`/rack-manager/analyze/${fileId}`, null, { params: (plate !== null && plate !== undefined) ? { plate } : {} }),
   getRacks:      ()                    => api.get('/rack-manager/racks'),
   createRack:    (data)                => api.post('/rack-manager/racks', data),
   deleteRack:    (rackId)              => api.delete(`/rack-manager/racks/${rackId}`),

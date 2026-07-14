@@ -175,7 +175,7 @@ def _parse_gcode_header_height(header: str) -> dict:
     return {}
 
 
-def analyze_3mf_height(file_path: str) -> dict:
+def analyze_3mf_height(file_path: str, plate: int | None = None) -> dict:
     """
     Extract print height from a .3mf (sliced Bambu/PrusaSlicer) file.
 
@@ -183,10 +183,29 @@ def analyze_3mf_height(file_path: str) -> dict:
       1. Metadata/slice_info.config  — <metadata key="height"> or layer_height + top_layer
       2. Embedded *.gcode header     — max_layer_z / layer_height × total_layer_num
       3. Vertex Z scan               — max Z coordinate in the raw mesh (fallback)
+
+    `plate`: bei Multi-Plate-.3mf die Höhe GENAU DIESER Platte (plate_N.gcode-Header)
+    statt der ersten — sonst bekommt jede Platte fälschlich die Höhe von Platte 1.
     """
     try:
         with zipfile.ZipFile(file_path, 'r') as zf:
             names = zf.namelist()
+
+            # Gewählte Platte: direkt deren G-code-Header lesen (der globale
+            # slice_info-Shortcut kennt nur EINEN Höhenwert fürs ganze Projekt).
+            if plate is not None:
+                target = next((n for n in names
+                               if re.match(rf'Metadata/plate_{int(plate)}\.gcode$', n, re.IGNORECASE)), None)
+                if target:
+                    try:
+                        with zf.open(target) as gf:
+                            header = gf.read(65536).decode('utf-8', errors='ignore')
+                        result = _parse_gcode_header_height(header)
+                        if result:
+                            return result
+                    except Exception as e:
+                        logger.debug(f"plate {plate} gcode header parse failed: {e}")
+                # Platte nicht gefunden/lesbar → normale (Platte-1-)Logik unten.
 
             # 1. slice_info.config
             si_path = next((n for n in names if n.lower().endswith('slice_info.config')), None)
@@ -612,8 +631,9 @@ def delete_rack(rack_id: str):
 
 
 @router.post("/analyze/{file_id}")
-def analyze_file(file_id: int, db: Session = Depends(get_db)):
-    """Parse a .gcode or .3mf file and return its maximum print height."""
+def analyze_file(file_id: int, plate: int | None = None, db: Session = Depends(get_db)):
+    """Parse a .gcode or .3mf file and return its maximum print height.
+    `plate`: bei Multi-Plate-.3mf die Höhe genau dieser Platte."""
     f = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not f:
         raise HTTPException(404, "Datei nicht gefunden")
@@ -623,7 +643,7 @@ def analyze_file(file_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Datei nicht auf Disk gefunden")
 
     if f.file_type == ".3mf":
-        result = analyze_3mf_height(f.file_path)
+        result = analyze_3mf_height(f.file_path, plate)
     else:
         result = analyze_gcode_height(f.file_path)
 

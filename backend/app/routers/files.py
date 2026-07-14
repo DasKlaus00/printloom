@@ -332,6 +332,7 @@ async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
         sig = None
     try:
         plate_times = {}
+        plate_count = 0
         if file.file_type == '.3mf':
             with zipfile.ZipFile(file.file_path, 'r') as zf:
                 names = zf.namelist()
@@ -340,6 +341,7 @@ async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
                     [n for n in names if re.match(r'Metadata/plate_\d+\.gcode$', n, re.IGNORECASE)],
                     key=lambda n: int(re.search(r'plate_(\d+)', n).group(1))
                 )
+                plate_count = len(plate_gcodes)
                 gcode_path = plate_gcodes[0] if plate_gcodes else next(
                     (n for n in names if n.lower().endswith('.gcode')), None
                 )
@@ -361,6 +363,8 @@ async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
             # Multi-Plate: Slicer-Zeit je Platte ({"1": sec, …}) — der Planer/die ETA
             # rechnen sonst für JEDE Platte mit der Zeit der ersten.
             "plate_times":    plate_times,
+            # Anzahl Platten (Badge „enthält N Platten" im Datei-Browser).
+            "plate_count":    plate_count,
         }
         if sig:
             _QMETA_CACHE[file_id] = (sig, result)
@@ -368,6 +372,66 @@ async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         logger.warning(f"quick-meta failed for {file_id}: {e}")
         return {"estimated_time": None, "time_seconds": None, "filament_g": None, "filament_m": None, "max_z_mm": None}
+
+
+_PLATES_META_CACHE: dict = {}   # file_id → (sig, result)
+
+
+@router.get("/{file_id}/plates-meta")
+async def get_plates_meta(file_id: int, db: Session = Depends(get_db)):
+    """Metadaten JE PLATTE einer Multi-Plate-.3mf: Zeit, Höhe, Filament, Schichten.
+
+    Liest pro Platte den plate_N.gcode-Header (64 KB) — Höhe/Zeit sind damit
+    plattengenau statt (wie früher) die Werte der ersten Platte für alle.
+    slice_info-Zeiten (prediction) dienen als Fallback."""
+    file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    if file.file_type != '.3mf' or not os.path.exists(file.file_path):
+        return {"plates": []}
+    try:
+        sig = _qmeta_sig(file.file_path)
+        cached = _PLATES_META_CACHE.get(file_id)
+        if cached and cached[0] == sig:
+            return cached[1]
+    except OSError:
+        sig = None
+    plates = []
+    try:
+        with zipfile.ZipFile(file.file_path, 'r') as zf:
+            names = zf.namelist()
+            predictions = _plate_predictions(zf)
+            plate_gcodes = sorted(
+                [n for n in names if re.match(r'Metadata/plate_\d+\.gcode$', n, re.IGNORECASE)],
+                key=lambda n: int(re.search(r'plate_(\d+)', n).group(1))
+            )
+            for gname in plate_gcodes:
+                num = int(re.search(r'plate_(\d+)', gname).group(1))
+                entry = {"plate": num, "time_seconds": None, "estimated_time": None,
+                         "max_z_mm": None, "filament_g": None, "layer_count": None}
+                try:
+                    with zf.open(gname) as gf:
+                        parsed = _parse_header(gf.read(65536).decode('utf-8', errors='ignore'))
+                    entry.update({
+                        "time_seconds":   parsed.get("time_seconds"),
+                        "estimated_time": parsed.get("estimated_time"),
+                        "max_z_mm":       parsed.get("max_z_mm"),
+                        "filament_g":     parsed.get("total_filament_g"),
+                        "layer_count":    parsed.get("layer_count"),
+                    })
+                except Exception:
+                    pass
+                # Fallback-Zeit aus slice_info (prediction), falls der Header keine hat.
+                if not entry["time_seconds"] and predictions.get(str(num)):
+                    entry["time_seconds"] = predictions[str(num)]
+                plates.append(entry)
+    except Exception as e:
+        logger.warning(f"plates-meta failed for {file_id}: {e}")
+        return {"plates": []}
+    result = {"plates": plates}
+    if sig:
+        _PLATES_META_CACHE[file_id] = (sig, result)
+    return result
 
 
 @router.get("/{file_id}/deep-analyze")

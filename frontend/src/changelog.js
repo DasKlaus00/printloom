@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.148',
+    de: [
+      'Multi-Plate-.3mf (Orca/Bambu) jetzt PLATTENGENAU: Höhe und Druckzeit werden pro Platte aus deren eigenem G-code gelesen — bisher bekam jede Platte fälschlich die Werte der ersten (falsche Fach-Reservierung und Zeitplanung). Gilt für Queue-Jobs, laufende Farm (enqueue) und die Höhen-Analyse.',
+      'Datei-Browser: Multi-Plate-Dateien zeigen ein Badge „🗂 N Platten". Aufklappen listet jede Platte mit ihrer Zeit, Höhe und Filamentmenge — und jede Platte lässt sich einzeln SOFORT drucken oder einzeln in die Auto-Farm-Queue legen. Der Direkt-Druck sendet dabei nur die gewählte Platte (umgepackt als Einzel-Platten-.3mf, plattengenaue AMS-Zuordnung).',
+    ],
+    en: [
+      'Multi-plate .3mf (Orca/Bambu) is now PLATE-ACCURATE: height and print time are read per plate from its own G-code — previously every plate wrongly got the first plate’s values (wrong slot reservation and scheduling). Applies to queue jobs, the running farm (enqueue) and the height analysis.',
+      'File browser: multi-plate files show a “🗂 N plates” badge. Expanding lists each plate with its time, height and filament — and each plate can be printed immediately on its own or added individually to the Auto Farm queue. Direct print sends only the selected plate (repacked as a single-plate .3mf, plate-accurate AMS mapping).',
+    ],
+  },
+  {
     version: '1.0.147',
     de: [
       'Neue native Installation OHNE Docker (systemd-Dienst) — für schwache Geräte wie den Raspberry Pi Zero 2 W (512 MB), auf denen Docker zu viel RAM kostet, und generell für alle, die ohne Docker arbeiten wollen (arm64 & amd64, Debian/Ubuntu/Raspberry Pi OS). Ein Befehl installiert alles: curl -fsSL https://raw.githubusercontent.com/DasKlaus00/printloom/main/scripts/install-native.sh | bash — inkl. fertigem Frontend (Vite-Build kommt als Release-Artefakt, schwache Geräte müssen nichts bauen), automatischen Speichergrenzen auf 512-MB-Geräten (schützt z. B. Klipper auf demselben Gerät) und ffmpeg nur bei genug RAM. Updates: bash ~/printloom/scripts/update-native.sh (auch für den Kanalwechsel). Die System-Seite erkennt den nativen Betrieb und zeigt den passenden Update-Weg. Doku: docs/INSTALL-NATIVE.md.',

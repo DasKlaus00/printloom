@@ -1227,7 +1227,9 @@ function AutoFarm() {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, ...updates } : j))
 
   const analyzeFile = (jobId, fileId, plate = null) => {
-    rackManagerService.analyzeFile(fileId)
+    // Plattengenau: Multi-Plate-Jobs analysieren IHRE Platte (Höhe/Fächer),
+    // nicht die erste.
+    rackManagerService.analyzeFile(fileId, plate)
       .then(r => {
         const computed = r.data.computed_height_mm ?? null
         setJobs(prev => {

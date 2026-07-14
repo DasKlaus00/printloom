@@ -808,6 +808,19 @@ const EN_STRINGS = {
     '⚠ The file contains credentials (printer access code, HA/Telegram token). Keep it safe and do not share it.',
   '↑ Backup importieren': '↑ Import backup',
 
+  /* ── Datei-Browser: Multi-Plate-Dropdown ── */
+  '{0} Platten': '{0} plates',
+  'Diese Datei enthält {0} Platten — aufklappen für Einzeldruck': 'This file contains {0} plates — expand for per-plate printing',
+  'Lade Platten…': 'Loading plates…',
+  'Keine Platten-Infos in der Datei gefunden': 'No plate info found in the file',
+  'Druckzeit dieser Platte': 'Print time of this plate',
+  'Objekthöhe dieser Platte': 'Object height of this plate',
+  'Nur diese Platte in die Auto-Farm-Queue legen': 'Add only this plate to the Auto Farm queue',
+  'Nur diese Platte sofort drucken': 'Print only this plate now',
+  '▶ Drucken': '▶ Print',
+  'Platte {0}: {1}': 'Plate {0}: {1}',
+  'Platte {0} in die Queue gelegt': 'Plate {0} added to the queue',
+
   /* ── System: native Linux-Installation ── */
   'Native Installation ohne Docker — Updates laufen per SSH-Befehl auf dem Gerät:':
     'Native installation without Docker — updates run via SSH command on the device:',

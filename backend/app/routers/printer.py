@@ -1102,8 +1102,10 @@ async def list_file_plates(file_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/send/{device_id}/{file_id}")
-async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = True, ams_slot: Optional[int] = None, db: Session = Depends(get_db)):
-    """Datei per FTPS auf den Drucker laden und Druck per MQTT starten."""
+async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = True, ams_slot: Optional[int] = None,
+                               plate: Optional[int] = None, db: Session = Depends(get_db)):
+    """Datei per FTPS auf den Drucker laden und Druck per MQTT starten.
+    `plate`: bei Multi-Plate-.3mf GENAU diese Platte drucken (sonst die erste)."""
     device = _get_bambu_device(device_id, db)
 
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
@@ -1202,7 +1204,7 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
     elif ams_slot is not None:
         ams_mapping = _get_ams_mapping(file.file_path, file.file_type, ams_slot_override=ams_slot, diag=diag_mapping)
     else:
-        f_types, f_colors = _read_filament_info(file.file_path, file.file_type)
+        f_types, f_colors = _read_filament_info(file.file_path, file.file_type, plate)
         # Live-AMS lesen (Drucker antwortet erst im Vollreport mit ams)
         await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
         ams_raw = {}
@@ -1241,7 +1243,7 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
             diag_mapping.append(f"Live-Match (Material+Farbe, nie materialübergreifend): {ams_mapping}")
         # Auf Slicer-Slot-Positionen heben (Datei druckt z. B. nur mit Filament 3
         # → [-1, -1, Tray]); no-op wenn die Filamente ohnehin 1..n sind.
-        expanded = _expand_mapping_to_slots(ams_mapping, file.file_path, file.file_type)
+        expanded = _expand_mapping_to_slots(ams_mapping, file.file_path, file.file_type, plate)
         if expanded != ams_mapping:
             diag_mapping.append(f"Auf Slicer-Slots gehoben (unbenutzte = -1): {expanded}")
             ams_mapping = expanded
@@ -1254,18 +1256,20 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
     if file.file_type == '.3mf':
         plates = _list_plates(file.file_path)
         if len(plates) > 1:
+            # Gewünschte Platte (Datei-Browser-Dropdown) — sonst die erste.
+            target = plate if (plate is not None and plate in plates) else plates[0]
             try:
-                upload_path = await loop.run_in_executor(None, _repack_single_plate, file.file_path, plates[0])
+                upload_path = await loop.run_in_executor(None, _repack_single_plate, file.file_path, target)
                 repack_tmp = upload_path
                 plate_param = "Metadata/plate_1.gcode"
                 _diag_add(sess, "Multi-Plate umpacken", [
-                    f"{len(plates)} Platten in der Datei → Platte {plates[0]} als Einzel-.3mf",
+                    f"{len(plates)} Platten in der Datei → Platte {target} als Einzel-.3mf",
                     f"Upload-Größe: {os.path.getsize(upload_path) / 1e6:.1f} MB (statt {os.path.getsize(file.file_path) / 1e6:.1f} MB)",
                 ])
             except Exception as e:
                 _diag_add(sess, "Multi-Plate umpacken", [f"Fehlgeschlagen ({e}) — sende Originaldatei"], ok=False)
                 upload_path, repack_tmp = file.file_path, None
-                plate_param = _get_plate_gcode_param(file.file_path)
+                plate_param = _get_plate_gcode_param(file.file_path, target)
         else:
             plate_param = _get_plate_gcode_param(file.file_path)
 
