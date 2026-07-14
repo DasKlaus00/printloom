@@ -694,7 +694,7 @@ function QueuePlanner({ jobs, tr }) {
               <span className="text-surface-300 flex-1 min-w-0 truncate">{j.fileName?.replace(/\.[^.]+$/, '')}</span>
               {j.plate != null && (
                 <span className="shrink-0 font-mono text-[9px] px-1 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300/90"
-                  title={tr('Platte {0} von {1}', j.plate, j.plateTotal ?? '?')}>
+                  title={tr('Platte {0} von {1}', j.plate, j.plateTotal ?? '?') + (j.plateName ? ` — ${j.plateName}` : '')}>
                   {j.plateTotal > 1 ? tr('P{0}/{1}', j.plate, j.plateTotal) : tr('P{0}', j.plate)}
                 </span>
               )}
@@ -1613,7 +1613,7 @@ function AutoFarm() {
           status: 'pending', amsMap: j.amsMap ?? '',
           layerHeightMm: j.layerHeightMm ?? 0,
           object_height_mm: j.computedHeight ?? j.objectHeight ?? null,
-          plate: j.plate ?? null, plateTotal: j.plateTotal ?? null,
+          plate: j.plate ?? null, plateTotal: j.plateTotal ?? null, plateName: j.plateName ?? null,
         })),
       })
       await fetchStatus()
@@ -2067,9 +2067,11 @@ function AutoFarm() {
                       <div className="flex-1" />
                       {/* oben rechts: Höhe + Fächer-Bedarf */}
                       {job.plate != null && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300 shrink-0"
-                          title={tr('Platte {0} aus Multi-Plate-.3mf', job.plate)}>
-                          {job.plateTotal > 1 ? tr('Platte {0}/{1}', job.plate, job.plateTotal) : tr('Platte {0}', job.plate)}
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300 shrink-0 max-w-[11rem] truncate"
+                          title={tr('Platte {0} aus Multi-Plate-.3mf', job.plate) + (job.plateName ? ` — ${job.plateName}` : '')}>
+                          {job.plateName
+                            ? job.plateName
+                            : (job.plateTotal > 1 ? tr('Platte {0}/{1}', job.plate, job.plateTotal) : tr('Platte {0}', job.plate))}
                         </span>
                       )}
                       {job.heightLoading ? (

@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.149',
+    de: [
+      'Multi-Plate-.3mf: Die im Slicer vergebenen PLATTEN-NAMEN (Orca/Bambu „Platte benennen") werden jetzt überall angezeigt statt nur „Platte 1/2": in der Platten-Liste des Datei-Browsers und auf den Karten der Auto-Farm-Warteschlange (Plattennummer weiterhin im Tooltip). Neue Jobs übernehmen den Namen automatisch — sowohl beim Einreihen einzelner Platten als auch beim Expandieren einer Mehr-Platten-Datei.',
+    ],
+    en: [
+      'Multi-plate .3mf: the PLATE NAMES assigned in the slicer (Orca/Bambu “rename plate”) are now shown everywhere instead of just “Plate 1/2”: in the file browser’s plate list and on Auto Farm queue cards (plate number stays in the tooltip). New jobs pick up the name automatically — both when queueing single plates and when expanding a multi-plate file.',
+    ],
+  },
+  {
     version: '1.0.148',
     de: [
       'Multi-Plate-.3mf (Orca/Bambu) jetzt PLATTENGENAU: Höhe und Druckzeit werden pro Platte aus deren eigenem G-code gelesen — bisher bekam jede Platte fälschlich die Werte der ersten (falsche Fach-Reservierung und Zeitplanung). Gilt für Queue-Jobs, laufende Farm (enqueue) und die Höhen-Analyse.',

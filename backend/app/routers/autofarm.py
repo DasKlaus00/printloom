@@ -2479,6 +2479,7 @@ class JobIn(BaseModel):
     object_height_mm: Optional[float] = None
     plate: Optional[int] = None
     plateTotal: Optional[int] = None   # Gesamt-Plattenzahl der Multi-Plate-.3mf (für „Platte 3/13")
+    plateName: Optional[str] = None    # Slicer-Plattenname (plater_name) — Anzeige statt „Platte N"
     tag: Optional[str] = None   # z. B. "proj:<itemId>" → Projekt-Fortschritt (Abhaken)
 
 
@@ -2492,6 +2493,7 @@ class EnqueueRequest(BaseModel):
     object_height_mm: Optional[float] = None
     plate: Optional[int] = None
     plateTotal: Optional[int] = None   # Gesamt-Plattenzahl der Multi-Plate-.3mf (für „Platte 3/13")
+    plateName: Optional[str] = None    # Slicer-Plattenname (plater_name)
     tag: Optional[str] = None   # z. B. "proj:<itemId>"
 
 
@@ -2649,6 +2651,7 @@ async def enqueue_job(job: EnqueueRequest):
         "object_height_mm": obj_h,
         "plate":            job.plate,
         "plateTotal":       job.plateTotal,
+        "plateName":        job.plateName or "",
         "tag":              job.tag or "",
     })
     _log(f"[+] {job.fileName}{f' (Platte {job.plate})' if job.plate else ''} → Fach wird bei Ausführung zugewiesen")

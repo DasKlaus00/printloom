@@ -335,14 +335,17 @@ function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sendin
     <div className="mt-1.5 space-y-1 border-t border-surface-800/50 pt-1.5">
       {plates.map(p => (
         <div key={p.plate} className="flex items-center gap-2 text-[11px]">
-          <span className="font-mono text-blue-300 w-16 shrink-0">{tr('Platte {0}', p.plate)}</span>
+          {/* Slicer-Plattenname (plater_name) falls vergeben, sonst „Platte N" */}
+          <span className="text-blue-300 w-36 shrink-0 truncate" title={tr('Platte {0}', p.plate) + (p.name ? ` — ${p.name}` : '')}>
+            {p.name || tr('Platte {0}', p.plate)}
+          </span>
           <span className="font-mono text-surface-400 w-16 shrink-0" title={tr('Druckzeit dieser Platte')}>⏱ {fmt(p.time_seconds)}</span>
           <span className="font-mono text-surface-400 w-20 shrink-0" title={tr('Objekthöhe dieser Platte')}>↕ {p.max_z_mm ? `${p.max_z_mm} mm` : '—'}</span>
           {p.filament_g != null && p.filament_g !== '' && (
             <span className="font-mono text-surface-600 w-16 shrink-0 hidden sm:inline">{p.filament_g} g</span>
           )}
           <span className="flex-1" />
-          <button onClick={() => onQueuePlate(file, p.plate, plates.length)} disabled={enqueuing}
+          <button onClick={() => onQueuePlate(file, p.plate, plates.length, p.name || null)} disabled={enqueuing}
             className="btn btn-ghost btn-sm text-[10px] disabled:opacity-50"
             title={tr('Nur diese Platte in die Auto-Farm-Queue legen')}>{tr('+ Queue')}</button>
           <button onClick={() => onSendPlate(file, p.plate)} disabled={!bambuId || sending === file.id}
@@ -800,7 +803,7 @@ function FileLibrary() {
   }
 
   // Genau EINE Platte einer Multi-Plate-.3mf in die Queue (aus dem Platten-Dropdown).
-  const enqueuePlate = async (file, plate, plateTotal) => {
+  const enqueuePlate = async (file, plate, plateTotal, plateName = null) => {
     setEnqueuing(true)
     try {
       const [statusRes, queueRes] = await Promise.all([
@@ -812,19 +815,19 @@ function FileLibrary() {
       const id = cur.length ? Math.max(...cur.map(j => j.id ?? 0)) + 1 : 1
       const j = {
         id, fileId: file.id, fileName: file.original_filename,
-        slot: null, amsMap: '', status: 'pending', plate, plateTotal,
+        slot: null, amsMap: '', status: 'pending', plate, plateTotal, plateName,
         objectHeight: null, progress: 0, remaining: 0,
       }
       if (running) {
         await autofarmService.enqueue({
           id: j.id, fileId: j.fileId, fileName: j.fileName,
-          slot: '1-0', amsMap: '', plate, plateTotal,
+          slot: '1-0', amsMap: '', plate, plateTotal, plateName,
         })
       } else {
         await autofarmService.saveQueue([...cur, j])
       }
       window.dispatchEvent(new CustomEvent('printloom:queueChanged'))
-      showFeedback(tr('Platte {0} in die Queue gelegt', plate))
+      showFeedback(tr('Platte {0} in die Queue gelegt', plateName || plate))
     } catch {
       showFeedback(tr('In die Queue legen fehlgeschlagen'), false)
     } finally { setEnqueuing(false) }
@@ -844,12 +847,18 @@ function FileLibrary() {
   const expandToPlateUnits = async (printable) => {
     const units = []
     for (const f of printable) {
-      let plates = []
+      let plates = [], names = {}
       if (f.file_type === '.3mf') {
-        try { plates = (await printerService.getPlates(f.id)).data?.plates ?? [] } catch { plates = [] }
+        try {
+          const r = (await printerService.getPlates(f.id)).data
+          plates = r?.plates ?? []
+          names  = r?.names ?? {}
+        } catch { plates = [] }
       }
-      if (plates.length > 1) plates.forEach(p => units.push({ file: f, plate: p, plateTotal: plates.length }))
-      else units.push({ file: f, plate: null, plateTotal: null })
+      if (plates.length > 1) plates.forEach(p => units.push({
+        file: f, plate: p, plateTotal: plates.length, plateName: names[String(p)] || null,
+      }))
+      else units.push({ file: f, plate: null, plateTotal: null, plateName: null })
     }
     return units
   }
@@ -872,7 +881,8 @@ function FileLibrary() {
         for (const u of units) {
           additions.push({
             id: nextId++, fileId: u.file.id, fileName: u.file.original_filename,
-            slot: null, amsMap: '', status: 'pending', plate: u.plate, plateTotal: u.plateTotal,
+            slot: null, amsMap: '', status: 'pending',
+            plate: u.plate, plateTotal: u.plateTotal, plateName: u.plateName,
             objectHeight: null, progress: 0, remaining: 0,
           })
         }
@@ -882,7 +892,7 @@ function FileLibrary() {
         for (const j of additions) {
           await autofarmService.enqueue({
             id: j.id, fileId: j.fileId, fileName: j.fileName,
-            slot: '1-0', amsMap: '', plate: j.plate, plateTotal: j.plateTotal,
+            slot: '1-0', amsMap: '', plate: j.plate, plateTotal: j.plateTotal, plateName: j.plateName,
           })
         }
       } else {

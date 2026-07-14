@@ -1092,13 +1092,21 @@ def _get_bambu_device(device_id: int, db: Session) -> Device:
 
 @router.get("/plates/{file_id}")
 async def list_file_plates(file_id: int, db: Session = Depends(get_db)):
-    """List the plate numbers inside a multi-plate .3mf (empty for single/.gcode)."""
+    """List the plate numbers inside a multi-plate .3mf (empty for single/.gcode).
+    `names` = vom Slicer vergebene Platten-Namen ({"1": "…"}), soweit vorhanden."""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     if file.file_type != ".3mf" or not os.path.exists(file.file_path):
-        return {"plates": []}
-    return {"plates": _list_plates(file.file_path)}
+        return {"plates": [], "names": {}}
+    names = {}
+    try:
+        from app.routers.files import _plate_names
+        with zipfile.ZipFile(file.file_path, 'r') as zf:
+            names = _plate_names(zf)
+    except Exception:
+        names = {}
+    return {"plates": _list_plates(file.file_path), "names": names}
 
 
 @router.post("/send/{device_id}/{file_id}")

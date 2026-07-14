@@ -285,6 +285,30 @@ def _qmeta_sig(path: str):
     return (path, st.st_size, int(st.st_mtime))
 
 
+def _plate_names(zf) -> dict:
+    """{Platten-Nr (str): Name} aus model_settings.config (<metadata key="plater_name">).
+    OrcaSlicer/Bambu Studio speichern dort den vom Nutzer vergebenen Platten-Namen —
+    die UI zeigt den echten Namen statt nur „Platte N"."""
+    try:
+        name = next((n for n in zf.namelist() if n.lower().endswith('model_settings.config')), None)
+        if not name:
+            return {}
+        root = ET.fromstring(zf.read(name).decode('utf-8', errors='ignore'))
+        out = {}
+        for pl in root.iter('plate'):
+            pid = pname = None
+            for m in pl.findall('metadata'):
+                if m.get('key') == 'plater_id':
+                    pid = m.get('value')
+                elif m.get('key') == 'plater_name':
+                    pname = m.get('value')
+            if pid is not None and pname:
+                out[str(pid).strip()] = pname.strip()
+        return out
+    except Exception:
+        return {}
+
+
 def _plate_predictions(zf) -> dict:
     """{Platten-Nr (str): Sekunden} aus slice_info.config (<metadata key="prediction">).
     Multi-Plate-Dateien haben PRO Platte eine eigene Slicer-Zeit — der Header der
@@ -401,13 +425,15 @@ async def get_plates_meta(file_id: int, db: Session = Depends(get_db)):
         with zipfile.ZipFile(file.file_path, 'r') as zf:
             names = zf.namelist()
             predictions = _plate_predictions(zf)
+            plate_names = _plate_names(zf)
             plate_gcodes = sorted(
                 [n for n in names if re.match(r'Metadata/plate_\d+\.gcode$', n, re.IGNORECASE)],
                 key=lambda n: int(re.search(r'plate_(\d+)', n).group(1))
             )
             for gname in plate_gcodes:
                 num = int(re.search(r'plate_(\d+)', gname).group(1))
-                entry = {"plate": num, "time_seconds": None, "estimated_time": None,
+                entry = {"plate": num, "name": plate_names.get(str(num)),
+                         "time_seconds": None, "estimated_time": None,
                          "max_z_mm": None, "filament_g": None, "layer_count": None}
                 try:
                     with zf.open(gname) as gf:
