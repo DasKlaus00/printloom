@@ -31,6 +31,8 @@ export const deviceService = {
   updateDevice: (id, data) => api.put(`/devices/${id}`, data),
   deleteDevice: (id)       => api.delete(`/devices/${id}`),
   testDevice:   (id)       => api.post(`/devices/${id}/test`),
+  // Netzwerk-Suche (SSDP-Bambu + Moonraker-Scan) dauert ~5 s → großzügiger Timeout.
+  discover:     ()         => api.get('/devices/discover', { timeout: 20000 }),
 }
 
 export const configService = {

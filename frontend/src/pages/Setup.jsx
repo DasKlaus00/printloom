@@ -64,6 +64,20 @@ export default function Setup({ setCurrentPage }) {
   const [homing, setHoming]   = useState(null)
   const [hBusy, setHBusy]     = useState(false)
 
+  // Netzwerk-Suche (gilt für Schritt 1 Drucker + Schritt 2 OTTOeject)
+  const [discovering, setDiscovering] = useState(false)
+  const [discovered, setDiscovered]   = useState(null)   // { bambu:[], klipper:[] } | null
+
+  const runDiscover = async () => {
+    setDiscovering(true); setDiscovered(null)
+    try {
+      const r = await deviceService.discover()
+      setDiscovered(r.data ?? { bambu: [], klipper: [] })
+    } catch (e) {
+      setDiscovered({ bambu: [], klipper: [], error: e.response?.data?.detail ?? e.message })
+    } finally { setDiscovering(false) }
+  }
+
   const bambu = devices.find(d => d.device_type === 'bambu_lab')
   const klipperDev = devices.find(d => d.device_type === 'klipper')
 
@@ -237,6 +251,30 @@ export default function Setup({ setCurrentPage }) {
             ) : (
               <>
                 <p className="text-xs text-surface-500">{tr('Bambu Lab Drucker verbinden. Access-Code & Seriennummer findest du am Druckerdisplay unter Einstellungen → WLAN.')}</p>
+
+                {/* Netzwerk-Suche: findet X1C per SSDP inkl. IP + Seriennummer */}
+                <div className="border border-surface-700 rounded-lg p-3 bg-surface-900/50 space-y-2">
+                  <button onClick={runDiscover} disabled={discovering} className="btn-secondary text-sm disabled:opacity-50">
+                    {discovering ? tr('Suche im Netzwerk…') : tr('🔍 Drucker im Netzwerk suchen')}
+                  </button>
+                  {discovered && (
+                    <div className="space-y-1.5">
+                      {discovered.error && <p className="text-[11px] text-amber-400">{tr('Suche fehlgeschlagen')}: {discovered.error}</p>}
+                      {!discovered.error && !discovered.bambu?.length && (
+                        <p className="text-[11px] text-surface-600">{tr('Kein Bambu gefunden — bitte manuell eintragen. (In Docker-Bridge-Netzen kommt SSDP nicht an.)')}</p>
+                      )}
+                      {discovered.bambu?.map((b, i) => (
+                        <button key={i} onClick={() => setPForm(f => ({ ...f, name: b.name || f.name, ip_address: b.ip || '', serial_number: b.serial || '' }))}
+                          className="w-full text-left px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-800 hover:border-blue-700 transition-colors">
+                          <span className="text-sm text-surface-200">🖨 {b.name || 'Bambu Lab'} <span className="font-mono text-xs text-surface-500">· {b.ip}</span></span>
+                          <span className="block text-[10px] font-mono text-surface-600">{b.serial ? `S/N: ${b.serial}` : tr('Seriennummer manuell nötig')}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-surface-600">{tr('Access-Code wird nie mitgesendet — den trägst du selbst ein.')}</p>
+                </div>
+
                 <div className="space-y-2">
                   <input className="w-full text-sm" placeholder={tr('Name (z. B. Bambu X1C)')} value={pForm.name}
                     onChange={e => setPForm(f => ({ ...f, name: e.target.value }))} />
@@ -291,6 +329,28 @@ export default function Setup({ setCurrentPage }) {
                 <p className="text-xs text-surface-500">
                   {tr('Das OTTOeject läuft über Klipper/Moonraker. Gib die Moonraker-Adresse an (Standard-Port 7125).')}
                 </p>
+
+                {/* Netzwerk-Suche: findet Moonraker per Port-Scan inkl. Hostname */}
+                <div className="border border-surface-700 rounded-lg p-3 bg-surface-900/50 space-y-2">
+                  <button onClick={runDiscover} disabled={discovering} className="btn-secondary text-sm disabled:opacity-50">
+                    {discovering ? tr('Suche im Netzwerk…') : tr('🔍 OTTOeject im Netzwerk suchen')}
+                  </button>
+                  {discovered && (
+                    <div className="space-y-1.5">
+                      {discovered.error && <p className="text-[11px] text-amber-400">{tr('Suche fehlgeschlagen')}: {discovered.error}</p>}
+                      {!discovered.error && !discovered.klipper?.length && (
+                        <p className="text-[11px] text-surface-600">{tr('Kein Klipper/Moonraker gefunden — bitte manuell eintragen.')}</p>
+                      )}
+                      {discovered.klipper?.map((k, i) => (
+                        <button key={i} onClick={() => setKForm(f => ({ ...f, name: k.hostname || f.name, ip_address: k.ip || '', port: k.port || 7125 }))}
+                          className="w-full text-left px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-800 hover:border-blue-700 transition-colors">
+                          <span className="text-sm text-surface-200">🦾 {k.hostname || 'Klipper / OTTOeject'} <span className="font-mono text-xs text-surface-500">· {k.ip}:{k.port}</span></span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-2">
                   <input className="w-full text-sm" placeholder={tr('Name (z. B. OTTOeject)')} value={kForm.name}
                     onChange={e => setKForm(f => ({ ...f, name: e.target.value }))} />

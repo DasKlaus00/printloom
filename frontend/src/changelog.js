@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.151',
+    de: [
+      'Netzwerk-Suche für Drucker: Im Setup-Assistenten (Schritt Drucker & OTTOeject) und in Konfiguration → Geräte gibt es jetzt „🔍 Netzwerk durchsuchen". Bambu-Drucker werden per SSDP gefunden (IP, Name UND Seriennummer werden direkt übernommen — wie in OrcaSlicer); Klipper/OTTOeject per Moonraker-Scan inkl. Hostname. Ein Klick füllt das Formular vor, nur der Access-Code wird noch selbst eingetragen (der wird aus Sicherheitsgründen nie mitgesendet). Hinweis: In Docker-Bridge-Netzen erreichen SSDP-Broadcasts den Container nicht — dort greift ein Port-Scan-Fallback (Drucker mit IP, Seriennummer dann manuell) oder man nutzt „network_mode: host".',
+      'Neue Geräte-Option „🌀 Bauraumlüftung dauerhaft aus" (bei Bambu-Druckern, Konfiguration → Geräte): Ist sie aktiv, prüft Printloom im 5-Sekunden-Takt über die bestehende MQTT-Verbindung, ob der Bauraumlüfter (P3) läuft, und schaltet ihn aus, sobald er anläuft. Standardmäßig aus — nichts ändert sich ohne dein Zutun.',
+    ],
+    en: [
+      'Network discovery for printers: the setup wizard (printer & OTTOeject steps) and Configuration → Devices now have "🔍 Scan network". Bambu printers are found via SSDP (IP, name AND serial number are filled in directly — like OrcaSlicer); Klipper/OTTOeject via a Moonraker scan including hostname. One click pre-fills the form; you only add the access code yourself (it is never broadcast for security). Note: in Docker bridge networks SSDP broadcasts do not reach the container — there a port-scan fallback applies (printer with IP, serial then manual) or use "network_mode: host".',
+      'New device option "🌀 Keep chamber fan off" (for Bambu printers, Configuration → Devices): when enabled, Printloom checks every 5 seconds over the existing MQTT connection whether the chamber fan (P3) is running and turns it off as soon as it starts. Off by default — nothing changes unless you enable it.',
+    ],
+  },
+  {
     version: '1.0.150',
     de: [
       'Auto-Farm-Warteschlange: Bei benannten Platten zeigt das Badge jetzt Name UND Plattenzahl („Name · 1/12") statt nur des Namens.',

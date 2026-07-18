@@ -834,6 +834,31 @@ const EN_STRINGS = {
   'Ein bereits laufender Kamera-Stream wird sofort beendet. Das Kamera-Panel im Auto-Farm-Dashboard zeigt einen Hinweis statt des Livebilds.':
     'An already running camera stream is stopped immediately. The camera panel on the Auto Farm dashboard shows a notice instead of the live view.',
 
+  /* ── Netzwerk-Suche (Discovery) + Bauraumlüfter ── */
+  '🔍 Netzwerk durchsuchen': '🔍 Scan network',
+  'Netzwerk nach Bambu-Druckern (SSDP) und Klipper/Moonraker durchsuchen': 'Scan the network for Bambu printers (SSDP) and Klipper/Moonraker',
+  'Suche…': 'Scanning…',
+  'Suche im Netzwerk…': 'Scanning network…',
+  '🔍 Drucker im Netzwerk suchen': '🔍 Find printer on the network',
+  '🔍 OTTOeject im Netzwerk suchen': '🔍 Find OTTOeject on the network',
+  'Gefundene Geräte': 'Discovered devices',
+  'ausblenden': 'hide',
+  'Suche fehlgeschlagen': 'Scan failed',
+  'Nichts gefunden. In Docker (Bridge-Netz) kommen SSDP-Broadcasts nicht am Container an — nutze „network_mode: host" oder trage den Drucker manuell ein.':
+    'Nothing found. In Docker (bridge network) SSDP broadcasts do not reach the container — use "network_mode: host" or add the printer manually.',
+  'Kein Bambu gefunden — bitte manuell eintragen. (In Docker-Bridge-Netzen kommt SSDP nicht an.)':
+    'No Bambu found — please enter manually. (In Docker bridge networks SSDP does not arrive.)',
+  'Kein Klipper/Moonraker gefunden — bitte manuell eintragen.': 'No Klipper/Moonraker found — please enter manually.',
+  'Seriennummer nicht ermittelt (Port-Scan) — bitte manuell': 'Serial number not detected (port scan) — please enter manually',
+  'Seriennummer manuell nötig': 'Serial number needed manually',
+  'Access-Code wird nie mitgesendet — den trägst du selbst ein.': 'The access code is never broadcast — you enter it yourself.',
+  'bereits angelegt': 'already added',
+  'Übernehmen': 'Use',
+  '🌀 Bauraumlüftung dauerhaft aus': '🌀 Keep chamber fan off',
+  'Bauraumlüftung dauerhaft ausgeschaltet halten': 'Keep the chamber ventilation permanently off',
+  'Prüft laufend über die MQTT-Verbindung und schaltet den Bauraumlüfter (P3) aus, sobald er anläuft.':
+    'Continuously checks via the MQTT connection and turns the chamber fan (P3) off whenever it starts.',
+
   /* ── Configuration ── */
   'Geräte': 'Devices',
   'Kameras': 'Cameras',

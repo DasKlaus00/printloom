@@ -60,6 +60,17 @@ app.include_router(push.router,          prefix="/api/push",            tags=["W
 app.include_router(folders.router,       prefix="/api/folders",         tags=["Folders"])
 
 
+@app.on_event("startup")
+async def _start_background_tasks():
+    # Bauraumlüfter-Guard: hält bei aktivierter Geräte-Option die Bauraumlüftung aus
+    # (nutzt die persistente MQTT-Verbindung, ~5-s-Takt). Idempotent.
+    try:
+        from app.services import chamber_fan_guard
+        chamber_fan_guard.start()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"chamber_fan_guard start failed: {e}")
+
+
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}

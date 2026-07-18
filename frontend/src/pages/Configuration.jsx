@@ -812,24 +812,73 @@ function Configuration() {
   const [error, setError]         = useState(null)
   const [tab, setTab]             = useState('devices')
 
+  // Netzwerk-Suche + Bauraumlüfter-Option je Bambu-Gerät.
+  const [discovering, setDiscovering] = useState(false)
+  const [discovered, setDiscovered]   = useState(null)   // { bambu:[], klipper:[] } | null
+  const [fanOff, setFanOff]           = useState({})     // { [deviceId]: bool }
+
   const bambu = devices.find(d => d.device_type === 'bambu_lab')
 
   const load = async () => {
     const d = await deviceService.listDevices()
     setDevices(d.data)
     // load webcam urls for each device (untere + obere Kamera + Home-Assistant-Kamera)
-    const urls = {}, tops = {}, ha = {}
+    const urls = {}, tops = {}, ha = {}, fans = {}
     for (const dev of d.data) {
       try {
         const s = await deviceSettingsService.getSettings(dev.id)
         urls[dev.id] = s.data.webcam_url ?? ''
         tops[dev.id] = s.data.webcam_url_top ?? ''
         ha[dev.id]   = { url: s.data.ha_url ?? '', token: '', entity: s.data.ha_camera ?? '', tokenSet: !!s.data.ha_token_set }
-      } catch { urls[dev.id] = ''; tops[dev.id] = ''; ha[dev.id] = { url: '', token: '', entity: '', tokenSet: false } }
+        fans[dev.id] = !!s.data.chamber_fan_off
+      } catch { urls[dev.id] = ''; tops[dev.id] = ''; ha[dev.id] = { url: '', token: '', entity: '', tokenSet: false }; fans[dev.id] = false }
     }
     setWebcamUrls(urls)
     setWebcamTopUrls(tops)
     setHaCams(ha)
+    setFanOff(fans)
+  }
+
+  // Bauraumlüftung dauerhaft aus (pro Bambu-Gerät). Optimistisch, bei Fehler zurück.
+  const toggleFanOff = async (deviceId) => {
+    const next = !fanOff[deviceId]
+    setFanOff(p => ({ ...p, [deviceId]: next }))
+    try {
+      await deviceSettingsService.updateSettings(deviceId, { chamber_fan_off: next })
+    } catch {
+      setFanOff(p => ({ ...p, [deviceId]: !next }))
+    }
+  }
+
+  // Netzwerk nach Druckern durchsuchen (SSDP-Bambu + Moonraker-Scan).
+  const runDiscover = async () => {
+    setDiscovering(true); setDiscovered(null)
+    try {
+      const r = await deviceService.discover()
+      setDiscovered(r.data ?? { bambu: [], klipper: [] })
+    } catch (e) {
+      setDiscovered({ bambu: [], klipper: [], error: e.response?.data?.detail ?? e.message })
+    } finally { setDiscovering(false) }
+  }
+
+  // Einen Fund ins Formular übernehmen (Access-Code trägt der Nutzer selbst nach).
+  const applyDiscovered = (item, type) => {
+    setEditId(null)
+    if (type === 'bambu_lab') {
+      setForm({
+        ...INITIAL_FORM, device_type: 'bambu_lab',
+        name: item.name || 'Bambu Lab X1C', ip_address: item.ip || '',
+        serial_number: item.serial || '', port: 8883, mqtt_port: 8883, use_tls: true,
+      })
+    } else {
+      setForm({
+        ...INITIAL_FORM, device_type: 'klipper',
+        name: item.hostname || 'OTTOeject', ip_address: item.ip || '',
+        port: item.port || 7125,
+      })
+    }
+    setShowForm(true)
+    setError(null)
   }
 
   useEffect(() => { load() }, [])
@@ -944,10 +993,57 @@ function Configuration() {
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <p className="section-label mb-0">Devices</p>
-          <button onClick={() => (showForm ? closeForm() : setShowForm(true))} className="btn btn-primary btn-sm">
-            {showForm ? tr('Abbrechen') : '+ Add Device'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={runDiscover} disabled={discovering} className="btn btn-ghost btn-sm disabled:opacity-50"
+              title={tr('Netzwerk nach Bambu-Druckern (SSDP) und Klipper/Moonraker durchsuchen')}>
+              {discovering ? tr('Suche…') : tr('🔍 Netzwerk durchsuchen')}
+            </button>
+            <button onClick={() => (showForm ? closeForm() : setShowForm(true))} className="btn btn-primary btn-sm">
+              {showForm ? tr('Abbrechen') : '+ Add Device'}
+            </button>
+          </div>
         </div>
+
+        {/* Netzwerk-Suche: Ergebnisse ─────────────────────────────── */}
+        {discovered && (
+          <div className="bg-surface-900 rounded-xl border border-surface-700 p-4 mb-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-surface-200">{tr('Gefundene Geräte')}</p>
+              <button onClick={() => setDiscovered(null)} className="text-[11px] text-surface-500 hover:text-surface-300">{tr('ausblenden')}</button>
+            </div>
+            {discovered.error && <p className="text-xs text-amber-400">{tr('Suche fehlgeschlagen')}: {discovered.error}</p>}
+            {!discovered.error && !discovered.bambu?.length && !discovered.klipper?.length && (
+              <p className="text-xs text-surface-500">
+                {tr('Nichts gefunden. In Docker (Bridge-Netz) kommen SSDP-Broadcasts nicht am Container an — nutze „network_mode: host" oder trage den Drucker manuell ein.')}
+              </p>
+            )}
+            {discovered.bambu?.map((b, i) => (
+              <div key={`b${i}`} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface-950 border border-surface-800">
+                <div className="min-w-0">
+                  <p className="text-sm text-surface-200 truncate">🖨 {b.name || 'Bambu Lab'} <span className="text-surface-500 font-mono text-xs">· {b.ip}</span></p>
+                  <p className="text-[11px] text-surface-600 font-mono">
+                    {b.serial ? `S/N: ${b.serial}` : tr('Seriennummer nicht ermittelt (Port-Scan) — bitte manuell')}
+                    {b.model ? ` · ${b.model}` : ''}
+                  </p>
+                </div>
+                {b.configured
+                  ? <span className="badge badge-green shrink-0">{tr('bereits angelegt')}</span>
+                  : <button onClick={() => applyDiscovered(b, 'bambu_lab')} className="btn btn-secondary btn-sm shrink-0">{tr('Übernehmen')}</button>}
+              </div>
+            ))}
+            {discovered.klipper?.map((k, i) => (
+              <div key={`k${i}`} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface-950 border border-surface-800">
+                <div className="min-w-0">
+                  <p className="text-sm text-surface-200 truncate">🦾 {k.hostname || 'Klipper / OTTOeject'} <span className="text-surface-500 font-mono text-xs">· {k.ip}:{k.port}</span></p>
+                  <p className="text-[11px] text-surface-600 font-mono">Moonraker</p>
+                </div>
+                {k.configured
+                  ? <span className="badge badge-green shrink-0">{tr('bereits angelegt')}</span>
+                  : <button onClick={() => applyDiscovered(k, 'klipper')} className="btn btn-secondary btn-sm shrink-0">{tr('Übernehmen')}</button>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Add form */}
         {showForm && (
@@ -1050,6 +1146,24 @@ function Configuration() {
                     </button>
                   </div>
                 </div>
+                {/* Bauraumlüfter dauerhaft aus — nur für Bambu-Drucker (X1C mit Bauraumlüftung).
+                    Prüft im 5-s-Takt über die MQTT-Verbindung, ob der Lüfter läuft, und schaltet ihn aus. */}
+                {device.device_type === 'bambu_lab' && (
+                  <div className="flex items-center gap-3 px-4 py-2.5 mt-1 rounded-lg bg-surface-900/60 border border-surface-800">
+                    <button
+                      onClick={() => toggleFanOff(device.id)}
+                      aria-pressed={!!fanOff[device.id]}
+                      title={tr('Bauraumlüftung dauerhaft ausgeschaltet halten')}
+                      className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ${fanOff[device.id] ? 'bg-blue-600' : 'bg-surface-700'}`}
+                    >
+                      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${fanOff[device.id] ? 'left-[18px]' : 'left-0.5'}`} />
+                    </button>
+                    <div className="min-w-0">
+                      <p className={`text-sm ${fanOff[device.id] ? 'text-blue-300' : 'text-surface-300'}`}>{tr('🌀 Bauraumlüftung dauerhaft aus')}</p>
+                      <p className="text-[11px] text-surface-600">{tr('Prüft laufend über die MQTT-Verbindung und schaltet den Bauraumlüfter (P3) aus, sobald er anläuft.')}</p>
+                    </div>
+                  </div>
+                )}
                 {testResults[device.id] && <TestResultBar result={testResults[device.id]} />}
               </div>
             ))}
