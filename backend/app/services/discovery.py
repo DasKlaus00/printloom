@@ -20,6 +20,7 @@ Drucker wenigstens mit IP (ohne Seriennummer). Nativ / `network_mode: host` geht
 from __future__ import annotations
 import asyncio
 import logging
+import os
 import re
 import socket
 import struct
@@ -108,17 +109,43 @@ def discover_bambu(timeout: float = 4.0) -> list[dict]:
     return list(found.values())
 
 
-def _local_subnet() -> str | None:
-    """Ermittelt das lokale /24 (z. B. „192.168.1") über die Standard-Route."""
+def _own_ip() -> str | None:
+    """Eigene IP über die Standard-Route (im Docker-Bridge-Netz die Container-IP)."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        return ip.rsplit(".", 1)[0]
+        return s.getsockname()[0]
     except OSError:
         return None
     finally:
         s.close()
+
+
+def _local_subnet() -> str | None:
+    """Lokales /24 (z. B. „192.168.1") aus der eigenen IP."""
+    ip = _own_ip()
+    return ip.rsplit(".", 1)[0] if ip else None
+
+
+def _is_containerized() -> bool:
+    """Läuft der Prozess in einem Container (Docker/containerd)?"""
+    try:
+        if os.path.exists("/.dockerenv"):
+            return True
+        with open("/proc/1/cgroup", "r", encoding="utf-8", errors="ignore") as f:
+            txt = f.read()
+        return "docker" in txt or "containerd" in txt or "kubepods" in txt
+    except Exception:
+        return False
+
+
+def _looks_like_docker_subnet(ip: str | None) -> bool:
+    """Docker-Adresspool (172.17.–172.31.x). 172.16.x bleibt außen vor (oft echtes LAN)."""
+    try:
+        a, b = ip.split(".")[:2]
+        return a == "172" and 17 <= int(b) <= 31
+    except Exception:
+        return False
 
 
 async def _port_open(ip: str, port: int, timeout: float = 0.4) -> bool:
@@ -157,35 +184,72 @@ async def _probe_host(ip: str, sem: asyncio.Semaphore, klipper: list, bambu: lis
                               "model": None, "source": "scan"})
 
 
-async def scan_subnet(timeout_note: float = 0.0) -> dict:
-    """Async /24-Scan: findet Moonraker (verifiziert) und Bambu (Port-Fallback)."""
-    subnet = _local_subnet()
+async def scan_subnet(subnet: str, own_ip: str | None = None) -> dict:
+    """Async /24-Scan des angegebenen Subnetzes (z. B. „192.168.1"): findet Moonraker
+    (verifiziert) und Bambu (Port-Fallback). Die eigene IP wird nie zurückgegeben."""
     if not subnet:
         return {"klipper": [], "bambu": []}
+    subnet = subnet.strip().rstrip(".")
     sem = asyncio.Semaphore(64)
     klipper: list = []
     bambu: list = []
-    tasks = [_probe_host(f"{subnet}.{i}", sem, klipper, bambu) for i in range(1, 255)]
+    hosts = [f"{subnet}.{i}" for i in range(1, 255) if f"{subnet}.{i}" != own_ip]
+    tasks = [_probe_host(ip, sem, klipper, bambu) for ip in hosts]
     await asyncio.gather(*tasks, return_exceptions=True)
     return {"klipper": klipper, "bambu": bambu}
 
 
-async def discover(timeout: float = 4.0) -> dict:
-    """Beide Wege parallel: SSDP-Bambu (mit Seriennummer) + Subnetz-Scan
-    (Moonraker verifiziert, Bambu-Port-Fallback). Ergebnis gemergt nach IP;
-    SSDP-Treffer (mit Seriennummer) haben Vorrang vor Scan-Treffern."""
+async def discover(timeout: float = 4.0, subnet: str | None = None) -> dict:
+    """SSDP-Bambu (mit Seriennummer) + Subnetz-Scan (Moonraker verifiziert, Bambu-
+    Port-Fallback), gemergt nach IP (SSDP hat Vorrang).
+
+    `subnet`: explizites /24 (z. B. „192.168.1") — nötig in Docker-Bridge, weil dort
+    die automatisch erkannte IP die Container-IP (172.x) ist und ein Scan des
+    Docker-Netzes nur andere Container fände. Ohne Angabe wird das eigene /24
+    genommen; erkennt Printloom aber ein Docker-Bridge-Netz, wird NICHT gescannt
+    (sonst falsche Treffer wie 172.18.0.2) und `docker_bridge=True` gemeldet."""
+    own_ip = _own_ip()
+    docker_bridge = False
+    scan_target = None
+    if subnet and subnet.strip():
+        scan_target = subnet.strip().rstrip(".")
+    elif own_ip:
+        if _is_containerized() and _looks_like_docker_subnet(own_ip):
+            docker_bridge = True   # Docker-Netz scannen wäre sinnlos → überspringen
+        else:
+            scan_target = own_ip.rsplit(".", 1)[0]
+
     loop = asyncio.get_event_loop()
     ssdp_task = loop.run_in_executor(None, discover_bambu, timeout)
-    scan_task = asyncio.ensure_future(scan_subnet())
+    scan_task = asyncio.ensure_future(
+        scan_subnet(scan_target, own_ip) if scan_target else _empty_scan())
     ssdp_bambu, scan = await asyncio.gather(ssdp_task, scan_task)
+
+    # Eigene IP + offensichtliche Docker-Adressen nie als Fund melden.
+    def _keep(ip: str | None) -> bool:
+        if not ip or ip == own_ip:
+            return False
+        if docker_bridge and _looks_like_docker_subnet(ip):
+            return False
+        return True
 
     bambu_by_ip: dict[str, dict] = {}
     for b in ssdp_bambu:
-        bambu_by_ip[b["ip"]] = b
+        if _keep(b.get("ip")):
+            bambu_by_ip[b["ip"]] = b
     for b in scan.get("bambu", []):
-        bambu_by_ip.setdefault(b["ip"], b)   # nur ergänzen, SSDP nicht überschreiben
+        if _keep(b.get("ip")):
+            bambu_by_ip.setdefault(b["ip"], b)   # nur ergänzen, SSDP nicht überschreiben
+
+    klipper = [k for k in scan.get("klipper", []) if _keep(k.get("ip"))]
 
     return {
         "bambu": list(bambu_by_ip.values()),
-        "klipper": scan.get("klipper", []),
+        "klipper": klipper,
+        "docker_bridge": docker_bridge,
+        "scanned_subnet": scan_target,
     }
+
+
+async def _empty_scan() -> dict:
+    return {"klipper": [], "bambu": []}

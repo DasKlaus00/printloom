@@ -32,7 +32,10 @@ export const deviceService = {
   deleteDevice: (id)       => api.delete(`/devices/${id}`),
   testDevice:   (id)       => api.post(`/devices/${id}/test`),
   // Netzwerk-Suche (SSDP-Bambu + Moonraker-Scan) dauert ~5 s → großzügiger Timeout.
-  discover:     ()         => api.get('/devices/discover', { timeout: 20000 }),
+  // subnet: optionales /24 (z. B. „192.168.1"), nötig in Docker-Bridge-Netzen.
+  discover:     (subnet)   => api.get('/devices/discover', {
+    params: subnet ? { subnet } : {}, timeout: 25000,
+  }),
 }
 
 export const configService = {

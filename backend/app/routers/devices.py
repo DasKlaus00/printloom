@@ -35,16 +35,18 @@ def _set_device_settings(db: Session, device_id: int, settings: dict):
 
 
 @router.get("/discover")
-async def discover_devices(db: Session = Depends(get_db)):
+async def discover_devices(subnet: str = None, db: Session = Depends(get_db)):
     """Netzwerk nach Druckern durchsuchen: Bambu (SSDP, inkl. Seriennummer) +
     Klipper/Moonraker (Subnetz-Scan). Bereits angelegte Geräte werden markiert
     (`configured`), damit die UI keine Dubletten anbietet.
 
-    Hinweis: In einem Docker-Bridge-Netz erreichen SSDP-Broadcasts den Container
-    nicht — dann liefert der Bambu-Teil evtl. nur den Port-Scan-Fallback (ohne
-    Seriennummer). Nativ / `network_mode: host` funktioniert die volle Erkennung."""
+    `subnet`: optionales /24 (z. B. „192.168.1"). In Docker-Bridge-Netzen ist die
+    automatisch erkannte IP die Container-IP (172.x) — dann wird NICHT gescannt
+    (`docker_bridge=True`), und der Nutzer kann sein echtes LAN-Subnetz angeben,
+    das per Docker-Routing erreichbar ist. Nativ / `network_mode: host` erkennt alles
+    automatisch (SSDP inkl. Seriennummer)."""
     from app.services import discovery
-    result = await discovery.discover()
+    result = await discovery.discover(subnet=subnet)
     known_ips = {d.ip_address for d in db.query(Device).all() if d.ip_address}
     for lst in (result.get("bambu", []), result.get("klipper", [])):
         for item in lst:

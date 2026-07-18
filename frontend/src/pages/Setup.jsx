@@ -66,17 +66,33 @@ export default function Setup({ setCurrentPage }) {
 
   // Netzwerk-Suche (gilt für Schritt 1 Drucker + Schritt 2 OTTOeject)
   const [discovering, setDiscovering] = useState(false)
-  const [discovered, setDiscovered]   = useState(null)   // { bambu:[], klipper:[] } | null
+  const [discovered, setDiscovered]   = useState(null)   // { bambu:[], klipper:[], docker_bridge } | null
+  const [scanSubnet, setScanSubnet]   = useState('')
 
-  const runDiscover = async () => {
+  const runDiscover = async (subnet = '') => {
     setDiscovering(true); setDiscovered(null)
     try {
-      const r = await deviceService.discover()
+      const r = await deviceService.discover(subnet.trim() || undefined)
       setDiscovered(r.data ?? { bambu: [], klipper: [] })
     } catch (e) {
       setDiscovered({ bambu: [], klipper: [], error: e.response?.data?.detail ?? e.message })
     } finally { setDiscovering(false) }
   }
+
+  // Docker-Bridge-Hinweis + Subnetz-Eingabe (in beiden Suchschritten gleich)
+  const DockerBridgeHint = () => discovered?.docker_bridge ? (
+    <div className="rounded-lg border border-amber-800/60 bg-amber-950/20 px-3 py-2 space-y-2">
+      <p className="text-[11px] text-amber-300">
+        {tr('Printloom läuft in einem Docker-Bridge-Netz und sieht dein LAN nicht automatisch. Gib dein LAN-Subnetz ein und suche erneut — oder nutze „network_mode: host".')}
+      </p>
+      <div className="flex items-center gap-2">
+        <input type="text" value={scanSubnet} onChange={e => setScanSubnet(e.target.value)}
+          placeholder="192.168.1" className="text-xs font-mono py-1 w-32" />
+        <button onClick={() => runDiscover(scanSubnet)} disabled={discovering || !scanSubnet.trim()}
+          className="btn-secondary text-xs disabled:opacity-50">{tr('Erneut suchen')}</button>
+      </div>
+    </div>
+  ) : null
 
   const bambu = devices.find(d => d.device_type === 'bambu_lab')
   const klipperDev = devices.find(d => d.device_type === 'klipper')
@@ -260,7 +276,8 @@ export default function Setup({ setCurrentPage }) {
                   {discovered && (
                     <div className="space-y-1.5">
                       {discovered.error && <p className="text-[11px] text-amber-400">{tr('Suche fehlgeschlagen')}: {discovered.error}</p>}
-                      {!discovered.error && !discovered.bambu?.length && (
+                      <DockerBridgeHint />
+                      {!discovered.error && !discovered.docker_bridge && !discovered.bambu?.length && (
                         <p className="text-[11px] text-surface-600">{tr('Kein Bambu gefunden — bitte manuell eintragen. (In Docker-Bridge-Netzen kommt SSDP nicht an.)')}</p>
                       )}
                       {discovered.bambu?.map((b, i) => (
@@ -338,7 +355,8 @@ export default function Setup({ setCurrentPage }) {
                   {discovered && (
                     <div className="space-y-1.5">
                       {discovered.error && <p className="text-[11px] text-amber-400">{tr('Suche fehlgeschlagen')}: {discovered.error}</p>}
-                      {!discovered.error && !discovered.klipper?.length && (
+                      <DockerBridgeHint />
+                      {!discovered.error && !discovered.docker_bridge && !discovered.klipper?.length && (
                         <p className="text-[11px] text-surface-600">{tr('Kein Klipper/Moonraker gefunden — bitte manuell eintragen.')}</p>
                       )}
                       {discovered.klipper?.map((k, i) => (

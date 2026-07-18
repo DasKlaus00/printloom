@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.153',
+    de: [
+      'Netzwerk-Suche in Docker korrigiert: Bisher meldete die Suche im Docker-Bridge-Netz fälschlich eine Docker-interne Adresse (z. B. 172.18.0.2) als Drucker. Jetzt erkennt Printloom die Bridge, scannt das nutzlose Docker-Netz nicht mehr und blendet die eigene Container-Adresse aus. Stattdessen erscheint ein Feld, in dem du dein echtes LAN-Subnetz (z. B. 192.168.1) eingibst — damit wird das richtige Netz gescannt (per Docker-Routing erreichbar), auch ohne „network_mode: host".',
+    ],
+    en: [
+      'Fixed network discovery in Docker: previously the scan in a Docker bridge network wrongly reported a Docker-internal address (e.g. 172.18.0.2) as a printer. Printloom now detects the bridge, no longer scans the useless Docker network and hides its own container address. Instead a field appears where you enter your real LAN subnet (e.g. 192.168.1) — that scans the correct network (reachable via Docker routing), even without "network_mode: host".',
+    ],
+  },
+  {
     version: '1.0.152',
     de: [
       'Magazin-Sollzahl fest je Rack: In Konfiguration → Regal legst du „Platten pro Magazin" jetzt als FESTE Sollzahl fest (z. B. 4+4+4). Beim Entnehmen aller Platten und beim Reset/Auffüllen stellt sich das Magazin wieder exakt auf diese Ursprungszahl — vorher konnte es je nach Verlauf schief stehen (z. B. 3/6/3) und bis zur Fachzahl (6) hochlaufen.',

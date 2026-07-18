@@ -854,6 +854,12 @@ const EN_STRINGS = {
   'Access-Code wird nie mitgesendet — den trägst du selbst ein.': 'The access code is never broadcast — you enter it yourself.',
   'bereits angelegt': 'already added',
   'Übernehmen': 'Use',
+  'Printloom läuft in einem Docker-Bridge-Netz und sieht dein LAN nicht automatisch (die erkannte IP ist die Container-Adresse 172.x). Gib dein LAN-Subnetz ein und suche erneut — oder nutze „network_mode: host".':
+    'Printloom is running in a Docker bridge network and cannot see your LAN automatically (the detected IP is the container address 172.x). Enter your LAN subnet and scan again — or use "network_mode: host".',
+  'Printloom läuft in einem Docker-Bridge-Netz und sieht dein LAN nicht automatisch. Gib dein LAN-Subnetz ein und suche erneut — oder nutze „network_mode: host".':
+    'Printloom is running in a Docker bridge network and cannot see your LAN automatically. Enter your LAN subnet and scan again — or use "network_mode: host".',
+  '(erste drei Zahlen deiner LAN-IP)': '(first three numbers of your LAN IP)',
+  'Erneut suchen': 'Scan again',
   '🌀 Bauraumlüftung dauerhaft aus': '🌀 Keep chamber fan off',
   'Bauraumlüftung dauerhaft ausgeschaltet halten': 'Keep the chamber ventilation permanently off',
   'Prüft laufend über die MQTT-Verbindung und schaltet den Bauraumlüfter (P3) aus, sobald er anläuft.':

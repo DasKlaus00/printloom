@@ -815,7 +815,8 @@ function Configuration() {
 
   // Netzwerk-Suche + Bauraumlüfter-Option je Bambu-Gerät.
   const [discovering, setDiscovering] = useState(false)
-  const [discovered, setDiscovered]   = useState(null)   // { bambu:[], klipper:[] } | null
+  const [discovered, setDiscovered]   = useState(null)   // { bambu:[], klipper:[], docker_bridge } | null
+  const [scanSubnet, setScanSubnet]   = useState('')     // optionales /24 für Docker-Bridge
   const [fanOff, setFanOff]           = useState({})     // { [deviceId]: bool }
 
   const bambu = devices.find(d => d.device_type === 'bambu_lab')
@@ -852,10 +853,10 @@ function Configuration() {
   }
 
   // Netzwerk nach Druckern durchsuchen (SSDP-Bambu + Moonraker-Scan).
-  const runDiscover = async () => {
+  const runDiscover = async (subnet = '') => {
     setDiscovering(true); setDiscovered(null)
     try {
-      const r = await deviceService.discover()
+      const r = await deviceService.discover(subnet.trim() || undefined)
       setDiscovered(r.data ?? { bambu: [], klipper: [] })
     } catch (e) {
       setDiscovered({ bambu: [], klipper: [], error: e.response?.data?.detail ?? e.message })
@@ -1013,7 +1014,22 @@ function Configuration() {
               <button onClick={() => setDiscovered(null)} className="text-[11px] text-surface-500 hover:text-surface-300">{tr('ausblenden')}</button>
             </div>
             {discovered.error && <p className="text-xs text-amber-400">{tr('Suche fehlgeschlagen')}: {discovered.error}</p>}
-            {!discovered.error && !discovered.bambu?.length && !discovered.klipper?.length && (
+            {/* Docker-Bridge erkannt: eigenes Subnetz angeben, Container sieht das LAN sonst nicht */}
+            {discovered.docker_bridge && (
+              <div className="rounded-lg border border-amber-800/60 bg-amber-950/20 px-3 py-2 space-y-2">
+                <p className="text-[11px] text-amber-300">
+                  {tr('Printloom läuft in einem Docker-Bridge-Netz und sieht dein LAN nicht automatisch (die erkannte IP ist die Container-Adresse 172.x). Gib dein LAN-Subnetz ein und suche erneut — oder nutze „network_mode: host".')}
+                </p>
+                <div className="flex items-center gap-2">
+                  <input type="text" value={scanSubnet} onChange={e => setScanSubnet(e.target.value)}
+                    placeholder="192.168.1" className="text-xs font-mono py-1 w-32" />
+                  <span className="text-[10px] text-surface-600">{tr('(erste drei Zahlen deiner LAN-IP)')}</span>
+                  <button onClick={() => runDiscover(scanSubnet)} disabled={discovering || !scanSubnet.trim()}
+                    className="btn btn-secondary btn-sm disabled:opacity-50">{tr('Erneut suchen')}</button>
+                </div>
+              </div>
+            )}
+            {!discovered.error && !discovered.docker_bridge && !discovered.bambu?.length && !discovered.klipper?.length && (
               <p className="text-xs text-surface-500">
                 {tr('Nichts gefunden. In Docker (Bridge-Netz) kommen SSDP-Broadcasts nicht am Container an — nutze „network_mode: host" oder trage den Drucker manuell ein.')}
               </p>
