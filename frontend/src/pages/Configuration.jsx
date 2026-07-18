@@ -376,8 +376,9 @@ function RegalKonfiguration() {
       setH(d.slot_height_mm ?? 50)
       setMargin(d.height_margin_pct ?? 15)
       setMagazineSlot(d.magazine_slot ?? 7)
-      const counts = d.magazine_counts ?? []
-      setMagazineCounts(counts.length ? counts : Array(d.num_racks ?? 3).fill(6))
+      // Fest konfigurierte Sollzahl je Magazin (nicht der schwankende Live-Bestand).
+      const defs = d.magazine_defaults ?? d.magazine_counts ?? []
+      setMagazineCounts(defs.length ? defs : Array(d.num_racks ?? 3).fill(4))
     } catch {}
   }
   useEffect(() => { load() }, [])
@@ -402,7 +403,7 @@ function RegalKonfiguration() {
         slot_height_mm:   +h,
         height_margin_pct: +margin,
         magazine_slot:    +magazineSlot,
-        magazine_counts:  magazineCounts.map(Number),
+        magazine_defaults: magazineCounts.map(Number),
       })
       await load()
       setStatus({ ok: true, msg: tr('Regal gespeichert.') })
@@ -454,8 +455,8 @@ function RegalKonfiguration() {
         </div>
       </div>
       <div className="border-t border-surface-800/40 pt-2 space-y-2">
-        <p className="text-[10px] text-surface-500">{tr('Platten pro Magazin')} <span className="text-surface-700">{tr('— aktueller Bestand')}</span></p>
-        <p className="text-[9px] text-surface-700">{tr('Farm leert Rack 1 zuerst, dann 2, dann 3 usw.')}</p>
+        <p className="text-[10px] text-surface-500">{tr('Platten pro Magazin')} <span className="text-surface-700">{tr('— feste Sollzahl')}</span></p>
+        <p className="text-[9px] text-surface-700">{tr('Fest je Magazin. „↺ Reset" (Regal-Ansicht) und Auffüllen stellen genau diese Zahl wieder her; sie bildet auch die Obergrenze im Magazin-Badge. Farm leert Rack 1 zuerst, dann 2, dann 3 usw.')}</p>
         <div className="flex items-center gap-2 flex-wrap">
           {magazineCounts.map((cnt, ri) => (
             <div key={ri} className="flex items-center gap-1.5">

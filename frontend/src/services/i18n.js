@@ -895,6 +895,9 @@ const EN_STRINGS = {
   'Fach in jedem Rack (Standard: 7)': 'Slot in each rack (default: 7)',
   'Platten pro Magazin': 'Plates per magazine',
   '— aktueller Bestand': '— current stock',
+  '— feste Sollzahl': '— fixed target count',
+  'Fest je Magazin. „↺ Reset" (Regal-Ansicht) und Auffüllen stellen genau diese Zahl wieder her; sie bildet auch die Obergrenze im Magazin-Badge. Farm leert Rack 1 zuerst, dann 2, dann 3 usw.':
+    'Fixed per magazine. "↺ Reset" (rack view) and refill restore exactly this number; it is also the upper limit in the magazine badge. Farm empties rack 1 first, then 2, then 3, etc.',
   'Farm leert Rack 1 zuerst, dann 2, dann 3 usw.': 'Farm empties rack 1 first, then 2, then 3, etc.',
   '= {0} gesamt': '= {0} total',
   'z. B. 00M…': 'e.g. 00M…',

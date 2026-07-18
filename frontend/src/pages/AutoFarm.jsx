@@ -2191,7 +2191,7 @@ function AutoFarm() {
                     rackData.magazine_count <= 1  ? 'border-amber-800/50 bg-amber-950/20 text-amber-400' :
                     'border-surface-700/50 bg-surface-800/30 text-surface-500'
                   }`}>
-                    📦 {rackData.magazine_count}/{numRacks * slotsPerRack}
+                    📦 {rackData.magazine_count}/{rackData.magazine_total ?? (numRacks * slotsPerRack)}
                   </span>
                 )}
               </div>

@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.152',
+    de: [
+      'Magazin-Sollzahl fest je Rack: In Konfiguration → Regal legst du „Platten pro Magazin" jetzt als FESTE Sollzahl fest (z. B. 4+4+4). Beim Entnehmen aller Platten und beim Reset/Auffüllen stellt sich das Magazin wieder exakt auf diese Ursprungszahl — vorher konnte es je nach Verlauf schief stehen (z. B. 3/6/3) und bis zur Fachzahl (6) hochlaufen.',
+      'Magazin-Badge im Regal (oben links) zeigt jetzt die konfigurierte Maximalzahl (z. B. 11/12) statt der theoretischen Fach-Kapazität (11/18).',
+    ],
+    en: [
+      'Fixed magazine target per rack: in Configuration → Rack you now set "Plates per magazine" as a FIXED target (e.g. 4+4+4). When you remove all plates and on reset/refill the magazine returns to exactly this original number — previously it could end up uneven (e.g. 3/6/3) and climb up to the slot count (6).',
+      'The rack magazine badge (top left) now shows the configured maximum (e.g. 11/12) instead of the theoretical slot capacity (11/18).',
+    ],
+  },
+  {
     version: '1.0.151',
     de: [
       'Netzwerk-Suche für Drucker: Im Setup-Assistenten (Schritt Drucker & OTTOeject) und in Konfiguration → Geräte gibt es jetzt „🔍 Netzwerk durchsuchen". Bambu-Drucker werden per SSDP gefunden (IP, Name UND Seriennummer werden direkt übernommen — wie in OrcaSlicer); Klipper/OTTOeject per Moonraker-Scan inkl. Hostname. Ein Klick füllt das Formular vor, nur der Access-Code wird noch selbst eingetragen (der wird aus Sicherheitsgründen nie mitgesendet). Hinweis: In Docker-Bridge-Netzen erreichen SSDP-Broadcasts den Container nicht — dort greift ein Port-Scan-Fallback (Drucker mit IP, Seriennummer dann manuell) oder man nutzt „network_mode: host".',

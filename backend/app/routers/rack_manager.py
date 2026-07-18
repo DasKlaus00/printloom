@@ -28,6 +28,11 @@ DEFAULT_NUM_RACKS      = 3
 DEFAULT_SLOTS_PER_RACK = 6
 DEFAULT_SLOT_H         = 50
 DEFAULT_MAGAZINE_SLOT  = 7
+# Fest konfigurierte Platten pro Magazin (je Rack) — die „Sollzahl". `magazine_counts`
+# ist der LIVE-Bestand (sinkt beim Drucken, steigt beim Entnehmen), `magazine_defaults`
+# ist der in den Einstellungen fest gesetzte Ausgangswert, auf den ein Reset zurückgeht
+# und der die Magazin-Obergrenze (Badge-Nenner + Auffüll-Deckel) bildet.
+DEFAULT_MAGAZINE_DEFAULT = 4
 
 STATUSES = {
     "free":     {"label": "Leer",     "color": "gray"},
@@ -56,7 +61,8 @@ def _default_data(num_racks=DEFAULT_NUM_RACKS, slots_per_rack=DEFAULT_SLOTS_PER_
         "stack_rack":       1,
         "stack_slot":       DEFAULT_MAGAZINE_SLOT,
         "magazine_slot":    DEFAULT_MAGAZINE_SLOT,
-        "magazine_counts":  [6] * num_racks,
+        "magazine_defaults": [DEFAULT_MAGAZINE_DEFAULT] * num_racks,
+        "magazine_counts":  [DEFAULT_MAGAZINE_DEFAULT] * num_racks,
         "max_plates":       4,
         "slots":            slots,
     }
@@ -93,13 +99,24 @@ def _load() -> dict:
             data.setdefault("max_plates", 4)
             data.pop("magazine_count", None)  # no longer stored, calculated dynamically
             data.setdefault("magazine_slot", DEFAULT_MAGAZINE_SLOT)
-            # Initialize per-rack magazine counts; resize if num_racks changed
+            # Fest konfigurierte Soll-Platten je Magazin. Bestehende Installationen ohne
+            # dieses Feld erben `max_plates` (Default 4) als Ausgangswert — der Nutzer
+            # setzt seine echte Zahl danach in den Einstellungen.
+            seed = int(data.get("max_plates", DEFAULT_MAGAZINE_DEFAULT)) or DEFAULT_MAGAZINE_DEFAULT
+            if "magazine_defaults" not in data or not isinstance(data.get("magazine_defaults"), list):
+                data["magazine_defaults"] = [seed] * nr
+            else:
+                defs = [max(0, int(c)) for c in data["magazine_defaults"]]
+                if len(defs) < nr:
+                    defs += [seed] * (nr - len(defs))
+                data["magazine_defaults"] = defs[:nr]
+            # Live-Bestand je Rack; bei geänderter Rack-Zahl auf die Sollwerte auffüllen.
             if "magazine_counts" not in data:
-                data["magazine_counts"] = [int(data.get("max_plates", 6))] * nr
+                data["magazine_counts"] = list(data["magazine_defaults"])
             else:
                 counts = [max(0, int(c)) for c in data["magazine_counts"]]
                 if len(counts) < nr:
-                    counts += [6] * (nr - len(counts))
+                    counts += [data["magazine_defaults"][i] for i in range(len(counts), nr)]
                 data["magazine_counts"] = counts[:nr]
             return data
         except Exception as e:
@@ -402,7 +419,8 @@ def get_all(db: Session = Depends(get_db)):
     nr  = data.get("num_racks",      DEFAULT_NUM_RACKS)
     spr = data.get("slots_per_rack",  DEFAULT_SLOTS_PER_RACK)
     max_plates = data.get("max_plates", 4)
-    mag_counts = data.get("magazine_counts", [6] * nr)
+    mag_counts = data.get("magazine_counts", [DEFAULT_MAGAZINE_DEFAULT] * nr)
+    mag_defs   = data.get("magazine_defaults", [DEFAULT_MAGAZINE_DEFAULT] * nr)
     return {
         "num_racks":          nr,
         "slots_per_rack":     spr,
@@ -415,6 +433,9 @@ def get_all(db: Session = Depends(get_db)):
         "magazine_slot":      data.get("magazine_slot", DEFAULT_MAGAZINE_SLOT),
         "magazine_counts":    mag_counts,
         "magazine_count":     max(0, sum(mag_counts)),
+        # Fest konfigurierte Sollwerte + deren Summe (Badge-Nenner „X / magazine_total").
+        "magazine_defaults":  mag_defs,
+        "magazine_total":     max(0, sum(mag_defs)),
         "max_plates":         max_plates,
         "slots":              data["slots"],
         "statuses":           STATUSES,
@@ -441,6 +462,13 @@ def update_config(body: dict, db: Session = Depends(get_db)):
     if "magazine_slot" in body:
         data["magazine_slot"] = max(1, int(body["magazine_slot"]))
         data["stack_slot"]    = data["magazine_slot"]  # keep in sync
+    # Fest konfigurierte Sollwerte je Magazin. Werden sie gesetzt, gilt der Live-Bestand
+    # als frisch bestückt → `magazine_counts` wird gleich auf die Sollwerte gesetzt
+    # (der Nutzer legt hier fest „so viele Platten liegen im Magazin").
+    if "magazine_defaults" in body and isinstance(body["magazine_defaults"], list):
+        defs = [max(0, int(c)) for c in body["magazine_defaults"]]
+        data["magazine_defaults"] = defs
+        data["magazine_counts"]   = list(defs)
     if "magazine_counts" in body:
         counts = body["magazine_counts"]
         if isinstance(counts, list):
@@ -456,6 +484,15 @@ def update_config(body: dict, db: Session = Depends(get_db)):
             k = f"{r}-{s}"
             new_slots[k] = existing.get(k, _default_slot())
     data["slots"] = new_slots
+    # Magazin-Arrays an die (evtl. neue) Rack-Zahl anpassen: fehlende Racks mit dem
+    # Sollwert (bzw. Default) auffüllen, überzählige abschneiden.
+    seed = DEFAULT_MAGAZINE_DEFAULT
+    defs = [max(0, int(c)) for c in data.get("magazine_defaults", [])]
+    defs = (defs + [seed] * nr)[:nr]
+    data["magazine_defaults"] = defs
+    cnts = [max(0, int(c)) for c in data.get("magazine_counts", [])]
+    cnts = (cnts + [defs[i] for i in range(len(cnts), nr)])[:nr]
+    data["magazine_counts"] = cnts
     _sync_db_slots(db, nr * spr)
     _save(data)
     return {
@@ -470,24 +507,25 @@ def update_config(body: dict, db: Session = Depends(get_db)):
 
 @router.post("/magazine/refill")
 def refill_magazine(body: dict = None):
-    """Refill every rack's magazine to full WITHOUT touching the rack layout.
-    Body may include {"value": N} to set a specific count; otherwise each rack is
-    refilled to `slots_per_rack` (the configured capacity)."""
+    """Magazin-Bestand zurücksetzen, OHNE das Regal-Layout anzufassen.
+    Ohne Body wird jedes Rack auf seinen fest konfigurierten Sollwert
+    (`magazine_defaults`) zurückgesetzt — genau die „Ursprungszahl", die in den
+    Einstellungen festgelegt wurde. Mit {"value": N} werden alle Racks auf N gesetzt."""
     data = _load()
-    nr  = int(data.get("num_racks",     DEFAULT_NUM_RACKS))
-    spr = int(data.get("slots_per_rack", DEFAULT_SLOTS_PER_RACK))
+    nr   = int(data.get("num_racks", DEFAULT_NUM_RACKS))
+    defs = [max(0, int(c)) for c in data.get("magazine_defaults", [])]
+    defs = (defs + [DEFAULT_MAGAZINE_DEFAULT] * nr)[:nr]
     body = body or {}
     if body.get("value") is not None:
-        target = max(0, int(body["value"]))
+        counts = [max(0, int(body["value"]))] * nr
     else:
-        target = spr
-    data["magazine_counts"] = [target] * nr
+        counts = list(defs)   # zurück auf die konfigurierten Sollwerte (Ursprungszahl)
+    data["magazine_counts"] = counts
     _save(data)
     return {
         "success":         True,
-        "magazine_counts": data["magazine_counts"],
-        "magazine_count":  target * nr,
-        "per_rack":        target,
+        "magazine_counts": counts,
+        "magazine_count":  sum(counts),
     }
 
 
@@ -525,9 +563,10 @@ _PLATE_PRESENT = ("done", "printing", "occupied")
 
 def _refill_one(data: dict, slot_id: str):
     """A plate taken out of the rack goes back into that rack's magazine ('oben
-    aufgefüllt'). Call this AFTER the slot has been set to free. Capped so that
-    magazine + plates-still-in-this-rack never exceeds the rack capacity — i.e.
-    with 2 plates in the rack the magazine tops out at capacity − 2."""
+    aufgefüllt'). Call this AFTER the slot has been set to free. Gedeckelt auf den
+    fest konfigurierten Sollwert dieses Magazins (`magazine_defaults`) minus der noch
+    im Rack liegenden Platten — so kann der Bestand nie über die „Ursprungszahl"
+    steigen (früher fälschlich auf die Fachzahl/Kapazität gedeckelt → z. B. 6 statt 4)."""
     try:
         rack = int(str(slot_id).split("-")[0])
     except Exception:
@@ -536,10 +575,11 @@ def _refill_one(data: dict, slot_id: str):
     idx = rack - 1
     if not (0 <= idx < len(counts)):
         return
-    spr = int(data.get("slots_per_rack", DEFAULT_SLOTS_PER_RACK))
+    defs = data.get("magazine_defaults") or []
+    default = int(defs[idx]) if 0 <= idx < len(defs) else DEFAULT_MAGAZINE_DEFAULT
     occupied = sum(1 for k, s in (data.get("slots") or {}).items()
                    if k.split("-")[0] == str(rack) and s.get("status") in _PLATE_PRESENT)
-    cap = max(0, spr - occupied)
+    cap = max(0, default - occupied)
     counts[idx] = min(cap, int(counts[idx]) + 1)
     data["magazine_counts"] = counts
 
@@ -579,6 +619,7 @@ def clear_slots(body: dict = None):
         status = body.get("status", "done")
         ids = [k for k, s in slots.items() if s.get("status") == status]
     cleared = 0
+    touched_racks = set()
     for k in ids:
         if k in slots:
             prev = slots[k].get("status")
@@ -587,6 +628,25 @@ def clear_slots(body: dict = None):
             cleared += 1
             if prev in _PLATE_PRESENT:
                 _refill_one(data, k)   # taken-out plate → back into the magazine
+                touched_racks.add(k.split("-")[0])
+    # Ist ein Rack nach dem Entnehmen KOMPLETT leer, steht sein Magazin exakt auf der
+    # konfigurierten Sollzahl (alle Platten liegen dann als Leerplatten im Magazin) —
+    # so landet „alle entnehmen" verlässlich wieder auf der Ursprungszahl, statt je nach
+    # Verlauf schief zu stehen.
+    defs = data.get("magazine_defaults") or []
+    counts = data.get("magazine_counts") or []
+    for r in touched_racks:
+        try:
+            idx = int(r) - 1
+        except ValueError:
+            continue
+        if not (0 <= idx < len(counts)):
+            continue
+        rack_has_plate = any(kk.split("-")[0] == r and ss.get("status") in _PLATE_PRESENT
+                             for kk, ss in slots.items())
+        if not rack_has_plate and 0 <= idx < len(defs):
+            counts[idx] = int(defs[idx])
+    data["magazine_counts"] = counts
     _save(data)
     return {"success": True, "cleared": cleared, "slots": slots}
 
