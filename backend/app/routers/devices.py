@@ -47,10 +47,19 @@ async def discover_devices(subnet: str = None, db: Session = Depends(get_db)):
     automatisch (SSDP inkl. Seriennummer)."""
     from app.services import discovery
     result = await discovery.discover(subnet=subnet)
-    known_ips = {d.ip_address for d in db.query(Device).all() if d.ip_address}
-    for lst in (result.get("bambu", []), result.get("klipper", [])):
-        for item in lst:
-            item["configured"] = item.get("ip") in known_ips
+    # Bereits angelegte Geräte werden gar nicht erst als Fund angeboten (per IP ODER
+    # Seriennummer — so taucht ein umgezogener Drucker mit neuer IP nicht doppelt auf).
+    devices = db.query(Device).all()
+    known_ips     = {d.ip_address for d in devices if d.ip_address}
+    known_serials = {d.serial_number for d in devices if d.serial_number}
+    result["bambu"] = [
+        b for b in result.get("bambu", [])
+        if b.get("ip") not in known_ips and (not b.get("serial") or b["serial"] not in known_serials)
+    ]
+    result["klipper"] = [
+        k for k in result.get("klipper", [])
+        if k.get("ip") not in known_ips
+    ]
     return result
 
 

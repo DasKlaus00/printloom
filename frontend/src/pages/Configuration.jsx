@@ -853,10 +853,12 @@ function Configuration() {
   }
 
   // Netzwerk nach Druckern durchsuchen (SSDP-Bambu + Moonraker-Scan).
-  const runDiscover = async (subnet = '') => {
+  // subnet kann ein String ODER (bei onClick) ein Event sein → robust normalisieren.
+  const runDiscover = async (subnet) => {
+    const s = (typeof subnet === 'string' ? subnet : '').trim()
     setDiscovering(true); setDiscovered(null)
     try {
-      const r = await deviceService.discover(subnet.trim() || undefined)
+      const r = await deviceService.discover(s || undefined)
       setDiscovered(r.data ?? { bambu: [], klipper: [] })
     } catch (e) {
       setDiscovered({ bambu: [], klipper: [], error: e.response?.data?.detail ?? e.message })
@@ -996,7 +998,7 @@ function Configuration() {
         <div className="flex items-center justify-between mb-4">
           <p className="section-label mb-0">Devices</p>
           <div className="flex items-center gap-2">
-            <button onClick={runDiscover} disabled={discovering} className="btn btn-ghost btn-sm disabled:opacity-50"
+            <button onClick={() => runDiscover()} disabled={discovering} className="btn btn-ghost btn-sm disabled:opacity-50"
               title={tr('Netzwerk nach Bambu-Druckern (SSDP) und Klipper/Moonraker durchsuchen')}>
               {discovering ? tr('Suche…') : tr('🔍 Netzwerk durchsuchen')}
             </button>
@@ -1043,9 +1045,7 @@ function Configuration() {
                     {b.model ? ` · ${b.model}` : ''}
                   </p>
                 </div>
-                {b.configured
-                  ? <span className="badge badge-green shrink-0">{tr('bereits angelegt')}</span>
-                  : <button onClick={() => applyDiscovered(b, 'bambu_lab')} className="btn btn-secondary btn-sm shrink-0">{tr('Übernehmen')}</button>}
+                <button onClick={() => applyDiscovered(b, 'bambu_lab')} className="btn btn-secondary btn-sm shrink-0">{tr('Übernehmen')}</button>
               </div>
             ))}
             {discovered.klipper?.map((k, i) => (
@@ -1054,9 +1054,7 @@ function Configuration() {
                   <p className="text-sm text-surface-200 truncate">🦾 {k.hostname || 'Klipper / OTTOeject'} <span className="text-surface-500 font-mono text-xs">· {k.ip}:{k.port}</span></p>
                   <p className="text-[11px] text-surface-600 font-mono">Moonraker</p>
                 </div>
-                {k.configured
-                  ? <span className="badge badge-green shrink-0">{tr('bereits angelegt')}</span>
-                  : <button onClick={() => applyDiscovered(k, 'klipper')} className="btn btn-secondary btn-sm shrink-0">{tr('Übernehmen')}</button>}
+                <button onClick={() => applyDiscovered(k, 'klipper')} className="btn btn-secondary btn-sm shrink-0">{tr('Übernehmen')}</button>
               </div>
             ))}
           </div>

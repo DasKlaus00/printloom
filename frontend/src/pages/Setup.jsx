@@ -69,10 +69,11 @@ export default function Setup({ setCurrentPage }) {
   const [discovered, setDiscovered]   = useState(null)   // { bambu:[], klipper:[], docker_bridge } | null
   const [scanSubnet, setScanSubnet]   = useState('')
 
-  const runDiscover = async (subnet = '') => {
+  const runDiscover = async (subnet) => {
+    const s = (typeof subnet === 'string' ? subnet : '').trim()
     setDiscovering(true); setDiscovered(null)
     try {
-      const r = await deviceService.discover(subnet.trim() || undefined)
+      const r = await deviceService.discover(s || undefined)
       setDiscovered(r.data ?? { bambu: [], klipper: [] })
     } catch (e) {
       setDiscovered({ bambu: [], klipper: [], error: e.response?.data?.detail ?? e.message })
@@ -270,7 +271,7 @@ export default function Setup({ setCurrentPage }) {
 
                 {/* Netzwerk-Suche: findet X1C per SSDP inkl. IP + Seriennummer */}
                 <div className="border border-surface-700 rounded-lg p-3 bg-surface-900/50 space-y-2">
-                  <button onClick={runDiscover} disabled={discovering} className="btn-secondary text-sm disabled:opacity-50">
+                  <button onClick={() => runDiscover()} disabled={discovering} className="btn-secondary text-sm disabled:opacity-50">
                     {discovering ? tr('Suche im Netzwerk…') : tr('🔍 Drucker im Netzwerk suchen')}
                   </button>
                   {discovered && (
@@ -349,7 +350,7 @@ export default function Setup({ setCurrentPage }) {
 
                 {/* Netzwerk-Suche: findet Moonraker per Port-Scan inkl. Hostname */}
                 <div className="border border-surface-700 rounded-lg p-3 bg-surface-900/50 space-y-2">
-                  <button onClick={runDiscover} disabled={discovering} className="btn-secondary text-sm disabled:opacity-50">
+                  <button onClick={() => runDiscover()} disabled={discovering} className="btn-secondary text-sm disabled:opacity-50">
                     {discovering ? tr('Suche im Netzwerk…') : tr('🔍 OTTOeject im Netzwerk suchen')}
                   </button>
                   {discovered && (

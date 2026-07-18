@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.154',
+    de: [
+      'Netzwerk-Suche: Fehler „_.trim is not a function" beim Start der Suche behoben (der Klick übergab versehentlich das Event statt des Subnetzes).',
+      'Netzwerk-Suche: Bereits angelegte Geräte werden nicht mehr als Fund angeboten — abgeglichen per IP UND Seriennummer (ein umgezogener Drucker mit neuer IP taucht so nicht doppelt auf).',
+    ],
+    en: [
+      'Network discovery: fixed the "_.trim is not a function" error when starting a scan (the click accidentally passed the event instead of the subnet).',
+      'Network discovery: already-added devices are no longer offered as a result — matched by IP AND serial number (a printer that moved to a new IP no longer shows up twice).',
+    ],
+  },
+  {
     version: '1.0.153',
     de: [
       'Netzwerk-Suche in Docker korrigiert: Bisher meldete die Suche im Docker-Bridge-Netz fälschlich eine Docker-interne Adresse (z. B. 172.18.0.2) als Drucker. Jetzt erkennt Printloom die Bridge, scannt das nutzlose Docker-Netz nicht mehr und blendet die eigene Container-Adresse aus. Stattdessen erscheint ein Feld, in dem du dein echtes LAN-Subnetz (z. B. 192.168.1) eingibst — damit wird das richtige Netz gescannt (per Docker-Routing erreichbar), auch ohne „network_mode: host".',
