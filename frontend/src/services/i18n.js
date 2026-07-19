@@ -860,6 +860,30 @@ const EN_STRINGS = {
     'Printloom is running in a Docker bridge network and cannot see your LAN automatically. Enter your LAN subnet and scan again — or use "network_mode: host".',
   '(erste drei Zahlen deiner LAN-IP)': '(first three numbers of your LAN IP)',
   'Erneut suchen': 'Scan again',
+
+  /* ── Historie + Crash-Warnung + Queue ── */
+  'Historie': 'History',
+  'Leeren': 'Clear',
+  'anzeigen': 'show',
+  'Status': 'Status',
+  'Start': 'Start',
+  'Ende': 'End',
+  'Dauer': 'Duration',
+  'Modell': 'Model',
+  'Verstanden': 'Got it',
+  'Geborgen': 'Recovered',
+  'Alle abgeschlossenen Druck-Jobs mit Datum, Anfangs- und End-Uhrzeit.': 'All completed print jobs with date, start and end time.',
+  'Historie leeren': 'Clear history',
+  'Wirklich die gesamte Druck-Historie löschen? Das kann nicht rückgängig gemacht werden.': 'Really delete the entire print history? This cannot be undone.',
+  'Noch keine abgeschlossenen Drucke.': 'No completed prints yet.',
+  '{0} fertig — ausgeblendet': '{0} done — hidden',
+  'Historie öffnen →': 'Open history →',
+  'Mögliche Kollision mit dem OTTOeject-Arm — klicken für Details': 'Possible collision with the OTTOeject arm — click for details',
+  'Wahrscheinliche Kollision mit dem OTTOeject-Arm': 'Likely collision with the OTTOeject arm',
+  'Oberhalb von {0} mm Höhe ragt der Druck bei Z={1} mm auf X={2} mm in die seitliche Randzone (0–{3} mm bzw. {4}–{5} mm). Dort fährt der OTTOeject-Arm beim Auswerfen und Einlagern entlang — beim Druck dieser Datei kommt es sehr wahrscheinlich zu einem Crash.':
+    'Above {0} mm height the print reaches X={2} mm at Z={1} mm into the side margin (0–{3} mm or {4}–{5} mm). The OTTOeject arm travels there when ejecting and storing — printing this file will very likely cause a crash.',
+  'Geprüft wird der gesamte G-code (inkl. Verfahrwege): oberhalb von {0} mm Höhe darf kein X-Wert unter {1} mm oder über {2} mm liegen. Verschiebe das Objekt zur Bettmitte oder halte in der Randzone unter {0} mm Höhe.':
+    'The entire G-code is checked (incl. travel moves): above {0} mm height no X value may be below {1} mm or above {2} mm. Move the object toward the bed center or keep anything in the margin zone below {0} mm height.',
   '🌀 Bauraumlüftung dauerhaft aus': '🌀 Keep chamber fan off',
   'Bauraumlüftung dauerhaft ausgeschaltet halten': 'Keep the chamber ventilation permanently off',
   'Prüft laufend über die MQTT-Verbindung und schaltet den Bauraumlüfter (P3) aus, sobald er anläuft.':

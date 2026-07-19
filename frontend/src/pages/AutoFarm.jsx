@@ -721,7 +721,7 @@ function QueuePlanner({ jobs, tr }) {
   )
 }
 
-function AutoFarm() {
+function AutoFarm({ setCurrentPage } = {}) {
   const { tr } = useLanguage()
   const [gcodeFiles,      setGcodeFiles]      = useState([])
   const [rackData,        setRackData]        = useState(null)
@@ -752,6 +752,7 @@ function AutoFarm() {
   const [tplOpen,         setTplOpen]         = useState(false)
   const [tplName,         setTplName]         = useState('')
   const [plannerOpen,     setPlannerOpen]     = useState(false)
+  const [showDone,        setShowDone]        = useState(false)   // fertige Jobs ausgeblendet (→ Historie)
   const [filePlates,      setFilePlates]      = useState([])     // plate numbers in selected file (multi-plate .3mf) → ALL get added as jobs
   const [amsSlots,        setAmsSlots]        = useState([])
   const [amsLoading,      setAmsLoading]      = useState(false)
@@ -1698,6 +1699,9 @@ function AutoFarm() {
   const pendingJobs   = jobs.filter(j => j.status === 'pending')
   const errorJobs     = jobs.filter(j => j.status === 'error')
   const activeJobs    = jobs.filter(j => ['pending', 'printing'].includes(j.status))
+  // Fertige Jobs werden in der Queue ausgeblendet (stehen in der Historie); optional einblendbar.
+  const doneJobsCount = jobs.filter(j => j.status === 'done').length
+  const visibleJobs   = showDone ? jobs : jobs.filter(j => j.status !== 'done')
   const eta = useQueueEta()   // echte Rest-Druckzeit der Warteschlange (Dashboard nutzt denselben Hook)
 
   // Slot → Job-Map für die Regal-Anzeige. NUR aktiv laufende Jobs (Server hat ihr
@@ -2001,7 +2005,20 @@ function AutoFarm() {
             </div>
           )}
 
-          {!jobs.length ? (
+          {/* Fertige Jobs sind ausgeblendet (→ Historie); Zähler + Einblenden-Umschalter. */}
+          {doneJobsCount > 0 && (
+            <div className="flex items-center gap-2 mb-3 text-[11px]">
+              <span className="text-surface-600">{tr('{0} fertig — ausgeblendet', doneJobsCount)}</span>
+              <button onClick={() => setShowDone(s => !s)} className="text-blue-400 hover:text-blue-300">
+                {showDone ? tr('ausblenden') : tr('anzeigen')}
+              </button>
+              <span className="text-surface-700">·</span>
+              <button onClick={() => setCurrentPage?.('history')} className="text-surface-500 hover:text-surface-300">
+                {tr('Historie öffnen →')}
+              </button>
+            </div>
+          )}
+          {!visibleJobs.length ? (
             <div className="flex flex-col items-center justify-center py-12 text-surface-600 text-center">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" className="mb-3 opacity-40">
                 <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -2015,7 +2032,7 @@ function AutoFarm() {
             </div>
           ) : (
             <div className="space-y-3">
-              {jobs.map((job, idx) => {
+              {visibleJobs.map((job, idx) => {
                 const sm      = S[job.status] ?? S.pending
                 const busy    = running && job.id === curJobId
                 const displayH = job.computedHeight ?? job.objectHeight
@@ -2093,7 +2110,7 @@ function AutoFarm() {
                         <>
                           <button onClick={() => moveJobUp(job.id)} disabled={idx === 0}
                             className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▲</button>
-                          <button onClick={() => moveJobDown(job.id)} disabled={idx === jobs.length - 1}
+                          <button onClick={() => moveJobDown(job.id)} disabled={idx === visibleJobs.length - 1}
                             className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▼</button>
                           <span
                             draggable

@@ -47,7 +47,9 @@ LOG_PATH      = db_path("farm_log.txt")
 STATS_PATH    = db_path("farm_stats.json")
 HISTORY_PATH  = db_path("farm_history.json")
 TIMELINE_PATH = db_path("farm_timeline.json")
+COMPLETED_PATH = db_path("farm_completed.json")   # Historie: abgeschlossene Druck-Jobs
 TIMELINE_MAX  = 1000  # keep the most recent N events
+COMPLETED_MAX = 2000  # keep the most recent N completed jobs (Historie)
 HISTORY_KEEP  = 8     # rolling samples per file for the duration average
 
 SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
@@ -292,6 +294,36 @@ def _record_event(etype: str, job: str = "", detail: str = ""):
         storage.write_json(TIMELINE_PATH, events)
     except Exception as e:
         logger.warning(f"timeline write failed: {e}")
+
+
+def _record_completed(job: dict, status: str, started_at, ended_at,
+                      duration_min: float, reason: str = ""):
+    """Einen abgeschlossenen Job in die Historie schreiben (neueste zuerst).
+    status: 'done' | 'error' | 'ejected'. Enthält Datum + Anfang/Ende-Uhrzeit."""
+    try:
+        items = storage.read_json(COMPLETED_PATH, [])
+        if not isinstance(items, list):
+            items = []
+        s_iso = started_at.isoformat() if hasattr(started_at, "isoformat") else (started_at or "")
+        e_iso = ended_at.isoformat() if hasattr(ended_at, "isoformat") else (ended_at or "")
+        items.insert(0, {
+            "fileId":     job.get("fileId"),
+            "fileName":   job.get("fileName", ""),
+            "plate":      job.get("plate"),
+            "plateTotal": job.get("plateTotal"),
+            "plateName":  job.get("plateName") or "",
+            "slot":       job.get("slot"),
+            "status":     status,
+            "reason":     reason or "",
+            "started_at": s_iso,
+            "ended_at":   e_iso,
+            "duration_min": round(float(duration_min), 1) if duration_min else None,
+        })
+        if len(items) > COMPLETED_MAX:
+            items = items[:COMPLETED_MAX]
+        storage.write_json(COMPLETED_PATH, items)
+    except Exception as e:
+        logger.warning(f"completed-history write failed: {e}")
 
 
 def _log(msg: str):
@@ -2349,6 +2381,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 _record_success(round(actual_min) or job.get("estimatedMinutes") or 0, used_kwh)
                 _record_duration(job.get("fileId"), actual_min, used_kwh)
                 _record_event("print_done", job.get("fileName", ""), f"Fach {job['slot']}")
+                _record_completed(job, "done", job_started_at, datetime.now(), actual_min)
                 cur_slot = None
                 _farm["current_job_id"] = None
                 _log(f"✓ Fertig: {job['fileName']}")
@@ -2364,6 +2397,8 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 _log(f"🔴 {msg}")
                 _record_failure(msg)
                 _record_event("error", job.get("fileName", ""), msg[:70])
+                _record_completed(job, "ejected", job_started_at, datetime.now(),
+                                  (datetime.now() - job_started_at).total_seconds() / 60.0, msg[:120])
                 _set_job(job["id"], {"status": "error"})
                 _rack_update(job["slot"], "done", job.get("fileName", ""))
                 cur_slot = None
@@ -2380,6 +2415,8 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 _log(f"FEHLER: {msg}")
                 _record_failure(msg)
                 _record_event("error", job.get("fileName", ""), msg[:70])
+                _record_completed(job, "error", job_started_at, datetime.now(),
+                                  (datetime.now() - job_started_at).total_seconds() / 60.0, msg[:120])
                 _set_job(job["id"], {"status": "error"})
                 if cur_slot:
                     _rack_update(job["slot"], "free")
@@ -3097,6 +3134,26 @@ async def reset_timeline():
     try:
         if os.path.exists(TIMELINE_PATH):
             os.remove(TIMELINE_PATH)
+    except Exception:
+        pass
+    return {"success": True}
+
+
+@router.get("/completed")
+async def get_completed(limit: int = 500):
+    """Historie abgeschlossener Druck-Jobs (neueste zuerst): Modell, Platte, Fach,
+    Datum, Anfangs-/End-Uhrzeit, Dauer, Status (done/error/ejected)."""
+    items = storage.read_json(COMPLETED_PATH, [])
+    if not isinstance(items, list):
+        items = []
+    return {"items": items[:max(1, min(limit, COMPLETED_MAX))], "total": len(items)}
+
+
+@router.delete("/completed")
+async def clear_completed():
+    try:
+        if os.path.exists(COMPLETED_PATH):
+            os.remove(COMPLETED_PATH)
     except Exception:
         pass
     return {"success": True}

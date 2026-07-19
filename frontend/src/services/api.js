@@ -59,6 +59,10 @@ export const fileService = {
   deepAnalyze:  (id)       => api.get(`/files/${id}/deep-analyze`),
   getQuickMeta: (id)       => api.get(`/files/${id}/quick-meta`),
   getPlatesMeta:(id)       => api.get(`/files/${id}/plates-meta`),
+  // Crash-Check: Objekt >30 mm hoch UND ragt in den 10-mm-Randstreifen (OTTOeject-Arm)?
+  crashCheck:   (id, plate = null) => api.get(`/files/${id}/crash-check`, {
+    params: plate != null ? { plate } : {}, timeout: 20000,
+  }),
   thumbnailUrl: (id)       => `/api/files/${id}/thumbnail`,
 }
 
@@ -197,6 +201,8 @@ export const autofarmService = {
   clearLogFile:      ()      => api.delete('/autofarm/log/file'),
   getStats:          ()      => api.get('/autofarm/stats'),
   resetStats:        ()      => api.delete('/autofarm/stats'),
+  getCompleted:      (limit = 500) => api.get('/autofarm/completed', { params: { limit } }),
+  clearCompleted:    ()      => api.delete('/autofarm/completed'),
   getHistory:        ()      => api.get('/autofarm/history'),
   getTimeline:       (hours = 24) => api.get('/autofarm/timeline', { params: { hours } }),
   getFileFilaments:  (id, plate) => api.get(`/autofarm/file_filaments/${id}`, plate != null ? { params: { plate } } : undefined),

@@ -16,6 +16,11 @@ const icons = {
       <path d="M20.07 4.93a10 10 0 0 1 0 14.14"/><path d="M3.93 4.93a10 10 0 0 0 0 14.14"/>
     </svg>
   ),
+  history: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/>
+    </svg>
+  ),
   projekt: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="18" height="4" rx="1"/>
@@ -124,6 +129,7 @@ function buildPages(t, tr) {
     { id: 'files',         label: t('nav.files'),         icon: 'files'       },
     { id: 'steuerung',     label: tr('Steuerung'),        icon: 'controls'    },
     { id: 'autofarm',      label: t('nav.autofarm'),      icon: 'autofarm'    },
+    { id: 'history',       label: tr('Historie'),         icon: 'history'     },
     { id: 'projekt',       label: tr('Projekt'),          icon: 'projekt'     },
     { id: 'sequence',      label: t('nav.sequence'),      icon: 'sequence'    },
     { id: 'profiles',      label: t('nav.profiles'),      icon: 'profiles'    },

@@ -357,6 +357,51 @@ function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sendin
   )
 }
 
+// Klickbares „!" wenn der G-code den OTTOeject-Arm rammen könnte: Objekt >30 mm hoch
+// UND ragt in den seitlichen 10-mm-Randstreifen (auch Verfahrwege). Lazy geladen.
+function CrashWarning({ fileId, plate = null }) {
+  const { tr } = useLanguage()
+  const [info, setInfo] = useState(null)   // null = lädt
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    let alive = true
+    fileService.crashCheck(fileId, plate)
+      .then(r => { if (alive) setInfo(r.data ?? {}) })
+      .catch(() => { if (alive) setInfo({}) })
+    return () => { alive = false }
+  }, [fileId, plate])
+  if (!info?.crash_risk) return null
+  const xmax = info.x_max_mm ?? 256, margin = info.x_margin_mm ?? 10, zlim = info.z_limit_mm ?? 30
+  return (
+    <>
+      <button onClick={() => setOpen(true)}
+        className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-600 text-white text-xs font-bold hover:bg-red-500 shrink-0 animate-pulse"
+        title={tr('Mögliche Kollision mit dem OTTOeject-Arm — klicken für Details')}>!</button>
+      {open && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={() => setOpen(false)}>
+          <div className="max-w-lg w-full bg-surface-900 border border-red-800/70 rounded-xl p-5 space-y-3 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-600 text-white text-sm font-bold">!</span>
+              <p className="text-sm font-semibold text-red-300">{tr('Wahrscheinliche Kollision mit dem OTTOeject-Arm')}</p>
+            </div>
+            <p className="text-xs text-surface-300 leading-relaxed">
+              {tr('Oberhalb von {0} mm Höhe ragt der Druck bei Z={1} mm auf X={2} mm in die seitliche Randzone (0–{3} mm bzw. {4}–{5} mm). Dort fährt der OTTOeject-Arm beim Auswerfen und Einlagern entlang — beim Druck dieser Datei kommt es sehr wahrscheinlich zu einem Crash.',
+                zlim, info.hit_z_mm, info.hit_x_mm, margin, Math.round(xmax - margin), Math.round(xmax))}
+            </p>
+            <p className="text-[11px] text-surface-500 leading-relaxed">
+              {tr('Geprüft wird der gesamte G-code (inkl. Verfahrwege): oberhalb von {0} mm Höhe darf kein X-Wert unter {1} mm oder über {2} mm liegen. Verschiebe das Objekt zur Bettmitte oder halte in der Randzone unter {0} mm Höhe.',
+                zlim, margin, Math.round(xmax - margin))}
+            </p>
+            <div className="flex justify-end">
+              <button onClick={() => setOpen(false)} className="btn btn-secondary btn-sm">{tr('Verstanden')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 function FileRow({ file, meta, folderOptions, folderById, searching, selected, onToggleSelect,
                   onSaveField, onMoveFolder, onDelete, onQueue, onSend, bambuId, sending, enqueuing,
                   amsSlots, catalog, onQueuePlate, onSendPlate }) {
@@ -420,6 +465,7 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] text-surface-600 font-mono">{(file.file_size / 1024).toFixed(1)} KB · ID {file.id}</span>
             {isPrintable && <MetaChips meta={meta} />}
+            {isPrintable && <CrashWarning fileId={file.id} />}
             {/* Multi-Plate-Badge: aufklappen → Platten einzeln (Zeit/Höhe/Druck/Queue) */}
             {isPrintable && (meta?.plate_count ?? 0) > 1 && (
               <button onClick={() => setShowPlates(s => !s)}

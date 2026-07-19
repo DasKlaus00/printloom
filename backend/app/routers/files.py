@@ -460,6 +460,129 @@ async def get_plates_meta(file_id: int, db: Session = Depends(get_db)):
     return result
 
 
+# ── Crash-Check: OTTOeject-Kollisionszone ────────────────────────────────────
+# Beim Auswerfen/Einlagern fährt der OTTOeject-Arm seitlich am Bett vorbei. Ragt ein
+# hohes Objekt in die seitlichen Randstreifen (links 0–X_MARGIN, rechts X_MAX−X_MARGIN),
+# kollidiert der Arm. Wir scannen den G-code der Platte: sobald OBERHALB von Z_LIMIT
+# ein X-Wert in die Randzone fällt (auch reine Verfahrwege!), gilt der Druck als riskant.
+CRASH_Z_LIMIT   = 30.0     # mm — ab hier ist die Randzone kritisch
+CRASH_X_MARGIN  = 10.0     # mm — Streifen links/rechts, in dem der Arm fährt
+CRASH_X_MAX     = 256.0    # mm — Bettbreite X (X1C); per Query überschreibbar
+
+_CRASH_CACHE: dict = {}    # (file_id, plate, x_max) → (sig, result)
+_NUM = r'[-+]?\d*\.?\d+'
+_RE_Z = re.compile(r'[Zz](' + _NUM + r')')
+_RE_X = re.compile(r'[Xx](' + _NUM + r')')
+_RE_MOVE = re.compile(r'^G[0-3]\b')
+
+
+def _scan_gcode_for_crash(line_iter, x_max: float,
+                          x_margin: float = CRASH_X_MARGIN,
+                          z_limit: float = CRASH_Z_LIMIT) -> dict:
+    """G-code zeilenweise durchgehen, aktuelle Z-Höhe mitführen und melden, sobald
+    oberhalb `z_limit` ein X-Wert in die Randzone (< x_margin oder > x_max − x_margin)
+    fällt. Bricht beim ersten Treffer ab. Nur absolute Positionierung (G90) wird geprüft."""
+    z = 0.0
+    absolute = True
+    max_z = 0.0
+    lo, hi = x_margin, x_max - x_margin
+    for raw in line_iter:
+        line = raw.split(';', 1)[0].strip()
+        if not line:
+            continue
+        u = line.upper()
+        if u.startswith('G90'):
+            absolute = True
+            continue
+        if u.startswith('G91'):
+            absolute = False
+            continue
+        if not _RE_MOVE.match(u):
+            continue
+        mz = _RE_Z.search(line)
+        if mz and absolute:
+            try:
+                z = float(mz.group(1))
+                if z > max_z:
+                    max_z = z
+            except ValueError:
+                pass
+        if not absolute or z <= z_limit:
+            continue
+        mx = _RE_X.search(line)
+        if mx:
+            try:
+                x = float(mx.group(1))
+            except ValueError:
+                continue
+            if x < lo or x > hi:
+                return {"crash_risk": True, "max_z_mm": round(max_z, 1),
+                        "hit_z_mm": round(z, 1), "hit_x_mm": round(x, 1)}
+    return {"crash_risk": False, "max_z_mm": round(max_z, 1)}
+
+
+@router.get("/{file_id}/crash-check")
+def crash_check(file_id: int, plate: int = None, x_max: float = CRASH_X_MAX,
+                db: Session = Depends(get_db)):
+    """Prüft, ob der Druck den OTTOeject-Arm rammt: Objekt höher als 30 mm UND ragt
+    links/rechts in den 10-mm-Randstreifen (auch Verfahrwege). Ergebnis wird gecacht.
+    Bewusst SYNCHRON (def): der volle G-code-Scan blockiert sonst den Event-Loop —
+    so führt FastAPI ihn im Threadpool aus (viele Datei-Zeilen gleichzeitig unkritisch)."""
+    file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    if file.file_type not in ('.3mf', '.gcode') or not os.path.exists(file.file_path):
+        return {"crash_risk": False, "max_z_mm": None}
+    try:
+        sig = _qmeta_sig(file.file_path)
+        cache_key = (file_id, plate, x_max)
+        cached = _CRASH_CACHE.get(cache_key)
+        if cached and cached[0] == sig:
+            return cached[1]
+    except OSError:
+        sig = None
+    try:
+        if file.file_type == '.3mf':
+            with zipfile.ZipFile(file.file_path, 'r') as zf:
+                names = zf.namelist()
+                if plate:
+                    targets = [n for n in names
+                               if re.match(rf'Metadata/plate_{plate}\.gcode$', n, re.IGNORECASE)]
+                else:
+                    # Ohne Plattenangabe ALLE Platten prüfen (bei Multi-Plate reicht eine
+                    # gefährliche Platte, damit die Datei als riskant gilt).
+                    targets = sorted([n for n in names if re.match(r'Metadata/plate_\d+\.gcode$', n, re.IGNORECASE)],
+                                     key=lambda n: int(re.search(r'plate_(\d+)', n).group(1)))
+                    if not targets:
+                        single = next((n for n in names if n.lower().endswith('.gcode')), None)
+                        targets = [single] if single else []
+                if not targets:
+                    return {"crash_risk": False, "max_z_mm": None}
+                result = {"crash_risk": False, "max_z_mm": 0.0}
+                for gname in targets:
+                    with zf.open(gname) as gf:
+                        r = _scan_gcode_for_crash(
+                            io.TextIOWrapper(gf, encoding='utf-8', errors='ignore'), x_max)
+                    result["max_z_mm"] = max(result.get("max_z_mm") or 0.0, r.get("max_z_mm") or 0.0)
+                    if r.get("crash_risk"):
+                        m = re.search(r'plate_(\d+)', gname)
+                        r["plate"] = int(m.group(1)) if m else None
+                        result = r
+                        break
+        else:
+            with open(file.file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                result = _scan_gcode_for_crash(f, x_max)
+    except Exception as e:
+        logger.warning(f"crash-check failed for {file_id}: {e}")
+        return {"crash_risk": False, "max_z_mm": None, "error": str(e)}
+    result["z_limit_mm"] = CRASH_Z_LIMIT
+    result["x_margin_mm"] = CRASH_X_MARGIN
+    result["x_max_mm"] = x_max
+    if sig:
+        _CRASH_CACHE[cache_key] = (sig, result)
+    return result
+
+
 @router.get("/{file_id}/deep-analyze")
 async def deep_analyze_file(file_id: int, db: Session = Depends(get_db)):
     """Vollständige Analyse einer .3mf / .gcode Datei — alle Slicer-Metadaten."""

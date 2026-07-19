@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.155',
+    de: [
+      'Crash-Warnung in der Datei-Bibliothek: Ein rotes „!" erscheint an Modellen, deren G-code den OTTOeject-Arm rammen würde — geprüft wird der GESAMTE G-code (inkl. Verfahrwege): ragt oberhalb von 30 mm Höhe ein X-Wert in den seitlichen 10-mm-Randstreifen (links 0–10 mm oder rechts X_max−10 mm), gilt der Druck als riskant. Klick auf das „!" zeigt den konkreten Trefferpunkt (Z/X) und was zu tun ist. Bei Multi-Plate-Dateien werden alle Platten geprüft.',
+      'Warteschlange: Fertige Jobs werden jetzt wirklich ausgeblendet (mit Zähler „N fertig — ausgeblendet" und Umschalter zum Einblenden).',
+      'Neuer Tab „Historie": alle abgeschlossenen Druck-Jobs mit Datum, Anfangs- und End-Uhrzeit, Dauer, Modell (inkl. Platte), Fach und Status (Fertig/Fehler/Geborgen).',
+    ],
+    en: [
+      'Crash warning in the file library: a red "!" appears on models whose G-code would hit the OTTOeject arm — the ENTIRE G-code is checked (incl. travel moves): if above 30 mm height any X value reaches into the 10 mm side margin (left 0–10 mm or right X_max−10 mm), the print is flagged risky. Clicking the "!" shows the exact hit point (Z/X) and what to do. Multi-plate files check every plate.',
+      'Queue: finished jobs are now actually hidden (with a "N done — hidden" counter and a toggle to show them).',
+      'New "History" tab: all completed print jobs with date, start and end time, duration, model (incl. plate), slot and status (Done/Error/Recovered).',
+    ],
+  },
+  {
     version: '1.0.154',
     de: [
       'Netzwerk-Suche: Fehler „_.trim is not a function" beim Start der Suche behoben (der Klick übergab versehentlich das Event statt des Subnetzes).',
