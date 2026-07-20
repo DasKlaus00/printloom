@@ -485,7 +485,7 @@ function X1CView({ bambuId }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-surface-500">{tr('Oben · X1C (RTSPS · direkt)')}</span>
+        <span className="text-[10px] text-surface-500">{tr('Oben · Drucker-Kamera (direkt)')}</span>
         <button onClick={() => live ? stop() : connect()} disabled={!bambuId}
           className={`btn btn-sm px-2 ${live ? 'btn-primary' : 'btn-ghost'}`}
           title={tr('LAN-Liveview muss am Drucker aktiv sein')}>
@@ -496,13 +496,13 @@ function X1CView({ bambuId }) {
         {live ? (
           err ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1.5 px-3 text-center">
-              <p className="text-[10px]">{tr('X1C nicht erreichbar')}</p>
+              <p className="text-[10px]">{tr('Drucker-Kamera nicht erreichbar')}</p>
               {err && <p className="text-[9px] font-mono text-red-400/80 break-all">{err}</p>}
               <button onClick={connect} className="btn btn-ghost btn-sm mt-0.5">{tr('Neu verbinden')}</button>
             </div>
           ) : ready ? (
             visible ? (
-              <img key={key} src={`${printerService.cameraStreamUrl(bambuId)}?t=${key}`} alt="X1C Live"
+              <img key={key} src={`${printerService.cameraStreamUrl(bambuId)}?t=${key}`} alt="Drucker-Kamera Live"
                 onError={() => setErr(e => e || tr('Stream-Verbindung abgebrochen'))}
                 className="w-full h-full object-contain" />
             ) : (

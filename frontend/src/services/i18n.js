@@ -142,6 +142,16 @@ let dynamicPacks = (() => {
 // English overrides keyed by the exact German source string (see tr() below).
 // Filled in incrementally per page; missing entries fall back to German.
 const EN_STRINGS = {
+  // ── Kamera (Modell-Auswahl) ──
+  'Eingebaute Kamera': 'Built-in camera',
+  'Automatisch erkennen (empfohlen)': 'Auto-detect (recommended)',
+  'X1 / X1C / X1E — RTSPS (flüssig)': 'X1 / X1C / X1E — RTSPS (smooth)',
+  'P1P / P1S / A1 — Port 6000 (Standbilder, langsam)': 'P1P / P1S / A1 — Port 6000 (stills, slow)',
+  'Aus (keine eingebaute Kamera)': 'Off (no built-in camera)',
+  'Der P1S/A1 liefert nur ~1–wenige Bilder/s (Hardware-Limit), kein flüssiges Video. „Automatisch" prüft den Drucker selbst — nur ändern, wenn die Erkennung danebenliegt.':
+    'The P1S/A1 only delivers ~1–a few frames/s (hardware limit), not smooth video. "Auto-detect" probes the printer itself — only change this if detection gets it wrong.',
+  'Oben · Drucker-Kamera (direkt)': 'Top · printer camera (direct)',
+  'Drucker-Kamera nicht erreichbar': 'Printer camera unreachable',
   // ── Shared / status ──
   'Leer': 'Empty',
   'Bereit': 'Ready',

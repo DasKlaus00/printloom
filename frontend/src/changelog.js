@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.157',
+    de: [
+      'Drucker-Kamera funktioniert jetzt auch für P1P/P1S und A1/A1 mini. Diese Modelle haben (anders als der X1C) keinen RTSP-Stream — Printloom spricht jetzt ihr Port-6000-Kameraprotokoll. Hinweis: Der P1S/A1 liefert nur langsame Standbilder (~1–wenige Bilder/s, Hardware-Limit), kein flüssiges Video wie beim X1C.',
+      'Das Kamera-Backend wird pro Drucker automatisch erkannt (X1-Serie → RTSPS, P1/A1 → Port 6000). In „Konfiguration & Kameras" lässt sich der Kamera-Typ pro Drucker auch manuell festlegen (Automatisch / X1 / P1·A1 / Aus), falls die Erkennung mal danebenliegt.',
+      'Aufräumen unter der Haube: Die geteilte Kamera-Hub-Logik (ein Stream pro Drucker, Verteilung an alle Zuschauer, Leerlauf-Stopp) ist jetzt protokoll-unabhängig und wird von beiden Kamera-Wegen genutzt.',
+    ],
+    en: [
+      'The printer camera now works for P1P/P1S and A1/A1 mini too. Unlike the X1C these models have no RTSP stream — Printloom now speaks their port-6000 camera protocol. Note: the P1S/A1 only delivers slow stills (~1–a few frames/s, a hardware limit), not smooth video like the X1C.',
+      'The camera backend is auto-detected per printer (X1 series → RTSPS, P1/A1 → port 6000). In "Configuration & cameras" you can also set the camera type per printer manually (Auto / X1 / P1·A1 / Off) in case detection gets it wrong.',
+      'Under-the-hood cleanup: the shared camera-hub logic (one stream per printer, fanned out to all viewers, idle stop) is now protocol-agnostic and used by both camera paths.',
+    ],
+  },
+  {
     version: '1.0.156',
     de: [
       'Release-Kanal ist jetzt ein kompakter Umschalter (Latest ↔ Beta). Auf Beta erscheint eine deutliche Warnung: Beta ist NICHT stabil, Nutzung auf eigene Gefahr, vorher Backup machen.',

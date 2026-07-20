@@ -1,32 +1,29 @@
-"""X1C chamber camera via its RTSPS stream, transcoded by ffmpeg.
+"""X1-Serie: Kammer-Kamera über den RTSPS-Stream, per ffmpeg transkodiert.
 
-Newer X1C firmware (>=01.11) rejects the legacy port-6000 camera protocol
-(see bambu_camera.py) but still exposes the chamber camera as RTSPS:
+Nur die X1-Serie (X1, X1C, X1E) stellt die eingebaute Kamera als RTSPS bereit:
 
     rtsps://bblp:<access_code>@<ip>:322/streaming/live/1
 
-Browsers can't play RTSPS, so the backend runs ffmpeg to pull it and emit MJPEG
-(a sequence of JPEG frames) that a plain <img> / multipart response can show.
+Browser können RTSPS nicht abspielen, deshalb zieht das Backend den Stream per
+ffmpeg und gibt MJPEG (eine Folge von JPEG-Frames) aus, das ein einfaches
+<img> / multipart-Response zeigen kann.
 
-WICHTIG (Ressourcen + Stabilität): Der MJPEG-Transcode kostet ~0,5-1 CPU-Kern pro
-ffmpeg, und der X1C erlaubt nur EINEN RTSP-Client. Deshalb läuft hier pro Drucker
-genau EIN geteilter ffmpeg (Hub): ein Leser-Thread parst die JPEG-Frames, alle
-Zuschauer (Streams UND Snapshots) bekommen dieselben Frames verteilt. Früher
-startete jeder Zuschauer einen eigenen ffmpeg → mehrere Kerne Dauerlast und
-gegenseitiges Rauswerfen am einzigen RTSP-Slot (Reconnect-Sturm). Der Hub stoppt
-~5 s nachdem der letzte Zuschauer weg ist.
+Der geteilte Frame-Hub (ein ffmpeg pro Drucker, Fan-out an alle Zuschauer, Leerlauf-
+Stopp, Snapshot-aus-dem-Stream) steckt jetzt in camera_hub — hier bleibt nur der
+ffmpeg-`Producer`. P1S/A1 nutzen ein anderes Protokoll (bambu_camera). Welche Kamera
+ein Drucker hat, entscheidet camera.py.
 
-Requires ffmpeg in the image and "LAN Mode Liveview" enabled on the printer.
-The cert is self-signed; ffmpeg's rtsps client does not verify it by default.
+Voraussetzung: ffmpeg im Image und „LAN-Modus Liveview" am Drucker aktiv. Das Zertifikat
+ist selbstsigniert; ffmpegs rtsps-Client prüft es standardmäßig nicht.
 """
 import subprocess
 import threading
-import time
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from typing import Iterator, Optional
 
 from app.paths import resolve_ffmpeg
+from app.services import camera_hub
+from app.services.camera_hub import executor  # re-export: geteilter Kamera-Pool
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +44,9 @@ def _no_window_kwargs() -> dict:
 
 RTSP_PORT = 322
 _MAX_FRAME = 8_000_000      # sanity cap (8 MB) for a single JPEG
-_IDLE_STOP_S = 5.0          # Hub stoppt so viele Sekunden nach dem letzten Zuschauer
-_FRAME_TIMEOUT_S = 15.0     # kein neues Frame so lange → Stream gilt als abgerissen
 
-# Eigener kleiner Pool für blockierende Kamera-Arbeit (Snapshots bis 15 s) — hält
-# den Default-Executor und den MQTT/FTP-Pool (bambu_manager) frei.
-executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="camera")
+_NO_IMAGE = ("ffmpeg lieferte kein Bild — LAN-Modus Liveview am Drucker aktiv? "
+             "Access-Code korrekt?")
 
 
 def _url(ip: str, access_code: str) -> str:
@@ -110,76 +104,32 @@ def _iter_jpeg(stdout, on_frame) -> int:
                 return count
 
 
-# ── Geteilter Stream-Hub (ein ffmpeg pro Drucker) ────────────────────────────
-class _Hub:
+# ── ffmpeg-Producer (X1-Serie, RTSPS) ────────────────────────────────────────
+class _FfmpegProducer(camera_hub.Producer):
+    default_error = _NO_IMAGE
+
     def __init__(self, ip: str, access_code: str):
         self.ip, self.code = ip, access_code
-        self.cond = threading.Condition()
-        self.frame: Optional[bytes] = None
-        self.frame_id = 0
-        self.error: Optional[str] = None
-        self.dead = False
-        self.refs = 0
-        self.idle_since: Optional[float] = None
         self.proc: Optional[subprocess.Popen] = None
+        self._err = ""
 
-    # -- Lebenszyklus -----------------------------------------------------
-    def start(self, first_frame_timeout: float) -> None:
-        """ffmpeg + Leser-Thread starten und auf das ERSTE Frame warten (oder
-        ConnectionError mit dem echten ffmpeg-Fehler werfen)."""
+    def open(self) -> None:
         self.proc = subprocess.Popen(
             _cmd(self.ip, self.code, single=False),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
             **_no_window_kwargs(),
         )
-        threading.Thread(target=self._reader, daemon=True,
-                         name=f"cam-hub-{self.ip}").start()
-        with self.cond:
-            self.cond.wait_for(lambda: self.frame_id > 0 or self.dead,
-                               timeout=first_frame_timeout)
-            if self.frame_id > 0:
-                return
-            # Kein Frame → aufräumen und den echten Grund melden.
-            self.dead = True
-        self._kill()
-        raise ConnectionError(
-            self.error
-            or "ffmpeg lieferte kein Bild — LAN-Modus Liveview am Drucker aktiv? Access-Code korrekt?")
 
-    def _reader(self) -> None:
-        err_txt = ""
+    def read(self, on_frame) -> None:
+        _iter_jpeg(self.proc.stdout, on_frame)
         try:
-            def on_frame(jpeg: bytes):
-                with self.cond:
-                    if self.dead:
-                        return False
-                    self.frame = jpeg
-                    self.frame_id += 1
-                    self.cond.notify_all()
-                    # Niemand schaut mehr und Gnadenfrist vorbei → selbst beenden.
-                    if self.refs == 0 and self.idle_since is not None \
-                            and time.monotonic() - self.idle_since > _IDLE_STOP_S:
-                        self.dead = True
-                        return False
-                return True
-            _iter_jpeg(self.proc.stdout, on_frame)
-            try:
-                err_txt = (self.proc.stderr.read() or b"").decode("utf-8", "ignore").strip()
-            except Exception:
-                pass
-        except Exception as e:
-            err_txt = str(e)
-        finally:
-            with self.cond:
-                if not self.dead:
-                    lines = err_txt.splitlines()
-                    self.error = lines[-1] if lines else "Stream beendet"
-                self.dead = True
-                self.cond.notify_all()
-            self._kill()
-            _drop_hub(self)
+            self._err = (self.proc.stderr.read() or b"").decode("utf-8", "ignore").strip()
+        except Exception:
+            pass
 
-    def _kill(self) -> None:
+    def close(self) -> None:
+        if not self.proc:
+            return
         for closer in (lambda: self.proc.kill(),
                        lambda: self.proc.stdout and self.proc.stdout.close(),
                        lambda: self.proc.stderr and self.proc.stderr.close()):
@@ -188,95 +138,18 @@ class _Hub:
             except Exception:
                 pass
 
-    # -- Zuschauer ----------------------------------------------------------
-    def acquire(self) -> None:
-        with self.cond:
-            self.refs += 1
-            self.idle_since = None
-
-    def release(self) -> None:
-        with self.cond:
-            self.refs -= 1
-            if self.refs <= 0:
-                self.refs = 0
-                self.idle_since = time.monotonic()
-        # Fallback-Stopp, falls ffmpeg keine Frames mehr liefert (der Reader-Check
-        # oben greift nur pro Frame): nach der Gnadenfrist hart prüfen.
-        threading.Timer(_IDLE_STOP_S + 0.5, self._stop_if_idle).start()
-
-    def _stop_if_idle(self) -> None:
-        with self.cond:
-            if self.refs > 0 or self.dead or self.idle_since is None:
-                return
-            if time.monotonic() - self.idle_since < _IDLE_STOP_S:
-                return
-            self.dead = True
-            self.cond.notify_all()
-        self._kill()
-        _drop_hub(self)
-
-    def frames_iter(self) -> Iterator[bytes]:
-        """Frames ab jetzt liefern; Ende/Fehler des Hubs beendet den Iterator mit
-        ConnectionError (der Browser/<img> verbindet dann neu)."""
-        self.acquire()
-        last_id = 0
-        try:
-            while True:
-                with self.cond:
-                    self.cond.wait_for(lambda: self.frame_id > last_id or self.dead,
-                                       timeout=_FRAME_TIMEOUT_S)
-                    if self.frame_id > last_id:
-                        last_id = self.frame_id     # slow-consumer: Frames überspringen ist ok
-                        jpeg = self.frame
-                    elif self.dead:
-                        raise ConnectionError(self.error or "Kamera-Stream beendet")
-                    else:
-                        raise ConnectionError("Kamera-Stream eingefroren (kein Frame)")
-                yield jpeg
-        finally:
-            self.release()
-
-    def latest_frame(self, max_age_frames_timeout: float = 3.0) -> Optional[bytes]:
-        """Aktuelles Frame des laufenden Hubs (für Snapshots) — vermeidet einen
-        zweiten RTSP-Zugriff, der den einzigen Slot des X1C stehlen würde."""
-        with self.cond:
-            if self.frame is not None and not self.dead:
-                return self.frame
-            self.cond.wait_for(lambda: self.frame_id > 0 or self.dead,
-                               timeout=max_age_frames_timeout)
-            return self.frame if not self.dead else None
+    def error_detail(self) -> str:
+        return self._err
 
 
-_hubs: dict = {}
-_hubs_lock = threading.Lock()
-
-
-def _drop_hub(hub: "_Hub") -> None:
-    with _hubs_lock:
-        if _hubs.get((hub.ip, hub.code)) is hub:
-            del _hubs[(hub.ip, hub.code)]
-
-
-def _get_hub(ip: str, access_code: str, first_frame_timeout: float) -> _Hub:
-    with _hubs_lock:
-        hub = _hubs.get((ip, access_code))
-        if hub is not None and not hub.dead:
-            return hub
-        hub = _Hub(ip, access_code)
-        _hubs[(ip, access_code)] = hub
-    try:
-        hub.start(first_frame_timeout)
-    except Exception:
-        _drop_hub(hub)
-        raise
-    return hub
+def _key(ip: str, access_code: str):
+    return ("rtsp", ip, access_code)
 
 
 def _raise_if_disabled() -> None:
     """Globaler Kamera-Aus-Schalter (System-Seite): auf schwachen Geräten (z. B.
     Raspberry Pi) frisst der RTSPS→MJPEG-Transcode alle Kerne — dann darf hier
-    NIE ein ffmpeg starten. Zentral an beiden Einstiegen (stream/single_frame),
-    damit auch künftige Aufrufer automatisch abgedeckt sind."""
+    NIE ein ffmpeg starten."""
     from app.services import appsettings
     if appsettings.camera_disabled():
         raise ConnectionError(
@@ -284,22 +157,8 @@ def _raise_if_disabled() -> None:
 
 
 def stop_all() -> None:
-    """Alle laufenden Kamera-Hubs SOFORT beenden (z. B. wenn die Kamera global
-    deaktiviert wird): ffmpeg killen, Zuschauer-Iteratoren enden — nicht erst
-    auf den Leerlauf-Stopp warten."""
-    with _hubs_lock:
-        hubs = list(_hubs.values())
-    for hub in hubs:
-        try:
-            with hub.cond:
-                hub.dead = True
-                if not hub.error:
-                    hub.error = "Kamera deaktiviert"
-                hub.cond.notify_all()
-            hub._kill()
-            _drop_hub(hub)
-        except Exception:
-            pass
+    """Alle laufenden Kamera-Hubs beenden (backend-übergreifend)."""
+    camera_hub.stop_all()
 
 
 def stream(ip: str, access_code: str, read_timeout: float = 15.0) -> Iterator[bytes]:
@@ -307,7 +166,9 @@ def stream(ip: str, access_code: str, read_timeout: float = 15.0) -> Iterator[by
     pro Drucker, egal wie viele Zuschauer). Wirft ConnectionError, wenn die Kamera
     nicht erreichbar ist (echter ffmpeg-Fehlertext)."""
     _raise_if_disabled()
-    return _get_hub(ip, access_code, read_timeout).frames_iter()
+    hub = camera_hub.get_hub(_key(ip, access_code),
+                             lambda: _FfmpegProducer(ip, access_code), read_timeout)
+    return hub.frames_iter()
 
 
 def _single_frame_oneshot(ip: str, access_code: str,
@@ -342,9 +203,7 @@ def _single_frame_oneshot(ip: str, access_code: str,
         except Exception:
             pass
         detail = err.decode("utf-8", "ignore").strip().splitlines()
-        raise ConnectionError(
-            (detail[-1] if detail else "")
-            or "ffmpeg lieferte kein Bild — LAN-Modus Liveview am Drucker aktiv? Access-Code korrekt?")
+        raise ConnectionError((detail[-1] if detail else "") or _NO_IMAGE)
     finally:
         got_first.set()
         for closer in (lambda: proc.kill(),
@@ -360,9 +219,8 @@ def single_frame(ip: str, access_code: str) -> Optional[bytes]:
     """Ein JPEG-Frame (Snapshots). Läuft gerade ein Hub, wird dessen aktuelles
     Frame genommen (kein zweiter RTSP-Zugriff); sonst kurzer One-Shot-ffmpeg."""
     _raise_if_disabled()
-    with _hubs_lock:
-        hub = _hubs.get((ip, access_code))
-    if hub is not None and not hub.dead:
+    hub = camera_hub.find_hub(_key(ip, access_code))
+    if hub is not None:
         img = hub.latest_frame()
         if img:
             return img

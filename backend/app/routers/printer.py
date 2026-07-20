@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db, SessionLocal
 from app.models.models import Device, PrinterType, UploadedFile
 from app.services.bambu_ftp import BambuFTP
-from app.services import storage, rtsp_camera, bambu_manager
+from app.services import storage, bambu_manager, camera
 
 
 def _make_print_name(original: str) -> str:
@@ -782,18 +782,21 @@ def _camera_enabled(db: Session, device_id: int) -> bool:
 
 async def capture_snapshot(device_id: int) -> Optional[str]:
     """Best-effort webcam grab for the AutoFarm loop. Uses the configured webcam_url
-    if set, otherwise the printer's built-in X1C camera (port 6000). Returns the saved
-    filename or None if unavailable. Never raises."""
+    if set, otherwise the printer's built-in camera (X1 → RTSPS, P1/A1 → Port 6000;
+    camera.py picks the right one). Returns the saved filename or None if unavailable.
+    Never raises."""
     db = SessionLocal()
+    settings = {}
     try:
         if not _camera_enabled(db, device_id):
             return None  # Kamera per Toggle aus → keine (auto.) Snapshots
         webcam_url = _get_webcam_url(db, device_id)
+        settings = _device_settings(db, device_id)
         device = db.query(Device).filter(Device.id == device_id).first()
         ip, code = (device.ip_address, device.access_code) if device else (None, None)
         if device:
-            # Force-load the attributes the MQTT client needs before the session
-            # closes (the instance is detached afterwards → DetachedInstanceError).
+            # Force-load the attributes the MQTT/camera client needs before the
+            # session closes (the instance is detached afterwards → DetachedInstanceError).
             _ = (device.serial_number, device.use_tls, device.mqtt_port, device.id)
             db.expunge(device)
     finally:
@@ -815,7 +818,8 @@ async def capture_snapshot(device_id: int) -> Optional[str]:
             loop = asyncio.get_event_loop()
             if device:
                 _ensure_chamber_light_async(device)
-            img_bytes = await loop.run_in_executor(rtsp_camera.executor, rtsp_camera.single_frame, ip, code)
+            img_bytes = await loop.run_in_executor(
+                camera.executor, camera.single_frame, device, settings)
         else:
             return None
         if not img_bytes:
@@ -857,38 +861,39 @@ def _ensure_chamber_light_async(device, on: bool = True) -> None:
 
 @router.get("/camera/{device_id}")
 def camera_stream(device_id: int, db: Session = Depends(get_db)):
-    """Live MJPEG stream from the printer's built-in X1C camera via its RTSPS stream
-    (ffmpeg-transcoded). Served as multipart/x-mixed-replace so a plain <img> tag
-    shows live video — no Home Assistant, just the printer IP + access code."""
+    """Live MJPEG stream from the printer's built-in camera. The backend picks the
+    right protocol per model (X1 → RTSPS:322 via ffmpeg, P1/A1 → JPEG:6000). Served
+    as multipart/x-mixed-replace so a plain <img> shows the live image — no Home
+    Assistant, just the printer IP + access code."""
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(404, "Gerät nicht gefunden")
-    # Global deaktiviert (System → Kamera): klare Meldung VOR Licht/ffmpeg.
+    # Global deaktiviert (System → Kamera): klare Meldung VOR Licht/Stream.
     from app.services import appsettings
     if appsettings.camera_disabled():
         raise HTTPException(503, "Kamera in Printloom deaktiviert (System → Kamera) — Energiesparmodus")
-    ip, code = device.ip_address, device.access_code
+    settings = _device_settings(db, device_id)
     boundary = "ottoframe"
 
     # Turn the chamber light on (non-blocking, so it can't delay the first frame).
     _ensure_chamber_light_async(device)
 
-    # Geteilter Hub: EIN ffmpeg pro Drucker, alle Zuschauer teilen sich die Frames
-    # (der X1C erlaubt nur einen RTSP-Client; mehrere ffmpeg warfen sich früher
-    # gegenseitig raus und kosteten je ~1 CPU-Kern). stream() wirft bei Verbindungs-/
-    # Auth-/Liveview-Fehlern sofort → echtes HTTP 502 mit dem Grund.
-    # Pull the FIRST frame synchronously so connection/auth/LAN-liveview failures
-    # surface as a real HTTP 502 (→ the <img> onError fires and the UI shows the
-    # actual reason). Otherwise StreamingResponse would already be committed and a
-    # failed camera would just stream nothing → a silent black box with no error.
+    # Geteilter Hub: EIN Client pro Drucker, alle Zuschauer teilen sich die Frames
+    # (X1C erlaubt nur einen RTSP-Client, P1/A1 nur einen Port-6000-Client; mehrere
+    # warfen sich früher gegenseitig raus). stream() wirft bei Verbindungs-/Auth-/
+    # Liveview-Fehlern sofort → echtes HTTP 502 mit dem Grund.
+    # Pull the FIRST frame synchronously so connection/auth/LAN failures surface as a
+    # real HTTP 502 (→ the <img> onError fires and the UI shows the actual reason).
+    # Otherwise StreamingResponse would already be committed and a failed camera would
+    # just stream nothing → a silent black box with no error.
     try:
-        frame_iter = rtsp_camera.stream(ip, code)
+        frame_iter = camera.stream(device, settings)
         first = next(frame_iter)
     except StopIteration:
-        raise HTTPException(502, "Kamera lieferte kein Bild (LAN-Modus Liveview am Drucker aktiv?)")
+        raise HTTPException(502, "Kamera lieferte kein Bild (LAN-Modus am Drucker aktiv?)")
     except Exception as e:
         logger.warning(f"camera_stream first-frame failed for device {device_id}: {e}")
-        raise HTTPException(502, f"X1C-Kamera nicht erreichbar: {e}")
+        raise HTTPException(502, f"Drucker-Kamera nicht erreichbar: {e}")
 
     def _part(img: bytes) -> bytes:
         return (b"--" + boundary.encode() + b"\r\n"
@@ -913,16 +918,18 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
 
 @router.get("/camera/{device_id}/frame")
 def camera_frame(device_id: int, db: Session = Depends(get_db)):
-    """Single JPEG frame from the built-in X1C camera (for snapshots / fallback)."""
+    """Single JPEG frame from the built-in camera (for snapshots / fallback).
+    Backend picks the protocol per model (X1 → RTSPS, P1/A1 → Port 6000)."""
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(404, "Gerät nicht gefunden")
     from app.services import appsettings
     if appsettings.camera_disabled():
         raise HTTPException(503, "Kamera in Printloom deaktiviert (System → Kamera) — Energiesparmodus")
+    settings = _device_settings(db, device_id)
     _ensure_chamber_light_async(device)
     try:
-        img = rtsp_camera.single_frame(device.ip_address, device.access_code)
+        img = camera.single_frame(device, settings)
     except Exception as e:
         raise HTTPException(502, f"Kamera nicht erreichbar: {e}")
     if not img:

@@ -398,11 +398,11 @@ async def save_camera_settings(body: CameraSettingsIn):
     from app.services import appsettings
     cfg = appsettings.write_camera({"disabled": body.disabled} if body.disabled is not None else {})
     if cfg.get("disabled"):
-        # Laufende ffmpeg-Hubs SOFORT beenden — der Nutzer schaltet gerade wegen
-        # der CPU-Last ab, nicht erst beim nächsten Leerlauf.
+        # Laufende Kamera-Hubs SOFORT beenden (beide Backends) — der Nutzer schaltet
+        # gerade wegen der CPU-Last ab, nicht erst beim nächsten Leerlauf.
         try:
-            from app.services import rtsp_camera
-            rtsp_camera.stop_all()
+            from app.services import camera
+            camera.stop_all()
         except Exception:
             pass
     return {"success": True, **cfg}

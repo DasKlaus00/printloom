@@ -788,6 +788,7 @@ function Configuration() {
   const [testResults, setTestResults] = useState({})
   const [webcamUrls, setWebcamUrls]   = useState({})       // untere (hochkant) Kamera
   const [webcamTopUrls, setWebcamTopUrls] = useState({})   // obere (Bambu / quer) Kamera
+  const [camTypes, setCamTypes]       = useState({})       // { [id]: 'auto'|'rtsp'|'bambu'|'none' } eingebaute Kamera
 
   // Kamera global aus (Energiesparmodus, z. B. Raspberry Pi) — null = lädt noch.
   // Bei Neuinstallationen ist die Kamera standardmäßig deaktiviert (seit v1.0.150).
@@ -825,7 +826,7 @@ function Configuration() {
     const d = await deviceService.listDevices()
     setDevices(d.data)
     // load webcam urls for each device (untere + obere Kamera + Home-Assistant-Kamera)
-    const urls = {}, tops = {}, ha = {}, fans = {}
+    const urls = {}, tops = {}, ha = {}, fans = {}, cams = {}
     for (const dev of d.data) {
       try {
         const s = await deviceSettingsService.getSettings(dev.id)
@@ -833,12 +834,14 @@ function Configuration() {
         tops[dev.id] = s.data.webcam_url_top ?? ''
         ha[dev.id]   = { url: s.data.ha_url ?? '', token: '', entity: s.data.ha_camera ?? '', tokenSet: !!s.data.ha_token_set }
         fans[dev.id] = !!s.data.chamber_fan_off
-      } catch { urls[dev.id] = ''; tops[dev.id] = ''; ha[dev.id] = { url: '', token: '', entity: '', tokenSet: false }; fans[dev.id] = false }
+        cams[dev.id] = s.data.camera_type || 'auto'
+      } catch { urls[dev.id] = ''; tops[dev.id] = ''; ha[dev.id] = { url: '', token: '', entity: '', tokenSet: false }; fans[dev.id] = false; cams[dev.id] = 'auto' }
     }
     setWebcamUrls(urls)
     setWebcamTopUrls(tops)
     setHaCams(ha)
     setFanOff(fans)
+    setCamTypes(cams)
   }
 
   // Bauraumlüftung dauerhaft aus (pro Bambu-Gerät). Optimistisch, bei Fehler zurück.
@@ -849,6 +852,18 @@ function Configuration() {
       await deviceSettingsService.updateSettings(deviceId, { chamber_fan_off: next })
     } catch {
       setFanOff(p => ({ ...p, [deviceId]: !next }))
+    }
+  }
+
+  // Kamera-Typ der eingebauten Kamera (pro Bambu). Optimistisch, bei Fehler zurück.
+  const setCamType = async (deviceId, value) => {
+    const prev = camTypes[deviceId] ?? 'auto'
+    setCamTypes(p => ({ ...p, [deviceId]: value }))
+    try {
+      await deviceSettingsService.updateSettings(deviceId, { camera_type: value })
+      window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved'))
+    } catch {
+      setCamTypes(p => ({ ...p, [deviceId]: prev }))
     }
   }
 
@@ -1224,6 +1239,25 @@ function Configuration() {
             <p className="text-sm text-surface-500">{tr('Erst unter „Geräte" einen Bambu-Drucker anlegen — dann hier die Kameras konfigurieren.')}</p>
           ) : (
             <>
+              {/* Eingebaute Drucker-Kamera: Protokoll je Modell.
+                  X1-Serie = RTSPS (flüssig), P1S/A1 = Port-6000-JPEG (langsame Standbilder). */}
+              <div className="mb-1 pb-2 border-b border-surface-800 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-surface-600 w-32 shrink-0">{tr('Eingebaute Kamera')}</span>
+                  <select
+                    value={camTypes[bambu.id] ?? 'auto'}
+                    onChange={e => setCamType(bambu.id, e.target.value)}
+                    className="flex-1 text-xs py-1">
+                    <option value="auto">{tr('Automatisch erkennen (empfohlen)')}</option>
+                    <option value="rtsp">{tr('X1 / X1C / X1E — RTSPS (flüssig)')}</option>
+                    <option value="bambu">{tr('P1P / P1S / A1 — Port 6000 (Standbilder, langsam)')}</option>
+                    <option value="none">{tr('Aus (keine eingebaute Kamera)')}</option>
+                  </select>
+                </div>
+                <p className="text-[10px] text-surface-600">
+                  {tr('Der P1S/A1 liefert nur ~1–wenige Bilder/s (Hardware-Limit), kein flüssiges Video. „Automatisch" prüft den Drucker selbst — nur ändern, wenn die Erkennung danebenliegt.')}
+                </p>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-surface-600 w-32 shrink-0">{tr('Oben (Bambu / quer)')}</span>
                 <input type="text" placeholder="http://192.168.1.50:8889/bambu  (WebRTC/HLS/MJPEG)"
