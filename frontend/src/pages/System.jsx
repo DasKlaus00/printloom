@@ -277,51 +277,39 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
 
       <ThemePicker />
 
-      {/* Release channel */}
-      <div className="card p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Release-Kanal')}</h2>
-        <div className="flex gap-3">
+      {/* Release channel — kompakter Toggle Latest ↔ Beta */}
+      <div className="card p-4 space-y-3">
+        <h2 className="text-xs font-semibold text-surface-300 uppercase tracking-wider">{tr('Release-Kanal')}</h2>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`text-sm font-medium ${!isBeta ? 'text-emerald-300' : 'text-surface-500'}`}>🏷️ Latest</span>
+            <span className="text-[10px] text-surface-600 hidden sm:inline">{tr('Stabil')}</span>
+          </div>
+          {/* Toggle-Schalter: links = Latest, rechts = Beta */}
           <button
-            onClick={() => switchChannel('latest')}
-            className={`flex-1 flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border text-sm transition-colors ${
-              !isBeta
-                ? 'border-emerald-700 bg-emerald-950/30 text-emerald-300'
-                : 'border-surface-700 bg-surface-900 text-surface-400 hover:border-surface-600'
-            }`}
+            onClick={() => switchChannel(isBeta ? 'latest' : 'beta')}
+            aria-pressed={isBeta}
+            title={tr('Zwischen Latest (stabil) und Beta umschalten')}
+            className={`relative w-14 h-7 rounded-full transition-colors shrink-0 ${isBeta ? 'bg-blue-600' : 'bg-emerald-700'}`}
           >
-            <span className="text-lg">🏷️</span>
-            <span className="font-semibold">Latest</span>
-            <span className="text-[11px] text-surface-500 text-center">{tr('Stabile Releases')}</span>
+            <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-all ${isBeta ? 'left-[30px]' : 'left-0.5'}`} />
           </button>
-          <button
-            onClick={() => switchChannel('beta')}
-            className={`flex-1 flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border text-sm transition-colors ${
-              isBeta
-                ? 'border-blue-700 bg-blue-950/30 text-blue-300'
-                : 'border-surface-700 bg-surface-900 text-surface-400 hover:border-surface-600'
-            }`}
-          >
-            <span className="text-lg">🧪</span>
-            <span className="font-semibold">Beta</span>
-            <span className="text-[11px] text-surface-500 text-center">{tr('Aktive Entwicklung')}</span>
-          </button>
+          <div className="flex items-center gap-2 min-w-0 justify-end">
+            <span className="text-[10px] text-surface-600 hidden sm:inline">{tr('Entwicklung')}</span>
+            <span className={`text-sm font-medium ${isBeta ? 'text-blue-300' : 'text-surface-500'}`}>🧪 Beta</span>
+          </div>
         </div>
-        {isBeta && !isNative && (
-          <div className="flex items-start gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
-            <span className="text-blue-400 text-sm mt-0.5">ℹ</span>
-            <p className="text-blue-300 text-xs">
-              {tr('Beta-Kanal aktiv — neue Features vor dem stabilen Release. Docker-Image-Tag:')}
-              {' '}<span className="font-mono bg-blue-950/50 px-1 rounded">:beta</span>
+        {/* Beta = Warnung „auf eigene Gefahr"; Latest = neutraler Hinweis */}
+        {isBeta ? (
+          <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2">
+            <span className="text-amber-400 text-sm mt-0.5">⚠</span>
+            <p className="text-amber-300 text-[11px] leading-relaxed">
+              {tr('Beta ist NICHT stabil und kann Fehler enthalten — Nutzung auf eigene Gefahr. Vor dem Wechsel ein Backup exportieren.')}
+              {!isNative && <>{' '}<span className="font-mono bg-amber-950/40 px-1 rounded">:beta</span></>}
             </p>
           </div>
-        )}
-        {isBeta && isNative && (
-          <div className="flex items-start gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
-            <span className="text-blue-400 text-sm mt-0.5">ℹ</span>
-            <p className="text-blue-300 text-xs">
-              {tr('Beta-Kanal aktiv — neue Features vor dem stabilen Release (Prerelease-Installer von GitHub).')}
-            </p>
-          </div>
+        ) : (
+          <p className="text-[11px] text-surface-600">{tr('Stabile Releases — empfohlen für den Produktivbetrieb.')}</p>
         )}
       </div>
 
@@ -522,7 +510,7 @@ docker compose up -d`}
       <div className="card p-6 space-y-4">
         <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Backup & Restore')}</h2>
         <p className="text-xs text-surface-500">
-          {tr('Sichert die')} <span className="text-surface-300">{tr('komplette Konfiguration')}</span> {tr('als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Kamera-/HA-Einstellungen, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.')}
+          {tr('Sichert die')} <span className="text-surface-300">{tr('komplette Konfiguration')}</span> {tr('als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Drucker-/Kamera-/HA-Einstellungen, Drucker-Geometrie (X-Positionen & G-code-Overrides), Profile, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.')}
         </p>
         <p className="text-[11px] text-amber-500/90">
           {tr('⚠ Die Datei enthält Zugangsdaten (Drucker-Access-Code, HA-/Telegram-Token). Sicher aufbewahren und nicht teilen.')}

@@ -47,6 +47,40 @@ export default function History() {
     finally { setBusy(false) }
   }
 
+  // Ein Modell aus der Historie erneut in die Auto-Farm-Warteschlange legen.
+  const [feedback, setFeedback] = useState(null)
+  const requeue = async (it) => {
+    if (it.fileId == null) { setFeedback({ ok: false, msg: tr('Datei nicht mehr verfügbar') }); return }
+    try {
+      const [statusRes, queueRes] = await Promise.all([
+        autofarmService.getStatus(true).catch(() => ({ data: {} })),
+        autofarmService.getQueue().catch(() => ({ data: [] })),
+      ])
+      const running = !!statusRes.data?.running
+      const cur = queueRes.data ?? []
+      const id = cur.length ? Math.max(...cur.map(j => j.id ?? 0)) + 1 : 1
+      const job = {
+        id, fileId: it.fileId, fileName: it.fileName,
+        slot: null, amsMap: '', status: 'pending',
+        plate: it.plate ?? null, plateTotal: it.plateTotal ?? null, plateName: it.plateName || null,
+        objectHeight: null, progress: 0, remaining: 0,
+      }
+      if (running) {
+        await autofarmService.enqueue({
+          id: job.id, fileId: job.fileId, fileName: job.fileName,
+          slot: '1-0', amsMap: '', plate: job.plate, plateTotal: job.plateTotal, plateName: job.plateName,
+        })
+      } else {
+        await autofarmService.saveQueue([...cur, job])
+      }
+      window.dispatchEvent(new CustomEvent('printloom:queueChanged'))
+      setFeedback({ ok: true, msg: tr('„{0}" in die Warteschlange gelegt', (it.fileName || '').replace(/\.[^.]+$/, '')) })
+    } catch {
+      setFeedback({ ok: false, msg: tr('In die Warteschlange legen fehlgeschlagen') })
+    }
+    setTimeout(() => setFeedback(null), 4000)
+  }
+
   const dateStr = (d) => d ? d.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
   const timeStr = (d) => d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'
 
@@ -67,6 +101,12 @@ export default function History() {
         </div>
       </div>
 
+      {feedback && (
+        <div className={`px-3 py-2 rounded-lg text-xs border ${feedback.ok ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-red-950/40 border-red-800 text-red-300'}`}>
+          {feedback.msg}
+        </div>
+      )}
+
       <div className="card p-0 overflow-hidden">
         {items === null ? (
           <p className="text-sm text-surface-500 py-10 text-center">{tr('Lädt…')}</p>
@@ -83,7 +123,8 @@ export default function History() {
                   <th className="text-left font-medium px-3 py-2.5">{tr('Dauer')}</th>
                   <th className="text-left font-medium px-3 py-2.5">{tr('Modell')}</th>
                   <th className="text-left font-medium px-3 py-2.5">{tr('Fach')}</th>
-                  <th className="text-left font-medium px-4 py-2.5">{tr('Status')}</th>
+                  <th className="text-left font-medium px-3 py-2.5">{tr('Status')}</th>
+                  <th className="text-right font-medium px-4 py-2.5"></th>
                 </tr>
               </thead>
               <tbody>
@@ -105,10 +146,17 @@ export default function History() {
                         <span className="text-surface-600 text-xs">{plateLabel}</span>
                       </td>
                       <td className="px-3 py-2.5 font-mono text-surface-500 whitespace-nowrap">{it.slot ?? '—'}</td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-3 py-2.5">
                         <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${meta.cls}`} title={it.reason || ''}>
                           {tr(meta.label)}
                         </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                        <button onClick={() => requeue(it)} disabled={it.fileId == null}
+                          className="btn btn-ghost btn-sm text-[11px] text-blue-400 hover:text-blue-300 disabled:opacity-40"
+                          title={it.fileId == null ? tr('Datei nicht mehr verfügbar') : tr('Dieses Modell erneut in die Warteschlange legen')}>
+                          {tr('+ Warteschlange')}
+                        </button>
                       </td>
                     </tr>
                   )

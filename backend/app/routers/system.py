@@ -478,7 +478,7 @@ BACKUP_SCHEMA = "printloom-backup/2"
 
 # (path, backup-key) for the flat JSON config files in the db dir.
 def _backup_files() -> list:
-    from app.routers import calibration, autofarm, rack_manager, filaments
+    from app.routers import calibration, autofarm, rack_manager, filaments, control
     db_dir = _db_dir()
     return [
         (calibration.CONFIG_PATH,    "calibration"),
@@ -487,6 +487,13 @@ def _backup_files() -> list:
         (rack_manager.SLOTS_PATH,    "rack_slots"),
         (rack_manager.RACKS_PATH,    "racks"),
         (filaments.CUSTOM_PATH,      "filaments"),
+        # OTTOeject-Geometrie (Drucker-Tab: X-Positionen je Regal/Drucker,
+        # G-code-Overrides, Geschwindigkeiten je Op) — war bisher NICHT im Backup.
+        (control.GEOMETRY_PATH,      "geometry"),
+        # Lokale Profil-Bibliothek (Setup-/Geometrie-Profile).
+        (str(db_dir / "profiles.json"),        "profiles"),
+        # Globaler Kamera-Aus-Schalter (Energiesparmodus).
+        (str(db_dir / "camera_settings.json"), "camera_settings"),
         (str(db_dir / "schedules.json"), "schedules"),
         (_langpacks_file(),          "langpacks"),
         (_dashboard_file(),          "dashboard_layout"),

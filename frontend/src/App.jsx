@@ -291,6 +291,9 @@ function App() {
   }, [])
 
   /* ── Multi-target health: printer · klipper ──────────────── */
+  const fetchTargets = useCallback(() => {
+    healthService.targets().then(r => setTargets(r.data)).catch(() => {})
+  }, [])
   useEffect(() => {
     let timer
     const run = () => {
@@ -300,8 +303,21 @@ function App() {
         .catch(() => { timer = setTimeout(run, 5000) })
     }
     run()
-    return () => clearTimeout(timer)
-  }, [])
+    // Status sofort auffrischen, wenn der Tab wieder sichtbar wird / Fokus bekommt —
+    // sonst zeigt der Header nach längerem Wegklicken bis zu 30 s alten/keinen Stand.
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchTargets() }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', fetchTargets)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', fetchTargets)
+    }
+  }, [fetchTargets])
+  // Bei jedem Seitenwechsel den Geräte-Status frisch holen (behebt „nach Seitenwechsel
+  // kein Drucker angezeigt, erst nach Reload"): die SPA bleibt zwar montiert, aber ohne
+  // Trigger lief der Status nur im 30-s-Takt.
+  useEffect(() => { fetchTargets() }, [currentPage, fetchTargets])
 
   const pageTitle = {
     dashboard:     'Dashboard',

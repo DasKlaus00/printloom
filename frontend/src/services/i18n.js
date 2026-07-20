@@ -884,6 +884,22 @@ const EN_STRINGS = {
     'Above {0} mm height the print reaches X={2} mm at Z={1} mm into the side margin (0–{3} mm or {4}–{5} mm). The OTTOeject arm travels there when ejecting and storing — printing this file will very likely cause a crash.',
   'Geprüft wird der gesamte G-code (inkl. Verfahrwege): oberhalb von {0} mm Höhe darf kein X-Wert unter {1} mm oder über {2} mm liegen. Verschiebe das Objekt zur Bettmitte oder halte in der Randzone unter {0} mm Höhe.':
     'The entire G-code is checked (incl. travel moves): above {0} mm height no X value may be below {1} mm or above {2} mm. Move the object toward the bed center or keep anything in the margin zone below {0} mm height.',
+
+  /* ── Release-Kanal-Toggle + History-Requeue + Backup ── */
+  'Zwischen Latest (stabil) und Beta umschalten': 'Toggle between Latest (stable) and Beta',
+  'Beta ist NICHT stabil und kann Fehler enthalten — Nutzung auf eigene Gefahr. Vor dem Wechsel ein Backup exportieren.':
+    'Beta is NOT stable and may contain bugs — use at your own risk. Export a backup before switching.',
+  'Stabile Releases — empfohlen für den Produktivbetrieb.': 'Stable releases — recommended for production use.',
+  'Stabil': 'Stable',
+  'Entwicklung': 'Development',
+  '„{0}" in die Warteschlange gelegt': '"{0}" added to the queue',
+  'In die Warteschlange legen fehlgeschlagen': 'Adding to the queue failed',
+  'Datei nicht mehr verfügbar': 'File no longer available',
+  '+ Warteschlange': '+ Queue',
+  'Dieses Modell erneut in die Warteschlange legen': 'Add this model to the queue again',
+  'Sichert die': 'Backs up the',
+  'als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Drucker-/Kamera-/HA-Einstellungen, Drucker-Geometrie (X-Positionen & G-code-Overrides), Profile, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.':
+    'as JSON: devices (printer & OTTOeject incl. credentials), printer/camera/HA settings, printer geometry (X positions & G-code overrides), profiles, calibration, sequences, farm settings, rack layout, filaments, schedules & language packs — export or restore.',
   '🌀 Bauraumlüftung dauerhaft aus': '🌀 Keep chamber fan off',
   'Bauraumlüftung dauerhaft ausgeschaltet halten': 'Keep the chamber ventilation permanently off',
   'Prüft laufend über die MQTT-Verbindung und schaltet den Bauraumlüfter (P3) aus, sobald er anläuft.':

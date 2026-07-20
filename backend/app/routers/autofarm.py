@@ -2293,7 +2293,20 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 # Job kommt (oder manuell gestoppt / per Update neugestartet wird).
                 if not _farm["idle"]:
                     _farm["idle"] = True
-                    _log("⏸ Warteschlange leer — warte auf neue Jobs…")
+                    # Nur parken, wenn schon einmal gehomt wurde (First Start lief) — sonst
+                    # ist die Maschine ungehomt und PARK wäre unsicher.
+                    if first_start_done:
+                        _log("⏸ Warteschlange leer — OTTOeject parkt, warte auf neue Jobs…")
+                        # Arm PARKEN, statt vor dem Regal stehen zu bleiben. Beim nächsten
+                        # Job wird neu gehomt: Klipper schaltet in der Wartezeit die Motoren
+                        # per idle_timeout ab → Referenz geht verloren.
+                        try:
+                            await _do_macro("PARK_OTTOEJECT")
+                        except Exception as e:
+                            _log(f"⚠ Parken beim Leerlauf fehlgeschlagen: {e}")
+                        _farm["_parked_idle"] = True   # → nächster Job homt zuerst
+                    else:
+                        _log("⏸ Warteschlange leer — warte auf neue Jobs…")
                 _farm["current_job_id"] = None
                 _farm["current_job_idx"] = -1
                 await asyncio.sleep(2)
@@ -2313,6 +2326,15 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 if not await _prestart_countdown():
                     continue   # gestoppt oder Job entfernt → Schleife neu bewerten
                 _farm["idle"] = False
+                # Nach dem Leerlauf zuerst REFERENZFAHRT: Klipper kann in der Wartezeit
+                # per idle_timeout die Motoren abgeschaltet haben (verlorene Referenz).
+                # Danach läuft der Zyklus normal weiter.
+                if _farm.pop("_parked_idle", False) and first_start_done:
+                    _log("↑ Referenzfahrt nach Leerlauf (OTTOeject homen)…")
+                    try:
+                        await _do_macro("OTTOEJECT_HOME")
+                    except Exception as e:
+                        _log(f"⚠ Homing nach Leerlauf fehlgeschlagen: {e}")
                 # WICHTIG: Während des Countdowns kann der Nutzer die Reihenfolge
                 # ändern (Drag/↑↓ → /jobs/reorder). Deshalb den jetzt obersten
                 # wartenden Job NEU bestimmen — sonst startet trotz Umsortieren der

@@ -208,6 +208,13 @@
 /* Jedes Panel füllt seine Rasterzelle; langer Inhalt scrollt intern. */
 .dashboard-grid .react-grid-item > .panel-fill {
   height: 100%;
+  overflow: hidden;
+}
+/* Die Karte füllt ihre Rasterzelle komplett aus (sonst ist sie nur inhaltshoch →
+   nebeneinander liegende Panels wirken trotz gleicher Zellhöhe unterschiedlich groß).
+   Eigener Scroll, falls der Inhalt höher als die Zelle ist. */
+.dashboard-grid .react-grid-item > .panel-fill > .card {
+  height: 100%;
   overflow: auto;
 }
 /* Platzhalter (Zielposition beim Ziehen) */

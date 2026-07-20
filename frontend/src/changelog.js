@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.156',
+    de: [
+      'Release-Kanal ist jetzt ein kompakter Umschalter (Latest ↔ Beta). Auf Beta erscheint eine deutliche Warnung: Beta ist NICHT stabil, Nutzung auf eigene Gefahr, vorher Backup machen.',
+      'Backup & Restore sichert jetzt WIRKLICH alles — zusätzlich: Drucker-Geometrie (X-Positionen je Regal/Drucker & G-code-Overrides), Profile und den globalen Kamera-Schalter. Bestehende Sicherungen bleiben kompatibel.',
+      'Auto Farm: Ist die letzte Platte gedruckt und die Warteschlange leer, PARKT der OTTOeject jetzt (statt vor dem Regal stehen zu bleiben). Kommt später ein neuer Job dazu, wird zuerst neu gehomt (Klipper kann in der Wartezeit die Motoren abschalten) und dann weitergemacht.',
+      'Historie: Neuer Knopf „+ Warteschlange" — legt das gedruckte Modell direkt wieder in die Auto-Farm-Queue.',
+      'Behoben: Nach einem Seitenwechsel/Tab-Wechsel wurde der Drucker-Status im Header manchmal nicht angezeigt (bis zum Reload) — er wird jetzt bei Navigation und beim Zurückkehren zum Tab sofort aufgefrischt.',
+      'Dashboard-Layout: Panels füllen ihre Rasterzelle jetzt vollständig aus — nebeneinander liegende Panels sind dadurch gleich hoch.',
+    ],
+    en: [
+      'The release channel is now a compact toggle (Latest ↔ Beta). On Beta a clear warning appears: Beta is NOT stable, use at your own risk, back up first.',
+      'Backup & Restore now really saves everything — additionally: printer geometry (per-rack/printer X positions & G-code overrides), profiles and the global camera switch. Existing backups stay compatible.',
+      'Auto Farm: once the last plate is printed and the queue is empty, the OTTOeject now PARKS (instead of staying in front of the rack). When a new job is added later, it re-homes first (Klipper may power the motors down while idle) and then continues.',
+      'History: new "+ Queue" button — puts the printed model straight back into the Auto Farm queue.',
+      'Fixed: after switching page/tab the printer status in the header sometimes did not show (until reload) — it now refreshes immediately on navigation and when returning to the tab.',
+      'Dashboard layout: panels now fill their grid cell completely — side-by-side panels are therefore equal height.',
+    ],
+  },
+  {
     version: '1.0.155',
     de: [
       'Crash-Warnung in der Datei-Bibliothek: Ein rotes „!" erscheint an Modellen, deren G-code den OTTOeject-Arm rammen würde — geprüft wird der GESAMTE G-code (inkl. Verfahrwege): ragt oberhalb von 30 mm Höhe ein X-Wert in den seitlichen 10-mm-Randstreifen (links 0–10 mm oder rechts X_max−10 mm), gilt der Druck als riskant. Klick auf das „!" zeigt den konkreten Trefferpunkt (Z/X) und was zu tun ist. Bei Multi-Plate-Dateien werden alle Platten geprüft.',
