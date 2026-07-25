@@ -369,6 +369,74 @@ def _rack_update(slot: str, status: str, file_name: str = None, object_height_mm
         logger.warning(f"rack slot update failed: {e}")
 
 
+def _rack_data() -> dict:
+    """slots.json lesen (leeres Dict bei Fehler) — für die Platten-Quelle."""
+    try:
+        if os.path.exists(SLOTS_PATH):
+            with open(SLOTS_PATH) as f:
+                return json.load(f) or {}
+    except Exception:
+        pass
+    return {}
+
+
+def _magazine_slot_cfg(data: dict = None) -> int:
+    """Konfiguriertes Magazin-Fach; 0 = KEIN Magazin (Platten liegen in den normalen
+    Fächern und werden von dort gegriffen — Setup-Assistent „7. Fach = normales Fach")."""
+    d = _rack_data() if data is None else data
+    try:
+        return max(0, int(d.get("magazine_slot", 7)))
+    except (TypeError, ValueError):
+        return 7
+
+
+def _plate_source(data: dict = None) -> tuple:
+    """Woher kommt die NÄCHSTE leere Platte? → (rack, slot, from_magazine).
+
+    Zwei Aufbauten (Komponenten-Auswahl im Setup):
+      • MIT Magazin (magazine_slot z. B. 7): Stapel leerer Platten liegt im Magazin-Fach;
+        gegriffen wird immer dieses Fach des ersten Regals mit Bestand > 0.
+      • OHNE Magazin (magazine_slot = 0): die leeren Platten stecken bereits in den
+        normalen Fächern 1..n. Gegriffen wird von OBEN nach unten (Fach = Bestand),
+        damit der Arm nie über eine noch liegende Platte hinweg muss. Der Zähler
+        (`magazine_counts`) sagt, wie viele Platten noch drin sind → Fach n.
+    """
+    d = _rack_data() if data is None else data
+    mag = _magazine_slot_cfg(d)
+    counts = d.get("magazine_counts") or []
+    rack = 1
+    count = 0
+    for i, c in enumerate(counts):
+        try:
+            c = int(c)
+        except (TypeError, ValueError):
+            continue
+        if c > 0:
+            rack, count = i + 1, c
+            break
+    if mag > 0:
+        return rack, mag, True
+    # Ohne Magazin: oberste noch belegte Position; ohne Bestand Fach 1 als Fallback.
+    return rack, max(1, count), False
+
+
+def _reserved_source_slots(data: dict) -> set:
+    """Fächer, in denen (ohne Magazin) noch LEERE Platten für den Nachschub liegen.
+    Die dürfen NICHT als Ablageziel vergeben werden — sonst legt der Arm einen
+    fertigen Druck auf eine bereits belegte Position (Kollision)."""
+    if _magazine_slot_cfg(data) > 0:
+        return set()          # mit Magazin: normale Fächer sind alle frei vergebbar
+    reserved = set()
+    for i, c in enumerate(data.get("magazine_counts") or []):
+        try:
+            c = int(c)
+        except (TypeError, ValueError):
+            continue
+        for s in range(1, c + 1):
+            reserved.add(f"{i + 1}-{s}")
+    return reserved
+
+
 def _magazine_count() -> int:
     """Summe aller per-Rack Magazin-Zähler."""
     try:
@@ -435,6 +503,10 @@ def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optio
                  if j.get("status") not in ("done", "error")
                  and j.get("slot")
                  and j.get("id") != exclude_job_id}
+        # Ohne Magazin liegen in den unteren Fächern noch LEERE Platten als Nachschub —
+        # die sind physisch belegt, obwohl ihr Status „free" ist. Niemals als Ziel
+        # vergeben, sonst legt der Arm den fertigen Druck auf eine liegende Platte.
+        taken |= _reserved_source_slots(data)
 
         for r in range(1, nr + 1):
             for s in range(1, spr - needed + 2):
@@ -826,21 +898,21 @@ def _slot_vars(slot: str) -> tuple[str, str]:
 
 
 def _stack_vars() -> tuple[str, str]:
-    """Return (stack_rack, stack_slot) — aktiver Magazin-Rack ist der erste mit Zähler > 0."""
+    """Return (stack_rack, stack_slot) — Quelle der nächsten LEEREN Platte.
+
+    Mit Magazin: erstes Regal mit Bestand > 0, Fach = Magazin-Fach (z. B. 7).
+    Ohne Magazin: erstes Regal mit Bestand > 0, Fach = Bestand (oberste noch
+    belegte Position) — siehe _plate_source. Alle leer → R1 als neutraler
+    Fallback (vorher das LETZTE Regal: ein vor der Leer-Pause aufgelöster Griff
+    fuhr dann nach dem Auffüllen zu R3, obwohl nur R1 Platten hatte)."""
     try:
-        if os.path.exists(SLOTS_PATH):
-            with open(SLOTS_PATH) as f:
-                d = json.load(f)
-            mag_slot = str(d.get("magazine_slot", 7))
-            counts   = d.get("magazine_counts")
+        d = _rack_data()
+        if d:
+            counts = d.get("magazine_counts")
             if counts:
-                for i, cnt in enumerate(counts):
-                    if int(cnt) > 0:
-                        return str(i + 1), mag_slot
-                # Alle leer → R1 als neutraler Fallback. Vorher stand hier das LETZTE
-                # Regal — ein vor der Leer-Pause aufgelöster Griff fuhr dann nach dem
-                # Auffüllen zu R3, obwohl nur R1 Platten hatte.
-                return "1", mag_slot
+                rack, slot, _ = _plate_source(d)
+                return str(rack), str(slot)
+            mag_slot = str(_magazine_slot_cfg(d) or 1)
             return str(d.get("stack_rack", "1")), str(d.get("stack_slot", mag_slot))
     except Exception:
         pass
@@ -853,25 +925,32 @@ async def _magazine_gate() -> tuple:
     (stack_rack, stack_slot) zurück — nach dem Auffüllen kann ein ANDERES Regal
     aktiv sein als vor der Pause (der vorab aufgelöste Wert schickte den Arm
     sonst z. B. zu R3, obwohl nur R1 aufgefüllt wurde)."""
+    with_mag = _magazine_slot_cfg() > 0
     was_empty = False
     if _magazine_count() <= 0:
         was_empty = True
-        _log("📦 Magazin leer — OTTOeject parkt. Platten auffüllen, Magazin-Zähler setzen, dann fortsetzen.")
+        _log("📦 Magazin leer — OTTOeject parkt. Platten auffüllen, Magazin-Zähler setzen, dann fortsetzen."
+             if with_mag else
+             "📦 Keine leeren Platten mehr in den Fächern — OTTOeject parkt. Platten einlegen, "
+             "Zähler im Regal-Panel setzen, dann fortsetzen.")
         try:
             await _do_macro("PARK_OTTOEJECT")
         except Exception as e:
             _log(f"⚠ Parken fehlgeschlagen ({e}) — pausiere trotzdem")
         _farm["paused"] = True
-        _farm["error"]  = "Magazin leer — Platten auffüllen, Zähler anpassen, dann fortsetzen"
+        _farm["error"]  = ("Magazin leer — Platten auffüllen, Zähler anpassen, dann fortsetzen"
+                           if with_mag else
+                           "Keine leeren Platten in den Fächern — einlegen, Zähler anpassen, dann fortsetzen")
     while _farm["paused"] and not _farm["stopping"]:
         await asyncio.sleep(0.5)
     if _farm["stopping"]:
         raise RuntimeError("Gestoppt")
     if _magazine_count() <= 0:
-        raise RuntimeError("Magazin leer — abgebrochen")
+        raise RuntimeError("Magazin leer — abgebrochen" if with_mag
+                           else "Keine leeren Platten in den Fächern — abgebrochen")
     _farm["error"] = None
     if was_empty:
-        _log("📦 Magazin aufgefüllt — Referenzfahrt vor dem Griff…")
+        _log("📦 Nachschub da — Referenzfahrt vor dem Griff…")
         await _do_macro("OTTOEJECT_HOME")
     return _stack_vars()
 
@@ -1833,6 +1912,12 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             # Magazin-Gate: leer → parken/pausieren, nach Auffüllen homen. Liefert das
             # DANN aktive Magazin (kann nach dem Auffüllen ein anderes Regal sein).
             stack_rack, stack_slot = await _magazine_gate()
+            # Ohne Magazin (Setup: „alle Fächer = Lagerfächer") liegen die leeren
+            # Platten in normalen Fächern → NORMALER Fach-Griff statt Magazin-Griff
+            # (grab_magazine greift flach/NOLIFT für einen Stapel, das passt hier nicht).
+            if op == "grab_magazine" and _magazine_slot_cfg() <= 0:
+                op = "grab"
+                _log("📥 Kein Magazin konfiguriert — greife die leere Platte aus dem Lagerfach")
         rk, sl = (int(stack_rack), int(stack_slot)) if is_grab else \
                  (int(rack_num), int(slot_num)) if is_store else (1, 1)
         geom = _farm.get("geometry") or _load_farm_geometry()

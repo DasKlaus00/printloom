@@ -121,6 +121,10 @@ export const printerService = {
   haCameraStreamUrl:    (deviceId)         => `/api/printer/ha-camera/${deviceId}`,
   haCameraTest:         (deviceId)         => api.get(`/printer/ha-camera/${deviceId}/test`),
   getPlates:            (fileId)           => api.get(`/printer/plates/${fileId}`),
+  // Drucker-Einstellungen (KI-Erkennung, Geschwindigkeit, Auto-Recovery, Licht)
+  getSettings:          (deviceId)         => api.get(`/printer/settings/${deviceId}`),
+  setSettings:          (deviceId, body)   => api.post(`/printer/settings/${deviceId}`, body),
+  calibrate:            (deviceId, options) => api.post(`/printer/calibrate/${deviceId}`, { options }),
   getHistory:           ()                 => api.get('/printer/history'),
   takeSnapshot:         (deviceId)         => api.post(`/printer/snapshot/${deviceId}`),
   getSnapshots:         ()                 => api.get('/printer/snapshots'),

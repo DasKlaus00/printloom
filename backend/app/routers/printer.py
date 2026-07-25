@@ -1466,6 +1466,81 @@ async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
     return _status_from_raw(raw)
 
 
+# ── Drucker-Einstellungen (was man sonst am Display einstellt) ───────────────
+
+@router.get("/settings/{device_id}")
+async def get_printer_settings(device_id: int, db: Session = Depends(get_db)):
+    """Aktuelle Drucker-Einstellungen (KI-Erkennung, Geschwindigkeit, Auto-Recovery,
+    Kammerlicht) aus dem letzten MQTT-Push-Report. Felder, die der Drucker (noch)
+    nicht gemeldet hat, sind null — die UI zeigt dann „—" statt zu raten."""
+    device = _get_bambu_device(device_id, db)
+    from app.services import bambu_settings
+    loop = asyncio.get_event_loop()
+    try:
+        raw = await asyncio.wait_for(
+            loop.run_in_executor(bambu_manager.executor, bambu_manager.fetch_status, device),
+            timeout=8.0)
+    except asyncio.TimeoutError:
+        raw = bambu_manager.last_status(device)
+    if raw is None:
+        return {"online": False, "settings": {}}
+    return {"online": True, "settings": bambu_settings.read_settings(raw)}
+
+
+@router.post("/settings/{device_id}")
+async def set_printer_settings(device_id: int, body: dict, db: Session = Depends(get_db)):
+    """Eine oder mehrere Einstellungen setzen: {"first_layer_inspector": true, …}.
+    Jede Einstellung wird als eigenes MQTT-Kommando geschickt."""
+    device = _get_bambu_device(device_id, db)
+    from app.services import bambu_settings
+    if not isinstance(body, dict) or not body:
+        raise HTTPException(400, "Keine Einstellung übergeben")
+    loop = asyncio.get_event_loop()
+    applied, failed = [], {}
+    for key, value in body.items():
+        try:
+            cmd = bambu_settings.build_command(key, value)
+        except ValueError as e:
+            failed[key] = str(e)
+            continue
+        ok = await loop.run_in_executor(bambu_manager.executor,
+                                        bambu_manager.publish_command, device, cmd)
+        if ok:
+            applied.append(key)
+        else:
+            failed[key] = "MQTT-Senden fehlgeschlagen"
+    if not applied and failed:
+        raise HTTPException(502, "; ".join(f"{k}: {v}" for k, v in failed.items()))
+    # Frischen Report anfragen, damit die UI den neuen Zustand zeitnah sieht.
+    await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
+    return {"success": True, "applied": applied, "failed": failed}
+
+
+@router.post("/calibrate/{device_id}")
+async def calibrate_printer(device_id: int, body: dict = None, db: Session = Depends(get_db)):
+    """Kalibrierung der X1-Serie starten (Bett-Nivellierung / Vibrations-
+    kompensation / Motorgeräusch). Alle drei zusammen dauern ~16 Minuten und
+    blockieren den Drucker — deshalb nur starten, wenn er idle ist."""
+    device = _get_bambu_device(device_id, db)
+    from app.services import bambu_settings
+    options = (body or {}).get("options") or list(bambu_settings.CALIBRATION_BITS)
+    raw = bambu_manager.last_status(device) or {}
+    state = (raw.get("print", {}) or {}).get("gcode_state", "")
+    if state in ("RUNNING", "PREPARE", "SLICING", "PAUSE"):
+        raise HTTPException(409, f"Drucker ist beschäftigt ({state}) — Kalibrierung nicht möglich")
+    try:
+        cmd = bambu_settings.build_calibration(options)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    loop = asyncio.get_event_loop()
+    ok = await loop.run_in_executor(bambu_manager.executor,
+                                    bambu_manager.publish_command, device, cmd)
+    if not ok:
+        raise HTTPException(502, "Kalibrierung konnte nicht gestartet werden (MQTT)")
+    return {"success": True, "options": options,
+            "message": "Kalibrierung gestartet — dauert je nach Umfang bis ~16 Minuten"}
+
+
 @router.get("/send-diagnostics")
 async def get_send_diagnostics():
     """Letzte Sende-Diagnose-Sessions zurückgeben."""

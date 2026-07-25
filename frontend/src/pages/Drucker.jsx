@@ -129,6 +129,202 @@ function OpCard({ op, icon, title, fields = [], extra, note, busy, gcodeOn, onTe
   )
 }
 
+/* ── Drucker-Einstellungen (Bambu Lab) ──────────────────────────────────────────
+   Alles, was man sonst am Drucker-Display einstellt: KI-/Kamera-Erkennung,
+   Druckgeschwindigkeit, Auto-Recovery, Kammerlicht + die große Kalibrierung.
+   Zustand kommt aus dem MQTT-Push-Report; unbekannte Felder zeigen „—" statt
+   einen Zustand zu erfinden. */
+const XCAM_SETTINGS = [
+  { key: 'first_layer_inspector',      label: 'Erste Schicht prüfen',
+    desc: 'Kamera prüft die erste Schicht und hält den Druck bei Fehlern an.' },
+  { key: 'spaghetti_detector',         label: 'Spaghetti-Erkennung',
+    desc: 'Erkennt Fehldrucke („Spaghetti") und hält den Druck an.' },
+  { key: 'buildplate_marker_detector', label: 'Bauplatten-Erkennung',
+    desc: 'Prüft per Marker, ob die richtige Druckplatte eingelegt ist.' },
+  { key: 'printing_monitor',           label: 'KI-Drucküberwachung',
+    desc: 'Allgemeine KI-Überwachung des Drucks.' },
+  { key: 'allow_skip_parts',           label: 'Abgelöste Teile überspringen',
+    desc: 'Druckt weiter und überspringt Objekte, die sich gelöst haben.' },
+]
+
+const SPEED_OPTIONS = [
+  { lvl: 1, label: 'Leise' },
+  { lvl: 2, label: 'Standard' },
+  { lvl: 3, label: 'Sport' },
+  { lvl: 4, label: 'Ludicrous' },
+]
+
+const CALIB_OPTIONS = [
+  { key: 'bed_leveling',             label: 'Bett-Nivellierung' },
+  { key: 'vibration_compensation',   label: 'Vibrations-Kompensation' },
+  { key: 'motor_noise_cancellation', label: 'Motorgeräusch-Abgleich' },
+]
+
+function PrinterSettingsPanel({ deviceId, printerName }) {
+  const { tr } = useLanguage()
+  const [open, setOpen]     = useState(false)
+  const [s, setS]           = useState(null)     // gelesene Einstellungen
+  const [online, setOnline] = useState(null)
+  const [busy, setBusy]     = useState(null)     // key der gerade gesetzt wird
+  const [msg, setMsg]       = useState(null)     // { text, err }
+  const [calib, setCalib]   = useState(() => CALIB_OPTIONS.map(o => o.key))
+  const [calibBusy, setCalibBusy] = useState(false)
+
+  const load = async () => {
+    if (deviceId == null) return
+    try {
+      const r = await printerService.getSettings(deviceId)
+      setOnline(!!r.data?.online)
+      setS(r.data?.settings ?? {})
+    } catch (e) {
+      setOnline(false)
+      setMsg({ text: e.response?.data?.detail ?? e.message, err: true })
+    }
+  }
+  useEffect(() => { if (open) load() /* eslint-disable-next-line */ }, [open, deviceId])
+
+  const apply = async (key, value) => {
+    setBusy(key); setMsg(null)
+    // optimistisch umschalten, bei Fehler zurückdrehen
+    const prev = s?.[key]
+    setS(o => ({ ...o, [key]: value }))
+    try {
+      await printerService.setSettings(deviceId, { [key]: value })
+      setMsg({ text: tr('✓ Übernommen'), err: false })
+      setTimeout(load, 1500)   // Drucker meldet den neuen Zustand kurz danach
+    } catch (e) {
+      setS(o => ({ ...o, [key]: prev }))
+      setMsg({ text: e.response?.data?.detail ?? e.message, err: true })
+    } finally { setBusy(null) }
+  }
+
+  const runCalibration = async () => {
+    if (!calib.length) return
+    setCalibBusy(true); setMsg(null)
+    try {
+      const r = await printerService.calibrate(deviceId, calib)
+      setMsg({ text: r.data?.message || tr('Kalibrierung gestartet'), err: false })
+    } catch (e) {
+      setMsg({ text: e.response?.data?.detail ?? e.message, err: true })
+    } finally { setCalibBusy(false) }
+  }
+
+  const TriState = ({ value, onToggle, disabled }) => (
+    value == null ? (
+      <span className="text-[10px] text-surface-600 w-9 text-center shrink-0" title={tr('Drucker hat diesen Wert noch nicht gemeldet')}>—</span>
+    ) : (
+      <Toggle on={!!value} onClick={() => !disabled && onToggle(!value)} color="bg-emerald-600" />
+    )
+  )
+
+  return (
+    <div className="card p-3 space-y-2">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between text-left">
+        <span className="text-sm font-medium text-surface-200">{tr('⚙ Drucker-Einstellungen ({0})', printerName)}</span>
+        <span className="text-[11px] text-blue-400">{open ? tr('▾ ausblenden') : tr('▸ anzeigen')}</span>
+      </button>
+      {!open ? (
+        <p className="text-[10px] text-surface-600">
+          {tr('KI-Erkennung, Geschwindigkeit, Auto-Recovery, Licht und Kalibrierung — direkt hier, ohne an den Drucker zu gehen.')}
+        </p>
+      ) : deviceId == null ? (
+        <p className="text-[11px] text-surface-500">{tr('Kein Bambu-Drucker unter „Geräte" angelegt.')}</p>
+      ) : (
+        <div className="space-y-3">
+          {online === false && (
+            <p className="text-[11px] text-amber-400">
+              {tr('Drucker nicht erreichbar — Einstellungen können nicht gelesen werden. Setzen wird erst nach dem Verbinden wirksam.')}
+            </p>
+          )}
+
+          {/* Kamera-/KI-Erkennung */}
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-medium text-surface-300">{tr('Erkennung (Kamera / KI)')}</p>
+            {XCAM_SETTINGS.map(row => (
+              <div key={row.key} className="flex items-start gap-2">
+                <TriState value={s?.[row.key]} disabled={busy === row.key}
+                  onToggle={v => apply(row.key, v)} />
+                <div className="min-w-0">
+                  <p className="text-[11px] text-surface-300">{tr(row.label)}</p>
+                  <p className="text-[9px] text-surface-600">{tr(row.desc)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Geschwindigkeit + Auto-Recovery + Licht */}
+          <div className="pt-2 border-t border-surface-800/50 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-surface-400">{tr('Druckgeschwindigkeit')}</span>
+              {SPEED_OPTIONS.map(o => (
+                <button key={o.lvl} onClick={() => apply('speed_level', o.lvl)} disabled={busy === 'speed_level'}
+                  className={`text-[11px] px-2 py-1 rounded border transition-colors disabled:opacity-50 ${
+                    s?.speed_level === o.lvl ? 'border-blue-600 bg-blue-950/40 text-blue-300'
+                                             : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>
+                  {tr(o.label)}
+                </button>
+              ))}
+              {s?.speed_level == null && <span className="text-[9px] text-surface-600">{tr('(aktuell unbekannt)')}</span>}
+            </div>
+            <div className="flex items-start gap-2">
+              <TriState value={s?.auto_recovery} disabled={busy === 'auto_recovery'}
+                onToggle={v => apply('auto_recovery', v)} />
+              <div>
+                <p className="text-[11px] text-surface-300">{tr('Auto-Recovery bei Schrittverlust')}</p>
+                <p className="text-[9px] text-surface-600">{tr('Druckt nach einem Schrittverlust weiter statt abzubrechen.')}</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <TriState value={s?.chamber_light} disabled={busy === 'chamber_light'}
+                onToggle={v => apply('chamber_light', v)} />
+              <div>
+                <p className="text-[11px] text-surface-300">{tr('Kammerlicht')}</p>
+                <p className="text-[9px] text-surface-600">{tr('Beleuchtung im Bauraum (wird für die Kamera automatisch eingeschaltet).')}</p>
+              </div>
+            </div>
+            {(s?.nozzle_diameter || s?.nozzle_type) && (
+              <p className="text-[9px] text-surface-600 font-mono">
+                {tr('Düse')}: {s.nozzle_type || '?'} · {s.nozzle_diameter || '?'} mm
+              </p>
+            )}
+          </div>
+
+          {/* Kalibrierung */}
+          <div className="pt-2 border-t border-surface-800/50 space-y-1.5">
+            <p className="text-[11px] font-medium text-surface-300">{tr('Kalibrierung (X1-Serie)')}</p>
+            <p className="text-[9px] text-surface-600">
+              {tr('Alle drei zusammen dauern ~16 Minuten und blockieren den Drucker. Nur starten, wenn nichts läuft — die Farm sollte gestoppt sein.')}
+            </p>
+            <div className="flex items-center gap-3 flex-wrap">
+              {CALIB_OPTIONS.map(o => (
+                <label key={o.key} className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={calib.includes(o.key)}
+                    onChange={e => setCalib(c => e.target.checked ? [...c, o.key] : c.filter(k => k !== o.key))} />
+                  <span className="text-[11px] text-surface-400">{tr(o.label)}</span>
+                </label>
+              ))}
+            </div>
+            <button onClick={runCalibration} disabled={calibBusy || !calib.length}
+              className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">
+              {calibBusy ? tr('Starte…') : tr('▶ Kalibrierung starten')}
+            </button>
+          </div>
+
+          {msg && (
+            <p className={`text-[11px] font-mono ${msg.err ? 'text-red-400' : 'text-emerald-400'}`}>{msg.text}</p>
+          )}
+          <div className="flex items-center gap-2">
+            <button onClick={load} className="text-[10px] text-blue-400 hover:text-blue-300">{tr('⟳ Zustand neu lesen')}</button>
+            <span className="text-[9px] text-surface-600">
+              {tr('„—" = der Drucker hat den Wert noch nicht gemeldet. Nicht jedes Modell unterstützt jede Option.')}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Drucker() {
   const { tr } = useLanguage()
 
@@ -358,6 +554,21 @@ export default function Drucker() {
     }
   }
 
+  // Druckbett homen (G28) — der Drucker referenziert seine Achsen neu. Nötig, wenn
+  // die Z-Position nach manuellem Verschieben nicht mehr stimmt (sonst fährt „Bett → Z"
+  // auf eine falsche Höhe).
+  const homeBed = async () => {
+    if (bambuId == null || jog.busy) return
+    setJog({ busy: true, msg: tr('Drucker-Bett homen…'), err: false })
+    try {
+      await printerService.sendGcode(bambuId, 'G28')
+      setJog({ busy: false, msg: tr('✓ Bett gehomt (G28)'), err: false })
+    } catch (e) {
+      const detail = e?.response?.data?.detail || e?.message || tr('Fehler')
+      setJog({ busy: false, msg: detail, err: true })
+    }
+  }
+
   // Geschwindigkeit setzen → M220 sofort an den OTTOeject schicken (und für Ops speichern).
   const applySpeed = (v) => {
     setSpeedFactor(v)
@@ -382,6 +593,11 @@ export default function Drucker() {
   // „Custom Printer" = ausschließlich eigener G-code je Operation, KEINE Start-Positionen.
   // Named Printer = Positions-Werte MIT optionalem eigenem G-code je Op (Feinjustage).
   const isCustom = printerId === CUSTOM_PRINTER.id
+  // Direkte Drucker-Steuerung (Bett fahren/homen, Einstellungen) geht nur bei Bambu Lab —
+  // nur dafür hat Printloom eine Verbindung (MQTT). Bei Fremdmodellen (Creality, Elegoo,
+  // Anycubic, Flashforge, Custom) wird die Sektion ausgeblendet statt tote Knöpfe zu zeigen.
+  const isBambuModel = ['x1c', 'p1s', 'p1p', 'a1'].includes(printerId)
+  const bedControlReady = isBambuModel && bambuId != null
   // Custom Printer: reiner G-code-Editor je Op. Named Printer: Positions-Felder +
   // Knopf „Eigenen G-code bearbeiten"; sobald ein Override existiert, zeigt die Karte
   // den Editor (Override hat dann Vorrang, siehe Backend). „✕ zurück zu Werten" löscht ihn.
@@ -496,28 +712,40 @@ export default function Drucker() {
                 {tr('Wird 1:1 an Klipper geschickt (Enter = Senden). Vorher homen; RACK=-Nummern werden automatisch in die Geräte-Zählung übersetzt.')}
               </p>
             </div>
-            {/* Druckerbett (Bambu) auf Ziel-Z fahren — Z200 = Ladeposition für den Platten-Wechsel */}
-            <div className="pt-1 border-t border-surface-800/50 space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] text-surface-400">{tr('🖨 Druckerbett')}</span>
-                <label className="flex items-center gap-1">
-                  <span className="text-[10px] text-surface-500">Z</span>
-                  <input type="number" step="10" value={bedZ} onChange={e => setBedZ(e.target.value)}
-                    disabled={jog.busy || bambuId == null}
-                    className="w-16 font-mono text-[11px] h-8 py-0 px-2" />
-                </label>
-                <button onClick={moveBedZ} disabled={jog.busy || bambuId == null}
-                  className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 shrink-0">{tr('▶ Bett fahren')}</button>
-                <button onClick={() => { setBedZ(200); }} disabled={jog.busy}
-                  title={tr('Auf Ladeposition Z200 setzen')}
-                  className="text-[10px] text-blue-400 hover:text-blue-300">{tr('= Z200')}</button>
+            {/* Druckerbett auf Ziel-Z fahren + homen. Nur für Bambu-Modelle — bei
+                Fremdmodellen hat Printloom keine Druckerverbindung. */}
+            {isBambuModel ? (
+              <div className="pt-1 border-t border-surface-800/50 space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] text-surface-400">{tr('🖨 Druckbett')}</span>
+                  <label className="flex items-center gap-1">
+                    <span className="text-[10px] text-surface-500">Z</span>
+                    <input type="number" step="10" value={bedZ} onChange={e => setBedZ(e.target.value)}
+                      disabled={jog.busy || !bedControlReady}
+                      className="w-16 font-mono text-[11px] h-8 py-0 px-2" />
+                  </label>
+                  <button onClick={moveBedZ} disabled={jog.busy || !bedControlReady}
+                    className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 shrink-0">{tr('▶ Bett fahren')}</button>
+                  <button onClick={() => { setBedZ(200); }} disabled={jog.busy}
+                    title={tr('Auf Ladeposition Z200 setzen')}
+                    className="text-[10px] text-blue-400 hover:text-blue-300">{tr('= Z200')}</button>
+                  <button onClick={homeBed} disabled={jog.busy || !bedControlReady}
+                    title={tr('G28 an den Drucker — referenziert die Achsen neu')}
+                    className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 shrink-0">{tr('⌂ Bett homen')}</button>
+                </div>
+                <p className="text-[9px] text-surface-600">
+                  {!bedControlReady
+                    ? tr('Kein Bambu-Drucker unter „Geräte" angelegt — Bett-Steuerung nicht verfügbar.')
+                    : tr('„Bett fahren" setzt das Bett absolut auf die Ziel-Z (G90/G1 Z), Z200 = Ladeposition für den Platten-Wechsel. „Bett homen" (G28) referenziert die Achsen neu — danach stimmt die Z-Höhe wieder. Drucker muss idle sein.')}
+                </p>
               </div>
-              <p className="text-[9px] text-surface-600">
-                {bambuId == null
-                  ? tr('Kein Bambu-Drucker verbunden — Bett-Fahrt nicht verfügbar.')
-                  : tr('Fährt das Druckerbett (X1C) absolut auf die Ziel-Z (G90/G1 Z). Z200 = Ladeposition für den Platten-Wechsel. Drucker muss idle sein.')}
-              </p>
-            </div>
+            ) : (
+              <div className="pt-1 border-t border-surface-800/50">
+                <p className="text-[9px] text-surface-600">
+                  {tr('{0}: Printloom kann diesen Drucker nicht direkt steuern (nur Bambu Lab über MQTT) — Bett-Fahrt, Homing und Drucker-Einstellungen entfallen. Der OTTOeject wird normal bedient.', printerName)}
+                </p>
+              </div>
+            )}
             {jog.msg && (
               <p className={`text-[11px] font-mono ${jog.err ? 'text-red-400' : jog.busy ? 'text-amber-400' : 'text-emerald-400'}`}>{jog.msg}</p>
             )}
@@ -532,6 +760,10 @@ export default function Drucker() {
               </div>
             )}
           </div>
+
+          {/* Drucker-Einstellungen — nur für Bambu-Modelle (nur die kann Printloom
+              per MQTT erreichen). Direkt unter den Controls, wie gewünscht. */}
+          {isBambuModel && <PrinterSettingsPanel deviceId={bambuId} printerName={printerName} />}
 
           {/* Operations-Karten */}
           <div className="grid gap-3 md:grid-cols-2">

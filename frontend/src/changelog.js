@@ -4,6 +4,27 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.158',
+    de: [
+      'Setup-Assistent: neuer erster Schritt „Komponenten" — du wählst mit Beschreibung aus, WAS du gebaut hast (Regal-Halterung Standard/Kompakt, oberstes Fach als Magazin oder Lagerfach). Daraus setzt Printloom die Grundkonfiguration: Fächer je Regal, Magazin-Fach, Z-Schritt und Fachhöhe. Standard-Halterung = 7 Positionen mit 55 mm Abstand, Kompakt = 10 Positionen mit 25 mm.',
+      'Ablauf passt sich dem Aufbau an: MIT Magazin holt die Farm den Nachschub wie bisher aus dem Magazin-Fach. OHNE Magazin (alle Fächer = Lagerfächer) liegen die leeren Platten schon in den Fächern — die Farm greift sich eine von OBEN nach unten heraus (normaler Fach-Griff statt Magazin-Griff) und legt den fertigen Druck dort wieder ab. Fächer, in denen noch eine leere Platte liegt, werden nie als Ablageziel vergeben (Kollisionsschutz).',
+      'Der Z-Schritt wird jetzt als gemessener Abstand von Fach zu Fach eingegeben (Standard 55 mm, Kompakt 25 mm) statt als interner slot_gap — die Umrechnung macht Printloom.',
+      'Setup-Assistent ist aus der Seitenleiste in „System → Einrichtung" gewandert (einmalige Einrichtung, kein Alltags-Tab). Am Ende führt er direkt auf die Drucker-Seite („Drucker einrichten") statt nur „Fertig" zu sagen.',
+      'Drucker-Seite: neuer Knopf „⌂ Bett homen" neben dem Bett-Z-Feld (G28) — referenziert die Achsen neu, wenn die Z-Höhe nicht mehr stimmt.',
+      'Drucker-Steuerung richtet sich nach dem gewählten Modell: Bett-Fahrt/Homing und Einstellungen erscheinen nur bei Bambu-Lab-Modellen (nur die kann Printloom per MQTT erreichen); bei Fremdmodellen steht dort ein klarer Hinweis statt toter Knöpfe.',
+      'NEU für Bambu Lab: Panel „Drucker-Einstellungen" direkt unter den Controls — Erste-Schicht-Prüfung, Spaghetti-Erkennung, Bauplatten-Erkennung, KI-Überwachung, abgelöste Teile überspringen, Druckgeschwindigkeit (Leise/Standard/Sport/Ludicrous), Auto-Recovery, Kammerlicht und die große Kalibrierung (~16 Min, einzeln wählbar). Damit muss man für diese Einstellungen nicht mehr an den Drucker.',
+    ],
+    en: [
+      'Setup wizard: new first step "Components" — you pick, with descriptions, WHAT you built (rack holder standard/compact, top slot as magazine or storage). Printloom derives the base configuration from it: slots per rack, magazine slot, Z pitch and slot height. Standard holder = 7 positions at 55 mm spacing, compact = 10 positions at 25 mm.',
+      'The workflow adapts to your build: WITH a magazine the farm takes fresh plates from the magazine slot as before. WITHOUT a magazine (all slots = storage) the empty plates already sit in the slots — the farm grabs one from the TOP downwards (normal slot grab instead of magazine grab) and puts the finished print back there. Slots that still hold an empty plate are never assigned as a drop target (collision safety).',
+      'The Z pitch is now entered as the measured slot-to-slot distance (standard 55 mm, compact 25 mm) instead of the internal slot_gap — Printloom does the conversion.',
+      'The setup wizard moved from the sidebar into "System → Setup" (one-time setup, not an everyday tab). At the end it now leads straight to the printer page ("Set up printer") instead of just saying "Done".',
+      'Printer page: new "⌂ Home bed" button next to the bed-Z field (G28) — re-references the axes when the Z height is off.',
+      'Printer controls now follow the selected model: bed move/homing and settings only appear for Bambu Lab models (the only ones Printloom can reach via MQTT); other models show a clear note instead of dead buttons.',
+      'NEW for Bambu Lab: a "Printer settings" panel right below the controls — first-layer inspection, spaghetti detection, build plate detection, AI monitoring, skip detached objects, print speed (silent/standard/sport/ludicrous), auto-recovery, chamber light and the full calibration (~16 min, individually selectable). No more walking to the printer for these.',
+    ],
+  },
+  {
     version: '1.0.157',
     de: [
       'Drucker-Kamera funktioniert jetzt auch für P1P/P1S und A1/A1 mini. Diese Modelle haben (anders als der X1C) keinen RTSP-Stream — Printloom spricht jetzt ihr Port-6000-Kameraprotokoll. Hinweis: Der P1S/A1 liefert nur langsame Standbilder (~1–wenige Bilder/s, Hardware-Limit), kein flüssiges Video wie beim X1C.',

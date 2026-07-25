@@ -136,7 +136,8 @@ function buildPages(t, tr) {
     { id: 'filamente',     label: tr('Filamente'),        icon: 'filamente'   },
     { id: 'drucker',       label: tr('Drucker'),          icon: 'drucker'     },
     { id: 'configuration', label: t('nav.configuration'), icon: 'config'      },
-    { id: 'setup',         label: tr('Setup-Assistent'),  icon: 'config'      },
+    // Setup-Assistent bewusst NICHT hier — er sitzt in System (einmalige Einrichtung,
+    // kein Alltags-Tab). Direktaufruf über /setup bleibt möglich.
     { id: 'system',        label: t('nav.system'),        icon: 'system'      },
   ]
 }

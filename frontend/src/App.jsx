@@ -423,7 +423,7 @@ function App() {
             {page('rack',          RackManager)}
             {page('drucker',       Drucker)}
             {page('configuration', Configuration)}
-            {page('system',        System, { onUpdateAvailable: setUpdateAvailable, onUpdatePhase: setUpdateOverlay })}
+            {page('system',        System, { onUpdateAvailable: setUpdateAvailable, onUpdatePhase: setUpdateOverlay, setCurrentPage })}
             {page('sequence',      SequenceEditor)}
             {page('profiles',      Profiles)}
             {page('setup',         Setup, { setCurrentPage })}

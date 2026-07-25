@@ -144,7 +144,7 @@ function waitForRestart() {
   })
 }
 
-export default function System({ onUpdateAvailable, onUpdatePhase }) {
+export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPage }) {
   const { tr, lang } = useLanguage()
   const [info, setInfo]               = useState(null)
   const [checking, setChecking]       = useState(false)
@@ -276,6 +276,18 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
       </div>
 
       <ThemePicker />
+
+      {/* Setup-Assistent — sitzt hier statt in der Seitenleiste (einmalige Einrichtung) */}
+      <div className="card p-4 space-y-2">
+        <h2 className="text-xs font-semibold text-surface-300 uppercase tracking-wider">{tr('Einrichtung')}</h2>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] text-surface-500 min-w-0">
+            {tr('Verbaute Komponenten, Drucker, OTTOeject, Regal und Kalibrierung in einem Durchlauf — daraus entsteht die Grundkonfiguration.')}
+          </p>
+          <button onClick={() => setCurrentPage?.('setup')}
+            className="btn-secondary text-sm shrink-0">{tr('🧭 Setup-Assistent öffnen')}</button>
+        </div>
+      </div>
 
       {/* Release channel — kompakter Toggle Latest ↔ Beta */}
       <div className="card p-4 space-y-3">

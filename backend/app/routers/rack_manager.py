@@ -460,8 +460,12 @@ def update_config(body: dict, db: Session = Depends(get_db)):
     if "max_plates" in body:
         data["max_plates"] = max(1, int(body["max_plates"]))
     if "magazine_slot" in body:
-        data["magazine_slot"] = max(1, int(body["magazine_slot"]))
-        data["stack_slot"]    = data["magazine_slot"]  # keep in sync
+        # 0 = KEIN Magazin (alle Fächer lagern; leere Platten werden manuell eingelegt).
+        # ottoeject_motion.magazine_slot() behandelt 0 bereits als „kein Magazin";
+        # stack_slot nur mitziehen, wenn es wirklich ein Magazin gibt.
+        data["magazine_slot"] = max(0, int(body["magazine_slot"]))
+        if data["magazine_slot"]:
+            data["stack_slot"] = data["magazine_slot"]  # keep in sync
     # Fest konfigurierte Sollwerte je Magazin. Werden sie gesetzt, gilt der Live-Bestand
     # als frisch bestückt → `magazine_counts` wird gleich auf die Sollwerte gesetzt
     # (der Nutzer legt hier fest „so viele Platten liegen im Magazin").

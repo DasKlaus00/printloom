@@ -142,6 +142,64 @@ let dynamicPacks = (() => {
 // English overrides keyed by the exact German source string (see tr() below).
 // Filled in incrementally per page; missing entries fall back to German.
 const EN_STRINGS = {
+  // ── Setup: verbaute Komponenten ──
+  'Komponenten': 'Components',
+  'Regal-Halterung': 'Rack holder',
+  'Welche Fachhalter sind verbaut?': 'Which slot holders are installed?',
+  'Standard-Halterung': 'Standard holder',
+  'Kompakt-Halterung': 'Compact holder',
+  'Oberstes Fach': 'Top slot',
+  'Wofür nutzt du die oberste Position?': 'What do you use the top position for?',
+  'Oberstes Fach = Magazin': 'Top slot = magazine',
+  'Alle Fächer = Lagerfächer': 'All slots = storage',
+  'Anzahl Regale': 'Number of racks',
+  'Wie viele Regal-Türme stehen neben dem Drucker? (Regal 1 = direkt am Drucker)':
+    'How many rack towers stand next to the printer? (rack 1 = closest to the printer)',
+  'Was hast du gebaut? Daraus setzt Printloom die Grundkonfiguration (Fächer je Regal, Magazin, Fach-Abstand). Alles bleibt danach änderbar.':
+    'What did you build? Printloom derives the base configuration from this (slots per rack, magazine, slot spacing). Everything stays editable afterwards.',
+  'Daraus folgt:': 'Resulting in:',
+  'Verbaute Komponenten wählen (daraus kommt die Grundkonfiguration)':
+    'Pick the installed components (the base configuration comes from this)',
+  'Aus den Komponenten vorbelegt — hier fein justieren.': 'Pre-filled from your components — fine-tune here.',
+  'Z-Schritt Fach→Fach (mm)': 'Z pitch slot→slot (mm)',
+  'Gemessener Abstand von Fach zu Fach (Standard 55, Kompakt 25)':
+    'Measured distance from slot to slot (standard 55, compact 25)',
+  'Magazin-Fach (0 = keins)': 'Magazine slot (0 = none)',
+  'Fach mit dem Stapel leerer Platten': 'Slot holding the stack of empty plates',
+  'Komponenten · Drucker · OTTOeject · Regal · Kalibrierung in einem Durchlauf.':
+    'Components · printer · OTTOeject · rack · calibration in one pass.',
+  '🖨 Drucker einrichten →': '🖨 Set up printer →',
+  'Einrichtung': 'Setup',
+  '🧭 Setup-Assistent öffnen': '🧭 Open setup wizard',
+  'Verbaute Komponenten, Drucker, OTTOeject, Regal und Kalibrierung in einem Durchlauf — daraus entsteht die Grundkonfiguration.':
+    'Installed components, printer, OTTOeject, rack and calibration in one pass — this creates the base configuration.',
+  // ── Drucker-Einstellungen (Bambu) ──
+  '⌂ Bett homen': '⌂ Home bed',
+  'G28 an den Drucker — referenziert die Achsen neu': 'Sends G28 to the printer — re-references the axes',
+  '🖨 Druckbett': '🖨 Print bed',
+  'Erkennung (Kamera / KI)': 'Detection (camera / AI)',
+  'Erste Schicht prüfen': 'First layer inspection',
+  'Spaghetti-Erkennung': 'Spaghetti detection',
+  'Bauplatten-Erkennung': 'Build plate detection',
+  'KI-Drucküberwachung': 'AI print monitoring',
+  'Abgelöste Teile überspringen': 'Skip detached objects',
+  'Druckgeschwindigkeit': 'Print speed',
+  'Leise': 'Silent',
+  'Sport': 'Sport',
+  'Auto-Recovery bei Schrittverlust': 'Auto-recovery on step loss',
+  'Kammerlicht': 'Chamber light',
+  'Kalibrierung (X1-Serie)': 'Calibration (X1 series)',
+  'Bett-Nivellierung': 'Bed leveling',
+  'Vibrations-Kompensation': 'Vibration compensation',
+  'Motorgeräusch-Abgleich': 'Motor noise cancellation',
+  '▶ Kalibrierung starten': '▶ Start calibration',
+  '⟳ Zustand neu lesen': '⟳ Re-read state',
+  'Alle drei zusammen dauern ~16 Minuten und blockieren den Drucker. Nur starten, wenn nichts läuft — die Farm sollte gestoppt sein.':
+    'All three together take ~16 minutes and block the printer. Only start when nothing is running — the farm should be stopped.',
+  '„—" = der Drucker hat den Wert noch nicht gemeldet. Nicht jedes Modell unterstützt jede Option.':
+    '"—" = the printer has not reported this value yet. Not every model supports every option.',
+  'KI-Erkennung, Geschwindigkeit, Auto-Recovery, Licht und Kalibrierung — direkt hier, ohne an den Drucker zu gehen.':
+    'AI detection, speed, auto-recovery, light and calibration — right here, without walking to the printer.',
   // ── Kamera (Modell-Auswahl) ──
   'Eingebaute Kamera': 'Built-in camera',
   'Automatisch erkennen (empfohlen)': 'Auto-detect (recommended)',
