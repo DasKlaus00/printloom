@@ -25,6 +25,8 @@ import re
 import socket
 import struct
 
+from app.services import printer_models
+
 logger = logging.getLogger(__name__)
 
 _MCAST_GRP = "239.255.255.250"
@@ -96,6 +98,9 @@ def discover_bambu(timeout: float = 4.0) -> list[dict]:
                 "serial": serial,
                 "name": name or "Bambu Lab",
                 "model": model,
+                # Modell-ID für die Vorbelegung im Geräte-Formular: erst der
+                # gemeldete Modellcode (DevModel), sonst das Seriennummer-Präfix.
+                "model_id": printer_models.normalize(model) or printer_models.from_serial(serial),
                 "source": "ssdp",
             }
     except Exception as e:
@@ -181,7 +186,7 @@ async def _probe_host(ip: str, sem: asyncio.Semaphore, klipper: list, bambu: lis
         if await _port_open(ip, 8883):
             if await _port_open(ip, 990):
                 bambu.append({"ip": ip, "serial": None, "name": "Bambu Lab",
-                              "model": None, "source": "scan"})
+                              "model": None, "model_id": "", "source": "scan"})
 
 
 async def scan_subnet(subnet: str, own_ip: str | None = None) -> dict:

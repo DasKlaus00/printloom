@@ -369,6 +369,13 @@ export default function Drucker() {
   const [testSlot, setTestSlot] = useState(1)
   const [rackXTrim, setRackXTrim] = useState({})   // {"2": -1.5, …} X-Korrektur je Regal (mm)
   const [regalOpen, setRegalOpen] = useState(false)
+  // Achsgrenzen des Geräts ({} = unbekannt) + Prüfergebnis der Geometrie. Solange die
+  // Grenzen fehlen, wird nur „unter 0" geprüft — deshalb der Knopf „vom Gerät holen".
+  const [limits, setLimits]       = useState({})
+  const [check, setCheck]         = useState(null)
+  const [limitsBusy, setLimitsBusy] = useState(false)
+  const [limitsMsg, setLimitsMsg] = useState('')
+  const [checkOpen, setCheckOpen] = useState(false)
   const [jog, setJog] = useState({ busy: false, msg: '', err: false })
   const [lastScript, setLastScript] = useState('')
   const [showScript, setShowScript] = useState(false)
@@ -413,9 +420,10 @@ export default function Drucker() {
       speed_factors: { ...speedFactors },
       rack_x_trim: { ...rackXTrim },
       clamp_push_mm: num(clampPush, 30),
+      machine_limits: { ...limits },
     }
   }, [printerId, printerName, enclosed, xUnclamp, yEngage,
-      firstZ, gap, yPullback, rackGap, eject, load, moveTo, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor, speedFactors, rackXTrim, clampPush])
+      firstZ, gap, yPullback, rackGap, eject, load, moveTo, doorOpen, doorClose, hasDoor, useGcode, gcodeOverride, speedFactor, speedFactors, rackXTrim, clampPush, limits])
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
   const hydrated = useRef(false)
@@ -444,6 +452,7 @@ export default function Drucker() {
         if (g.speed_factors) setSpeedFactors(g.speed_factors)
         if (g.rack_x_trim) setRackXTrim(g.rack_x_trim)
         if (g.clamp_push_mm != null) setClampPush(g.clamp_push_mm)
+        if (g.machine_limits && typeof g.machine_limits === 'object') setLimits(g.machine_limits)
         if (g.use_gcode) {
           // Migration: die Einlege-Op hieß früher „load", jetzt „place" (Alias) —
           // alte Aktivierung übernehmen, damit die Farm-Position nicht still ausgeht.
@@ -461,9 +470,29 @@ export default function Drucker() {
   }, [])
   useEffect(() => {
     if (!hydrated.current) return
-    const t = setTimeout(() => { controlService.putGeometry(geometry).catch(() => {}) }, 600)
+    // Speichern liefert die Plausibilitätsprüfung mit zurück (Achsgrenzen) — so sieht
+    // der Nutzer sofort, wenn ein Wert eine Bewegung aus der Achse fahren würde,
+    // statt es erst beim Testen von Klipper zu erfahren.
+    const t = setTimeout(() => {
+      controlService.putGeometry(geometry)
+        .then(r => setCheck(r?.data?.check || null))
+        .catch(() => {})
+    }, 600)
     return () => clearTimeout(t)
   }, [geometry])
+
+  // Achsgrenzen vom Gerät holen (Klipper toolhead.axis_maximum) → in die Geometrie.
+  const fetchLimits = async () => {
+    setLimitsBusy(true); setLimitsMsg('')
+    try {
+      const r = await controlService.getAxisLimits()
+      const l = r?.data?.limits || {}
+      setLimits(l)
+      setLimitsMsg(tr('✓ Vom Gerät: X {0} · Y {1} · Z {2} mm', l.x ?? '—', l.y ?? '—', l.z ?? '—'))
+    } catch (e) {
+      setLimitsMsg(e?.response?.data?.detail || e?.message || tr('Fehler'))
+    } finally { setLimitsBusy(false) }
+  }
 
   // Regalzahl / Fächer / Magazin-Fach global aus der Rack-Konfiguration (Configuration).
   useEffect(() => {
@@ -1002,6 +1031,76 @@ export default function Drucker() {
                     </label>
                   ))}
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Plausibilität & Achsgrenzen ──
+              Printloom rechnet die Bewegungen aus diesen Werten. Sind die Achsgrenzen
+              bekannt, wird eine Bewegung, die aus der Achse fährt, gar nicht gesendet —
+              sonst bricht Klipper sie mitten im Ablauf ab (womöglich mit Platte im
+              Greifer). Ohne Grenzen wird nur „unter 0 mm" geprüft (Endschalter). */}
+          <div className="card p-3 space-y-2">
+            <button onClick={() => setCheckOpen(o => !o)} className="w-full flex items-center justify-between text-left">
+              <span className="text-sm font-medium text-surface-200 flex items-center gap-2">
+                {tr('🛡 Plausibilität & Achsgrenzen')}
+                {check && (check.errors?.length
+                  ? <span className="badge badge-red">{tr('{0} Fehler', check.errors.length)}</span>
+                  : check.warnings?.length
+                    ? <span className="badge badge-amber">{tr('{0} Hinweise', check.warnings.length)}</span>
+                    : <span className="badge badge-green">{tr('geprüft')}</span>)}
+              </span>
+              <span className="text-[11px] text-blue-400">{checkOpen ? tr('▾ ausblenden') : tr('▸ anzeigen')}</span>
+            </button>
+            {checkOpen && (
+              <div className="space-y-3 pt-1">
+                <p className="text-[10px] text-surface-500">
+                  {tr('Achsgrenzen des OTTOeject (mm). Sind sie bekannt, prüft Printloom jede Bewegung VOR dem Senden und verweigert sie, wenn sie aus der Achse fährt. Leer = unbekannt → es wird nur geprüft, ob eine Bewegung unter 0 mm fährt.')}
+                </p>
+                <div className="flex flex-wrap items-end gap-2">
+                  {['x', 'y', 'z'].map(a => (
+                    <label key={a} className="block">
+                      <span className="text-[11px] text-surface-400 font-mono">{a.toUpperCase()} max</span>
+                      <input type="number" step="1" min="0" value={limits[a] ?? ''}
+                        placeholder={tr('unbekannt')}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value)
+                          setLimits(m => {
+                            const n = { ...m }
+                            if (Number.isNaN(v) || v <= 0) delete n[a]; else n[a] = v
+                            return n
+                          })
+                        }}
+                        className="w-24 text-sm font-mono mt-0.5" />
+                    </label>
+                  ))}
+                  <button onClick={fetchLimits} disabled={limitsBusy}
+                    className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">
+                    {limitsBusy ? tr('Lese…') : tr('⤓ Grenzen vom Gerät holen')}
+                  </button>
+                  {Object.keys(limits).length > 0 && (
+                    <button onClick={() => { setLimits({}); setLimitsMsg('') }}
+                      className="btn btn-ghost btn-sm text-[11px]">{tr('Leeren')}</button>
+                  )}
+                </div>
+                {limitsMsg && <p className="text-[11px] font-mono text-surface-400">{limitsMsg}</p>}
+
+                {check?.errors?.map((p, i) => (
+                  <div key={`e${i}`} className="px-3 py-2 rounded-lg bg-red-950/40 border border-red-800 text-[11px] text-red-300">
+                    {p.message}
+                  </div>
+                ))}
+                {check?.warnings?.map((p, i) => (
+                  <div key={`w${i}`} className="px-3 py-2 rounded-lg bg-amber-950/30 border border-amber-800/60 text-[11px] text-amber-300">
+                    {p.message}
+                  </div>
+                ))}
+                {check && !check.errors?.length && !check.warnings?.length && (
+                  <p className="text-[11px] text-emerald-400">{tr('✓ Alle Bewegungen liegen innerhalb der Achsen.')}</p>
+                )}
+                <p className="text-[9px] text-surface-600">
+                  {tr('Geprüft werden alle Operationen über alle Regale und das erste/letzte Fach — dort liegen die Extremwerte. Ob eine Position mechanisch passt (z. B. genau vor dem Fach), kann nur das Einmessen zeigen.')}
+                </p>
               </div>
             )}
           </div>

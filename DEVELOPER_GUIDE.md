@@ -357,57 +357,57 @@ className="bg-dark-800 text-dark-50 rounded px-4 py-2"
 
 ## Testing
 
-### Backend Testing
+Beide Suiten laufen bei jedem Push auf `main`/`beta` und bei jedem PR
+(`.github/workflows/tests.yml`). Lokal:
 
-```python
-# Create test file: backend/tests/test_devices.py
-
-import pytest
-from fastapi.testclient import TestClient
-from app.main import app
-
-client = TestClient(app)
-
-def test_get_devices():
-    """Test listing devices"""
-    response = client.get("/api/devices")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
-
-def test_create_device():
-    """Test creating device"""
-    device_data = {
-        "name": "Test Printer",
-        "device_type": "bambu_lab",
-        "ip_address": "192.168.1.100",
-        "port": 8883,
-        "serial_number": "12345",
-        "access_code": "12345"
-    }
-    response = client.post("/api/devices", json=device_data)
-    assert response.status_code == 200
-    assert response.json()["name"] == "Test Printer"
-```
-
-Run tests:
 ```bash
+# Backend (pytest)
 cd backend
-pytest
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest -q
 
-# With coverage
-pytest --cov=app
+# Nur eine Datei / ein Test
+python -m pytest tests/test_geometry_check.py -q
+python -m pytest -k "magazin" -q
+
+# Frontend (vitest)
+cd frontend && npm test
 ```
+
+### Was getestet wird — und was nicht
+
+Die Suite deckt bewusst die Stellen ab, an denen ein Fehler **Hardware bewegt
+oder Zusagen bricht**, nicht die Menge an Code:
+
+| Datei | Warum sie existiert |
+|---|---|
+| `test_geometry_check.py` | Bewegung außerhalb der Achse wird nicht gesendet; ohne bekannte Achsgrenzen wird nichts nach oben blockiert |
+| `test_plate_source.py`   | Griff-Reihenfolge mit/ohne Magazin + reservierte Quell-Fächer (Kollisionsschutz) |
+| `test_rack_logic.py` / `test_slotlogic.py` | Fach-Belegung nach Objekthöhe, Betriebszeiten, Start-Countdown |
+| `test_online.py`         | OHNE Zustimmung + Schalter geht KEIN Request nach außen |
+| `test_diagnostics.py`    | keine Geheimnisse im Diagnose-ZIP |
+| `test_camera.py` / `test_camera_hub.py` | richtiges Kamera-Protokoll je Modell; ein Producer je Drucker |
+| `test_printer_models.py` | Modell-Erkennung: lieber „unbekannt" als falsch |
+| `test_bambu_settings.py` | Report lesen (unbekannt ≠ aus) + MQTT-Befehle |
+| `test_migration.py`      | neue Spalten in bestehender DB (sonst „no such column" beim Nutzer) |
+| `test_ams.py`, `test_hms.py`, `test_profiles.py`, `test_project.py`, `test_storage.py`, `test_version.py` | AMS-Abgleich, HMS-Codes, Import-Whitelist, Projekt-Zähler, atomares JSON, Versionsvergleich |
+
+### Konventionen
+
+- **Reine Logik zuerst.** Was ohne FastAPI/MQTT läuft, gehört in einen Service
+  (`app/services/…`) und wird direkt getestet.
+- **Fehlende Abhängigkeiten überspringen, nicht crashen:** Tests, die FastAPI
+  brauchen, beginnen mit `pytest.importorskip("fastapi")`.
+- **Kein Netz, keine echten Pfade.** Externe Aufrufe werden per `monkeypatch`
+  ersetzt (siehe `FakeHttpx` in `test_online.py`), Dateien liegen in `tmp_path`.
+- **Der Docstring sagt, WARUM der Test da ist** — idealerweise der konkrete
+  Fehlerfall, den er verhindert. Ein Test ohne Schadensbild ist meist überflüssig.
 
 ### Frontend Testing
 
-```bash
-# Install testing library
-npm install -D vitest @testing-library/react @testing-library/jest-dom
-
-# Create test file: src/components/Navigation.test.jsx
-# Add tests
-# Run: npm test
-```
+Vitest liegt in `frontend/` (`npm test` = `vitest run`, `npm run test:watch`).
+Getestet werden vor allem die Rechenteile (`src/services/hardware.js`,
+Slot-/Höhen-Logik), nicht das Markup.
 
 ---
 

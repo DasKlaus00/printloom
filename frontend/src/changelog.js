@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.162',
+    de: [
+      'NEU Plausibilitätsprüfung der Geometrie (Drucker-Tab → „🛡 Plausibilität & Achsgrenzen"): Printloom rechnet jede Bewegung vorab durch und meldet, wenn eine Position aus der Achse fährt — mit Achse, Wert und Grenze. Vorher nahm die Geometrie jede Zahl an, und ein Tippfehler (X 4250 statt 425) fiel erst auf, wenn der Arm schon fuhr.',
+      'Neu „⤓ Grenzen vom Gerät holen": liest die echten Achsgrenzen aus Klipper. Sind sie bekannt, wird eine Bewegung außerhalb der Achse GAR NICHT gesendet — vorher brach Klipper sie mitten im Ablauf ab, womöglich mit Platte im Greifer. Solange die Grenzen fehlen, wird nur „unter 0 mm" geprüft (Endschalter) — wer seine X-Schiene verlängert hat, wird also nicht ausgebremst.',
+      'Geprüft werden außerdem unmögliche Werte: kein Höhenschritt zwischen den Fächern, mehrere Regale ohne Abstand, Greif-Y hinter der Rückzugsposition.',
+      'NEU Drucker-Modell am Gerät (Konfiguration → Geräte und im Setup-Assistenten): X1/X1C/X1E, P1P/P1S, A1/A1 mini, H2D. Damit ist das Kamera-Protokoll eindeutig, statt es über einen Netzwerk-Test zu erraten. Bestehende Geräte werden beim Update automatisch aus der Seriennummer vorbelegt; ohne Angabe erkennt Printloom die Kamera weiter selbst.',
+      'Die Netzwerk-Suche schlägt das Modell jetzt gleich mit vor.',
+      'Für Entwickler: die automatischen Tests im Repo sind von 46 auf 174 gewachsen (Achsprüfung, Platten-Quelle mit/ohne Magazin, Kamera-Protokolle, Kamera-Hub, Online-Opt-in, Diagnose-Redaction, Modell-Erkennung, DB-Migration). Sie laufen bei jedem Push — vorher war ein Teil davon nur einmalig von Hand geprüft.',
+    ],
+    en: [
+      'NEW geometry plausibility check (Printer tab → "🛡 Plausibility & axis limits"): Printloom now computes every move up front and reports positions that leave the axis — naming axis, value and limit. Previously the geometry accepted any number, and a typo (X 4250 instead of 425) only surfaced once the arm was already moving.',
+      'New "⤓ Read limits from device": fetches the real axis limits from Klipper. Once known, a move outside the axis is NOT sent at all — previously Klipper aborted it mid-sequence, possibly with a plate in the gripper. While the limits are unknown, only "below 0 mm" is rejected (endstop), so anyone who extended their X rail is not held back.',
+      'Impossible values are flagged too: no height step between slots, several racks without spacing, grab Y behind the retract position.',
+      'NEW printer model on the device (Configuration → Devices and in the setup wizard): X1/X1C/X1E, P1P/P1S, A1/A1 mini, H2D. This makes the camera protocol unambiguous instead of guessing it via a network probe. Existing devices are pre-filled from their serial number on update; without a model, Printloom keeps detecting the camera itself.',
+      'Network discovery now suggests the model as well.',
+      'For developers: the automated tests in the repo grew from 46 to 174 (axis check, plate source with/without magazine, camera protocols, camera hub, online opt-in, diagnostics redaction, model detection, DB migration). They run on every push — before, part of this was only verified once by hand.',
+    ],
+  },
+  {
     version: '1.0.161',
     de: [
       'Entfernt: Die Einstellung „Abgelöste Teile überspringen" ist wieder raus. Das Feld steckt zwar im Datenstrom des Druckers, ist aber KEINE Einstellung, die man am Bambu-Display umschaltet — die Beschreibung in Printloom war irreführend.',

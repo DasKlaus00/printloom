@@ -419,6 +419,7 @@ async def get_control_status(db: Session = Depends(get_db)):
 # Statt Klipper-Macros erzeugt Printloom die G-code-Sequenzen aus dieser Geometrie.
 from app.services import storage as _storage
 from app.services import ottoeject_motion as _motion
+from app.services import geometry_check as _geometry_check
 from app.paths import db_path
 
 GEOMETRY_PATH = db_path("ottoeject_geometry.json")
@@ -466,10 +467,52 @@ async def get_ottoeject_geometry():
 
 @router.put("/ottoeject/geometry")
 async def put_ottoeject_geometry(geometry: dict):
-    """Geometrie speichern (Printloom merkt sich alle Positionen)."""
+    """Geometrie speichern (Printloom merkt sich alle Positionen).
+
+    Gespeichert wird IMMER — der Nutzer soll zwischendurch abspeichern können. Die
+    Antwort enthält aber das Prüfergebnis (`check`), damit die UI unplausible Werte
+    sofort zeigt, statt sie stillschweigend zu übernehmen. Gesendet wird eine
+    fehlerhafte Bewegung ohnehin nicht (siehe /ottoeject/op)."""
     merged = _motion.merge_defaults(geometry)
     _storage.write_json(GEOMETRY_PATH, merged)
-    return {"success": True, "geometry": merged}
+    return {"success": True, "geometry": merged,
+            "check": _geometry_check.check_geometry(_load_geometry())}
+
+
+@router.post("/ottoeject/geometry/check")
+async def check_ottoeject_geometry(request: dict = None):
+    """Geometrie prüfen, ohne zu speichern (Vorschau beim Einstellen).
+    Body: {geometry?} — ohne Angabe wird die gespeicherte geprüft."""
+    geom = _geometry_from_request(request or {})
+    return {"success": True, "check": _geometry_check.check_geometry(geom)}
+
+
+@router.get("/ottoeject/limits")
+async def get_ottoeject_limits(db: Session = Depends(get_db)):
+    """Achsgrenzen vom Gerät lesen (Klipper `toolhead.axis_maximum`).
+
+    Damit muss niemand raten, wie weit seine X-Schiene reicht: einmal holen, in der
+    Geometrie speichern — danach wird jede Bewegung vor dem Senden dagegen geprüft."""
+    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
+    if not klipper:
+        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
+    url = f"http://{klipper.ip_address}:{klipper.port}/printer/objects/query?toolhead"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(url)
+        if r.status_code != 200:
+            raise HTTPException(502, f"Moonraker: {r.text}")
+        th = (r.json().get("result", {}).get("status", {}) or {}).get("toolhead", {})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
+    limits = _geometry_check.limits_from_toolhead(th)
+    if not limits:
+        raise HTTPException(502, "Moonraker hat keine Achsgrenzen gemeldet "
+                                 "(toolhead.axis_maximum fehlt)")
+    return {"success": True, "limits": limits,
+            "standard": _geometry_check.STANDARD_LIMITS}
 
 
 @router.post("/ottoeject/op")
@@ -477,8 +520,9 @@ async def run_ottoeject_op(request: dict, db: Session = Depends(get_db)):
     """Eine OTTOeject-Bewegung aus der gespeicherten Geometrie erzeugen und live senden.
 
     Body: {op: grab|store|eject|load|open_door|close_door|approach|park|home,
-           rack?, slot?, nolift?, geometry?}
+           rack?, slot?, nolift?, geometry?, force?}
     `geometry` optional = Vorschau/Test mit ungespeicherten Werten (sonst gespeicherte).
+    `force` = Achsprüfung übergehen (nur für den bewussten Ausnahmefall).
     """
     op = (request.get("op") or "").strip()
     if not op:
@@ -490,7 +534,12 @@ async def run_ottoeject_op(request: dict, db: Session = Depends(get_db)):
             rack=int(request.get("rack", 1) or 1),
             slot=int(request.get("slot", 1) or 1),
             nolift=request.get("nolift"),
+            check=not request.get("force"),
         )
+    except _geometry_check.GeometryError as e:
+        # Bewegung würde die Achse verlassen → NICHT senden. Klipper würde sie mitten
+        # im Ablauf abbrechen; hier kommt stattdessen eine Meldung mit Achse und Wert.
+        raise HTTPException(400, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -511,14 +560,17 @@ async def preview_ottoeject_op(request: dict):
     if not op:
         raise HTTPException(400, "Keine Operation angegeben")
     geom = _geometry_from_request(request)
+    rack = int(request.get("rack", 1) or 1)
+    slot = int(request.get("slot", 1) or 1)
     try:
-        script = _motion.build_op(
-            geom, op,
-            rack=int(request.get("rack", 1) or 1),
-            slot=int(request.get("slot", 1) or 1),
-            nolift=request.get("nolift"),
-        )
+        # Vorschau prüft NICHT (check=False): sie soll auch unplausiblen G-code zeigen
+        # können — die Probleme kommen daneben als `problems` mit.
+        script = _motion.build_op(geom, op, rack=rack, slot=slot,
+                                  nolift=request.get("nolift"), check=False)
     except ValueError as e:
         raise HTTPException(400, str(e))
     # Vorschau zeigt exakt das, was gesendet würde (inkl. gespiegelter RACK=-Nummern).
-    return {"success": True, "op": op, "script": _mirror_for_device(script)}
+    # Geprüft wird der eben gebaute G-code (das Spiegeln ändert nur RACK=-Nummern,
+    # keine Koordinaten) — kein zweiter Aufbau nötig.
+    return {"success": True, "op": op, "script": _mirror_for_device(script),
+            "problems": _geometry_check.check_script(script, geom, op, rack, slot)}

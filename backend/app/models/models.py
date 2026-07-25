@@ -30,6 +30,10 @@ class Device(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, index=True)
     device_type = Column(SQLEnum(PrinterType))
+    # Drucker-Modell als ID aus app/services/printer_models.py (z. B. "x1c", "p1s").
+    # Bestimmt Kamera-Protokoll und Fähigkeiten (AMS/Tür/Kalibrierung) — vorher musste
+    # das geraten werden (Port-Probe / Seriennummer). Leer = unbekannt → weiter raten.
+    model = Column(String(64), nullable=True)
     ip_address = Column(String(255))
     port = Column(Integer)
     serial_number = Column(String(255), nullable=True)

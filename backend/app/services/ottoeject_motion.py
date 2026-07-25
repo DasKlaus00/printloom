@@ -55,6 +55,11 @@ DEFAULT_GEOMETRY = {
     # abzuschieben. Drucker-Seite (eject/load) = +push, Regal-Seite (grab/store) = −push.
     # Im Original fix 30 mm; jetzt einstellbar (0 = ohne Andruck, Greifpunkt = Start-X).
     "clamp_push_mm": 30.0,
+    # Achsgrenzen des Geräts in mm ({} = unbekannt) — für die Plausibilitätsprüfung
+    # (geometry_check). Am besten per „Grenzen vom Gerät holen" aus Klipper geholt,
+    # dann wird eine Bewegung außerhalb der Achse gar nicht erst gesendet. Leer
+    # gelassen wird nur nach unten geprüft (unter 0 ist immer falsch).
+    "machine_limits": {},
 }
 
 
@@ -102,6 +107,14 @@ def _sanitize_geometry(g: dict) -> dict:
     sf = g.get("speed_factors")
     if isinstance(sf, dict):
         g["speed_factors"] = {k: _num(v, 100) for k, v in sf.items() if v is not None}
+    ml = g.get("machine_limits")
+    if isinstance(ml, dict):
+        # 0/leer/Müll = „unbekannt" → Eintrag fällt weg (nicht 0 speichern, sonst wäre
+        # jede Bewegung über 0 mm plötzlich ein Fehler).
+        g["machine_limits"] = {k: _num(v) for k, v in ml.items()
+                               if k in ("x", "y", "z") and _num(v) > 0}
+    else:
+        g["machine_limits"] = {}
     s = g.setdefault("storage", {})
     for k, dv in d["storage"].items():
         s[k] = _num(s.get(k), dv)
@@ -488,7 +501,25 @@ def _speed_prefix(g: dict, op: str | None = None) -> str:
     return f"M220 S{f}\n" if f != 100 else ""
 
 
-def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str:
+def _guard(script: str, g: dict, op: str, rack: int, slot: int, check: bool) -> str:
+    """Letzte Instanz vor dem Senden: verlässt die Bewegung die Achsen, wird sie NICHT
+    ausgeliefert, sondern als GeometryError gemeldet (mit Achse, Wert und Grenze).
+    Sonst bräche Klipper sie mitten im Ablauf ab — womöglich mit Platte im Greifer.
+    Import bewusst hier drin: geometry_check baut selbst G-code über build_op."""
+    if not check:
+        return script
+    from app.services import geometry_check
+    problems = geometry_check.check_script(script, g, op, rack, slot)
+    errors = [p for p in problems if p.get("severity") == "error"]
+    if errors:
+        raise geometry_check.GeometryError(errors)
+    return script
+
+
+def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None,
+             check: bool = True) -> str:
+    """G-code einer Operation aus der Geometrie. `check=False` überspringt die
+    Achsprüfung (Vorschau/Anzeige — die soll auch kaputte Werte zeigen können)."""
     g = _sanitize_geometry(merge_defaults(g))
     op = (op or "").lower()
     if op == "speed":   # nur den globalen Vorschubfaktor live setzen
@@ -523,7 +554,8 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
         ):
             s = s.replace(k, v)
         s = s.strip()
-        return speed + (s if s.rstrip().endswith("M400") else s + "\nM400")
+        return _guard(speed + (s if s.rstrip().endswith("M400") else s + "\nM400"),
+                      g, op, rack, slot, check)
     if op == "grab":
         lines = grab_from_rack(g, rack, slot, nolift)
     elif op in ("grab_magazine", "grab_mag"):
@@ -551,4 +583,4 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> str
         lines = ["OTTOEJECT_HOME"]
     else:
         raise ValueError(f"Unbekannte Operation: {op}")
-    return speed + "\n".join(lines) + "\nM400"
+    return _guard(speed + "\n".join(lines) + "\nM400", g, op, rack, slot, check)

@@ -61,6 +61,19 @@ def _migrate():
         for name, typ in adds.items():
             if name not in cols:
                 cur.execute(f"ALTER TABLE uploaded_files ADD COLUMN {name} {typ}")
+        # Drucker-Modell (seit v1.0.162). Für vorhandene Bambu-Geräte einmalig aus der
+        # Seriennummer vorbelegt, damit die Kamera nicht weiter proben muss. Nur als
+        # Vorschlag: der Nutzer kann das Modell im Geräte-Formular korrigieren.
+        cur.execute("PRAGMA table_info(devices)")
+        dev_cols = {r[1] for r in cur.fetchall()}
+        if "model" not in dev_cols:
+            cur.execute("ALTER TABLE devices ADD COLUMN model VARCHAR(64)")
+            from app.services import printer_models
+            cur.execute("SELECT id, serial_number FROM devices")
+            for dev_id, serial in cur.fetchall():
+                guess = printer_models.from_serial(serial)
+                if guess:
+                    cur.execute("UPDATE devices SET model = ? WHERE id = ?", (guess, dev_id))
         con.commit()
     except Exception:
         pass

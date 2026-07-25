@@ -26,6 +26,8 @@ class PrintStatus(str, Enum):
 class DeviceCreate(BaseModel):
     name: str
     device_type: PrinterType
+    # Modell-ID aus printer_models (z. B. "x1c"); leer = unbekannt.
+    model: Optional[str] = None
     ip_address: str
     port: int
     serial_number: Optional[str] = None
@@ -35,6 +37,7 @@ class DeviceCreate(BaseModel):
 
 class DeviceUpdate(BaseModel):
     name: Optional[str] = None
+    model: Optional[str] = None
     ip_address: Optional[str] = None
     port: Optional[int] = None
     serial_number: Optional[str] = None
@@ -47,6 +50,7 @@ class DeviceResponse(BaseModel):
     id: int
     name: str
     device_type: PrinterType
+    model: Optional[str] = None
     ip_address: str
     port: int
     serial_number: Optional[str]

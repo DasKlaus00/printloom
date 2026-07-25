@@ -63,6 +63,14 @@ async def discover_devices(subnet: str = None, db: Session = Depends(get_db)):
     return result
 
 
+@router.get("/models")
+async def list_printer_models():
+    """Bekannte Drucker-Modelle für die Auswahl im Geräte-Formular. EINE Liste im
+    Backend (printer_models) — Kamera-Protokoll und Fähigkeiten hängen daran."""
+    from app.services import printer_models
+    return {"models": printer_models.public_list()}
+
+
 @router.get("/", response_model=List[DeviceResponse])
 async def list_devices(db: Session = Depends(get_db)):
     return db.query(Device).all()
@@ -76,12 +84,21 @@ async def get_device(device_id: int, db: Session = Depends(get_db)):
     return device
 
 
+def _clean_model(raw, serial=None) -> str:
+    """Modell-Angabe auf eine bekannte ID bringen. Nicht erkannt → aus der
+    Seriennummer erraten → sonst leer (dann probt die Kamera wie bisher)."""
+    from app.services import printer_models
+    return printer_models.normalize(raw) or printer_models.from_serial(serial)
+
+
 @router.post("/", response_model=DeviceResponse)
 async def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
     existing = db.query(Device).filter(Device.name == device.name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Device name already exists")
-    db_device = Device(**device.dict())
+    data = device.dict()
+    data["model"] = _clean_model(data.get("model"), data.get("serial_number")) or None
+    db_device = Device(**data)
     db.add(db_device)
     db.commit()
     db.refresh(db_device)
@@ -93,7 +110,15 @@ async def update_device(device_id: int, device: DeviceUpdate, db: Session = Depe
     db_device = db.query(Device).filter(Device.id == device_id).first()
     if not db_device:
         raise HTTPException(status_code=404, detail="Device not found")
-    for field, value in device.dict(exclude_unset=True).items():
+    fields = device.dict(exclude_unset=True)
+    if "model" in fields:
+        # Beim Ändern zählt die AUSDRÜCKLICHE Wahl: hat der Nutzer „nicht angegeben"
+        # gewählt, wird das Modell geleert (dann probt die Kamera wieder) und NICHT
+        # aus der Seriennummer wieder aufgefüllt — sonst käme der eben gelöschte Wert
+        # sofort zurück. Vorbelegen aus der Seriennummer passiert nur beim Anlegen.
+        from app.services import printer_models
+        fields["model"] = printer_models.normalize(fields["model"]) or None
+    for field, value in fields.items():
         setattr(db_device, field, value)
     db.add(db_device)
     db.commit()

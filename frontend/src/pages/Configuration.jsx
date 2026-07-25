@@ -482,7 +482,7 @@ function RegalKonfiguration() {
 }
 
 const INITIAL_FORM = {
-  name: '', device_type: 'bambu_lab', ip_address: '',
+  name: '', device_type: 'bambu_lab', model: '', ip_address: '',
   port: 8883, serial_number: '', access_code: '',
   mqtt_port: 8883, use_tls: true,
 }
@@ -822,6 +822,14 @@ function Configuration() {
 
   const bambu = devices.find(d => d.device_type === 'bambu_lab')
 
+  // Bekannte Drucker-Modelle aus dem Backend (printer_models) — davon hängen
+  // Kamera-Protokoll und Fähigkeiten ab, deshalb keine zweite Liste im Frontend.
+  const [models, setModels] = useState([])
+  useEffect(() => {
+    deviceService.listModels().then(r => setModels(r.data?.models || [])).catch(() => setModels([]))
+  }, [])
+  const modelLabel = (id) => models.find(m => m.id === id)?.label || id
+
   const load = async () => {
     const d = await deviceService.listDevices()
     setDevices(d.data)
@@ -887,6 +895,9 @@ function Configuration() {
       setForm({
         ...INITIAL_FORM, device_type: 'bambu_lab',
         name: item.name || 'Bambu Lab X1C', ip_address: item.ip || '',
+        // Modell aus der Netzwerk-Suche vorbelegen (Modellcode/Seriennummer) —
+        // der Nutzer kann es im Formular korrigieren.
+        model: item.model_id || '',
         serial_number: item.serial || '', port: 8883, mqtt_port: 8883, use_tls: true,
       })
     } else {
@@ -931,6 +942,7 @@ function Configuration() {
     setEditId(device.id)
     setForm({
       name: device.name ?? '', device_type: device.device_type ?? 'bambu_lab',
+      model: device.model ?? '',
       ip_address: device.ip_address ?? '', port: device.port ?? 8883,
       serial_number: device.serial_number ?? '', access_code: '',
       mqtt_port: device.mqtt_port ?? 8883, use_tls: device.use_tls ?? true,
@@ -952,6 +964,7 @@ function Configuration() {
           name: form.name, device_type: form.device_type, ip_address: form.ip_address,
           port: +form.port, mqtt_port: +form.mqtt_port, use_tls: form.use_tls,
           serial_number: form.serial_number,
+          model: form.device_type === 'bambu_lab' ? (form.model || '') : '',
         }
         if (form.access_code) payload.access_code = form.access_code
         await deviceService.updateDevice(editId, payload)
@@ -1108,6 +1121,28 @@ function Configuration() {
 
             {form.device_type === 'bambu_lab' && (
               <div className="grid grid-cols-2 gap-3">
+                {/* Modell bestimmt das Kamera-Protokoll (X1-Serie: RTSP, P1/A1: Port 6000)
+                    und die Fähigkeiten. Ohne Angabe erkennt Printloom die Kamera wie
+                    bisher selbst — mit Angabe ohne Umweg und ohne Netz-Probe. */}
+                <div className="col-span-2">
+                  <label className="text-xs text-surface-500 block mb-1">{tr('Modell')}</label>
+                  <select name="model" value={form.model} onChange={handleChange}>
+                    <option value="">{tr('Nicht angegeben (automatisch erkennen)')}</option>
+                    {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                  {form.model && (
+                    <p className="text-[11px] text-surface-600 mt-1">
+                      {(() => {
+                        const m = models.find(x => x.id === form.model)
+                        if (!m) return null
+                        const cam = m.camera === 'rtsp' ? tr('Kamera über RTSP (Port 322)')
+                          : m.camera === 'bambu' ? tr('Kamera über Bambu-Protokoll (Port 6000)')
+                          : tr('Kamera wird automatisch erkannt')
+                        return `${cam} · ${m.enclosed ? tr('geschlossen (Tür)') : tr('offen (keine Tür)')}`
+                      })()}
+                    </p>
+                  )}
+                </div>
                 <div>
                   <label className="text-xs text-surface-500 block mb-1">Serial Number</label>
                   <input name="serial_number" value={form.serial_number} onChange={handleChange} placeholder={tr('z. B. 00M…')} required />
@@ -1145,7 +1180,8 @@ function Configuration() {
                     <div>
                       <p className="text-sm font-medium text-surface-200">{device.name}</p>
                       <p className="text-xs text-surface-500 font-mono mt-0.5">
-                        {typeLabel[device.device_type] ?? device.device_type} · {device.ip_address}:{device.port}
+                        {device.model ? modelLabel(device.model) : (typeLabel[device.device_type] ?? device.device_type)}
+                        {' · '}{device.ip_address}:{device.port}
                       </p>
                       {device.serial_number && (
                         <p className="text-xs text-surface-600 font-mono">S/N: {device.serial_number}</p>

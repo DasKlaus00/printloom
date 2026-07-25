@@ -31,6 +31,8 @@ export const deviceService = {
   updateDevice: (id, data) => api.put(`/devices/${id}`, data),
   deleteDevice: (id)       => api.delete(`/devices/${id}`),
   testDevice:   (id)       => api.post(`/devices/${id}/test`),
+  // Bekannte Drucker-Modelle (Kamera-Protokoll + Fähigkeiten) — EINE Liste im Backend.
+  listModels:   ()         => api.get('/devices/models'),
   // Netzwerk-Suche (SSDP-Bambu + Moonraker-Scan) dauert ~5 s → großzügiger Timeout.
   // subnet: optionales /24 (z. B. „192.168.1"), nötig in Docker-Bridge-Netzen.
   discover:     (subnet)   => api.get('/devices/discover', {
@@ -90,6 +92,9 @@ export const controlService = {
   putGeometry:         (g)     => api.put('/control/ottoeject/geometry', g),
   runOp:               (body)  => api.post('/control/ottoeject/op', body),
   previewOp:           (body)  => api.post('/control/ottoeject/preview', body),
+  // Plausibilitätsprüfung der Geometrie (Achsgrenzen) — prüft ohne zu speichern
+  checkGeometry:       (g)     => api.post('/control/ottoeject/geometry/check', { geometry: g }),
+  getAxisLimits:       ()      => api.get('/control/ottoeject/limits'),
 }
 
 // Printer-Status koaleszieren: viele gleichzeitig gemountete Seiten (Dashboard,

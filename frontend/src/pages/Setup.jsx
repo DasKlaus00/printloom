@@ -48,7 +48,9 @@ export default function Setup({ setCurrentPage }) {
 
   // Step 2 — printer
   const [devices, setDevices]   = useState([])
-  const [pForm, setPForm]       = useState({ name: 'Bambu X1C', ip_address: '', serial_number: '', access_code: '' })
+  const [pForm, setPForm]       = useState({ name: 'Bambu X1C', model: '', ip_address: '', serial_number: '', access_code: '' })
+  // Modelle aus dem Backend (printer_models): bestimmt Kamera-Protokoll + Fähigkeiten.
+  const [models, setModels]     = useState([])
   const [pSaving, setPSaving]   = useState(false)
   const [pErr, setPErr]         = useState(null)
   const [pTest, setPTest]       = useState(null)   // Bambu-Testergebnis
@@ -109,6 +111,7 @@ export default function Setup({ setCurrentPage }) {
 
   useEffect(() => {
     deviceService.listDevices().then(r => setDevices(r.data ?? [])).catch(() => {})
+    deviceService.listModels().then(r => setModels(r.data?.models || [])).catch(() => {})
     // Gespeicherte Zeitzone laden; sonst die Browser-Zone vorbelegen und gleich sichern.
     autofarmService.getSettings().then(r => {
       const stored = r.data?.timezone || ''
@@ -200,6 +203,7 @@ export default function Setup({ setCurrentPage }) {
         port: 8883, mqtt_port: 8883, use_tls: true,
         serial_number: pForm.serial_number,
         access_code: pForm.access_code,
+        model: pForm.model || '',
       })
       const r = await deviceService.listDevices()
       setDevices(r.data ?? [])
@@ -431,7 +435,7 @@ export default function Setup({ setCurrentPage }) {
                         <p className="text-[11px] text-surface-600">{tr('Kein Bambu gefunden — bitte manuell eintragen. (In Docker-Bridge-Netzen kommt SSDP nicht an.)')}</p>
                       )}
                       {discovered.bambu?.map((b, i) => (
-                        <button key={i} onClick={() => setPForm(f => ({ ...f, name: b.name || f.name, ip_address: b.ip || '', serial_number: b.serial || '' }))}
+                        <button key={i} onClick={() => setPForm(f => ({ ...f, name: b.name || f.name, ip_address: b.ip || '', serial_number: b.serial || '', model: b.model_id || f.model }))}
                           className="w-full text-left px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-800 hover:border-blue-700 transition-colors">
                           <span className="text-sm text-surface-200">🖨 {b.name || 'Bambu Lab'} <span className="font-mono text-xs text-surface-500">· {b.ip}</span></span>
                           <span className="block text-[10px] font-mono text-surface-600">{b.serial ? `S/N: ${b.serial}` : tr('Seriennummer manuell nötig')}</span>
@@ -445,6 +449,13 @@ export default function Setup({ setCurrentPage }) {
                 <div className="space-y-2">
                   <input className="w-full text-sm" placeholder={tr('Name (z. B. Bambu X1C)')} value={pForm.name}
                     onChange={e => setPForm(f => ({ ...f, name: e.target.value }))} />
+                  {/* Modell: davon hängt das Kamera-Protokoll ab (X1-Serie RTSP, P1/A1
+                      Port 6000). Ohne Angabe erkennt Printloom es selbst. */}
+                  <select className="w-full text-sm" value={pForm.model}
+                    onChange={e => setPForm(f => ({ ...f, model: e.target.value }))}>
+                    <option value="">{tr('Modell wählen (optional — wird sonst erkannt)')}</option>
+                    {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
                   <input className="w-full text-sm" placeholder={tr('IP-Adresse (192.168.1.100)')} value={pForm.ip_address}
                     onChange={e => setPForm(f => ({ ...f, ip_address: e.target.value }))} />
                   <input className="w-full text-sm" placeholder={tr('Seriennummer (z. B. 00M…)')} value={pForm.serial_number}

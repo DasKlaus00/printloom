@@ -5,10 +5,12 @@
 
 Auswahl je Gerät, in dieser Reihenfolge:
   1. Explizite Geräte-Einstellung camera_type: "rtsp" | "bambu" | "none" | "auto".
-  2. Laufzeit-Probe von TCP 322 (offen → rtsp, sonst → bambu), pro IP gecacht —
+  2. Gespeichertes Drucker-Modell (Device.model → printer_models) — eindeutig, ohne
+     Netzverkehr. Seit v1.0.162 wird das Modell beim Anlegen gesetzt.
+  3. Laufzeit-Probe von TCP 322 (offen → rtsp, sonst → bambu), pro IP gecacht —
      nur die X1-Serie hat den RTSP-Port offen, das trennt zuverlässig unabhängig
-     von der Seriennummer.
-  3. Seriennummer-Präfix als Fallback, wenn keine IP zum Proben da ist.
+     von der Seriennummer. Greift bei Geräten ohne (oder mit unbekanntem) Modell.
+  4. Seriennummer-Präfix als Fallback, wenn keine IP zum Proben da ist.
 
 Die eigentliche Stream-/Snapshot-Logik (geteilter Hub) liegt in den Backend-Modulen;
 hier wird nur dispatcht. Der ffmpeg/Snapshot-Threadpool wird re-exportiert.
@@ -17,7 +19,7 @@ import socket
 import time
 import logging
 
-from app.services import rtsp_camera, bambu_camera
+from app.services import rtsp_camera, bambu_camera, printer_models
 from app.services.camera_hub import executor  # noqa: F401  (re-export für Aufrufer)
 
 logger = logging.getLogger(__name__)
@@ -58,6 +60,10 @@ def resolve_backend(device, settings: dict = None) -> str:
     explicit = (settings.get("camera_type") or "").strip().lower()
     if explicit in (RTSP, BAMBU, NONE):
         return explicit
+    # Bekanntes Modell → Protokoll steht fest, kein Proben nötig.
+    backend = printer_models.camera_backend(getattr(device, "model", None))
+    if backend in (RTSP, BAMBU):
+        return backend
     ip = getattr(device, "ip_address", None)
     if ip:
         return _probe(ip)

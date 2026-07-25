@@ -445,6 +445,30 @@ const EN_STRINGS = {
   'Greifer-Andruck · 0 = Greifpunkt = Start-X': 'Gripper push · 0 = grab point = start X',
   'Andruck-Weg: der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original 30. Auf 0 stellen, wenn der Greifer genau bei Start-X fassen soll.':
     'Push distance: on grab/place the arm moves this far beyond X to press the gripper into the bracket (eject/place: +, grab/store: −). Original 30. Set to 0 for the gripper to engage exactly at start X.',
+  // Plausibilitätsprüfung der Geometrie (Achsgrenzen) — seit v1.0.162
+  '🛡 Plausibilität & Achsgrenzen': '🛡 Plausibility & axis limits',
+  '{0} Fehler': '{0} errors',
+  '{0} Hinweise': '{0} notices',
+  'geprüft': 'checked',
+  'Achsgrenzen des OTTOeject (mm). Sind sie bekannt, prüft Printloom jede Bewegung VOR dem Senden und verweigert sie, wenn sie aus der Achse fährt. Leer = unbekannt → es wird nur geprüft, ob eine Bewegung unter 0 mm fährt.':
+    'Axis limits of the OTTOeject (mm). Once known, Printloom checks every move BEFORE sending it and refuses moves that leave the axis. Empty = unknown → only moves below 0 mm are rejected.',
+  'unbekannt': 'unknown',
+  'Lese…': 'Reading…',
+  '⤓ Grenzen vom Gerät holen': '⤓ Read limits from device',
+  'Leeren': 'Clear',
+  '✓ Vom Gerät: X {0} · Y {1} · Z {2} mm': '✓ From device: X {0} · Y {1} · Z {2} mm',
+  '✓ Alle Bewegungen liegen innerhalb der Achsen.': '✓ All moves stay inside the axes.',
+  'Geprüft werden alle Operationen über alle Regale und das erste/letzte Fach — dort liegen die Extremwerte. Ob eine Position mechanisch passt (z. B. genau vor dem Fach), kann nur das Einmessen zeigen.':
+    'All operations are checked across all racks and the first/last slot — that is where the extremes are. Whether a position fits mechanically (e.g. exactly in front of the slot) can only be found by measuring it in.',
+  // Drucker-Modell am Gerät — seit v1.0.162
+  'Modell': 'Model',
+  'Nicht angegeben (automatisch erkennen)': 'Not specified (detect automatically)',
+  'Modell wählen (optional — wird sonst erkannt)': 'Choose model (optional — detected otherwise)',
+  'Kamera über RTSP (Port 322)': 'Camera via RTSP (port 322)',
+  'Kamera über Bambu-Protokoll (Port 6000)': 'Camera via Bambu protocol (port 6000)',
+  'Kamera wird automatisch erkannt': 'Camera is detected automatically',
+  'geschlossen (Tür)': 'enclosed (door)',
+  'offen (keine Tür)': 'open (no door)',
   '🖨 Druckerbett': '🖨 Print bed',
   '▶ Bett fahren': '▶ Move bed',
   '= Z200': '= Z200',
