@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { systemService, healthService, pushService } from '../services/api'
 import SetupHealth from '../components/SetupHealth'
+import OnlineServices from '../components/OnlineServices'
 import { pushSupported, pushUnsupportedReason, isSubscribed, syncSubscription, subscribe as pushSubscribe, unsubscribe as pushUnsubscribe } from '../services/push'
 import { VERSION } from '../version'
 import { THEMES, getTheme, applyTheme } from '../services/theme'
@@ -157,11 +158,13 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
   const [backupFeedback, setBackupFeedback] = useState(null)
   const importRef = useRef(null)
 
-  const checkVersion = useCallback(async (silent = false) => {
+  // `force` = ausdrückliche Prüfung per Knopf. Ohne force respektiert das Backend
+  // den Opt-in-Schalter „Update-Prüfung im Internet" und geht NICHT ins Netz.
+  const checkVersion = useCallback(async (silent = false, force = false) => {
     if (!silent) setChecking(true)
     setError(null)
     try {
-      const r = await systemService.getVersion(channel)
+      const r = await systemService.getVersion(channel, force)
       setInfo(r.data)
       onUpdateAvailable?.(r.data.update_available)
     } catch {
@@ -288,6 +291,9 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
             className="btn-secondary text-sm shrink-0">{tr('🧭 Setup-Assistent öffnen')}</button>
         </div>
       </div>
+
+      {/* Online-Dienste — Opt-in, standardmäßig alles aus */}
+      <OnlineServices />
 
       {/* Release channel — kompakter Toggle Latest ↔ Beta */}
       <div className="card p-4 space-y-3">
@@ -428,14 +434,21 @@ docker compose up -d`}
           </div>
         )}
 
+        {/* Automatische Prüfung ist aus → sagen, dass hier nichts ins Netz geht */}
+        {info?.online_disabled && (
+          <p className="text-[11px] text-surface-500 bg-surface-900/50 border border-surface-800 rounded-lg px-3 py-2">
+            {tr('Die automatische „Update-Prüfung im Internet" ist aus — Printloom fragt von allein NICHT bei GitHub nach. „Jetzt prüfen" macht eine einmalige Abfrage. Dauerhaft einschalten kannst du sie unter „Online-Dienste".')}
+          </p>
+        )}
+
         {/* Action buttons (both channels) */}
         <div className="flex gap-3 flex-wrap">
           <button
-            onClick={() => checkVersion()}
+            onClick={() => checkVersion(false, true)}
             disabled={!canUpdate}
             className="btn-secondary text-sm"
           >
-            {checking ? tr('Prüfe…') : tr('Auf Updates prüfen')}
+            {checking ? tr('Prüfe…') : (info?.online_disabled ? tr('Jetzt prüfen (einmalig)') : tr('Auf Updates prüfen'))}
           </button>
           {!confirmUpdate && !isNativeLinux && !['done', 'running'].includes(phase) && (
             <button

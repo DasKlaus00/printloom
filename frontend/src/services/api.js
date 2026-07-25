@@ -163,7 +163,10 @@ export const calibrationService = {
 }
 
 export const systemService = {
-  getVersion:       (channel) => api.get('/system/version', { params: channel ? { channel } : {} }),
+  // force=true = einmalige Prüfung auf ausdrücklichen Knopfdruck, auch wenn die
+  // automatische „Update-Prüfung im Internet" ausgeschaltet ist.
+  getVersion:       (channel, force) => api.get('/system/version', {
+                      params: { ...(channel && { channel }), ...(force && { force: 1 }) } }),
   getRunningVersion:() => api.get('/system/running-version'),
   triggerUpdate:    (channel) => api.post('/system/update', channel ? { channel } : {}),
   getNotifications: () => api.get('/system/notifications'),
@@ -180,6 +183,20 @@ export const systemService = {
   resetDashboardLayout:() => api.delete('/system/dashboard-layout'),
   getCameraSettings:   () => api.get('/system/camera'),
   saveCameraSettings:  (data) => api.post('/system/camera', data),
+  // Diagnose-Paket (ZIP, ohne Zugangsdaten) — direkter Download-Link
+  diagnosticsUrl:      () => '/api/system/diagnostics',
+}
+
+/* Online-Dienste — ALLE opt-in. Ohne Zustimmung + Schalter macht das Backend
+   keinen einzigen externen Request (siehe backend/app/services/online.py). */
+export const onlineService = {
+  getSettings:  ()          => api.get('/online/settings'),
+  saveSettings: (data)      => api.post('/online/settings', data),
+  getNotices:   (refresh)   => api.get('/online/notices', refresh ? { params: { refresh: 1 } } : undefined),
+  getLibrary:   (kind, refresh) => api.get('/online/library', {
+                                 params: { ...(kind && { kind }), ...(refresh && { refresh: 1 }) } }),
+  getItem:      (id)        => api.get('/online/library/item', { params: { id } }),
+  clearCache:   ()          => api.post('/online/cache/clear'),
 }
 
 export const autofarmService = {

@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import asyncio
 import logging
@@ -6,6 +7,7 @@ import httpx
 from datetime import datetime
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Optional
 
@@ -196,11 +198,24 @@ async def _check_native_linux(current: str, channel: str) -> dict:
 
 
 @router.get("/version")
-async def get_version(channel: str = "latest"):
+async def get_version(channel: str = "latest", force: bool = False):
     """Update check for the selected channel: stable (git tags) or beta (:beta image).
 
-    Native Desktop-App: prüft GitHub-Releases auf einen Installer statt Docker/ghcr."""
+    Native Desktop-App: prüft GitHub-Releases auf einen Installer statt Docker/ghcr.
+
+    WICHTIG (Opt-in): Die Prüfung geht ins Internet (GitHub/ghcr). Ist die
+    „Update-Prüfung im Internet" nicht freigeschaltet, wird KEIN externer Request
+    gemacht — es kommt nur die installierte Version zurück. `force=true` erlaubt
+    eine einmalige Prüfung auf ausdrücklichen Knopfdruck (die UI fragt vorher)."""
     current = _get_current_version()
+    from app.services import online
+    if not online.enabled("update_check") and not force:
+        return {
+            "current": current, "channel": channel or "latest", "latest": None,
+            "update_available": False, "checked": False, "online_disabled": True,
+            "docker_available": _docker_available(), "runtime": paths.RUNTIME,
+            "error": None,
+        }
     if paths.RUNTIME == "native":
         from app.services import native_update
         result = await native_update.check(current, channel or "latest")
@@ -498,6 +513,137 @@ def _backup_files() -> list:
         (_langpacks_file(),          "langpacks"),
         (_dashboard_file(),          "dashboard_layout"),
     ]
+
+
+# ─── Diagnose-Paket (Support) ────────────────────────────────────────────────
+# Anders als das Backup enthält das Diagnose-Paket ABSICHTLICH KEINE Zugangsdaten:
+# es ist zum Verschicken gedacht. Alles, was nach Geheimnis aussieht, wird anhand des
+# SCHLÜSSELNAMENS rekursiv ersetzt (nicht anhand einer Whitelist von Dateien) — so
+# rutscht auch bei künftig neuen Feldern kein Token mit raus.
+_SECRET_KEY_HINTS = ("access_code", "password", "passwd", "token", "secret",
+                     "api_key", "apikey", "auth", "credential", "private_key")
+_REDACTED = "***entfernt***"
+
+
+def _redact(value, _depth: int = 0):
+    """Rekursiv Geheimnisse ersetzen. Werte bleiben strukturell erhalten (damit man
+    sieht, DASS etwas konfiguriert ist), nur der Inhalt verschwindet."""
+    if _depth > 30:
+        return value
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            kl = str(k).lower()
+            if any(h in kl for h in _SECRET_KEY_HINTS):
+                out[k] = _REDACTED if v not in (None, "", [], {}) else v
+            else:
+                out[k] = _redact(v, _depth + 1)
+        return out
+    if isinstance(value, list):
+        return [_redact(v, _depth + 1) for v in value]
+    return value
+
+
+def _diag_devices() -> tuple:
+    """(devices, per_device_settings, error) — Geräteliste OHNE Access-Code/Seriennummer
+    und die pro-Gerät-Einstellungen mit redigierten Tokens. Eigene Session, damit die
+    ZIP-Erzeugung keine offene DB-Verbindung hält."""
+    db = SessionLocal()
+    try:
+        devices = [{
+            "id": d.id, "name": d.name,
+            "device_type": getattr(d.device_type, "value", str(d.device_type)),
+            "ip_address": d.ip_address, "port": d.port, "mqtt_port": d.mqtt_port,
+            "use_tls": d.use_tls, "is_active": d.is_active,
+            # Nur ob etwas gesetzt ist — nie der Wert selbst.
+            "has_access_code": bool(d.access_code), "has_serial": bool(d.serial_number),
+        } for d in db.query(Device).all()]
+        per_dev = {}
+        for r in db.query(SystemConfig).filter(
+                SystemConfig.key.like("device_settings_%")).all():
+            try:
+                per_dev[r.key] = _redact(json.loads(r.value))
+            except Exception:
+                per_dev[r.key] = _REDACTED
+        return devices, per_dev, None
+    except Exception as e:
+        return [], {}, str(e)
+    finally:
+        db.close()
+
+
+@router.get("/diagnostics")
+async def download_diagnostics():
+    """Diagnose-Paket als ZIP zum Herunterladen und Verschicken (Support).
+
+    Enthält Konfiguration (Geometrie, Regal, Sequenzen, Farm-Einstellungen),
+    Versions-/Laufzeit-Infos und die Geräteliste OHNE Zugangsdaten.
+    Ausdrücklich NICHT enthalten: Access-Codes, Tokens, Passwörter, Druckdateien."""
+    import io
+    import zipfile
+    from datetime import datetime as _dt
+
+    included, skipped = [], []
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for path, key in _backup_files():
+            data = storage.read_json(path, None)
+            if data is None:
+                skipped.append(key)
+                continue
+            z.writestr(f"config/{key}.json", json.dumps(_redact(data), indent=2, ensure_ascii=False))
+            included.append(key)
+
+        # Geräte + pro-Gerät-Einstellungen, beides ohne Zugangsdaten.
+        devices, per_dev, dev_err = _diag_devices()
+        if dev_err:
+            skipped.append(f"devices ({dev_err})")
+        else:
+            z.writestr("devices.json", json.dumps(devices, indent=2, ensure_ascii=False))
+            included.append("devices (ohne Zugangsdaten)")
+            if per_dev:
+                z.writestr("device_settings.json", json.dumps(per_dev, indent=2, ensure_ascii=False))
+                included.append("device_settings (Tokens entfernt)")
+
+        # Farm-Log (letzte Zeilen) — hilft bei Ablauf-Fehlern am meisten.
+        try:
+            from app.routers import autofarm
+            log = (autofarm._farm.get("log") or [])[-500:]
+            if log:
+                z.writestr("farm_log.txt", "\n".join(str(l) for l in log))
+                included.append("farm_log (letzte 500 Zeilen)")
+        except Exception:
+            pass
+
+        from app.services import online as _online
+        env = {
+            "version": _get_current_version(),
+            "runtime": paths.RUNTIME,
+            "docker_available": _docker_available(),
+            "platform": sys.platform,
+            "python": sys.version.split()[0],
+            "created_at": _dt.now().isoformat(timespec="seconds"),
+            # Zeigt, WELCHE Online-Funktionen an sind (für „warum kommen keine Hinweise?").
+            "online_settings": _online.read_settings(),
+        }
+        z.writestr("environment.json", json.dumps(env, indent=2, ensure_ascii=False))
+        z.writestr("README.txt",
+                   "Printloom Diagnose-Paket\n"
+                   "========================\n\n"
+                   f"Erstellt: {env['created_at']}\nVersion: {env['version']}\n"
+                   f"Laufzeit: {env['runtime']}\n\n"
+                   "Enthalten:\n  - " + "\n  - ".join(included) + "\n\n"
+                   "NICHT enthalten (absichtlich): Access-Codes, Tokens, Passwörter,\n"
+                   "Druckdateien, Kamerabilder.\n\n"
+                   "Dieses Paket wird NICHT automatisch verschickt — du entscheidest,\n"
+                   "wem du es gibst.\n")
+
+    buf.seek(0)
+    stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
+    return Response(
+        content=buf.getvalue(), media_type="application/zip",
+        headers={"Content-Disposition":
+                 f'attachment; filename="printloom_diagnose_{stamp}.zip"'})
 
 
 def _safe_load_json(path: str):

@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.159',
+    de: [
+      'NEU „Online-Dienste" (System): Printloom verbindet sich jetzt NUR noch nach ausdrücklicher Freigabe nach außen. Standardmäßig ist alles AUS — dann geht kein einziger Request an einen Server außerhalb deines Netzwerks, und die App funktioniert vollständig offline.',
+      'WICHTIG: Die Update-Prüfung lief bisher ungefragt automatisch (beim Start und alle 10 Minuten an GitHub/ghcr). Sie heißt jetzt „Update-Prüfung im Internet", ist standardmäßig AUS und läuft nur, wenn du sie einschaltest. Von Hand prüfen kannst du jederzeit mit „Jetzt prüfen (einmalig)".',
+      'Vor der ersten Aktivierung kommt ein Hinweis, der genau benennt, mit welchem Server verbunden wird, dass nur gelesen wird und dass keine Drucker-Daten, Dateinamen, Zugangsdaten oder Nutzungsstatistiken gesendet werden. Widerrufen (inkl. Löschen des Zwischenspeichers) geht jederzeit mit einem Klick.',
+      'NEU „Bekannte Probleme & Hinweise": zeigt Warnungen zur laufenden Version — so erfährst du von einem Fehler, ohne auf ein Update zu warten. Wird lokal zwischengespeichert (6 h) und ist ohne Netz nie eine Fehlerwand.',
+      'NEU „Sprachpakete & Bibliothek": Katalog mit Sprachpaketen, Drucker-Profilen und Sequenzen. Inhalte werden IMMER erst als Vorschau gezeigt und nur nach deiner Bestätigung übernommen — bei Sequenzen zusätzlich mit Warnhinweis, weil sie echte Mechanik bewegen.',
+      'NEU „Diagnose-Paket" (System): erzeugt eine ZIP mit Konfiguration, Geometrie, Sequenzen, Versions-Infos und den letzten Log-Zeilen zum Verschicken an den Support. Access-Codes, Tokens und Passwörter werden dabei automatisch entfernt (rekursiv anhand der Feldnamen) — Druckdateien und Kamerabilder sind nicht enthalten. Es wird nichts automatisch hochgeladen.',
+    ],
+    en: [
+      'NEW "Online services" (System): Printloom now only connects to the outside after explicit consent. Everything is OFF by default — then not a single request goes to any server outside your network, and the app works fully offline.',
+      'IMPORTANT: the update check previously ran automatically without asking (at startup and every 10 minutes, to GitHub/ghcr). It is now called "Check for updates online", is OFF by default and only runs if you enable it. You can always check manually via "Check now (one-off)".',
+      'Before the first activation a notice states exactly which server is contacted, that data is only read, and that no printer data, file names, credentials or usage statistics are sent. Revoking (including clearing the cache) is one click away at any time.',
+      'NEW "Known issues & notices": shows warnings about your running version — so you hear about a bug without waiting for an update. Cached locally (6 h) and never an error wall when offline.',
+      'NEW "Language packs & library": a catalogue of language packs, printer profiles and sequences. Content is ALWAYS shown as a preview first and only applied after you confirm — sequences additionally carry a warning, because they drive real mechanics.',
+      'NEW "Diagnostics package" (System): creates a ZIP with configuration, geometry, sequences, version info and the last log lines to send to support. Access codes, tokens and passwords are stripped automatically (recursively, by field name) — print files and camera images are not included. Nothing is uploaded automatically.',
+    ],
+  },
+  {
     version: '1.0.158',
     de: [
       'Setup-Assistent: neuer erster Schritt „Komponenten" — du wählst mit Beschreibung aus, WAS du gebaut hast (Regal-Halterung Standard/Kompakt, oberstes Fach als Magazin oder Lagerfach). Daraus setzt Printloom die Grundkonfiguration: Fächer je Regal, Magazin-Fach, Z-Schritt und Fachhöhe. Standard-Halterung = 7 Positionen mit 55 mm Abstand, Kompakt = 10 Positionen mit 25 mm.',

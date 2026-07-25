@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pathlib import Path
 
-from app.routers import config, files, devices, control, printer, calibration, rack_manager, system, autofarm, project, profiles, filaments, push, folders
+from app.routers import config, files, devices, control, printer, calibration, rack_manager, system, autofarm, project, profiles, filaments, push, folders, online
 from app.db.database import init_db
 from app import paths
 import logging
@@ -58,6 +58,7 @@ app.include_router(profiles.router,      prefix="/api/profiles",       tags=["Pr
 app.include_router(filaments.router,     prefix="/api/filaments",       tags=["Filaments"])
 app.include_router(push.router,          prefix="/api/push",            tags=["Web-Push"])
 app.include_router(folders.router,       prefix="/api/folders",         tags=["Folders"])
+app.include_router(online.router,        prefix="/api/online",          tags=["Online-Dienste"])
 
 
 @app.on_event("startup")

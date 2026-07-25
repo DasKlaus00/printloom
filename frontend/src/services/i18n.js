@@ -142,6 +142,64 @@ let dynamicPacks = (() => {
 // English overrides keyed by the exact German source string (see tr() below).
 // Filled in incrementally per page; missing entries fall back to German.
 const EN_STRINGS = {
+  // ── Online-Dienste (Opt-in) ──
+  'Online-Dienste': 'Online services',
+  'komplett aus': 'fully off',
+  'teilweise aktiv': 'partly active',
+  'Update-Prüfung im Internet': 'Check for updates online',
+  'Bekannte Probleme & Hinweise': 'Known issues & notices',
+  'Sprachpakete & Bibliothek': 'Language packs & library',
+  'Alles freiwillig. Ist hier nichts eingeschaltet, verbindet sich Printloom mit KEINEM Server außerhalb deines Netzwerks — die App funktioniert vollständig offline.':
+    'All optional. With nothing enabled here, Printloom connects to NO server outside your network — the app works fully offline.',
+  'Prüft bei GitHub, ob eine neuere Printloom-Version da ist. Aus = Printloom prüft nichts von allein; du kannst jederzeit von Hand prüfen.':
+    'Checks GitHub for a newer Printloom version. Off = Printloom never checks on its own; you can always check manually.',
+  'Lädt Warnungen zur laufenden Version (z. B. „Fehler in 1.0.158"), damit du von Fehlern erfährst, ohne auf ein Update zu warten.':
+    'Loads warnings about your running version (e.g. "bug in 1.0.158") so you hear about problems without waiting for an update.',
+  'Katalog mit Sprachpaketen, Drucker-Profilen und Sequenzen. Wird nur angezeigt — übernommen erst nach deiner Bestätigung.':
+    'Catalogue of language packs, printer profiles and sequences. Only displayed — applied only after you confirm.',
+  '⚠ Verbindung nach außen bestätigen': '⚠ Confirm connection to the outside',
+  'Damit verbindet sich Printloom mit einem Server AUSSERHALB deines Netzwerks:':
+    'This makes Printloom connect to a server OUTSIDE your network:',
+  'Es werden nur Daten ABGERUFEN (lesende Anfragen).': 'Data is only RETRIEVED (read-only requests).',
+  'Es werden KEINE Drucker-Daten, Dateinamen, Zugangsdaten oder Nutzungsstatistiken gesendet.':
+    'NO printer data, file names, credentials or usage statistics are sent.',
+  'Der Abruf läuft über den Printloom-Server, nicht über deinen Browser.':
+    'The request is made by the Printloom server, not by your browser.',
+  'Alles wird lokal zwischengespeichert und funktioniert danach auch offline.':
+    'Everything is cached locally and works offline afterwards.',
+  'Du kannst das jederzeit wieder abschalten und den Zwischenspeicher löschen.':
+    'You can switch this off again at any time and clear the cache.',
+  'Die Update-Prüfung geht zusätzlich an GitHub (github.com / ghcr.io), da dort die Versionen liegen.':
+    'The update check additionally contacts GitHub (github.com / ghcr.io), where the versions are hosted.',
+  'Verstanden — verbinden': 'Understood — connect',
+  'Verbindung widerrufen & Zwischenspeicher löschen': 'Revoke connection & clear cache',
+  'Verbindung abgelehnt — alle Online-Funktionen aus, Zwischenspeicher gelöscht.':
+    'Connection declined — all online features off, cache cleared.',
+  '✓ Keine bekannten Probleme für diese Version.': '✓ No known issues for this version.',
+  'Mehr dazu': 'Learn more',
+  'Abruf fehlgeschlagen': 'Fetch failed',
+  'Bibliothek': 'Library',
+  'Sprachen': 'Languages',
+  'Sequenzen': 'Sequences',
+  'Nichts vorhanden.': 'Nothing available.',
+  'Ansehen': 'View',
+  'Vorschau': 'Preview',
+  'Lade Inhalt …': 'Loading content …',
+  'Übernehmen': 'Apply',
+  'Übernehme…': 'Applying…',
+  '⚠ Diese Sequenz steuert den OTTOeject. Nach dem Übernehmen im Sequenz-Editor prüfen und einmal ohne Platte testen — fremde Koordinaten können die Mechanik beschädigen.':
+    '⚠ This sequence drives the OTTOeject. After applying, review it in the sequence editor and test once without a plate — foreign coordinates can damage the mechanics.',
+  'Diagnose-Paket (Support)': 'Diagnostics package (support)',
+  '⤓ Herunterladen': '⤓ Download',
+  'ZIP mit Konfiguration, Geometrie, Sequenzen, Versions-Infos und den letzten Log-Zeilen — für die Fehlersuche zum Verschicken. Access-Codes, Tokens und Passwörter sind NICHT enthalten, Druckdateien und Kamerabilder auch nicht. Es wird nichts automatisch verschickt: die Datei landet nur in deinem Download-Ordner.':
+    'ZIP with configuration, geometry, sequences, version info and the last log lines — to send for troubleshooting. Access codes, tokens and passwords are NOT included, nor are print files or camera images. Nothing is sent automatically: the file just lands in your downloads folder.',
+  'Die automatische „Update-Prüfung im Internet" ist aus — Printloom fragt von allein NICHT bei GitHub nach. „Jetzt prüfen" macht eine einmalige Abfrage. Dauerhaft einschalten kannst du sie unter „Online-Dienste".':
+    'The automatic "check for updates online" is off — Printloom does NOT contact GitHub on its own. "Check now" performs a one-off query. You can enable it permanently under "Online services".',
+  'Jetzt prüfen (einmalig)': 'Check now (one-off)',
+  'noch nie': 'never',
+  'gerade eben': 'just now',
+  'Server': 'Server',
+  'Stand': 'Updated',
   // ── Setup: verbaute Komponenten ──
   'Komponenten': 'Components',
   'Regal-Halterung': 'Rack holder',
