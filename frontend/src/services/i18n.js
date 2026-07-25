@@ -467,6 +467,23 @@ const EN_STRINGS = {
   'Greifer-Andruck · 0 = Greifpunkt = Start-X': 'Gripper push · 0 = grab point = start X',
   'Andruck-Weg: der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original 30. Auf 0 stellen, wenn der Greifer genau bei Start-X fassen soll.':
     'Push distance: on grab/place the arm moves this far beyond X to press the gripper into the bracket (eject/place: +, grab/store: −). Original 30. Set to 0 for the gripper to engage exactly at start X.',
+  // Dauerbetrieb: unterbrochener Lauf, Arm-Zustand, Fehler-Historie — seit v1.1.2
+  'Der letzte Lauf wurde unterbrochen': 'The last run was interrupted',
+  'Job „{0}" stand bei: {1}': 'Job "{0}" was at: {1}',
+  'Ein Lauf war aktiv, als Printloom beendet wurde.': 'A run was active when Printloom shut down.',
+  'Fach {0}': 'Slot {0}',
+  'Platte ist abgenommen — quittieren': 'Plate removed — acknowledge',
+  'Nur quittieren (Platte hängt noch)': 'Just acknowledge (plate still attached)',
+  'Drucker-Fehler (HMS)': 'Printer errors (HMS)',
+  'Bisher kein Drucker-Fehler aufgezeichnet.': 'No printer error recorded yet.',
+  'Fehler-Historie leeren': 'Clear error history',
+  'Alle aufgezeichneten Drucker-Fehler löschen?': 'Delete all recorded printer errors?',
+  'Bewegung hängt': 'Move is stuck',
+  'OTTOeject meldet die Bewegung nicht als beendet — Arm steht an unbekannter Stelle':
+    'The OTTOeject does not report the move as finished — the arm is at an unknown position',
+  'Zeitlimit je Bewegung (s):': 'Time limit per move (s):',
+  'Ein Griff über mehrere Regale darf dauern — großzügig einstellen. Nach dem Zeitlimit gilt die Position des Arms als unbekannt: die nächste Bewegung referenziert automatisch zuerst.':
+    'A grab across several racks may take a while — set this generously. After the limit the arm position counts as unknown: the next move homes first automatically.',
   // Einmess-Assistent + Setup-Ausbau — seit v1.1.1
   '📐 Einmessen': '📐 Teach-in',
   'Position einmessen': 'Teach in position',

@@ -166,6 +166,81 @@ export default function History() {
           </div>
         )}
       </div>
+
+      <HmsHistory />
+    </div>
+  )
+}
+
+/* Drucker-Fehler mit Zeitstempel (Phase 3.4).
+   Bisher tauchten HMS-Codes nur im Live-Log auf — nach einem Neustart waren sie
+   weg, genau dann, wenn man wissen will: „hatte ich den Fehler schon mal?" */
+function HmsHistory() {
+  const { tr } = useLanguage()
+  const [items, setItems] = useState(null)
+  const [open, setOpen]   = useState(false)
+
+  const load = () => autofarmService.getHmsHistory(100)
+    .then(r => setItems(r.data?.items ?? []))
+    .catch(() => setItems([]))
+  useEffect(() => { load() }, [])
+
+  const clear = async () => {
+    if (!(await confirmDialog({
+      title: tr('Fehler-Historie leeren'),
+      message: tr('Alle aufgezeichneten Drucker-Fehler löschen?'),
+      confirmLabel: tr('Leeren'),
+    }))) return
+    await autofarmService.clearHmsHistory().catch(() => {})
+    load()
+  }
+
+  if (!items) return null
+  const SEV = {
+    fatal:   'text-red-400 border-red-900/60 bg-red-950/20',
+    serious: 'text-amber-400 border-amber-900/60 bg-amber-950/20',
+  }
+
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <button onClick={() => setOpen(o => !o)} className="text-left">
+          <span className="text-sm font-medium text-surface-200">
+            {tr('Drucker-Fehler (HMS)')}{' '}
+            <span className="text-[11px] font-mono text-surface-600">{items.length}</span>
+          </span>
+        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={load} className="btn btn-ghost btn-sm text-[11px]">{tr('Aktualisieren')}</button>
+          {items.length > 0 && (
+            <button onClick={clear} className="btn btn-ghost btn-sm text-[11px] text-red-400 hover:text-red-300">
+              {tr('Leeren')}
+            </button>
+          )}
+          <button onClick={() => setOpen(o => !o)} className="text-[11px] text-blue-400 hover:text-blue-300">
+            {open ? tr('▾ ausblenden') : tr('▸ anzeigen')}
+          </button>
+        </div>
+      </div>
+      {!items.length ? (
+        <p className="text-xs text-surface-600">{tr('Bisher kein Drucker-Fehler aufgezeichnet.')}</p>
+      ) : open && (
+        <div className="space-y-1.5">
+          {items.map((h, i) => (
+            <div key={i} className="flex items-start gap-2 text-[11px]">
+              <span className="font-mono text-surface-600 whitespace-nowrap">
+                {h.ts ? new Date(h.ts).toLocaleString() : '—'}
+              </span>
+              <span className={`font-mono px-1.5 py-0.5 rounded border shrink-0 ${SEV[h.severity] || 'text-surface-400 border-surface-700'}`}>
+                {h.code}
+              </span>
+              <span className="text-surface-300 min-w-0">{h.text}</span>
+              {h.action && <span className="text-surface-600 shrink-0">· {h.action}</span>}
+              {h.job && <span className="text-surface-700 shrink-0 truncate max-w-[20%]">· {h.job}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

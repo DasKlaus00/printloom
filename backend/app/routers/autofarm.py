@@ -50,8 +50,11 @@ STATS_PATH    = db_path("farm_stats.json")
 HISTORY_PATH  = db_path("farm_history.json")
 TIMELINE_PATH = db_path("farm_timeline.json")
 COMPLETED_PATH = db_path("farm_completed.json")   # Historie: abgeschlossene Druck-Jobs
+STATE_PATH    = db_path("farm_state.json")        # Laufzustand — überlebt den Neustart
+HMS_PATH      = db_path("farm_hms.json")          # Drucker-Fehler mit Zeitstempel
 TIMELINE_MAX  = 1000  # keep the most recent N events
 COMPLETED_MAX = 2000  # keep the most recent N completed jobs (Historie)
+HMS_MAX       = 300   # keep the most recent N printer errors (HMS-Historie)
 HISTORY_KEEP  = 8     # rolling samples per file for the duration average
 
 SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
@@ -67,6 +70,9 @@ _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": Tru
                      "machine_rate_eur_h":    0.0,
                      "filament_price_eur_kg": 20.0,
                      "idle_off_min":          0,    # 0 = Auto-Abschaltung aus
+                     # Zeitlimit EINER OTTOeject-Bewegung (s) — danach gilt sie als
+                     # hängend (Phase 3.3). Ein Griff über mehrere Regale darf dauern.
+                     "move_timeout_s":        180,
                      # Watchdog (Roadmap 1.1/1.7)
                      "conn_alarm":            True,  # Push bei wiederholtem Verbindungsverlust (1.1)
                      "progress_stall_min":    0,     # 0 = aus; sonst Pause bei N min ohne Fortschritt (1.7)
@@ -160,6 +166,15 @@ _farm: dict = {
     "started_at":       None,
     "stop_reason":      None,  # "completed" | "manual" | None
     "_last_gcode_time": None,  # loop.time() when last Bambu gcode step was sent
+    # Was hält der Greifer? (Phase 3.2) — nach einem Abbruch die einzige Info darüber,
+    # ob noch eine Platte am Arm hängt. Wird mitgesichert (farm_state.json).
+    "arm":              {"holding": "none", "from": "", "job_id": None},
+    # Nach Notaus/Abbruch ist die Position unbekannt → vor der nächsten Bewegung homen.
+    "needs_home":       False,
+    # Unterbrochener Lauf aus einer früheren Sitzung (wird beim Import gefüllt).
+    "recovery":         None,
+    "_current_job_name": "",
+    "_current_job_slot": "",
 }
 _task: Optional[asyncio.Task] = None
 
@@ -296,6 +311,121 @@ def _record_event(etype: str, job: str = "", detail: str = ""):
         storage.write_json(TIMELINE_PATH, events)
     except Exception as e:
         logger.warning(f"timeline write failed: {e}")
+
+
+# ── Laufzustand sichern (Phase 3.1/3.2) ──────────────────────────────────────
+# `_farm` lag bisher NUR im Speicher. Ein Neustart — auch der durch das eigene
+# In-App-Update! — ließ den Drucker weiterdrucken, während die Farm einfach weg
+# war: kein Auswurf, kein Einlagern, und niemand wusste, ob eine Platte im
+# Greifer hing. Deshalb wird der Zustand bei jedem Schritt mitgeschrieben.
+#
+# WICHTIG: Nach einem Neustart wird NICHT automatisch weitergefahren. Der Arm
+# steht an unbekannter Stelle, evtl. mit Platte — das muss ein Mensch bestätigen.
+# Printloom meldet nur, was unterbrochen wurde (siehe /recovery).
+
+# Was der Greifer hält: "none" | "empty" (leere Platte) | "printed" (fertiger Druck)
+_ARM_EMPTY = {"holding": "none", "from": "", "job_id": None}
+
+
+def _persist_state():
+    """Aktuellen Laufzustand wegschreiben (billig: kleine Datei, atomar)."""
+    try:
+        storage.write_json(STATE_PATH, {
+            "running":        bool(_farm.get("running")),
+            "paused":         bool(_farm.get("paused")),
+            "current_job_id": _farm.get("current_job_id"),
+            "job_name":       _farm.get("_current_job_name") or "",
+            "slot":           _farm.get("_current_job_slot") or "",
+            "step_idx":       _farm.get("seq_step_idx"),
+            "step_total":     _farm.get("seq_step_total"),
+            "step_label":     _farm.get("seq_step_label") or "",
+            "arm":            _farm.get("arm") or dict(_ARM_EMPTY),
+            "needs_home":     bool(_farm.get("needs_home")),
+            "bambu_id":       _farm.get("bambu_id"),
+            "saved_at":       datetime.now().isoformat(),
+        })
+    except Exception as e:
+        logger.warning(f"farm state persist failed: {e}")
+
+
+def _clear_state():
+    """Sauberes Ende → nichts mehr zu bergen."""
+    try:
+        storage.write_json(STATE_PATH, {"running": False, "arm": dict(_ARM_EMPTY),
+                                        "needs_home": bool(_farm.get("needs_home"))})
+    except Exception as e:
+        logger.warning(f"farm state clear failed: {e}")
+
+
+def _load_recovery() -> dict | None:
+    """Beim Start prüfen, ob ein Lauf unterbrochen wurde. Gibt den Zustand zurück,
+    wenn beim letzten Speichern noch etwas lief (oder der Arm etwas hielt)."""
+    try:
+        s = storage.read_json(STATE_PATH, None)
+    except Exception:
+        return None
+    if not isinstance(s, dict):
+        return None
+    arm = s.get("arm") or {}
+    if not s.get("running") and arm.get("holding", "none") == "none":
+        return None
+    return s
+
+
+def _set_arm(holding: str, from_slot: str = "", job_id=None):
+    """Greifer-Zustand mitschreiben — nach einem Abbruch ist das die einzige
+    Information darüber, ob noch eine Platte am Arm hängt."""
+    _farm["arm"] = {"holding": holding, "from": from_slot or "", "job_id": job_id}
+    _persist_state()
+
+
+def mark_position_unknown(reason: str = ""):
+    """Von außen aufrufbar (Notaus): Die Ist-Position des Arms gilt als unbekannt —
+    vor der nächsten Bewegung wird referenziert."""
+    _farm["needs_home"] = True
+    _persist_state()
+    if reason:
+        _log(f"⌂ {reason}: Position des OTTOeject gilt als unbekannt — "
+             f"vor der nächsten Bewegung wird referenziert.")
+
+
+def _record_hms(code: str, severity: str, text: str, action: str = ""):
+    """Drucker-Fehler in die durchsuchbare Historie schreiben (neueste zuerst).
+    Bisher tauchten HMS-Codes nur im Live-Log auf und waren nach einem Neustart weg —
+    genau dann, wenn man wissen will, ob ein Fehler schon einmal auftrat."""
+    try:
+        items = storage.read_json(HMS_PATH, [])
+        if not isinstance(items, list):
+            items = []
+        items.insert(0, {
+            "ts":       datetime.now().isoformat(),
+            "code":     code,
+            "severity": severity,
+            "text":     text or "",
+            "action":   action or "",
+            "job":      _farm.get("_current_job_name") or "",
+        })
+        storage.write_json(HMS_PATH, items[:HMS_MAX])
+    except Exception as e:
+        logger.warning(f"hms history write failed: {e}")
+
+
+def _init_recovery():
+    """Beim Start des Backends prüfen, ob ein Lauf unterbrochen wurde (Neustart,
+    Update, Absturz). Das Ergebnis landet in _farm["recovery"] und wird der UI
+    gemeldet — fortgesetzt wird NICHTS von allein: der Arm steht an unbekannter
+    Stelle und hält womöglich eine Platte."""
+    rec = _load_recovery()
+    if not rec:
+        return
+    _farm["recovery"] = rec
+    _farm["arm"] = rec.get("arm") or dict(_ARM_EMPTY)
+    _farm["needs_home"] = True      # Position nach dem Abbruch unbekannt
+    logger.warning("Unterbrochener Farm-Lauf gefunden: %s (Schritt: %s)",
+                   rec.get("job_name") or "?", rec.get("step_label") or "?")
+
+
+_init_recovery()
 
 
 def _record_completed(job: dict, status: str, started_at, ended_at,
@@ -622,6 +752,23 @@ async def _send_print_cmd(cmd: str):
 
 
 # ── Step implementations ─────────────────────────────────────
+class _MoveTimeout(RuntimeError):
+    """Eine OTTOeject-Bewegung hat nicht innerhalb des Zeitlimits geantwortet.
+    Eigener Typ, damit die Fehlerstrategie „move_timeout" darauf reagieren kann —
+    ein hängender Arm ist etwas anderes als ein abgelehnter Befehl."""
+
+
+def _move_timeout() -> float:
+    """Zeitlimit für EINE Bewegung (s). Ein Griff über mehrere Regale darf lange
+    dauern, deshalb großzügig und einstellbar."""
+    try:
+        v = float(_farm.get("move_timeout_s")
+                  or _read_config(SETTINGS_PATH, _DEFAULT_SETTINGS).get("move_timeout_s", 180))
+    except (TypeError, ValueError):
+        v = 180.0
+    return max(30.0, min(900.0, v))
+
+
 async def _do_macro(name: str, _recover: bool = True):
     db = SessionLocal()
     try:
@@ -631,6 +778,21 @@ async def _do_macro(name: str, _recover: bool = True):
         url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
     finally:
         db.close()
+
+    # Nach Notaus / hängender Bewegung ist die Ist-Position unbekannt. Dann VOR der
+    # nächsten Bewegung referenzieren — sonst fährt der erste Move von einer falschen
+    # Annahme aus los (Phase 3.7). Homing selbst räumt das Flag ab.
+    if _farm.get("needs_home") and "OTTOEJECT_HOME" not in name.upper():
+        _log("⌂ Position unbekannt (Notaus/Abbruch) — referenziere zuerst…")
+        _farm["needs_home"] = False
+        try:
+            await _do_macro("OTTOEJECT_HOME", _recover=False)
+        except Exception as e:
+            _farm["needs_home"] = True
+            raise RuntimeError(f"Referenzfahrt vor der Bewegung fehlgeschlagen: {e}")
+        _persist_state()
+    elif "OTTOEJECT_HOME" in name.upper():
+        _farm["needs_home"] = False
 
     # Geräte-Macros zählen Regal 1 = am Homing-Punkt (rechts), Printloom R1 = am
     # Drucker → RACK=-Nummern erst hier beim Senden spiegeln (mirror_rack_params).
@@ -649,8 +811,19 @@ async def _do_macro(name: str, _recover: bool = True):
     if not send.lstrip().upper().startswith("G90"):
         send = "G90\n" + send
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        r = await client.post(url, json={"script": send})
+    # Moonraker antwortet erst, wenn die Bewegung DURCH ist. Bleibt sie hängen
+    # (Riemen rutscht, Endschalter prellt, Klipper wartet auf etwas), lief die Farm
+    # bisher in einen nackten httpx-Timeout und meldete „Network Error" — ohne den
+    # Arm zu parken. Jetzt: klare Meldung, damit die Fehlerstrategie „move_timeout"
+    # greifen kann (Phase 3.3).
+    limit = _move_timeout()
+    try:
+        async with httpx.AsyncClient(timeout=limit) as client:
+            r = await client.post(url, json={"script": send})
+    except httpx.ReadTimeout:
+        raise _MoveTimeout(f"{name}: keine Rückmeldung nach {int(limit)} s — Bewegung hängt")
+    except httpx.HTTPError as e:
+        raise RuntimeError(f"{name}: OTTOeject nicht erreichbar ({e})")
     if r.status_code == 200:
         return
 
@@ -1193,6 +1366,9 @@ _ERROR_DEFAULTS = {
     "progress_stall":  "pause",
     "no_slot":         "pause",
     "ams_unmatched":   "pause",
+    # Hängende Bewegung (Phase 3.3): Standard „pause" — der Arm steht an unbekannter
+    # Stelle, evtl. mit Platte. Einfach weiterfahren wäre die schlechteste Option.
+    "move_timeout":    "pause",
 }
 
 
@@ -1396,10 +1572,12 @@ async def _handle_hms(hms_list: list):
         if action == "ignore" or hms.normalize_code(cs) in soft:
             why = "Soft-Liste" if hms.normalize_code(cs) in soft else "Strategie: ignorieren"
             _log(f"ℹ HMS {sev} (ignoriert, {why}): {cs} — {text}")
+            _record_hms(cs, sev, text, f"ignoriert ({why})")
             await _notify(f"ℹ *Printloom — Drucker-Hinweis (unkritisch)*\nHMS {cs} ({sev})\n{text}")
             continue
         _record_failure(f"HMS {cs}")
         _record_event("error", "", f"HMS {cs} ({sev})")
+        _record_hms(cs, sev, text, action)
         if action == "stop":
             _log(f"🛑 HMS {sev}: {cs} — Farm wird gestoppt (Strategie)")
             await _notify(f"🛑 *Printloom — Drucker-Fehler, Farm gestoppt*\nHMS {cs} ({sev})\n{text}")
@@ -1874,6 +2052,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         await _do_macro(send_val)
         if "GRAB_FROM_RACK" in val or val.startswith("GRAB_FROM_SLOT_"):
             _decrement_magazine()
+            _set_arm("empty", f"{stack_rack}-{stack_slot}", job.get("id"))
             if job.get("slot") and job["slot"] != "1-0":
                 _rack_update(job["slot"], "printing", job["fileName"])
             if _farm.get("_in_first_start"):
@@ -1881,6 +2060,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         elif "STORE_TO_RACK" in val or val.startswith("STORE_TO_SLOT_"):
             _rack_update(job["slot"], "done",
                          object_height_mm=job.get("object_height_mm"))
+            _set_arm("none")
 
     elif t == "app_op":
         # Printloom-eigene Operation (Drucker-Tab-Geometrie → G-code), frei in Sequenzen
@@ -1916,12 +2096,20 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             # Gegriffenes Fach ausdrücklich mitgeben — ohne Magazin wird genau dessen
             # Markierung gelöscht (nicht „das nächstbeste" Fach).
             _decrement_magazine(rk, sl)
+            _set_arm("empty", f"{rk}-{sl}", job.get("id"))
             if job.get("slot") and job["slot"] != "1-0":
                 _rack_update(job["slot"], "printing", job["fileName"])
             if _farm.get("_in_first_start"):
                 _farm["_plate_ready"] = True   # Zyklus-Griff des ersten Jobs überspringen
         elif is_store:
             _rack_update(job["slot"], "done", object_height_mm=job.get("object_height_mm"))
+            _set_arm("none")
+        elif op == "eject":
+            # Fertige Platte kommt aus dem Drucker → sie hängt jetzt am Arm.
+            _set_arm("printed", "", job.get("id"))
+        elif op in ("place", "load"):
+            # Leere Platte ist im Drucker abgesetzt → Arm ist wieder frei.
+            _set_arm("none")
 
     elif t == "delay":
         secs = int(step.get("seconds", 0))
@@ -2273,6 +2461,9 @@ async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
         _farm["seq_step_idx"] = gi
         _farm["seq_step_total"] = total
         _farm["seq_step_label"] = label
+        # Bei JEDEM Schritt mitschreiben: bricht die App hier ab, weiß man danach
+        # genau, wo es aufgehört hat (Phase 3.1).
+        _persist_state()
         _log(f"▸ {label}")
 
         if len(group) == 1:
@@ -2504,6 +2695,42 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 await _notify(f"➡️ *Printloom — weiter nach Druckfehler*\n`{job['fileName']}`\n"
                               "Platte eingelagert, nächster Job startet.")
 
+            except _MoveTimeout as e:
+                # Hängende Bewegung (Phase 3.3): Der Arm steht an unbekannter Stelle,
+                # evtl. mit Platte. Weiterfahren wäre die schlechteste Option — also
+                # Position als unbekannt markieren (erzwingt Referenzfahrt) und nach
+                # der eingestellten Strategie reagieren.
+                msg = str(e)
+                _farm["needs_home"] = True
+                _persist_state()
+                action = _estrat("move_timeout")
+                _log(f"⏱ {msg} — Strategie: {action}")
+                _record_failure(msg)
+                _record_event("error", job.get("fileName", ""), msg[:70])
+                await _notify(f"⏱ *Printloom — Bewegung hängt*\n`{job['fileName']}`\n{msg}")
+                if action == "stop":
+                    _farm["stopping"] = True
+                    _farm["error"] = msg
+                    break
+                if action == "pause":
+                    _farm["paused"] = True
+                    _farm["error"] = (f"{msg} — OTTOeject prüfen, dann fortsetzen "
+                                      f"(es wird zuerst referenziert)")
+                    while _farm["paused"] and not _farm["stopping"]:
+                        await asyncio.sleep(0.5)
+                    if _farm["stopping"]:
+                        break
+                    _farm["error"] = None
+                    continue          # denselben Job erneut versuchen
+                # skip/ignore → Job als Fehler werten und weitermachen
+                _record_completed(job, "error", job_started_at, datetime.now(),
+                                  (datetime.now() - job_started_at).total_seconds() / 60.0, msg[:120])
+                _set_job(job["id"], {"status": "error"})
+                if cur_slot:
+                    _rack_update(job["slot"], "free")
+                cur_slot = None
+                _farm["current_job_id"] = None
+
             except RuntimeError as e:
                 msg = str(e)
                 if msg == "Gestoppt":
@@ -2584,6 +2811,8 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
         _farm["seq_step_label"] = ""
         _farm["_last_gcode_time"] = None
         # stop_reason intentionally kept — frontend reads it once after running→False
+        _farm["arm"] = dict(_ARM_EMPTY)
+        _clear_state()               # sauberes Ende → nichts zu bergen
         _record_event("farm_stop", "", _farm.get("stop_reason") or "")
         _log("═══ Auto Farm beendet ═══")
 
@@ -2656,6 +2885,7 @@ class SettingsPayload(BaseModel):
     machine_rate_eur_h:    float = 0.0
     filament_price_eur_kg: float = 20.0
     idle_off_min:          int   = 0
+    move_timeout_s:        int   = 180
     conn_alarm:            bool  = True
     progress_stall_min:    int   = 0
     error_strategy:        dict  = {}
@@ -2716,6 +2946,12 @@ async def start_farm(req: StartRequest):
         "error_strategy":     dict(_settings.get("error_strategy") or {}),
         "failed_retries":     max(0, int(_settings.get("failed_retries", 1) or 0)),
         "operating_hours_enabled": bool(_settings.get("operating_hours_enabled", False)),
+        "move_timeout_s":     int(_settings.get("move_timeout_s", 180) or 180),
+        # Ein neuer Lauf beginnt mit leerem Greifer; ein unterbrochener Lauf ist
+        # damit erledigt (der Nutzer startet ja bewusst neu). Position gilt aber
+        # weiter als unbekannt → die erste Bewegung referenziert (needs_home).
+        "arm":                dict(_ARM_EMPTY),
+        "recovery":           None,
         "operating_schedule":      _operating_schedule(_settings),
         "operating_tz":            str(_settings.get("timezone", "") or ""),
         "exact_color_only":        bool(_settings.get("exact_color_only", False)),
@@ -2976,6 +3212,9 @@ async def force_reset():
         "started_at":       None,
         "_last_gcode_time": None,
         "_plate_ready": False,
+        "arm":              dict(_ARM_EMPTY),
+        "recovery":         None,
+        "needs_home":       True,   # Position nach dem Force-Reset unbekannt
         "_in_first_start": False,
     })
     _task = None
@@ -3067,6 +3306,68 @@ async def pause_farm():
         _farm["error"] = None
         await _send_print_cmd("resume")    # X1C-Druck fortsetzen
     return {"success": True, "paused": _farm["paused"]}
+
+
+@router.get("/recovery")
+async def get_recovery():
+    """Wurde ein Lauf durch einen Neustart unterbrochen? (Phase 3.1)
+
+    Bewusst NUR eine Meldung, kein automatisches Weiterfahren: der Arm steht an
+    unbekannter Stelle und hält womöglich eine Platte. Das muss ein Mensch ansehen."""
+    rec = _farm.get("recovery")
+    if not rec:
+        return {"pending": False}
+    arm = rec.get("arm") or {}
+    holding = arm.get("holding", "none")
+    hint = {
+        "empty":   "Im Greifer hängt eine LEERE Platte" + (f" (aus Fach {arm.get('from')})" if arm.get("from") else ""),
+        "printed": "Im Greifer hängt eine Platte mit einem FERTIGEN Druck",
+    }.get(holding, "Der Greifer war leer")
+    return {
+        "pending": True,
+        "job": rec.get("job_name") or "",
+        "slot": rec.get("slot") or "",
+        "step": rec.get("step_label") or "",
+        "step_idx": rec.get("step_idx"),
+        "step_total": rec.get("step_total"),
+        "arm": arm,
+        "arm_hint": hint,
+        "saved_at": rec.get("saved_at"),
+        "advice": ("Erst nachsehen: Steht eine Platte im Greifer oder im Drucker? "
+                   "Danach hier bestätigen — die Farm referenziert vor der nächsten "
+                   "Bewegung selbst."),
+    }
+
+
+@router.post("/recovery/dismiss")
+async def dismiss_recovery(body: dict = None):
+    """Unterbrochenen Lauf quittieren. `arm_cleared` = der Greifer ist wieder leer
+    (der Nutzer hat die Platte abgenommen)."""
+    body = body or {}
+    _farm["recovery"] = None
+    if body.get("arm_cleared", True):
+        _farm["arm"] = dict(_ARM_EMPTY)
+    # Position gilt nach einem Abbruch immer als unbekannt → vor der nächsten
+    # Bewegung wird referenziert.
+    _farm["needs_home"] = True
+    _clear_state()
+    _log("↩ Unterbrochener Lauf quittiert — vor der nächsten Bewegung wird referenziert.")
+    return {"success": True}
+
+
+@router.get("/hms-history")
+async def get_hms_history(limit: int = 100):
+    """Aufgetretene Drucker-Fehler mit Zeitstempel (neueste zuerst)."""
+    items = storage.read_json(HMS_PATH, [])
+    if not isinstance(items, list):
+        items = []
+    return {"items": items[:max(1, min(HMS_MAX, limit))], "total": len(items)}
+
+
+@router.delete("/hms-history")
+async def clear_hms_history():
+    storage.write_json(HMS_PATH, [])
+    return {"success": True}
 
 
 @router.post("/dry-run")

@@ -138,7 +138,16 @@ async def emergency_stop(db: Session = Depends(get_db)):
         device.is_active = False
         db.add(device)
     db.commit()
-    
+
+    # Nach einem Notaus steht der Arm irgendwo — die gespeicherte Position stimmt
+    # nicht mehr. Vor der nächsten Bewegung MUSS referenziert werden, sonst fährt
+    # der erste Move von einer falschen Annahme los (Phase 3.7).
+    try:
+        from app.routers import autofarm
+        autofarm.mark_position_unknown("Notaus")
+    except Exception as e:
+        logger.warning(f"needs_home nach Notaus nicht gesetzt: {e}")
+
     return {
         "success": True,
         "message": "Emergency stop activated - all devices deactivated"

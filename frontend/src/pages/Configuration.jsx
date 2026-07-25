@@ -708,14 +708,17 @@ const ERROR_CATALOG = [
   { key: 'progress_stall',  label: 'Stillstand / kein Fortschritt', desc: 'Watchdog: kein Druckfortschritt (mögliche Verstopfung)',      actions: ['pause', 'skip', 'stop'] },
   { key: 'no_slot',         label: 'Kein freies Regalfach',        desc: 'Regal voll — kein Platz für die fertige Platte',              actions: ['pause', 'stop'] },
   { key: 'ams_unmatched',   label: 'AMS-Festlegung nötig',         desc: 'Kein passendes Filament im AMS gefunden',                     actions: ['pause', 'skip'] },
+  { key: 'move_timeout',    label: 'Bewegung hängt',               desc: 'OTTOeject meldet die Bewegung nicht als beendet — Arm steht an unbekannter Stelle', actions: ['pause', 'skip', 'stop'] },
 ]
-const ERROR_DEFAULTS = { hms: 'pause', print_failed: 'eject', connection_lost: 'skip', progress_stall: 'pause', no_slot: 'pause', ams_unmatched: 'pause' }
+const ERROR_DEFAULTS = { hms: 'pause', print_failed: 'eject', connection_lost: 'skip', progress_stall: 'pause', no_slot: 'pause', ams_unmatched: 'pause', move_timeout: 'pause' }
 const ACTION_LABEL = { pause: 'Pausieren', skip: 'Job überspringen', stop: 'Farm stoppen', ignore: 'Ignorieren', eject: 'Platte auswerfen & weiter' }
 
 function ErrorStrategy() {
   const { tr } = useLanguage()
   const [strategy, setStrategy] = useState({})
   const [retries, setRetries]   = useState(1)
+  // Zeitlimit EINER OTTOeject-Bewegung — danach gilt sie als hängend (Phase 3.3).
+  const [moveTimeout, setMoveTimeout] = useState(180)
   const [saving, setSaving]     = useState(false)
   const [status, setStatus]     = useState(null)
 
@@ -723,13 +726,18 @@ function ErrorStrategy() {
     autofarmService.getSettings().then(r => {
       setStrategy({ ...ERROR_DEFAULTS, ...(r.data.error_strategy || {}) })
       setRetries(r.data.failed_retries ?? 1)
+      setMoveTimeout(r.data.move_timeout_s ?? 180)
     }).catch(() => setStrategy({ ...ERROR_DEFAULTS }))
   }, [])
 
   const save = async () => {
     setSaving(true); setStatus(null)
     try {
-      await autofarmService.saveSettings({ error_strategy: strategy, failed_retries: Math.max(0, Math.round(Number(retries) || 0)) })
+      await autofarmService.saveSettings({
+        error_strategy: strategy,
+        failed_retries: Math.max(0, Math.round(Number(retries) || 0)),
+        move_timeout_s: Math.max(30, Math.min(900, Math.round(Number(moveTimeout) || 180))),
+      })
       setStatus({ ok: true, msg: tr('Gespeichert.') })
     } catch (e) {
       setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
@@ -758,6 +766,19 @@ function ErrorStrategy() {
                   </div>
                   <p className="text-[10px] text-emerald-700/90 mt-1 leading-snug">
                     {tr('„Platte auswerfen & weiter": Bett auf Z200, Tür öffnen, Platte auswerfen und ins Fach einlagern — dann startet der nächste Job automatisch. „Job überspringen" lässt die fehlgeschlagene Platte im Drucker (nur wählen, wenn du sie selbst entnimmst).')}
+                  </p>
+                </>
+              )}
+              {err.key === 'move_timeout' && (
+                <>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-[10px] text-surface-500">{tr('Zeitlimit je Bewegung (s):')}</span>
+                    <input type="number" min="30" max="900" step="10" value={moveTimeout}
+                      onChange={e => setMoveTimeout(Number(e.target.value))}
+                      className="w-16 font-mono text-xs h-6 py-0" />
+                  </div>
+                  <p className="text-[10px] text-surface-600 mt-1 leading-snug">
+                    {tr('Ein Griff über mehrere Regale darf dauern — großzügig einstellen. Nach dem Zeitlimit gilt die Position des Arms als unbekannt: die nächste Bewegung referenziert automatisch zuerst.')}
                   </p>
                 </>
               )}

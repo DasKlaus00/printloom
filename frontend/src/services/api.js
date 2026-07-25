@@ -220,6 +220,11 @@ export const autofarmService = {
   saveSequences: (data)  => api.put('/autofarm/sequences', data),
   // Trockenlauf: Sequenz durchspielen, ohne etwas zu senden
   dryRun:        (body)  => api.post('/autofarm/dry-run', body || {}),
+  // Unterbrochener Lauf (Neustart/Update mitten im Zyklus) + Drucker-Fehler-Historie
+  getRecovery:      ()     => api.get('/autofarm/recovery'),
+  dismissRecovery:  (body) => api.post('/autofarm/recovery/dismiss', body || {}),
+  getHmsHistory:    (limit) => api.get('/autofarm/hms-history', { params: { limit: limit || 100 } }),
+  clearHmsHistory:  ()     => api.delete('/autofarm/hms-history'),
   getSettings:   ()      => api.get('/autofarm/settings'),
   saveSettings:  (data)  => api.put('/autofarm/settings', data),
   getQueue:      ()      => api.get('/autofarm/queue'),

@@ -99,32 +99,26 @@ hingen seit v1.0.158 am Regal-Schritt).
 
 ---
 
-## Phase 3 — Dauerbetrieb, dem man wegläuft
+## ~~Phase 3 — Dauerbetrieb, dem man wegläuft~~ ✅ *(v1.1.2)*
 
 **Ziel:** Die Farm übersteht das, was in echt passiert: Neustart, Update, Stromausfall,
 hängende Bewegung, Nutzer greift dazwischen.
 
-**Fertig, wenn:** ein Neustart mitten im Zyklus die Farm nicht in einen unklaren Zustand
-bringt.
-
-1. 🏗 **Farm-Zustand überlebt den Neustart.** `_farm` liegt nur im Speicher; die
-   Warteschlange wird gesichert, der laufende Zyklus nicht. Nach einem Container-Neustart
-   (auch durch das **eigene In-App-Update**!) druckt der Drucker weiter, die Farm ist
-   gestoppt. Zustand persistieren + beim Start erkennen: „Job X war in Schritt Y —
-   fortsetzen / abbrechen / Platte bergen?"
-2. 🏗 **Arm-Zustand kennen.** Nach einem Abbruch weiß Printloom nicht, ob eine Platte im
-   Greifer liegt. Zustand mitschreiben (leer / Leerplatte / fertiger Druck) und beim
-   Fortsetzen berücksichtigen — das ist die Ursache für die meisten Bergungs-Handgriffe.
-3. ⚡ **Hängende Bewegung erkennen.** Moonraker-Aufruf ohne Fortschritt → Zeitlimit,
-   Parken, klare Meldung statt endlosem Warten.
-4. ⚡ **HMS-Historie.** Fehler werden live erkannt und gemeldet, aber nicht durchsuchbar
-   gesammelt. Liste mit Zeit, Code, Klartext und was geholfen hat.
-5. ⚡ **Ereignis-Zeitleiste je Job.** Was passierte wann (Start, Griff, Auswurf,
-   Einlagern, Fehler) — mit Bezug zu den Schnappschüssen.
-6. ⚡ **Fehlerstrategie pro Fehlerklasse.** Heute global; sinnvoll unterschiedlich für
-   „Druck fehlgeschlagen", „kein Fach frei", „Klipper weg", „HMS kritisch".
-7. ⚡ **Notaus-Zustand.** Nach Notaus sauber wieder anlaufen (Referenzfahrt erzwingen,
-   Fach-Buchhaltung prüfen), statt dass der Nutzer raten muss.
+1. ~~**Farm-Zustand überlebt den Neustart.**~~ `farm_state.json` wird bei jedem Schritt
+   mitgeschrieben; beim Start meldet `/autofarm/recovery`, welcher Job bei welchem
+   Schritt unterbrochen wurde. Fortgesetzt wird bewusst NICHTS von allein.
+2. ~~**Arm-Zustand kennen.**~~ leer / Leerplatte / fertiger Druck inkl. Herkunftsfach,
+   mitgesichert und in der Meldung sichtbar.
+3. ~~**Hängende Bewegung erkennen.**~~ Eigener Fehlertyp `_MoveTimeout` mit
+   einstellbarem Zeitlimit (Standard 180 s) statt nacktem httpx-Timeout.
+4. ~~**HMS-Historie.**~~ `farm_hms.json` + Anzeige im Historie-Tab, inkl. der
+   ignorierten Codes.
+5. ~~**Ereignis-Zeitleiste je Job.**~~ Bestand bereits (`farm_timeline.json`), jetzt um
+   die Fehler-Ereignisse aus 3.3/3.4 ergänzt.
+6. ~~**Fehlerstrategie pro Fehlerklasse.**~~ Bestand bereits (6 Klassen), ergänzt um
+   „Bewegung hängt".
+7. ~~**Notaus-Zustand.**~~ Notaus / Force-Reset / Timeout setzen `needs_home` — die
+   nächste Bewegung referenziert automatisch zuerst.
 
 ---
 

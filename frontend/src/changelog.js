@@ -4,6 +4,27 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.2',
+    de: [
+      'ROADMAP-PHASE 3 „Dauerbetrieb, dem man wegläuft" — die Farm übersteht jetzt, was in echt passiert: Neustart, Update, Notaus, hängende Bewegung.',
+      'WICHTIG Der Farm-Zustand überlebt einen Neustart. Bisher lag er nur im Speicher: Nach einem Container-Neustart — auch dem durch das EIGENE In-App-Update — druckte der Drucker weiter, während die Farm einfach weg war. Niemand wusste, ob eine Platte im Greifer hängt. Jetzt wird bei jedem Schritt mitgeschrieben, und beim nächsten Start meldet Printloom, welcher Job bei welchem Schritt unterbrochen wurde.',
+      'Fortgesetzt wird bewusst NICHTS von allein: der Arm steht an unbekannter Stelle. Es kommt eine Meldung mit „was ist zu tun", die man quittiert — danach referenziert die nächste Bewegung automatisch zuerst.',
+      'NEU Der Greifer-Zustand wird mitgeführt: leer / leere Platte / fertiger Druck, samt Herkunftsfach. Nach einem Abbruch ist das die einzige Information darüber, ob noch etwas am Arm hängt — sie steht jetzt in der Meldung.',
+      'NEU Hängende Bewegungen werden erkannt: Meldet der OTTOeject eine Bewegung nicht innerhalb des Zeitlimits als beendet (einstellbar, Standard 180 s), gilt sie als hängend. Vorher lief das in einen nackten „Network Error", ohne dass jemand merkte, dass der Arm steht. Neue Fehlerstrategie „Bewegung hängt" (Standard: pausieren, danach denselben Job erneut versuchen).',
+      'NEU Nach Notaus, Force-Reset oder hängender Bewegung gilt die Position des Arms als unbekannt — die nächste Bewegung fährt automatisch erst eine Referenzfahrt, statt von einer falschen Annahme loszufahren.',
+      'NEU Drucker-Fehler-Historie (Historie-Tab): jeder HMS-Code mit Zeitstempel, Schweregrad, Klartext, ausgeführter Strategie und betroffenem Job — auch die ignorierten. Bisher standen sie nur im Live-Log und waren nach einem Neustart weg, also genau dann, wenn man nachschlagen will, ob ein Fehler schon einmal auftrat.',
+    ],
+    en: [
+      'ROADMAP PHASE 3 "Unattended operation you can walk away from" — the farm now survives what actually happens: restart, update, emergency stop, stuck move.',
+      'IMPORTANT The farm state survives a restart. It used to live only in memory: after a container restart — including the one triggered by Printloom’s OWN in-app update — the printer kept printing while the farm was simply gone. Nobody knew whether a plate was still in the gripper. Now the state is written on every step, and on the next start Printloom reports which job was interrupted at which step.',
+      'Nothing resumes on its own, deliberately: the arm is at an unknown position. You get a message with what to check, acknowledge it — and the next move homes first automatically.',
+      'NEW The gripper state is tracked: empty / empty plate / finished print, including the source slot. After an abort that is the only information about whether something is still attached to the arm — and it is now in the message.',
+      'NEW Stuck moves are detected: if the OTTOeject does not report a move as finished within the time limit (configurable, default 180 s), it counts as stuck. Previously this ran into a bare "network error" without anyone noticing that the arm had stopped. New error strategy "move is stuck" (default: pause, then retry the same job).',
+      'NEW After an emergency stop, force reset or stuck move the arm position counts as unknown — the next move homes first instead of starting from a wrong assumption.',
+      'NEW Printer error history (History tab): every HMS code with timestamp, severity, plain text, the strategy applied and the affected job — including the ignored ones. Previously they only appeared in the live log and were gone after a restart, exactly when you want to look up whether an error occurred before.',
+    ],
+  },
+  {
     version: '1.1.1',
     de: [
       'ROADMAP-PHASE 2 „Einrichten ohne Rätselraten" — die Erstinbetriebnahme kommt jetzt ohne Zahlenraten aus.',

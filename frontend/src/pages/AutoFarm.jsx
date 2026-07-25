@@ -9,6 +9,7 @@ import { gateStart } from '../services/operatingHours'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { usePageActive, useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
+import RecoveryBanner from '../components/RecoveryBanner'
 
 /* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
    Webcam am Drucker → 404), statt ein kaputtes Bild-Icon zu zeigen. */
@@ -1805,6 +1806,10 @@ function AutoFarm({ setCurrentPage } = {}) {
           )}
         </div>
       )}
+
+      {/* Unterbrochener Lauf (Neustart/Update mitten im Zyklus) — ganz oben, weil
+          es beantwortet werden muss, bevor irgendetwas wieder losfährt. */}
+      <RecoveryBanner onDismissed={() => load()} />
 
       {/* ── Top bar ────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 flex-wrap">
