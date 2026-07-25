@@ -142,6 +142,48 @@ let dynamicPacks = (() => {
 // English overrides keyed by the exact German source string (see tr() below).
 // Filled in incrementally per page; missing entries fall back to German.
 const EN_STRINGS = {
+  // ── Bibliothek (eigener Tab) ──
+  'Sprachpakete, Drucker-Profile und Sequenzen': 'Language packs, printer profiles and sequences',
+  'Alle': 'All',
+  'Profile': 'Profiles',
+  'Sprachpaket': 'Language pack',
+  'Profil': 'Profil',
+  'Sequenz': 'Sequence',
+  'Autor': 'Author',
+  'Kennung': 'ID',
+  'Quelle': 'Source',
+  'unbekannt': 'unknown',
+  'Keine Beschreibung': 'No description',
+  'Ansehen & übernehmen': 'View & apply',
+  'Suchen (Name, Autor, Beschreibung)…': 'Search (name, author, description)…',
+  '⟳ Aktualisieren': '⟳ Refresh',
+  'Kein Eintrag passt zum Filter.': 'No entry matches the filter.',
+  'Der Katalog ist leer — auf dem Server sind noch keine Inhalte veröffentlicht.':
+    'The catalogue is empty — no content has been published on the server yet.',
+  'angezeigt wird der letzte gespeicherte Stand.': 'showing the last saved state.',
+  'Die Bibliothek lädt Inhalte von einem Server außerhalb deines Netzwerks und ist deshalb standardmäßig aus.':
+    'The library loads content from a server outside your network and is therefore off by default.',
+  'Solange sie aus ist, wird hier NICHTS abgerufen. Du kannst sie unter „System → Online-Dienste" freischalten — dort steht auch genau, was dabei übertragen wird (und was nicht).':
+    'While it is off, NOTHING is fetched here. You can enable it under "System → Online services" — that page also states exactly what is transferred (and what is not).',
+  'Zu den Online-Diensten →': 'Go to online services →',
+  'Bibliothek freigeschaltet — Einträge mit Autor, Version und Vorschau findest du im Tab „Bibliothek".':
+    'Library enabled — entries with author, version and preview are in the "Library" tab.',
+  'Bibliothek öffnen →': 'Open library →',
+  'Version des Eintrags': 'Version of this entry',
+  'Sprachcode „{0}" · {1} Übersetzungen': 'Language code "{0}" · {1} translations',
+  '{0} Schritte': '{0} steps',
+  'Geometrie': 'Geometry',
+  'Regal-Konfiguration': 'Rack configuration',
+  'Profil-Daten': 'Profile data',
+  'Wird als Sprache „{0}" ({1}) installiert — unabhängig vom Katalog-Namen.':
+    'Will be installed as language "{0}" ({1}) — regardless of the catalogue name.',
+  'Inhalte kommen von {0} und werden vor der Anzeige geprüft. Übernommen wird nur, was du bestätigst.':
+    'Content comes from {0} and is validated before display. Only what you confirm gets applied.',
+  'Sprachpaket „{0}" installiert — Sprache in Konfiguration → Allgemein umstellen.':
+    'Language pack "{0}" installed — switch the language under Configuration → General.',
+  'Sequenz „{0}" übernommen — VOR dem Einsatz im Sequenz-Editor prüfen und ohne Platte testen.':
+    'Sequence "{0}" applied — review it in the sequence editor and test without a plate BEFORE using it.',
+  '({0} Einträge)': '({0} entries)',
   // ── Online-Dienste (Opt-in) ──
   'Online-Dienste': 'Online services',
   'komplett aus': 'fully off',

@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.160',
+    de: [
+      'Die Bibliothek ist jetzt ein eigener Tab in der Seitenleiste (statt eines kleinen Blocks in System) und zeigt zu jedem Eintrag alle Daten: Autor, Version, Beschreibung, Art (Sprachpaket/Profil/Sequenz), Kennung und Quelle.',
+      'Filter je Art mit Anzahl (Alle / Sprachen / Profile / Sequenzen) und Suche über Name, Autor und Beschreibung.',
+      'Vorschau zeigt vorab eine Kurz-Statistik des Inhalts — z. B. „Sprachcode fr · 42 Übersetzungen" oder „7 Schritte" — und bei Sprachpaketen, unter welchem Sprachcode wirklich installiert wird (der kann vom Katalog-Namen abweichen). Übernommen wird weiterhin nur nach Bestätigung; Sequenzen behalten ihren Warnhinweis.',
+      'Ist die Bibliothek nicht freigeschaltet, zeigt der Tab nur einen Hinweis und ruft NICHTS ab — mit direktem Weg zu den Online-Diensten.',
+      'Aufgeräumt: In System steht jetzt nur noch der Verweis auf den Tab, damit es nicht zwei Ansichten für dasselbe gibt.',
+    ],
+    en: [
+      'The library is now its own tab in the sidebar (instead of a small block in System) and shows all data per entry: author, version, description, kind (language pack/profile/sequence), ID and source.',
+      'Per-kind filter with counts (All / Languages / Profiles / Sequences) plus search across name, author and description.',
+      'The preview now shows a short content summary up front — e.g. "language code fr · 42 translations" or "7 steps" — and for language packs which language code will actually be installed (it can differ from the catalogue name). Applying still requires confirmation; sequences keep their warning.',
+      'If the library is not enabled, the tab only shows a notice and fetches NOTHING — with a direct link to the online services.',
+      'Cleanup: System now only links to the tab, so there are no longer two views for the same thing.',
+    ],
+  },
+  {
     version: '1.0.159',
     de: [
       'NEU „Online-Dienste" (System): Printloom verbindet sich jetzt NUR noch nach ausdrücklicher Freigabe nach außen. Standardmäßig ist alles AUS — dann geht kein einziger Request an einen Server außerhalb deines Netzwerks, und die App funktioniert vollständig offline.',

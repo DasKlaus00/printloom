@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { onlineService, systemService, profileService, autofarmService } from '../services/api'
+import { onlineService, systemService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 
 /* ── Online-Dienste (Opt-in) ─────────────────────────────────────────────────
@@ -45,15 +45,13 @@ function timeAgo(ts, tr) {
   return tr('vor {0} Tagen', Math.floor(hrs / 24))
 }
 
-export default function OnlineServices() {
+export default function OnlineServices({ setCurrentPage }) {
   const { tr } = useLanguage()
   const [cfg, setCfg]         = useState(null)
   const [busy, setBusy]       = useState(false)
   const [askConsent, setAsk]  = useState(null)   // { feature } — Dialog vor der ersten Aktivierung
   const [notices, setNotices] = useState(null)
-  const [library, setLibrary] = useState(null)
-  const [libKind, setLibKind] = useState('language')
-  const [preview, setPreview] = useState(null)   // { item, content } — Vorschau vor dem Übernehmen
+  const [library, setLibrary] = useState(null)   // nur für die Anzahl-Anzeige
   const [msg, setMsg]         = useState(null)   // { text, err }
 
   const load = useCallback(async () => {
@@ -64,12 +62,12 @@ export default function OnlineServices() {
   const loadNotices = useCallback(async (refresh) => {
     try { setNotices((await onlineService.getNotices(refresh)).data) } catch { /* leise */ }
   }, [])
-  const loadLibrary = useCallback(async (kind, refresh) => {
-    try { setLibrary((await onlineService.getLibrary(kind, refresh)).data) } catch { /* leise */ }
+  const loadLibrary = useCallback(async () => {
+    try { setLibrary((await onlineService.getLibrary()).data) } catch { /* leise */ }
   }, [])
 
   useEffect(() => { if (cfg?.consented && cfg?.notices) loadNotices(false) }, [cfg?.consented, cfg?.notices, loadNotices])
-  useEffect(() => { if (cfg?.consented && cfg?.library) loadLibrary(libKind, false) }, [cfg?.consented, cfg?.library, libKind, loadLibrary])
+  useEffect(() => { if (cfg?.consented && cfg?.library) loadLibrary() }, [cfg?.consented, cfg?.library, loadLibrary])
 
   const save = async (patch) => {
     setBusy(true); setMsg(null)
@@ -95,55 +93,9 @@ export default function OnlineServices() {
 
   const revoke = async () => {
     await save({ consented: false })
-    setNotices(null); setLibrary(null); setPreview(null)
+    setNotices(null); setLibrary(null)
     try { await onlineService.clearCache() } catch { /* egal */ }
     setMsg({ text: tr('Verbindung abgelehnt — alle Online-Funktionen aus, Zwischenspeicher gelöscht.'), err: false })
-  }
-
-  // Bibliotheks-Eintrag holen und als Vorschau zeigen (noch NICHT anwenden).
-  const openPreview = async (item) => {
-    setMsg(null); setPreview({ item, content: null, loading: true })
-    try {
-      const r = await onlineService.getItem(item.id)
-      setPreview({ item: r.data.item, content: r.data.content, loading: false })
-    } catch (e) {
-      setPreview(null)
-      setMsg({ text: e.response?.data?.detail ?? e.message, err: true })
-    }
-  }
-
-  // Erst hier wird wirklich etwas übernommen — über die bestehenden Import-Wege.
-  const applyPreview = async () => {
-    if (!preview?.content) return
-    const { item, content } = preview
-    setBusy(true); setMsg(null)
-    try {
-      if (item.kind === 'language') {
-        await systemService.importLang({
-          code: content.code, name: content.name,
-          strings: content.strings ?? undefined,
-          translations: content.translations ?? undefined,
-        })
-        setMsg({ text: tr('Sprachpaket „{0}" installiert. Sprache in Konfiguration umstellen.', content.code), err: false })
-      } else if (item.kind === 'profile') {
-        await profileService.import(content)
-        setMsg({ text: tr('Profil „{0}" importiert.', item.name), err: false })
-      } else if (item.kind === 'sequence') {
-        // Sequenzen liegen als EIN Dokument; die neue Sequenz wird eingemischt
-        // (read-modify-write), damit bestehende Sequenzen erhalten bleiben.
-        const cur = (await autofarmService.getSequences()).data ?? {}
-        const list = Array.isArray(cur.sequences) ? [...cur.sequences] : []
-        const name = content.name || item.name
-        const idx = list.findIndex(s => s?.name === name)
-        const entry = { name, description: content.description || item.description, steps: content.steps }
-        if (idx >= 0) list[idx] = entry; else list.push(entry)
-        await autofarmService.saveSequences({ ...cur, sequences: list })
-        setMsg({ text: tr('Sequenz „{0}" übernommen — VOR dem Einsatz im Sequenz-Editor prüfen und trocken testen.', name), err: false })
-      }
-      setPreview(null)
-    } catch (e) {
-      setMsg({ text: e.response?.data?.detail ?? e.message, err: true })
-    } finally { setBusy(false) }
   }
 
   if (!cfg) {
@@ -225,42 +177,16 @@ export default function OnlineServices() {
         </div>
       )}
 
-      {/* Bibliothek */}
+      {/* Bibliothek: eigener Tab (Autor/Version/Beschreibung + Vorschau) — hier nur
+          der Verweis, damit es nicht zwei Ansichten für dasselbe gibt. */}
       {cfg.consented && cfg.library && (
-        <div className="pt-2 border-t border-surface-800/60 space-y-2">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <p className="text-[11px] font-medium text-surface-300">{tr('Bibliothek')}</p>
-            <div className="flex items-center gap-1.5">
-              {[['language', 'Sprachen'], ['profile', 'Profile'], ['sequence', 'Sequenzen']].map(([k, label]) => (
-                <button key={k} onClick={() => setLibKind(k)}
-                  className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
-                    libKind === k ? 'border-blue-600 bg-blue-950/40 text-blue-300'
-                                  : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>
-                  {tr(label)}
-                </button>
-              ))}
-              <button onClick={() => loadLibrary(libKind, true)} className="text-[10px] text-blue-400 hover:text-blue-300 ml-1">{tr('⟳')}</button>
-            </div>
-          </div>
-          {library?.error && <p className="text-[10px] text-amber-400">{tr('Abruf fehlgeschlagen')}: {library.error}</p>}
-          {library && !library.items?.length && !library.error && (
-            <p className="text-[10px] text-surface-600">{tr('Nichts vorhanden.')}</p>
-          )}
-          <div className="space-y-1.5">
-            {library?.items?.map(it => (
-              <div key={it.id} className="flex items-start gap-2 rounded-lg border border-surface-800 bg-surface-900/40 px-2.5 py-1.5">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] text-surface-200 truncate">
-                    {it.name}
-                    {it.version && <span className="text-surface-600 font-mono text-[9px]"> · {it.version}</span>}
-                  </p>
-                  {it.description && <p className="text-[9px] text-surface-600 leading-snug">{it.description}</p>}
-                </div>
-                <button onClick={() => openPreview(it)}
-                  className="btn-secondary text-[10px] px-2 py-0.5 shrink-0">{tr('Ansehen')}</button>
-              </div>
-            ))}
-          </div>
+        <div className="pt-2 border-t border-surface-800/60 flex items-center justify-between gap-3">
+          <p className="text-[10px] text-surface-500 min-w-0">
+            {tr('Bibliothek freigeschaltet — Einträge mit Autor, Version und Vorschau findest du im Tab „Bibliothek".')}
+            {library?.items?.length ? ' ' + tr('({0} Einträge)', library.items.length) : ''}
+          </p>
+          <button onClick={() => setCurrentPage?.('library')}
+            className="btn-secondary text-[11px] shrink-0">{tr('Bibliothek öffnen →')}</button>
         </div>
       )}
 
@@ -310,37 +236,6 @@ export default function OnlineServices() {
         </div>
       )}
 
-      {/* ── Vorschau vor dem Übernehmen ── */}
-      {preview && (
-        <div className="fixed inset-0 z-[9998] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setPreview(null)}>
-          <div className="card p-5 max-w-2xl w-full space-y-3" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-surface-100">
-              {tr('Vorschau')}: {preview.item?.name}
-            </h3>
-            {preview.loading ? (
-              <p className="text-[11px] text-surface-500">{tr('Lade Inhalt …')}</p>
-            ) : (
-              <>
-                {preview.item?.kind === 'sequence' && (
-                  <p className="text-[11px] text-amber-300 bg-amber-950/20 border border-amber-800/60 rounded px-2 py-1.5">
-                    {tr('⚠ Diese Sequenz steuert den OTTOeject. Nach dem Übernehmen im Sequenz-Editor prüfen und einmal ohne Platte testen — fremde Koordinaten können die Mechanik beschädigen.')}
-                  </p>
-                )}
-                <pre className="text-[10px] leading-snug font-mono text-surface-300 bg-surface-900/70 border border-surface-700/60 rounded-lg p-2 overflow-auto max-h-72 whitespace-pre-wrap">
-                  {JSON.stringify(preview.content, null, 2)?.slice(0, 8000)}
-                </pre>
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => setPreview(null)} className="btn-secondary text-sm">{tr('Abbrechen')}</button>
-                  <button onClick={applyPreview} disabled={busy} className="btn-primary text-sm disabled:opacity-50">
-                    {busy ? tr('Übernehme…') : tr('Übernehmen')}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

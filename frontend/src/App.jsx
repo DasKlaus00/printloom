@@ -55,6 +55,7 @@ const AmsDiagnostics  = React.lazy(() => import('./pages/AmsDiagnostics'))
 const MobileView      = React.lazy(() => import('./pages/MobileView'))
 const Projekt         = React.lazy(() => import('./pages/Projekt'))
 const History         = React.lazy(() => import('./pages/History'))
+const Library         = React.lazy(() => import('./pages/Library'))
 import { healthService, systemService, deviceService, printerService } from './services/api'
 import { PageActiveContext } from './services/useAutoRefresh'
 import Toaster from './components/Toaster'
@@ -73,6 +74,7 @@ const PATH_TO_PAGE = {
   '/steuerung':     'steuerung',
   '/autofarm':      'autofarm',
   '/history':       'history',
+  '/bibliothek':    'library',
   '/projekt':       'projekt',
   '/rack':          'rack',
   '/drucker':       'drucker',
@@ -93,6 +95,7 @@ const PAGE_TO_PATH = {
   steuerung:     '/steuerung',
   autofarm:      '/autofarm',
   history:       '/history',
+  library:       '/bibliothek',
   projekt:       '/projekt',
   rack:          '/rack',
   drucker:       '/drucker',
@@ -327,6 +330,7 @@ function App() {
     steuerung:     'Steuerung',
     autofarm:      'Auto Farm',
     history:       'Historie',
+    library:       'Bibliothek',
     projekt:       'Projekt',
     rack:          'Rack Manager',
     drucker:       'Drucker',
@@ -419,6 +423,7 @@ function App() {
             {page('steuerung',     Steuerung)}
             {page('autofarm',      AutoFarm, { setCurrentPage })}
             {page('history',       History)}
+            {page('library',       Library, { setCurrentPage })}
             {page('projekt',       Projekt)}
             {page('rack',          RackManager)}
             {page('drucker',       Drucker)}

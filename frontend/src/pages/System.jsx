@@ -293,7 +293,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
       </div>
 
       {/* Online-Dienste — Opt-in, standardmäßig alles aus */}
-      <OnlineServices />
+      <OnlineServices setCurrentPage={setCurrentPage} />
 
       {/* Release channel — kompakter Toggle Latest ↔ Beta */}
       <div className="card p-4 space-y-3">

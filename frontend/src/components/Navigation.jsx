@@ -21,6 +21,13 @@ const icons = {
       <path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/>
     </svg>
   ),
+  library: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+      <path d="M9 6h7"/>
+    </svg>
+  ),
   projekt: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="18" height="4" rx="1"/>
@@ -134,6 +141,7 @@ function buildPages(t, tr) {
     { id: 'sequence',      label: t('nav.sequence'),      icon: 'sequence'    },
     { id: 'profiles',      label: t('nav.profiles'),      icon: 'profiles'    },
     { id: 'filamente',     label: tr('Filamente'),        icon: 'filamente'   },
+    { id: 'library',       label: tr('Bibliothek'),       icon: 'library'     },
     { id: 'drucker',       label: tr('Drucker'),          icon: 'drucker'     },
     { id: 'configuration', label: t('nav.configuration'), icon: 'config'      },
     // Setup-Assistent bewusst NICHT hier — er sitzt in System (einmalige Einrichtung,
