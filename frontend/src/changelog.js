@@ -4,6 +4,35 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.1',
+    de: [
+      'ROADMAP-PHASE 2 „Einrichten ohne Rätselraten" — die Erstinbetriebnahme kommt jetzt ohne Zahlenraten aus.',
+      'NEU Einmess-Assistent (📐 an jeder Positions-Karte im Drucker-Tab): Position anfahren, mit Pfeilen in 0,1–10-mm-Schritten justieren, „Hierher übernehmen" — Printloom rechnet den Wert aus der echten Ist-Position. Jeder Schritt wird vorher gegen die Achsgrenzen geprüft und gar nicht erst gesendet, wenn er aus der Achse führt.',
+      'Beim Regal misst man nur Fach 1 in Regal 1 ein — Start-X, Y-Engage und Fachhöhe folgen daraus, die übrigen Fächer und Regale rechnet Printloom.',
+      'NEU Trockenlauf (Setup-Assistent, letzter Schritt): spielt die ganze Sequenz durch, OHNE etwas an Drucker oder OTTOeject zu senden. Zeigt je Schritt das Ziel-Fach, woher die leere Platte käme und ob eine Bewegung aus der Achse fahren würde.',
+      'Das Drucker-Modell wird jetzt wirklich genutzt: passt die gewählte Geometrie-Vorlage nicht zum angelegten Drucker, kommt eine Warnung mit Ein-Klick-Korrektur. Die Kalibrierung wird nur noch bei Modellen angeboten, die sie annehmen (X1-Serie) — beim P1S/A1 stand der Knopf da und tat nichts. Für Modelle ohne Vorlage (A1 mini, H2D) steht dort der Hinweis, die Positionen einzumessen, statt geratener Werte.',
+      'NEU Bauart-Paket: Wer im Setup sein Modell wählt, bekommt die passende Geometrie-Vorlage automatisch — und bei einem offenen Drucker (P1P/A1) fallen die Tür-Schritte aus der Sequenz, statt ins Leere zu laufen.',
+      'Achsgrenzen lassen sich jetzt direkt im Setup-Assistenten vom Gerät holen (bisher nur im Drucker-Tab).',
+      'Der Einrichtungs-Status prüft vier Punkte mehr: Geometrie plausibel, Achsgrenzen bekannt, Sequenz vorhanden, leere Platten bereit.',
+      'Sprachwahl ist der erste Schritt im Assistenten — alles Weitere steht dann schon in der eigenen Sprache.',
+      'NEU „Was ist neu": nach einem Update kommt die Änderungsliste einmal von selbst. Bei einer Neuinstallation bewusst nicht.',
+      'FEHLER BEHOBEN: Der letzte Schritt des Setup-Assistenten war leer — Homing, Status und Abschluss hingen fälschlich am Regal-Schritt (seit dem Komponenten-Schritt in v1.0.158).',
+    ],
+    en: [
+      'ROADMAP PHASE 2 "Setup without guesswork" — first-time setup no longer requires guessing numbers.',
+      'NEW teach-in assistant (📐 on every position card in the Printer tab): move to the position, adjust with arrows in 0.1–10 mm steps, "use this position" — Printloom derives the value from the real current position. Every step is checked against the axis limits up front and is not sent at all if it would leave the axis.',
+      'For the rack you only teach in slot 1 of rack 1 — start X, Y engage and slot height follow from it, Printloom computes the other slots and racks.',
+      'NEW dry run (setup wizard, last step): walks the whole sequence WITHOUT sending anything to the printer or OTTOeject. Shows the target slot per step, where the empty plate would come from and whether a move would leave the axis.',
+      'The printer model is now actually used: if the selected geometry template does not match the configured printer, you get a warning with a one-click fix. Calibration is only offered for models that accept it (X1 series) — on the P1S/A1 the button was there and did nothing. Models without a template (A1 mini, H2D) now say "teach in the positions" instead of showing guessed values.',
+      'NEW build package: choosing your model in the setup wizard applies the matching geometry template automatically — and on an open printer (P1P/A1) the door steps drop out of the sequence instead of running into nothing.',
+      'Axis limits can now be read from the device right in the setup wizard (previously only in the Printer tab).',
+      'The setup status checks four more points: geometry plausible, axis limits known, sequence present, empty plates ready.',
+      'Language is the first step in the wizard — everything after it is already in your language.',
+      'NEW "What’s new": after an update the change list appears once by itself. Deliberately not on a fresh install.',
+      'BUG FIX: the last step of the setup wizard was empty — homing, status and finish were wrongly attached to the rack step (since the components step in v1.0.158).',
+    ],
+  },
+  {
     version: '1.0.163',
     de: [
       'NEU im Aufbau OHNE Magazin („alle Fächer = Lagerfächer"): In der Farm-Ansicht markierst du jetzt je Fach mit ▭, ob dort eine leere Platte liegt. Der Knopf erscheint NUR in dieser Bauart — mit Magazin bleibt es beim Magazin-Zähler.',

@@ -106,3 +106,22 @@ def test_public_list_ohne_interna():
     assert len(lst) == len(pm.MODELS)
     assert all("serial_prefixes" not in e and "aliases" not in e for e in lst)
     assert lst[0]["id"] == "x1c"     # feste Reihenfolge für die Auswahl
+    # Die UI braucht Vorlage + Bettgröße für das Bauart-Paket.
+    assert all("preset" in e and "bed_mm" in e for e in lst)
+
+
+def test_vorlage_nur_wo_das_fahrgestell_passt():
+    """Eine geratene Vorlage schickt den Arm an die falsche Stelle. X1/X1E teilen
+    den X1C-Rahmen — für A1 mini und H2D gibt es bewusst KEINE."""
+    assert pm.by_id("x1")["preset"] == "x1c"
+    assert pm.by_id("x1e")["preset"] == "x1c"
+    assert pm.by_id("p1s")["preset"] == "p1s"
+    assert pm.by_id("a1mini")["preset"] is None
+    assert pm.by_id("h2d")["preset"] is None
+    assert pm.by_id("other")["preset"] is None
+
+
+def test_bettgroesse():
+    assert pm.by_id("x1c")["bed_mm"] == 256
+    assert pm.by_id("a1mini")["bed_mm"] == 180
+    assert pm.by_id("other")["bed_mm"] is None

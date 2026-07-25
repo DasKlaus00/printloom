@@ -515,6 +515,69 @@ async def get_ottoeject_limits(db: Session = Depends(get_db)):
             "standard": _geometry_check.STANDARD_LIMITS}
 
 
+@router.post("/ottoeject/jog")
+async def jog_ottoeject(request: dict, db: Session = Depends(get_db)):
+    """Einmessen: den Arm um einen kleinen Weg verfahren und die neue Position melden.
+
+    Body: {axis: "x"|"y"|"z", delta: mm, feed?: mm/min}
+
+    Der Weg wird VORHER gegen die Achsgrenzen geprüft (sofern bekannt) und gegen 0 —
+    beim Einmessen tippt man sich sonst schnell aus der Achse, und Klipper bricht dann
+    mitten in der Bewegung ab. Gesendet wird absolut (Zielposition), nicht relativ:
+    G91 würde nach einem Fehlschlag auf einer unbekannten Ist-Position aufsetzen.
+    """
+    axis = str(request.get("axis", "")).strip().lower()
+    if axis not in ("x", "y", "z"):
+        raise HTTPException(400, "Achse muss x, y oder z sein")
+    try:
+        delta = float(request.get("delta"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Kein gültiger Weg (delta)")
+    if delta == 0:
+        raise HTTPException(400, "Weg ist 0")
+    if abs(delta) > 100:
+        raise HTTPException(400, "Einzelschritt beim Einmessen ist auf 100 mm begrenzt")
+
+    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
+    if not klipper:
+        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
+
+    # Ist-Position lesen — ohne sie wüssten wir das Ziel nicht und könnten es nicht prüfen.
+    base = f"http://{klipper.ip_address}:{klipper.port}"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"{base}/printer/objects/query?toolhead")
+        th = (r.json().get("result", {}).get("status", {}) or {}).get("toolhead", {})
+        pos = th.get("position") or []
+        homed = str(th.get("homed_axes", "")).lower()
+    except Exception as e:
+        raise HTTPException(502, f"Position nicht lesbar: {e}")
+    if axis not in homed:
+        raise HTTPException(400, f"Achse {axis.upper()} ist nicht referenziert — erst homen")
+    idx = {"x": 0, "y": 1, "z": 2}[axis]
+    try:
+        current = float(pos[idx])
+    except (IndexError, TypeError, ValueError):
+        raise HTTPException(502, "Position nicht lesbar (unerwartete Antwort)")
+
+    target = round(current + delta, 3)
+    limits = _geometry_check.limits_from(_load_geometry())
+    if target < 0:
+        raise HTTPException(400, f"{axis.upper()} {target:g} mm läge unter dem Endschalter (0 mm)")
+    if limits.get(axis) is not None and target > limits[axis]:
+        raise HTTPException(400, f"{axis.upper()} {target:g} mm läge über der Achsgrenze "
+                                 f"{limits[axis]:g} mm")
+
+    try:
+        feed = max(60, min(6000, int(request.get("feed", 1500))))
+    except (TypeError, ValueError):
+        feed = 1500
+    script = f"G90\nG1 {axis.upper()}{target:g} F{feed}\nM400"
+    running = await _fire_moonraker_script(f"{base}/printer/gcode/script", script)
+    return {"success": True, "axis": axis, "from": round(current, 3), "to": target,
+            "running": running}
+
+
 @router.post("/ottoeject/op")
 async def run_ottoeject_op(request: dict, db: Session = Depends(get_db)):
     """Eine OTTOeject-Bewegung aus der gespeicherten Geometrie erzeugen und live senden.

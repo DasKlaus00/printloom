@@ -71,33 +71,31 @@ offen ist, die einen Nutzer treffen kann.
 
 ---
 
-## Phase 2 — Einrichten ohne Rätselraten
+## ~~Phase 2 — Einrichten ohne Rätselraten~~ ✅ *(v1.1.1)*
 
 **Ziel:** Ein Fremder baut die Mechanik nach und kommt ohne Rückfragen zum ersten
 erfolgreichen Wechsel. Das ist die Phase, die „auf möglichst viele zugeschnitten"
 wirklich einlöst.
 
-**Fertig, wenn:** die Erstinbetriebnahme ohne Zahleneingabe von Hand auskommt und jeder
-Fehlversuch sagt, was zu tun ist.
+1. ~~**Einmess-Assistent statt Zahlenfelder.**~~ 📐 an jeder Positions-Karte:
+   anfahren → mit Pfeilen (0,1–10 mm) justieren → „Hierher übernehmen". Jeder Jog
+   läuft über `/control/ottoeject/jog` und wird vorher gegen die Achsgrenzen gerechnet.
+2. ~~**Achsgrenzen automatisch anbieten.**~~ „⤓ Grenzen vom Gerät holen" jetzt auch im
+   Setup-Assistenten.
+3. ~~**Modell-Wissen wirklich nutzen.**~~ Vorlagen-Abgleich mit Warnung + Ein-Klick-
+   Korrektur, Kalibrierung nur bei Modellen, die sie annehmen, `bed_mm`/`preset` in der
+   Modell-Registry.
+4. ~~**Bauart-Pakete.**~~ Modellwahl im Setup schreibt die passende Geometrie-Vorlage
+   und nimmt bei offenen Druckern die Tür-Schritte aus der Sequenz.
+5. ~~**Health-Check erweitern.**~~ +4 Punkte: Geometrie plausibel, Achsgrenzen bekannt,
+   Sequenz vorhanden, leere Platten bereit.
+6. ~~**Sprachwahl als erster Schritt** und **„Was ist neu"**~~ nach einem Update (bei
+   Neuinstallation bewusst nicht).
+7. ~~**Trockenlauf.**~~ `/autofarm/dry-run` spielt die Sequenz durch, ohne etwas zu
+   senden — mit Ziel-Fach, Plattenquelle und Achsprüfung je Schritt.
 
-1. 🏗 **Einmess-Assistent statt Zahlenfelder.** Position anfahren → mit Pfeiltasten
-   nachjustieren → „hier ist es" → Printloom rechnet den Wert. Pro Position (Fach 1,
-   Regal-X, Drucker-Auswurf, Einlegen, Tür). Baut direkt auf der Achsprüfung und den
-   Test-Knöpfen auf, die seit v1.0.162 da sind.
-2. ⚡ **Achsgrenzen automatisch anbieten.** Sind sie unbekannt, im Assistenten einmal
-   „vom Gerät holen" vorschlagen — danach prüft Printloom jede Bewegung auch nach oben.
-3. ⚡ **Modell-Wissen wirklich nutzen.** Das Modell steht seit v1.0.162 am Gerät: Tür-
-   Schritte automatisch weglassen bei offenen Druckern (A1/P1P), Kalibrier-Kachel nur
-   zeigen, wo es sie gibt, Bettgröße/Bett-Z vorbelegen.
-4. ⚡ **Bauart-Pakete.** Halterung + oberstes Fach + Druckermodell → ein fertiges Paket
-   (Regal-Konfiguration, Geometrie-Startwerte, Sequenz). ↩ War vorgeschlagen und bewusst
-   nicht gewählt — mit Modell und Markierung im Rücken lohnt es jetzt mehr.
-5. ⚡ **Health-Check erweitern.** Geometrie-Prüfung, „Achsgrenzen bekannt?", „Sequenz
-   passt zum Drucker?", „Leerplatten markiert?" in die Setup-Checkliste.
-6. ⚡ **Sprachwahl als erster Schritt** und **„Was ist neu"** beim ersten Start nach
-   einem Update (Changelog gibt es, das Popup fehlt).
-7. ⚡ **Trockenlauf.** Ganze Sequenz ohne Drucker durchspielen (G-code nur anzeigen,
-   Fach-Buchhaltung simulieren) — Vertrauen vor dem ersten echten Lauf.
+**Nebenbei behoben:** der letzte Schritt des Setup-Assistenten war leer (Homing/Status
+hingen seit v1.0.158 am Regal-Schritt).
 
 ---
 

@@ -29,6 +29,7 @@ from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filame
 from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _load as _rack_load
 from app.services import hms
 from app.services import rack_logic as _rack_logic
+from app.services import geometry_check as _geometry_check
 from app.services.rack_logic import (
     slots_needed as _slots_needed_base,
     is_blocked_from_below as _is_blocked_base,
@@ -3066,6 +3067,109 @@ async def pause_farm():
         _farm["error"] = None
         await _send_print_cmd("resume")    # X1C-Druck fortsetzen
     return {"success": True, "paused": _farm["paused"]}
+
+
+@router.post("/dry-run")
+async def dry_run(payload: dict = None):
+    """Trockenlauf: die Sequenz durchspielen, OHNE etwas zu senden.
+
+    Zeigt Schritt für Schritt, was passieren WÜRDE — welches Macro, welcher
+    Printloom-G-code, welches Regal/Fach, und ob eine Bewegung aus der Achse fahren
+    würde. Gedacht als letzter Blick vor dem ersten echten Lauf: bisher musste man
+    den Arm dafür wirklich losschicken.
+
+    Body: {which?: "seq_new"|"seq_next"|"both", height_mm?: Objekthöhe für die
+           Fachwahl (Standard 40)}
+    """
+    payload = payload or {}
+    which = str(payload.get("which") or "both")
+    try:
+        height = max(0.0, float(payload.get("height_mm", 40)))
+    except (TypeError, ValueError):
+        height = 40.0
+
+    seq_data = _read_config(SEQ_PATH, {"seq_new": [], "seq_next": []})
+    geom = _load_farm_geometry()
+    rack_data = _rack_data()
+    check = _geometry_check.check_geometry(geom)
+
+    # Simulierte Ausgangslage: Fach für die Objekthöhe + Quelle der leeren Platte.
+    target_slot = _find_slot_for_height(height) or ""
+    rack_num, slot_num = _slot_vars(target_slot or "1-1")
+    src_rack, src_slot, from_mag = _rack_logic.plate_source(rack_data)
+    stack_rack, stack_slot = str(src_rack), str(src_slot)
+    plates = _rack_logic.empty_plate_count(rack_data)
+
+    def _walk(steps: list, name: str) -> list:
+        out = []
+        for i, step in enumerate(_filter_disabled(steps or [])):
+            t = step.get("type", "")
+            raw = (step.get("value") or "")
+            val = (raw.replace("{rack}", rack_num).replace("{slot}", slot_num)
+                      .replace("{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot))
+            entry = {"seq": name, "index": i, "type": t,
+                     "label": step.get("label") or val[:60], "value": val,
+                     "target": "", "script": "", "problems": [], "note": ""}
+
+            op, rack, slot = None, 1, 1
+            if t == "app_op":
+                op = (val or "").strip().lower()
+                if op in ("grab", "grab_magazine"):
+                    rack, slot = src_rack, src_slot
+                    # Ohne Magazin wird der Magazin-Griff zum normalen Fach-Griff.
+                    if op == "grab_magazine" and _magazine_slot_cfg() <= 0:
+                        op = "grab"
+                        entry["note"] = "kein Magazin — greift aus dem Lagerfach"
+                elif op == "store":
+                    rack, slot = int(rack_num), int(slot_num)
+            elif t == "macro":
+                mapped = _macro_to_op(val, rack_num, slot_num, stack_rack, stack_slot)
+                if mapped and (geom.get("use_gcode") or {}).get(mapped[0]):
+                    op, rack, slot = mapped
+                    entry["note"] = "läuft als Printloom-G-code (use_gcode)"
+                elif mapped:
+                    entry["note"] = "Geräte-Macro (Printloom-G-code nicht aktiviert)"
+
+            if op:
+                if op in ("grab", "grab_magazine", "store", "approach"):
+                    entry["target"] = f"R{rack} Fach {slot}"
+                try:
+                    entry["script"] = _motion.build_op(geom, op, rack=rack, slot=slot, check=False)
+                    entry["problems"] = _geometry_check.check_script(entry["script"], geom, op, rack, slot)
+                except ValueError as e:
+                    entry["problems"] = [{"severity": "error", "message": str(e)}]
+            elif t == "delay":
+                entry["target"] = f"{step.get('seconds', 0)} s"
+            out.append(entry)
+        return out
+
+    steps = []
+    if which in ("seq_new", "both"):
+        steps += _walk(seq_data.get("seq_new"), "seq_new")
+    if which in ("seq_next", "both"):
+        steps += _walk(seq_data.get("seq_next"), "seq_next")
+
+    problems = [p for s in steps for p in s["problems"]]
+    warnings = []
+    if not target_slot:
+        warnings.append(f"Kein freies Fach für ein {height:.0f} mm hohes Objekt — die Farm "
+                        f"würde hier nach der eingestellten Fehlerstrategie reagieren.")
+    if plates <= 0:
+        warnings.append("Keine leeren Platten gemeldet — der Griff würde ins Magazin-Gate "
+                        "laufen (parken + pausieren).")
+    if not steps:
+        warnings.append("Keine aktiven Schritte in der Sequenz.")
+
+    return {
+        "success": True,
+        "steps": steps,
+        "start": {"target_slot": target_slot, "source": f"R{src_rack} Fach {src_slot}",
+                  "from_magazine": from_mag, "plates_available": plates,
+                  "height_mm": height},
+        "geometry_check": check,
+        "warnings": warnings,
+        "errors": [p for p in problems if p.get("severity") == "error"],
+    }
 
 
 @router.get("/sequences")

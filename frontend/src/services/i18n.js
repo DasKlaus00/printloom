@@ -467,6 +467,77 @@ const EN_STRINGS = {
   'Greifer-Andruck · 0 = Greifpunkt = Start-X': 'Gripper push · 0 = grab point = start X',
   'Andruck-Weg: der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original 30. Auf 0 stellen, wenn der Greifer genau bei Start-X fassen soll.':
     'Push distance: on grab/place the arm moves this far beyond X to press the gripper into the bracket (eject/place: +, grab/store: −). Original 30. Set to 0 for the gripper to engage exactly at start X.',
+  // Einmess-Assistent + Setup-Ausbau — seit v1.1.1
+  '📐 Einmessen': '📐 Teach-in',
+  'Position einmessen': 'Teach in position',
+  'Schritt': 'Step',
+  'links / rechts': 'left / right',
+  'vor / zurück': 'forward / back',
+  'runter / hoch': 'down / up',
+  '→ Position anfahren': '→ Move to position',
+  '✓ Hierher übernehmen': '✓ Use this position',
+  'Fahre an…': 'Moving…',
+  'Angefahren — jetzt mit den Pfeilen genau justieren': 'In position — now fine-tune with the arrows',
+  'Anfahren fehlgeschlagen': 'Moving failed',
+  'Bewegung abgelehnt': 'Move rejected',
+  'Position nicht lesbar': 'Position not readable',
+  'Position neu lesen': 'Read position again',
+  'Nicht referenziert — erst „Referenzfahrt", sonst lehnt Klipper jede Bewegung ab.':
+    'Not homed — run "home" first, otherwise Klipper rejects every move.',
+  '✓ Übernommen: X {0} · Y {1} · Z {2}': '✓ Applied: X {0} · Y {1} · Z {2}',
+  '📐 Regal einmessen': '📐 Teach in rack',
+  '✕ Einmessen schließen': '✕ Close teach-in',
+  'Regal 1, Fach 1': 'Rack 1, slot 1',
+  'Der Greifer soll genau vor Fach 1 des ERSTEN Regals stehen (Regal 1 = am Drucker). Daraus folgen Start-X, Y-Engage und die Höhe von Fach 1; die übrigen Fächer/Regale rechnet Printloom aus Fach-Abstand und Regal-Versatz.':
+    'The gripper should sit exactly in front of slot 1 of the FIRST rack (rack 1 = at the printer). Start X, Y engage and the height of slot 1 follow from that; Printloom computes the other slots/racks from slot spacing and rack offset.',
+  'Anfahr-Position': 'Approach position',
+  'Vor den Drucker fahren und so justieren, wie der Arm ansetzen soll.':
+    'Move in front of the printer and adjust the way the arm should approach.',
+  'Auswurf-Start': 'Eject start',
+  'Der Greifer muss genau an der Platte im Drucker ansetzen. Erst anfahren, dann justieren.':
+    'The gripper has to engage exactly at the plate in the printer. Approach first, then adjust.',
+  'Einlege-Position': 'Place position',
+  'Position, an der die Platte im Drucker abgesetzt wird.': 'Position where the plate is set down in the printer.',
+  'Dein angelegter Drucker ist ein {0} — hier ist eine andere Vorlage gewählt. Die Positionen passen dann nicht.':
+    'Your configured printer is a {0} — a different template is selected here. The positions will not match.',
+  'Passende Vorlage wählen': 'Select matching template',
+  'Für {0} gibt es keine fertige Vorlage — die Positionen einmessen (📐 an jeder Karte).':
+    'There is no ready-made template for {0} — teach in the positions (📐 on each card).',
+  '{0} nimmt keine Kalibrierung über Printloom entgegen — die läuft am Drucker selbst.':
+    '{0} does not accept calibration via Printloom — run it on the printer itself.',
+  'Sprache': 'Language',
+  'Gilt für die ganze Oberfläche. Später jederzeit unter „System" änderbar.':
+    'Applies to the whole interface. Changeable at any time under "System".',
+  'Achsgrenzen des OTTOeject': 'Axis limits of the OTTOeject',
+  'Einmal vom Gerät holen: danach wird jede Bewegung vorher geprüft und eine, die aus der Achse fährt, gar nicht erst gesendet.':
+    'Read them from the device once: after that every move is checked up front and one that leaves the axis is never sent.',
+  'Trockenlauf': 'Dry run',
+  'Spielt die Sequenz Schritt für Schritt durch, OHNE etwas an Drucker oder OTTOeject zu senden — zeigt, welches Fach getroffen würde und ob eine Bewegung aus der Achse fährt.':
+    'Walks the sequence step by step WITHOUT sending anything to the printer or OTTOeject — showing which slot would be used and whether a move leaves the axis.',
+  '▶ Trockenlauf starten': '▶ Start dry run',
+  'Läuft…': 'Running…',
+  'Quelle': 'Source',
+  'Ziel-Fach': 'Target slot',
+  '{0} Platten bereit': '{0} plates ready',
+  '✓ Kein Schritt würde aus der Achse fahren.': '✓ No step would leave the axis.',
+  'Geometrie plausibel': 'Geometry plausible',
+  'nicht prüfbar': 'cannot be checked',
+  '{0} Bewegung(en) außerhalb der Achse': '{0} move(s) outside the axis',
+  'alle Bewegungen innerhalb der Achsen': 'all moves inside the axes',
+  'Achsgrenzen bekannt': 'Axis limits known',
+  'nicht gesetzt — „vom Gerät holen", dann wird auch nach oben geprüft':
+    'not set — "read from device", then the upper bound is checked too',
+  'Sequenz vorhanden': 'Sequence present',
+  '{0} Schritte im Zyklus': '{0} steps in the cycle',
+  'leer — im Sequenz-Editor anlegen': 'empty — create it in the sequence editor',
+  'Leere Platten bereit': 'Empty plates ready',
+  '{0} Fächer als bestückt markiert': '{0} slots marked as loaded',
+  '{0} Platten im Magazin': '{0} plates in the magazine',
+  'keine markiert — in der Farm-Ansicht mit ▭ setzen': 'none marked — set them with ▭ in the farm view',
+  'Magazin leer': 'Magazine empty',
+  'Was ist neu': 'What’s new',
+  'Aktualisiert auf Version {0}': 'Updated to version {0}',
+  'Verstanden': 'Got it',
   // Plausibilitätsprüfung der Geometrie (Achsgrenzen) — seit v1.0.162
   '🛡 Plausibilität & Achsgrenzen': '🛡 Plausibility & axis limits',
   '{0} Fehler': '{0} errors',

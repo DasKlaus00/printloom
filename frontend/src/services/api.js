@@ -95,6 +95,8 @@ export const controlService = {
   // Plausibilitätsprüfung der Geometrie (Achsgrenzen) — prüft ohne zu speichern
   checkGeometry:       (g)     => api.post('/control/ottoeject/geometry/check', { geometry: g }),
   getAxisLimits:       ()      => api.get('/control/ottoeject/limits'),
+  // Einmessen: eine Achse um `delta` mm verfahren (gegen die Achsgrenzen geprüft)
+  jog:                 (axis, delta, feed) => api.post('/control/ottoeject/jog', { axis, delta, feed }),
 }
 
 // Printer-Status koaleszieren: viele gleichzeitig gemountete Seiten (Dashboard,
@@ -216,6 +218,8 @@ export const autofarmService = {
   setJobAms:     (jobId, amsMap) => api.put(`/autofarm/job/${jobId}/ams`, { amsMap }),
   getSequences:  ()      => api.get('/autofarm/sequences'),
   saveSequences: (data)  => api.put('/autofarm/sequences', data),
+  // Trockenlauf: Sequenz durchspielen, ohne etwas zu senden
+  dryRun:        (body)  => api.post('/autofarm/dry-run', body || {}),
   getSettings:   ()      => api.get('/autofarm/settings'),
   saveSettings:  (data)  => api.put('/autofarm/settings', data),
   getQueue:      ()      => api.get('/autofarm/queue'),

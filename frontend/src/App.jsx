@@ -59,6 +59,7 @@ const Library         = React.lazy(() => import('./pages/Library'))
 import { healthService, systemService, deviceService, printerService } from './services/api'
 import { PageActiveContext } from './services/useAutoRefresh'
 import Toaster from './components/Toaster'
+import WhatsNew from './components/WhatsNew'
 import { learnFromAms } from './services/amsLearn'
 import { loadLangPacks, useLanguage } from './services/i18n'
 import { useFarmStatusStream } from './services/useFarmStatusStream'
@@ -465,6 +466,7 @@ function App() {
       )}
       <ConfirmHost />
       <Toaster />
+      <WhatsNew />
     </div>
   )
 }

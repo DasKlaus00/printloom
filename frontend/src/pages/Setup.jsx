@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { deviceService, rackManagerService, autofarmService, controlService } from '../services/api'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, setLanguage, availableLanguages } from '../services/i18n'
 import { TIMEZONES } from './Configuration'
+import { PRINTERS } from '../services/printers'
 import SetupHealth from '../components/SetupHealth'
 import RackPreview from '../components/RackPreview'
 import { COMPONENT_GROUPS, derivedConfig, loadComponents, saveComponents,
@@ -32,8 +33,44 @@ function StepDots({ step }) {
   )
 }
 
+/* Ergebnis des Trockenlaufs: Schrittliste mit Ziel-Fach und Achs-Problemen.
+   Bewusst kompakt — es geht um „passt das?", nicht um eine G-code-Anzeige. */
+function DryRunResult({ dry, tr }) {
+  if (dry.error) return <p className="text-xs text-red-400">{dry.error}</p>
+  const errs = dry.errors ?? []
+  return (
+    <div className="space-y-2">
+      <div className="text-[11px] text-surface-400 font-mono">
+        {tr('Quelle')}: {dry.start?.source} · {tr('Ziel-Fach')}: {dry.start?.target_slot || '—'} ·{' '}
+        {tr('{0} Platten bereit', dry.start?.plates_available ?? 0)}
+      </div>
+      {(dry.warnings ?? []).map((w, i) => (
+        <p key={i} className="text-[11px] text-amber-300">⚠ {w}</p>
+      ))}
+      {errs.length > 0 && (
+        <div className="rounded-lg border border-red-800 bg-red-950/30 p-2 space-y-1">
+          {errs.map((e, i) => <p key={i} className="text-[11px] text-red-300">{e.message}</p>)}
+        </div>
+      )}
+      <ol className="space-y-0.5">
+        {(dry.steps ?? []).map((s, i) => (
+          <li key={i} className="flex items-center gap-2 text-[11px]">
+            <span className="font-mono text-surface-700 w-6 text-right">{i + 1}</span>
+            <span className={s.problems?.length ? 'text-red-300' : 'text-surface-300'}>{s.label}</span>
+            {s.target && <span className="font-mono text-surface-600">{s.target}</span>}
+            {s.note && <span className="text-surface-600">· {s.note}</span>}
+          </li>
+        ))}
+      </ol>
+      {!errs.length && (dry.steps ?? []).length > 0 && (
+        <p className="text-[11px] text-emerald-400">{tr('✓ Kein Schritt würde aus der Achse fahren.')}</p>
+      )}
+    </div>
+  )
+}
+
 export default function Setup({ setCurrentPage }) {
-  const { tr } = useLanguage()
+  const { tr, lang } = useLanguage()
   const [step, setStep] = useState(0)
 
   // Step 0 — Zeitzone (2.1): Basis für Betriebszeiten/Uhrzeiten. Container läuft i. d. R.
@@ -71,9 +108,38 @@ export default function Setup({ setCurrentPage }) {
   const [magSlot, setMagSlot] = useState(7)   // 0 = kein Magazin
   const [rSaving, setRSaving] = useState(false)
 
-  // Step 5 — homing
+  // Step 5 — homing, Achsgrenzen, Trockenlauf
   const [homing, setHoming]   = useState(null)
   const [hBusy, setHBusy]     = useState(false)
+  const [limitsBusy, setLimitsBusy] = useState(false)
+  const [limitsMsg, setLimitsMsg]   = useState('')
+  const [limitsErr, setLimitsErr]   = useState(false)
+  const [dry, setDry]         = useState(null)
+  const [dryBusy, setDryBusy] = useState(false)
+
+  // Achsgrenzen aus Klipper lesen und in die Geometrie schreiben (read-modify-write,
+  // damit die übrigen Werte stehen bleiben).
+  const fetchLimits = async () => {
+    setLimitsBusy(true); setLimitsMsg(''); setLimitsErr(false)
+    try {
+      const l = (await controlService.getAxisLimits())?.data?.limits || {}
+      const cur = (await controlService.getGeometry())?.data?.geometry || {}
+      await controlService.putGeometry({ ...cur, machine_limits: l })
+      setLimitsMsg(tr('✓ X {0} · Y {1} · Z {2} mm', l.x ?? '—', l.y ?? '—', l.z ?? '—'))
+    } catch (e) {
+      setLimitsErr(true)
+      setLimitsMsg(e?.response?.data?.detail || e?.message || tr('Fehler'))
+    } finally { setLimitsBusy(false) }
+  }
+
+  const runDry = async () => {
+    setDryBusy(true); setDry(null)
+    try {
+      setDry((await autofarmService.dryRun({ which: 'both' }))?.data || null)
+    } catch (e) {
+      setDry({ error: e?.response?.data?.detail || e?.message || tr('Fehler') })
+    } finally { setDryBusy(false) }
+  }
 
   // Netzwerk-Suche (gilt für Schritt 1 Drucker + Schritt 2 OTTOeject)
   const [discovering, setDiscovering] = useState(false)
@@ -193,6 +259,44 @@ export default function Setup({ setCurrentPage }) {
     } finally { setCSaving(false) }
   }
 
+  // Bauart-Paket (Phase 2.4): aus dem gewählten Modell folgen Geometrie-Vorlage
+  // (Anfahr-Positionen, Tür ja/nein) und die passende Sequenz. Bisher musste der
+  // Nutzer die Vorlage auf der Drucker-Seite selbst noch einmal auswählen — und
+  // bei einem offenen Drucker die Tür-Schritte von Hand abschalten.
+  const applyPrinterPackage = async (modelId) => {
+    const m = models.find(x => x.id === modelId)
+    if (!m) return
+    const preset = m.preset ? PRINTERS.find(p => p.id === m.preset) : null
+    if (preset) {
+      try {
+        const cur = (await controlService.getGeometry())?.data?.geometry || {}
+        await controlService.putGeometry({
+          ...cur,
+          printer_id: preset.id, printer_name: preset.name, enclosed: preset.enclosed,
+          printer: {
+            ...(cur.printer || {}),
+            eject: { ...preset.eject }, load: { ...preset.load },
+            move:  { ...preset.eject },
+            door:  preset.door ? { open: { ...preset.door.open }, close: { ...preset.door.close } } : null,
+          },
+        })
+      } catch { /* Vorlage ist Komfort — Setup darf daran nicht scheitern */ }
+    }
+    // Offener Drucker → Tür-Schritte aus den Sequenzen nehmen (sie würden „keine
+    // Tür konfiguriert" fahren und nur Zeit kosten).
+    if (!m.enclosed) {
+      try {
+        const d = (await autofarmService.getSequences())?.data || {}
+        const strip = (arr) => (Array.isArray(arr) ? arr : []).filter(
+          s => !(s.type === 'app_op' && String(s.value || '').includes('door')))
+        const seq_new = strip(d.seq_new), seq_next = strip(d.seq_next)
+        if (seq_new.length || seq_next.length) {
+          await autofarmService.saveSequences({ seq_new, seq_next })
+        }
+      } catch { /* dito */ }
+    }
+  }
+
   const createPrinter = async () => {
     setPErr(null); setPSaving(true)
     try {
@@ -205,6 +309,7 @@ export default function Setup({ setCurrentPage }) {
         access_code: pForm.access_code,
         model: pForm.model || '',
       })
+      if (pForm.model) await applyPrinterPackage(pForm.model)
       const r = await deviceService.listDevices()
       setDevices(r.data ?? [])
       window.dispatchEvent(new CustomEvent('printloom:devicesChanged'))
@@ -309,6 +414,20 @@ export default function Setup({ setCurrentPage }) {
               <li>{tr('Regal konfigurieren (Anzahl, Fächer, Fachhöhe)')}</li>
               <li>{tr('Homing-Datei für den Auswurf erstellen')}</li>
             </ul>
+
+            {/* Sprache ganz zuerst: alles Folgende soll schon in der eigenen Sprache
+                dastehen. Umschalten lädt die Seite neu (setLanguage) — deshalb hier
+                oben, wo noch nichts eingegeben wurde. */}
+            <div className="border border-surface-700 rounded-lg p-3 bg-surface-900/50">
+              <label className="text-xs font-medium text-surface-300 block mb-1">🌐 {tr('Sprache')}</label>
+              <p className="text-[10px] text-surface-600 mb-2">{tr('Gilt für die ganze Oberfläche. Später jederzeit unter „System" änderbar.')}</p>
+              <select value={lang} onChange={e => { if (e.target.value !== lang) setLanguage(e.target.value) }}
+                className="w-full text-sm">
+                {availableLanguages().map(l => (
+                  <option key={l.code} value={l.code}>{l.name}{l.builtin ? '' : ' ·'}</option>
+                ))}
+              </select>
+            </div>
 
             {/* 2.1: Zeitzone gleich am Anfang — Basis für Betriebszeiten & Uhrzeiten */}
             <div className="border border-surface-700 rounded-lg p-3 bg-surface-900/50">
@@ -604,8 +723,11 @@ export default function Setup({ setCurrentPage }) {
           </div>
         )}
 
-        {/* ── Step 4: Homing / Calibration ── */}
-        {step === 4 && (
+        {/* ── Step 5: Homing / Kalibrierung ──
+            Stand bis v1.0.163 fälschlich auf `step === 4` (aus der Zeit vor dem
+            Komponenten-Schritt): Schritt 4 zeigte Regal UND Homing untereinander,
+            der letzte Schritt blieb leer. */}
+        {step === 5 && (
           <div className="space-y-3">
             <p className="text-xs text-surface-500">
               {tr('Für den Auswurf braucht die Farm eine Homing-Datei (G28 + Z200), die vor dem Greifen an den Drucker gesendet wird.')}
@@ -620,6 +742,33 @@ export default function Setup({ setCurrentPage }) {
               </button>
             )}
             {homing?.error && <p className="text-xs text-red-400">{homing.error}</p>}
+
+            {/* Achsgrenzen: einmal vom Gerät holen — danach verweigert Printloom
+                jede Bewegung, die aus der Achse fahren würde, VOR dem Senden. */}
+            <div className="border-t border-surface-800 pt-3 space-y-2">
+              <p className="text-xs font-medium text-surface-300">{tr('Achsgrenzen des OTTOeject')}</p>
+              <p className="text-[10px] text-surface-600">
+                {tr('Einmal vom Gerät holen: danach wird jede Bewegung vorher geprüft und eine, die aus der Achse fährt, gar nicht erst gesendet.')}
+              </p>
+              <div className="flex items-center gap-2">
+                <button onClick={fetchLimits} disabled={limitsBusy} className="btn-secondary text-sm disabled:opacity-50">
+                  {limitsBusy ? tr('Lese…') : tr('⤓ Grenzen vom Gerät holen')}
+                </button>
+                {limitsMsg && <span className={`text-[11px] font-mono ${limitsErr ? 'text-red-400' : 'text-emerald-400'}`}>{limitsMsg}</span>}
+              </div>
+            </div>
+
+            {/* Trockenlauf: die Sequenz durchspielen, ohne etwas zu senden. */}
+            <div className="border-t border-surface-800 pt-3 space-y-2">
+              <p className="text-xs font-medium text-surface-300">{tr('Trockenlauf')}</p>
+              <p className="text-[10px] text-surface-600">
+                {tr('Spielt die Sequenz Schritt für Schritt durch, OHNE etwas an Drucker oder OTTOeject zu senden — zeigt, welches Fach getroffen würde und ob eine Bewegung aus der Achse fährt.')}
+              </p>
+              <button onClick={runDry} disabled={dryBusy} className="btn-secondary text-sm disabled:opacity-50">
+                {dryBusy ? tr('Läuft…') : tr('▶ Trockenlauf starten')}
+              </button>
+              {dry && <DryRunResult dry={dry} tr={tr} />}
+            </div>
 
             {/* 2.9 — Einrichtungs-Checkliste: was ist bereit, was fehlt noch */}
             <div className="border-t border-surface-800 pt-3">

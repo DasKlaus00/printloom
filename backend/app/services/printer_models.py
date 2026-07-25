@@ -10,6 +10,13 @@ aus dieser Datei:
   enclosed      geschlossenes Gehäuse (Tür-Operationen sinnvoll)
   ams           AMS möglich (Farb-/Material-Abgleich)
   calibration   Kalibrierung per MQTT anstoßbar (Bett/Vibration/Motorgeräusch)
+  bed_mm        Kantenlänge der Druckplatte in mm — bestimmt, welche Platte der
+                Greifer holt (Rückzugs-Y) und was im Drucker-Tab vorbelegt wird
+  preset        ID der Geometrie-Vorlage (frontend/src/services/printers.js) mit
+                fertigen Anfahr-Positionen. None = keine Vorlage vorhanden →
+                Positionen einmessen (Einmess-Assistent). Bewusst nur gesetzt, wo
+                das Fahrgestell wirklich passt: X1/X1E teilen den X1C-Rahmen,
+                A1 mini und H2D bekommen KEINE geratene Vorlage.
 
 `serial_prefixes` und `dev_models` dienen NUR der Vorbelegung (Netzwerk-Suche /
 Altbestand): sie sind gut belegt, aber nicht garantiert. Die Kamera-Entscheidung
@@ -24,41 +31,41 @@ BAMBU = "bambu"
 
 MODELS = [
     {"id": "x1c", "label": "Bambu Lab X1 Carbon", "series": "x1", "camera": RTSP,
-     "enclosed": True, "ams": True, "calibration": True,
+     "bed_mm": 256, "preset": "x1c", "enclosed": True, "ams": True, "calibration": True,
      "serial_prefixes": ("00M",), "dev_models": ("BL-P001",),
      "aliases": ("x1 carbon", "x1carbon", "x1-carbon", "x1c", "carbon")},
     {"id": "x1", "label": "Bambu Lab X1", "series": "x1", "camera": RTSP,
-     "enclosed": True, "ams": True, "calibration": True,
+     "bed_mm": 256, "preset": "x1c", "enclosed": True, "ams": True, "calibration": True,
      "serial_prefixes": ("00W",), "dev_models": ("BL-P002",),
      "aliases": ("x1",)},
     {"id": "x1e", "label": "Bambu Lab X1E", "series": "x1", "camera": RTSP,
-     "enclosed": True, "ams": True, "calibration": True,
+     "bed_mm": 256, "preset": "x1c", "enclosed": True, "ams": True, "calibration": True,
      "serial_prefixes": ("03W",), "dev_models": (),
      "aliases": ("x1e", "x1 e")},
     {"id": "p1s", "label": "Bambu Lab P1S", "series": "p1", "camera": BAMBU,
-     "enclosed": True, "ams": True, "calibration": False,
+     "bed_mm": 256, "preset": "p1s", "enclosed": True, "ams": True, "calibration": False,
      "serial_prefixes": ("01S",), "dev_models": ("C12",),
      "aliases": ("p1s",)},
     {"id": "p1p", "label": "Bambu Lab P1P", "series": "p1", "camera": BAMBU,
-     "enclosed": False, "ams": True, "calibration": False,
+     "bed_mm": 256, "preset": "p1p", "enclosed": False, "ams": True, "calibration": False,
      "serial_prefixes": ("01P",), "dev_models": ("C11",),
      "aliases": ("p1p",)},
     {"id": "a1", "label": "Bambu Lab A1", "series": "a1", "camera": BAMBU,
-     "enclosed": False, "ams": True, "calibration": False,
+     "bed_mm": 256, "preset": "a1", "enclosed": False, "ams": True, "calibration": False,
      "serial_prefixes": ("039",), "dev_models": ("N2S",),
      "aliases": ("a1",)},
     {"id": "a1mini", "label": "Bambu Lab A1 mini", "series": "a1", "camera": BAMBU,
-     "enclosed": False, "ams": True, "calibration": False,
+     "bed_mm": 180, "preset": None, "enclosed": False, "ams": True, "calibration": False,
      "serial_prefixes": ("030",), "dev_models": ("N1",),
      "aliases": ("a1 mini", "a1mini", "a1-mini")},
     # Neuere/unbekannte Modelle: Kamera bleibt „unbekannt" → Port-Probe entscheidet.
     # Lieber ehrlich offen als ein falsch geratenes Protokoll fest eintragen.
     {"id": "h2d", "label": "Bambu Lab H2D", "series": "h2", "camera": None,
-     "enclosed": True, "ams": True, "calibration": False,
+     "bed_mm": 350, "preset": None, "enclosed": True, "ams": True, "calibration": False,
      "serial_prefixes": (), "dev_models": (),
      "aliases": ("h2d",)},
     {"id": "other", "label": "Anderer / unbekannter Drucker", "series": None, "camera": None,
-     "enclosed": True, "ams": True, "calibration": False,
+     "bed_mm": None, "preset": None, "enclosed": True, "ams": True, "calibration": False,
      "serial_prefixes": (), "dev_models": (), "aliases": ()},
 ]
 
@@ -123,5 +130,6 @@ def public_list() -> list:
     """Für die UI: nur Anzeige-relevante Felder, in fester Reihenfolge."""
     return [{"id": m["id"], "label": m["label"], "series": m["series"],
              "camera": m["camera"], "enclosed": m["enclosed"],
-             "ams": m["ams"], "calibration": m["calibration"]}
+             "ams": m["ams"], "calibration": m["calibration"],
+             "bed_mm": m["bed_mm"], "preset": m["preset"]}
             for m in MODELS]

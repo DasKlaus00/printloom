@@ -3,6 +3,7 @@ import { useLanguage } from '../services/i18n'
 import { controlService, rackManagerService, deviceService, printerService } from '../services/api'
 import { PRINTERS, CUSTOM_PRINTER } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
+import TeachIn from '../components/TeachIn'
 
 /* ── Drucker-Tab ────────────────────────────────────────────────────────────────
    Ein Drucker pro Printloom. Modell wählen → Positionen je Aufgabe (Tür auf/zu,
@@ -62,7 +63,7 @@ function SpeedSelect({ value, onChange }) {
    Entweder X/Y/Z-Werte ODER (Feinjustage) ein eigener, editierbarer G-code. */
 function OpCard({ op, icon, title, fields = [], extra, note, busy, gcodeOn, onTest, onToggle,
                  overrideVal, canOverride, gcodeOnly, onLoadGcode, onChangeGcode, onClearGcode, effHint,
-                 speedVal, onSpeed }) {
+                 speedVal, onSpeed, onTeach, teachNode }) {
   const { tr } = useLanguage()
   const showGcode = gcodeOnly || typeof overrideVal === 'string'
   const gval = overrideVal ?? ''
@@ -72,10 +73,18 @@ function OpCard({ op, icon, title, fields = [], extra, note, busy, gcodeOn, onTe
         <p className="text-sm font-medium text-surface-200 min-w-0 truncate">{icon} {title}</p>
         <div className="flex items-center gap-1.5 shrink-0">
           <SpeedSelect value={speedVal} onChange={v => onSpeed(op, v)} />
+          {/* Einmessen statt Zahlen raten: anfahren, mit den Pfeilen justieren,
+              „Hierher übernehmen" schreibt die Ist-Position in die Felder. */}
+          {onTeach && (
+            <button onClick={() => onTeach(op)} disabled={busy} title={tr('Position einmessen')}
+              className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">📐</button>
+          )}
           <button onClick={() => onTest(op, tr('{0}…', title), extra)} disabled={busy}
             className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">{tr('▶ Test')}</button>
         </div>
       </div>
+
+      {teachNode}
 
       {showGcode ? (
         <div className="space-y-1.5">
@@ -158,7 +167,7 @@ const CALIB_OPTIONS = [
   { key: 'motor_noise_cancellation', label: 'Motorgeräusch-Abgleich' },
 ]
 
-function PrinterSettingsPanel({ deviceId, printerName }) {
+function PrinterSettingsPanel({ deviceId, printerName, canCalibrate }) {
   const { tr } = useLanguage()
   const [open, setOpen]     = useState(false)
   const [s, setS]           = useState(null)     // gelesene Einstellungen
@@ -287,26 +296,34 @@ function PrinterSettingsPanel({ deviceId, printerName }) {
             )}
           </div>
 
-          {/* Kalibrierung */}
-          <div className="pt-2 border-t border-surface-800/50 space-y-1.5">
-            <p className="text-[11px] font-medium text-surface-300">{tr('Kalibrierung (X1-Serie)')}</p>
-            <p className="text-[9px] text-surface-600">
-              {tr('Alle drei zusammen dauern ~16 Minuten und blockieren den Drucker. Nur starten, wenn nichts läuft — die Farm sollte gestoppt sein.')}
-            </p>
-            <div className="flex items-center gap-3 flex-wrap">
-              {CALIB_OPTIONS.map(o => (
-                <label key={o.key} className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="checkbox" checked={calib.includes(o.key)}
-                    onChange={e => setCalib(c => e.target.checked ? [...c, o.key] : c.filter(k => k !== o.key))} />
-                  <span className="text-[11px] text-surface-400">{tr(o.label)}</span>
-                </label>
-              ))}
+          {/* Kalibrierung — nur bei Modellen, die sie per MQTT annehmen (X1-Serie).
+              Vorher stand der Knopf auch beim P1S/A1 da und tat schlicht nichts. */}
+          {canCalibrate !== false && (
+            <div className="pt-2 border-t border-surface-800/50 space-y-1.5">
+              <p className="text-[11px] font-medium text-surface-300">{tr('Kalibrierung (X1-Serie)')}</p>
+              <p className="text-[9px] text-surface-600">
+                {tr('Alle drei zusammen dauern ~16 Minuten und blockieren den Drucker. Nur starten, wenn nichts läuft — die Farm sollte gestoppt sein.')}
+              </p>
+              <div className="flex items-center gap-3 flex-wrap">
+                {CALIB_OPTIONS.map(o => (
+                  <label key={o.key} className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" checked={calib.includes(o.key)}
+                      onChange={e => setCalib(c => e.target.checked ? [...c, o.key] : c.filter(k => k !== o.key))} />
+                    <span className="text-[11px] text-surface-400">{tr(o.label)}</span>
+                  </label>
+                ))}
+              </div>
+              <button onClick={runCalibration} disabled={calibBusy || !calib.length}
+                className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">
+                {calibBusy ? tr('Starte…') : tr('▶ Kalibrierung starten')}
+              </button>
             </div>
-            <button onClick={runCalibration} disabled={calibBusy || !calib.length}
-              className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">
-              {calibBusy ? tr('Starte…') : tr('▶ Kalibrierung starten')}
-            </button>
-          </div>
+          )}
+          {canCalibrate === false && (
+            <p className="pt-2 border-t border-surface-800/50 text-[10px] text-surface-600">
+              {tr('{0} nimmt keine Kalibrierung über Printloom entgegen — die läuft am Drucker selbst.', printerName)}
+            </p>
+          )}
 
           {msg && (
             <p className={`text-[11px] font-mono ${msg.err ? 'text-red-400' : 'text-emerald-400'}`}>{msg.text}</p>
@@ -382,6 +399,11 @@ export default function Drucker() {
   const [gcodeLine, setGcodeLine] = useState('')
   const [bambuId, setBambuId] = useState(null)   // verbundener Bambu-Drucker (für „Bett → Z")
   const [bedZ, setBedZ] = useState(200)          // Ziel-Z des Druckerbetts (Ladeposition = 200)
+  // Modell des angelegten Druckers + Registry (printer_models). Damit weiß die Seite,
+  // ob es eine Tür gibt, ob Kalibrierung geht und welche Geometrie-Vorlage passt —
+  // statt das aus der gewählten Vorlage zu erraten.
+  const [deviceModel, setDeviceModel] = useState('')
+  const [modelList, setModelList]     = useState([])
 
   const hasDoor = enclosed && !!(doorOpen && doorClose)
   const yPullback = plate === '220' ? 30 : 5
@@ -481,6 +503,26 @@ export default function Drucker() {
     return () => clearTimeout(t)
   }, [geometry])
 
+  // ── Einmessen (Phase 2.1) ──
+  // Statt Zahlen zu raten: hinfahren, mit den Pfeilen justieren, Ist-Position
+  // übernehmen. Drucker-Positionen werden OHNE Regal-Versatz gespeichert (die
+  // Maschinen-X ist Basis + xOff) — beim Übernehmen also zurückrechnen.
+  const [teachOp, setTeachOp] = useState(null)
+  const toggleTeach = (op) => setTeachOp(t => (t === op ? null : op))
+
+  const applyTeachPrinter = (setter) => (pos) => {
+    setter(s => ({ ...s, x: r1(pos.x - xOff), y: r1(pos.y), z: r1(pos.z) }))
+    setTeachOp(null)
+  }
+  // Regal: gemessen wird Fach 1 in Regal 1. Daraus folgen Start-X (abzüglich des
+  // Regal-Versatzes, s. slot_position), Y-Engage und die Höhe von Fach 1.
+  const applyTeachRack = (pos) => {
+    setX(r1(pos.x - xOff))
+    setY(r1(pos.y))
+    setFirstZ(r1(pos.z))
+    setTeachOp(null)
+  }
+
   // Achsgrenzen vom Gerät holen (Klipper toolhead.axis_maximum) → in die Geometrie.
   const fetchLimits = async () => {
     setLimitsBusy(true); setLimitsMsg('')
@@ -561,10 +603,15 @@ export default function Drucker() {
   }
 
   // Verbundenen Bambu-Drucker ermitteln (für „Bett → Z" — bewegt den X1C, nicht den OTTOeject).
+  // Dazu sein MODELL: davon hängen Tür, Kalibrierung und die passende Geometrie-Vorlage ab.
   useEffect(() => {
     deviceService.listDevices()
-      .then(r => { const b = (r?.data || []).find(d => d.device_type === 'bambu_lab'); if (b) setBambuId(b.id) })
+      .then(r => {
+        const b = (r?.data || []).find(d => d.device_type === 'bambu_lab')
+        if (b) { setBambuId(b.id); setDeviceModel(b.model || '') }
+      })
       .catch(() => {})
+    deviceService.listModels().then(r => setModelList(r.data?.models || [])).catch(() => {})
   }, [])
 
   // Druckerbett auf Ziel-Z fahren (absolut). Z200 = Ladeposition für den Platten-Wechsel.
@@ -623,7 +670,17 @@ export default function Drucker() {
   // Direkte Drucker-Steuerung (Bett fahren/homen, Einstellungen) geht nur bei Bambu Lab —
   // nur dafür hat Printloom eine Verbindung (MQTT). Bei Fremdmodellen (Creality, Elegoo,
   // Anycubic, Flashforge, Custom) wird die Sektion ausgeblendet statt tote Knöpfe zu zeigen.
-  const isBambuModel = ['x1c', 'p1s', 'p1p', 'a1'].includes(printerId)
+  // Maßgeblich ist das MODELL des angelegten Geräts; die Vorlagen-ID ist nur der
+  // Rückfall für Installationen, bei denen noch kein Modell gesetzt ist.
+  const modelInfo    = modelList.find(m => m.id === deviceModel) || null
+  const isBambuModel = deviceModel
+    ? true                                   // im Geräte-Formular gibt es nur Bambu-Modelle
+    : ['x1c', 'p1s', 'p1p', 'a1'].includes(printerId)
+  // Passt die gewählte Geometrie-Vorlage zum angelegten Drucker? Ein X1C-Preset auf
+  // einem P1S fährt sonst an die falsche Stelle — das ist ein teurer Fehler.
+  const presetMismatch = modelInfo?.preset && printerId !== CUSTOM_PRINTER.id
+    && printerId !== modelInfo.preset
+  const modelNoPreset  = !!deviceModel && modelInfo && !modelInfo.preset
   const bedControlReady = isBambuModel && bambuId != null
   // Custom Printer: reiner G-code-Editor je Op. Named Printer: Positions-Felder +
   // Knopf „Eigenen G-code bearbeiten"; sobald ein Override existiert, zeigt die Karte
@@ -668,6 +725,22 @@ export default function Drucker() {
         {/* ── Links: Modell wählen ── */}
         <div className="card p-3 space-y-1.5 self-start">
           <p className="section-label">{tr('1 · Drucker-Modell')}</p>
+          {/* Angelegtes Gerät kennt sein Modell (Konfiguration → Geräte). Passt die
+              gewählte Vorlage nicht dazu, fährt der Arm an die falsche Stelle. */}
+          {presetMismatch && (
+            <div className="rounded-lg border border-amber-800/60 bg-amber-950/30 px-2.5 py-2 text-[10px] text-amber-300 space-y-1.5">
+              <p>{tr('Dein angelegter Drucker ist ein {0} — hier ist eine andere Vorlage gewählt. Die Positionen passen dann nicht.', modelInfo.label)}</p>
+              <button onClick={() => {
+                const p = [...PRINTERS, CUSTOM_PRINTER].find(x => x.id === modelInfo.preset)
+                if (p) pickPrinter(p)
+              }} className="text-blue-300 hover:text-blue-200 underline">{tr('Passende Vorlage wählen')}</button>
+            </div>
+          )}
+          {modelNoPreset && (
+            <p className="rounded-lg border border-surface-700 bg-surface-900/60 px-2.5 py-2 text-[10px] text-surface-400">
+              {tr('Für {0} gibt es keine fertige Vorlage — die Positionen einmessen (📐 an jeder Karte).', modelInfo.label)}
+            </p>
+          )}
           {[...PRINTERS, CUSTOM_PRINTER].map(p => (
             <button key={p.id} onClick={() => pickPrinter(p)}
               className={`w-full flex items-center gap-2 text-left px-2.5 py-1.5 rounded-lg border text-sm transition-colors ${
@@ -790,7 +863,8 @@ export default function Drucker() {
 
           {/* Drucker-Einstellungen — nur für Bambu-Modelle (nur die kann Printloom
               per MQTT erreichen). Direkt unter den Controls, wie gewünscht. */}
-          {isBambuModel && <PrinterSettingsPanel deviceId={bambuId} printerName={printerName} />}
+          {isBambuModel && <PrinterSettingsPanel deviceId={bambuId} printerName={printerName}
+            canCalibrate={modelInfo ? modelInfo.calibration : undefined} />}
 
           {/* Operations-Karten */}
           <div className="grid gap-3 md:grid-cols-2">
@@ -825,6 +899,13 @@ export default function Drucker() {
             <OpCard op="move_to_printer" icon="➡" title={tr('Vor Drucker fahren')}
               busy={jog.busy} gcodeOn={useGcode.move_to_printer} onTest={sendOp} onToggle={toggleGcode}
               speedVal={speedFactors.move_to_printer ?? ''} onSpeed={setOpSpeed}
+              onTeach={toggleTeach}
+              teachNode={teachOp === 'move_to_printer' && (
+                <TeachIn title={tr('Anfahr-Position')} axes={['x', 'y', 'z']}
+                  hint={tr('Vor den Drucker fahren und so justieren, wie der Arm ansetzen soll.')}
+                  onApproach={() => controlService.runOp({ op: 'move_to_printer', geometry })}
+                  onApply={applyTeachPrinter(setMoveTo)} onClose={() => setTeachOp(null)} />
+              )}
               {...opGcodeProps('move_to_printer')}
               effHint={absHint(moveTo)}
               note={tr('Sichere Anfahrt vor den Drucker — eigene Start-Position. Standard = Auswurf-Position; hier fein justierbar.')}
@@ -836,6 +917,13 @@ export default function Drucker() {
             <OpCard op="eject" icon="⬆" title={tr('Platte auswerfen')}
               busy={jog.busy} gcodeOn={useGcode.eject} onTest={sendOp} onToggle={toggleGcode}
               speedVal={speedFactors.eject ?? ''} onSpeed={setOpSpeed}
+              onTeach={toggleTeach}
+              teachNode={teachOp === 'eject' && (
+                <TeachIn title={tr('Auswurf-Start')} axes={['x', 'y', 'z']}
+                  hint={tr('Der Greifer muss genau an der Platte im Drucker ansetzen. Erst anfahren, dann justieren.')}
+                  onApproach={() => controlService.runOp({ op: 'move_to_printer', geometry })}
+                  onApply={applyTeachPrinter(setEject)} onClose={() => setTeachOp(null)} />
+              )}
               {...opGcodeProps('eject')}
               effHint={absHint(eject)}
               fields={[
@@ -846,6 +934,13 @@ export default function Drucker() {
             <OpCard op="place" icon="⬇" title={tr('Platte einlegen (Place)')}
               busy={jog.busy} gcodeOn={useGcode.place} onTest={sendOp} onToggle={toggleGcode}
               speedVal={speedFactors.place ?? ''} onSpeed={setOpSpeed}
+              onTeach={toggleTeach}
+              teachNode={teachOp === 'place' && (
+                <TeachIn title={tr('Einlege-Position')} axes={['x', 'y', 'z']}
+                  hint={tr('Position, an der die Platte im Drucker abgesetzt wird.')}
+                  onApproach={() => controlService.runOp({ op: 'move_to_printer', geometry })}
+                  onApply={applyTeachPrinter(setLoad)} onClose={() => setTeachOp(null)} />
+              )}
               {...opGcodeProps('place')}
               effHint={absHint(load)}
               fields={[
@@ -872,6 +967,19 @@ export default function Drucker() {
                 <p className="text-[10px] text-surface-500">
                   {tr('Physische Regal-Positionen (mm). Regalzahl ({0}), Fächer/Regal ({1}) & Magazin-Fach ({2}) kommen global aus der Konfiguration → Rack Configuration.', numRacks, rackCfg.slots_per_rack, magazineSlot || '—')}
                 </p>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-surface-500">{tr('Positionen')}</span>
+                  <button onClick={() => toggleTeach('rack')}
+                    className="text-[11px] text-blue-400 hover:text-blue-300">
+                    {teachOp === 'rack' ? tr('✕ Einmessen schließen') : tr('📐 Regal einmessen')}
+                  </button>
+                </div>
+                {teachOp === 'rack' && (
+                  <TeachIn title={tr('Regal 1, Fach 1')} axes={['x', 'y', 'z']}
+                    hint={tr('Der Greifer soll genau vor Fach 1 des ERSTEN Regals stehen (Regal 1 = am Drucker). Daraus folgen Start-X, Y-Engage und die Höhe von Fach 1; die übrigen Fächer/Regale rechnet Printloom aus Fach-Abstand und Regal-Versatz.')}
+                    onApproach={() => controlService.runOp({ op: 'approach', geometry, rack: 1, slot: 1 })}
+                    onApply={applyTeachRack} onClose={() => setTeachOp(null)} />
+                )}
                 <div className="grid grid-cols-3 gap-2">
                   <NumField label={tr('Start-X (Regal 1)')} hint={tr('x_unclamp')} value={xUnclamp} onChange={setX} />
                   <NumField label={tr('Y-Engage')} value={yEngage} onChange={setY} />
