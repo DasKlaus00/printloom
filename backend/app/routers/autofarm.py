@@ -28,6 +28,7 @@ from app.services import ottoeject_motion as _motion
 from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _expand_mapping_to_slots, _get_plate_gcode_param, _list_plates, _repack_single_plate, _ams_match_confident, _ams_slots_from_raw, capture_snapshot, publish_live_status
 from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _load as _rack_load
 from app.services import hms
+from app.services import rack_logic as _rack_logic
 from app.services.rack_logic import (
     slots_needed as _slots_needed_base,
     is_blocked_from_below as _is_blocked_base,
@@ -380,72 +381,37 @@ def _rack_data() -> dict:
     return {}
 
 
+# Dünne Wrapper um die reine Platten-Quellen-Logik (app/services/rack_logic.py):
+# lesen nur slots.json nach, die Entscheidungen selbst stehen dort — dieselben
+# Funktionen nutzt der Rack Manager, damit Farm und UI nie auseinanderlaufen.
 def _magazine_slot_cfg(data: dict = None) -> int:
     """Konfiguriertes Magazin-Fach; 0 = KEIN Magazin (Platten liegen in den normalen
     Fächern und werden von dort gegriffen — Setup-Assistent „7. Fach = normales Fach")."""
-    d = _rack_data() if data is None else data
-    try:
-        return max(0, int(d.get("magazine_slot", 7)))
-    except (TypeError, ValueError):
-        return 7
+    return _rack_logic.magazine_slot_of(_rack_data() if data is None else data)
 
 
 def _plate_source(data: dict = None) -> tuple:
     """Woher kommt die NÄCHSTE leere Platte? → (rack, slot, from_magazine).
-
-    Zwei Aufbauten (Komponenten-Auswahl im Setup):
-      • MIT Magazin (magazine_slot z. B. 7): Stapel leerer Platten liegt im Magazin-Fach;
-        gegriffen wird immer dieses Fach des ersten Regals mit Bestand > 0.
-      • OHNE Magazin (magazine_slot = 0): die leeren Platten stecken bereits in den
-        normalen Fächern 1..n. Gegriffen wird von OBEN nach unten (Fach = Bestand),
-        damit der Arm nie über eine noch liegende Platte hinweg muss. Der Zähler
-        (`magazine_counts`) sagt, wie viele Platten noch drin sind → Fach n.
-    """
-    d = _rack_data() if data is None else data
-    mag = _magazine_slot_cfg(d)
-    counts = d.get("magazine_counts") or []
-    rack = 1
-    count = 0
-    for i, c in enumerate(counts):
-        try:
-            c = int(c)
-        except (TypeError, ValueError):
-            continue
-        if c > 0:
-            rack, count = i + 1, c
-            break
-    if mag > 0:
-        return rack, mag, True
-    # Ohne Magazin: oberste noch belegte Position; ohne Bestand Fach 1 als Fallback.
-    return rack, max(1, count), False
+    Siehe rack_logic.plate_source (mit/ohne Magazin, Griff von oben nach unten)."""
+    return _rack_logic.plate_source(_rack_data() if data is None else data)
 
 
 def _reserved_source_slots(data: dict) -> set:
     """Fächer, in denen (ohne Magazin) noch LEERE Platten für den Nachschub liegen.
     Die dürfen NICHT als Ablageziel vergeben werden — sonst legt der Arm einen
     fertigen Druck auf eine bereits belegte Position (Kollision)."""
-    if _magazine_slot_cfg(data) > 0:
-        return set()          # mit Magazin: normale Fächer sind alle frei vergebbar
-    reserved = set()
-    for i, c in enumerate(data.get("magazine_counts") or []):
-        try:
-            c = int(c)
-        except (TypeError, ValueError):
-            continue
-        for s in range(1, c + 1):
-            reserved.add(f"{i + 1}-{s}")
-    return reserved
+    return _rack_logic.reserved_source_slots(data)
 
 
 def _magazine_count() -> int:
-    """Summe aller per-Rack Magazin-Zähler."""
+    """Wie viele LEERE Platten stehen bereit? Mit Magazin die Summe der Zähler, ohne
+    Magazin die Zahl der als bestückt markierten Fächer (rack_logic)."""
     try:
         if os.path.exists(SLOTS_PATH):
             with open(SLOTS_PATH) as f:
                 d = json.load(f)
-            counts = d.get("magazine_counts")
-            if counts:
-                return max(0, sum(int(c) for c in counts))
+            if d.get("magazine_counts") or _rack_logic.uses_marks(d):
+                return max(0, _rack_logic.empty_plate_count(d))
             # Legacy: max_plates minus belegte Slots
             max_p    = int(d.get("max_plates", 4))
             occupied = sum(1 for s in d.get("slots", {}).values()
@@ -908,8 +874,9 @@ def _stack_vars() -> tuple[str, str]:
     try:
         d = _rack_data()
         if d:
-            counts = d.get("magazine_counts")
-            if counts:
+            # Sobald es einen Bestand gibt — Zähler ODER markierte Fächer — entscheidet
+            # die Platten-Quelle. Nur ohne beides bleibt der alte feste stack_slot.
+            if d.get("magazine_counts") or _rack_logic.uses_marks(d):
                 rack, slot, _ = _plate_source(d)
                 return str(rack), str(slot)
             mag_slot = str(_magazine_slot_cfg(d) or 1)
@@ -932,7 +899,7 @@ async def _magazine_gate() -> tuple:
         _log("📦 Magazin leer — OTTOeject parkt. Platten auffüllen, Magazin-Zähler setzen, dann fortsetzen."
              if with_mag else
              "📦 Keine leeren Platten mehr in den Fächern — OTTOeject parkt. Platten einlegen, "
-             "Zähler im Regal-Panel setzen, dann fortsetzen.")
+             "die Fächer im Regal-Panel mit ▭ als bestückt markieren, dann fortsetzen.")
         try:
             await _do_macro("PARK_OTTOEJECT")
         except Exception as e:
@@ -940,7 +907,8 @@ async def _magazine_gate() -> tuple:
         _farm["paused"] = True
         _farm["error"]  = ("Magazin leer — Platten auffüllen, Zähler anpassen, dann fortsetzen"
                            if with_mag else
-                           "Keine leeren Platten in den Fächern — einlegen, Zähler anpassen, dann fortsetzen")
+                           "Keine leeren Platten in den Fächern — einlegen und im Regal-Panel "
+                           "als bestückt markieren, dann fortsetzen")
     while _farm["paused"] and not _farm["stopping"]:
         await asyncio.sleep(0.5)
     if _farm["stopping"]:
@@ -955,20 +923,39 @@ async def _magazine_gate() -> tuple:
     return _stack_vars()
 
 
-def _decrement_magazine():
-    """Zähler für den aktiven Magazin-Rack (erster mit Zähler > 0) um 1 reduzieren."""
+def _decrement_magazine(rack: int = None, slot: int = None):
+    """Eine leere Platte ist entnommen — Bestand nachziehen.
+
+    MIT Magazin: Zähler des aktiven Regals (erster mit Zähler > 0) −1.
+    OHNE Magazin: die Markierung des Fachs löschen, aus dem gegriffen wurde. Ohne
+    Angabe wird das Fach genommen, das die Quelle gerade meldet — also genau das
+    eben gegriffene (der Bestand ist noch unverändert)."""
     try:
-        if os.path.exists(SLOTS_PATH):
-            with open(SLOTS_PATH) as f:
-                d = json.load(f)
-            counts = d.get("magazine_counts")
-            if counts:
-                for i, cnt in enumerate(counts):
-                    if int(cnt) > 0:
-                        d["magazine_counts"][i] = max(0, int(cnt) - 1)
-                        storage.write_json(SLOTS_PATH, d)
-                        _log(f"📦 Magazin R{i+1}: {d['magazine_counts'][i]} Platten verbleibend")
-                        return
+        if not os.path.exists(SLOTS_PATH):
+            return
+        with open(SLOTS_PATH) as f:
+            d = json.load(f)
+
+        if _rack_logic.magazine_slot_of(d) <= 0:
+            if rack is None or slot is None:
+                rack, slot, _ = _rack_logic.plate_source(d)
+            key = f"{int(rack)}-{int(slot)}"
+            s = (d.get("slots") or {}).get(key)
+            if isinstance(s, dict) and s.get("empty_plate"):
+                s["empty_plate"] = False
+                storage.write_json(SLOTS_PATH, d)
+                _log(f"📥 Leerplatte aus Fach {key} entnommen — "
+                     f"{_rack_logic.empty_plate_count(d)} verbleibend")
+            return
+
+        counts = d.get("magazine_counts")
+        if counts:
+            for i, cnt in enumerate(counts):
+                if int(cnt) > 0:
+                    d["magazine_counts"][i] = max(0, int(cnt) - 1)
+                    storage.write_json(SLOTS_PATH, d)
+                    _log(f"📦 Magazin R{i+1}: {d['magazine_counts'][i]} Platten verbleibend")
+                    return
     except Exception as e:
         logger.warning(f"_decrement_magazine failed: {e}")
 
@@ -1925,7 +1912,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         _log(f"▶ Printloom-Op: {op}" + (f" (Regal {rk} Fach {sl})" if (is_grab or is_store) else ""))
         await _do_macro(script)   # Klipper HTTP blocks until movement is complete
         if is_grab:
-            _decrement_magazine()
+            # Gegriffenes Fach ausdrücklich mitgeben — ohne Magazin wird genau dessen
+            # Markierung gelöscht (nicht „das nächstbeste" Fach).
+            _decrement_magazine(rk, sl)
             if job.get("slot") and job["slot"] != "1-0":
                 _rack_update(job["slot"], "printing", job["fileName"])
             if _farm.get("_in_first_start"):

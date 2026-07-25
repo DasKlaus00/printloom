@@ -1494,6 +1494,23 @@ function AutoFarm({ setCurrentPage } = {}) {
     }
   }
 
+  // Ohne Magazin: „hier liegt eine leere Platte" markieren/aufheben. Die Farm greift
+  // ihren Nachschub aus diesen Fächern (oberstes zuerst) und legt fertige Drucke
+  // NIE dorthin ab — sonst käme der Druck auf eine liegende Platte.
+  const toggleEmptyPlate = async (slotId) => {
+    const has = plateSlots.has(slotId)
+    try {
+      await rackManagerService.updateSlot(slotId, { empty_plate: !has })
+      const r = await rackManagerService.getAll()
+      setRackData(r.data)
+      window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
+      showFeedback(has ? tr('Fach {0}: keine Leerplatte mehr', slotId)
+                       : tr('Fach {0}: Leerplatte liegt drin', slotId))
+    } catch (e) {
+      showFeedback(e?.response?.data?.detail || tr('Markierung konnte nicht geändert werden'), false)
+    }
+  }
+
   const assignJobToSlot = async (slotKey) => {
     try {
       await rackManagerService.updateSlot(slotKey, { status: 'free', file_id: null, file_name: null })
@@ -1687,6 +1704,11 @@ function AutoFarm({ setCurrentPage } = {}) {
   const slotTol    = slotTolerance(rackData)
   const numRacks   = rackData?.num_racks        ?? 3
   const slotsPerRack = rackData?.slots_per_rack ?? 6
+  // Aufbau ohne Magazin („alle Fächer = Lagerfächer"): die leeren Platten liegen
+  // einzeln in den Fächern. Dann markiert der Nutzer je Fach, ob eine drin liegt —
+  // und der Magazin-Zähler je Regal entfällt, weil es kein Magazin gibt.
+  const noMagazine = (rackData?.magazine_slot ?? 7) <= 0
+  const plateSlots = new Set(rackData?.empty_plates ?? [])
   const slots      = rackData
     ? Object.entries(rackData.slots ?? {}).sort(([a], [b]) => {
         const [ar, as] = parseSlotKey(a)
@@ -2207,8 +2229,11 @@ function AutoFarm({ setCurrentPage } = {}) {
                     rackData.magazine_count === 0 ? 'border-red-800/60 bg-red-950/30 text-red-400' :
                     rackData.magazine_count <= 1  ? 'border-amber-800/50 bg-amber-950/20 text-amber-400' :
                     'border-surface-700/50 bg-surface-800/30 text-surface-500'
-                  }`}>
-                    📦 {rackData.magazine_count}/{rackData.magazine_total ?? (numRacks * slotsPerRack)}
+                  }`}
+                    title={noMagazine
+                      ? tr('Leere Platten in den Fächern (mit ▭ markiert) — Nachschub der Farm')
+                      : tr('Platten im Magazin')}>
+                    {noMagazine ? '▭' : '📦'} {rackData.magazine_count}/{rackData.magazine_total ?? (numRacks * slotsPerRack)}
                   </span>
                 )}
               </div>
@@ -2235,23 +2260,38 @@ function AutoFarm({ setCurrentPage } = {}) {
                     <p className="text-[9px] text-center font-mono text-surface-600 mb-1 tracking-wide">
                       R{ri+1}
                     </p>
-                    {/* Magazin dieses Regals: Bestand anzeigen + direkt setzen (Enter/Blur) */}
-                    <div
-                      className="flex items-center justify-center gap-1 mb-1.5"
-                      title={tr('Magazin R{0} — Bestand nach dem Auffüllen hier setzen', ri + 1)}
-                    >
-                      <span className={`text-[10px] ${(rackData?.magazine_counts?.[ri] ?? 0) === 0 ? 'opacity-100' : 'opacity-60'}`}>📦</span>
-                      <input
-                        type="number" min="0"
-                        value={magEdit[ri] ?? (rackData?.magazine_counts?.[ri] ?? 0)}
-                        onChange={e => setMagEdit(m => ({ ...m, [ri]: e.target.value }))}
-                        onBlur={e => { if (magEdit[ri] != null) saveMagCount(ri, e.target.value) }}
-                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                        className={`w-11 h-5 text-[10px] font-mono text-center py-0 px-0.5 ${
-                          (magEdit[ri] ?? (rackData?.magazine_counts?.[ri] ?? 0)) == 0 ? 'text-red-400 border-red-900/60' : ''
-                        }`}
-                      />
-                    </div>
+                    {/* Magazin dieses Regals: Bestand anzeigen + direkt setzen (Enter/Blur).
+                        Ohne Magazin gibt es keinen Zähler — dort markiert der Nutzer die
+                        einzelnen Fächer (▭), und hier steht nur, wie viele es sind. */}
+                    {noMagazine ? (
+                      <div className="flex items-center justify-center gap-1 mb-1.5"
+                        title={tr('Leere Platten in R{0} — je Fach mit ▭ markieren', ri + 1)}>
+                        <span className="text-[10px] opacity-60">▭</span>
+                        <span className={`text-[10px] font-mono ${
+                          [...plateSlots].filter(k => k.startsWith(`${ri + 1}-`)).length === 0
+                            ? 'text-red-400' : 'text-surface-500'
+                        }`}>
+                          {[...plateSlots].filter(k => k.startsWith(`${ri + 1}-`)).length}
+                        </span>
+                      </div>
+                    ) : (
+                      <div
+                        className="flex items-center justify-center gap-1 mb-1.5"
+                        title={tr('Magazin R{0} — Bestand nach dem Auffüllen hier setzen', ri + 1)}
+                      >
+                        <span className={`text-[10px] ${(rackData?.magazine_counts?.[ri] ?? 0) === 0 ? 'opacity-100' : 'opacity-60'}`}>📦</span>
+                        <input
+                          type="number" min="0"
+                          value={magEdit[ri] ?? (rackData?.magazine_counts?.[ri] ?? 0)}
+                          onChange={e => setMagEdit(m => ({ ...m, [ri]: e.target.value }))}
+                          onBlur={e => { if (magEdit[ri] != null) saveMagCount(ri, e.target.value) }}
+                          onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                          className={`w-11 h-5 text-[10px] font-mono text-center py-0 px-0.5 ${
+                            (magEdit[ri] ?? (rackData?.magazine_counts?.[ri] ?? 0)) == 0 ? 'text-red-400 border-red-900/60' : ''
+                          }`}
+                        />
+                      </div>
+                    )}
                     <div className="space-y-1">
                       {Array.from({length: slotsPerRack}, (_, si) => {
                         const si2          = slotsPerRack - 1 - si  // visual: 6→1 top to bottom
@@ -2282,6 +2322,11 @@ function AutoFarm({ setCurrentPage } = {}) {
                         const canClear     = !isActive && slot.status !== 'free' && !isLocked
                         // 🔒 nur auf wirklich freien, nicht reservierten Fächern anbieten.
                         const canBlock     = !occupied && !isGhost && !isOther && slot.status === 'free'
+                        // ▭ Leerplatte: nur im Aufbau OHNE Magazin. Ein markiertes Fach ist
+                        // physisch belegt (Nachschub-Platte) — die Farm greift daraus und
+                        // legt dort nie einen fertigen Druck ab.
+                        const hasPlate     = noMagazine && plateSlots.has(key)
+                        const canMarkPlate = noMagazine && !occupied && !isGhost && !isOther && slot.status === 'free'
 
                         return (
                           <div
@@ -2291,6 +2336,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                               isActive ? 'border-blue-800/40 bg-blue-950/10' :
                               isLocked ? 'border-surface-600/50 bg-surface-800/50 opacity-70' :
                               topJob   ? 'border-surface-700/50 bg-surface-900' :
+                              hasPlate ? 'border-emerald-800/40 bg-emerald-950/10' :
                               isGhost  ? 'border-dashed border-surface-700/40 bg-surface-800/15' :
                               'border-surface-800/20 bg-transparent'
                             }`}
@@ -2301,6 +2347,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                               isActive ? 'dot-blue animate-pulse' :
                               isLocked ? 'dot-gray opacity-60' :
                               topJob   ? (S[topJob.status]?.dot ?? 'dot-gray') :
+                              hasPlate ? 'dot-green opacity-70' :
                               isGhost  ? 'dot-gray opacity-50' :
                               isOther  ? 'dot-amber opacity-70' :
                               'dot-gray opacity-30'
@@ -2314,6 +2361,9 @@ function AutoFarm({ setCurrentPage } = {}) {
                                 <p className="text-[9px] text-surface-600 italic truncate leading-tight" title={tr('Belegt durch „{0}" (ragt aus Fach {1})', ghostName.replace(/\.[^.]+$/, ''), ghostBase)}>↑ {ghostName.replace(/\.[^.]+$/, '')}</p>
                               ) : isOther ? (
                                 <p className="text-[9px] text-amber-600/80 truncate leading-tight" title={tr('Hängendes Fach (Status: {0}) — ✓ zum Leeren', slot.status)}>{slot.file_name?.replace(/\.[^.]+$/, '') || tr('belegt')}</p>
+                              ) : hasPlate ? (
+                                <p className="text-[9px] text-emerald-500/90 truncate leading-tight"
+                                   title={tr('Leere Platte liegt hier — die Farm holt sich von hier Nachschub')}>{tr('▭ Leerplatte')}</p>
                               ) : (
                                 <p className={`text-[9px] ${isLocked ? 'text-surface-400' : 'text-surface-800'}`}>{isLocked ? tr('🔒 Belegt') : ''}</p>
                               )}
@@ -2334,7 +2384,18 @@ function AutoFarm({ setCurrentPage } = {}) {
                                 )}
                               </div>
                             )}
-                            {canBlock && (
+                            {/* ▭ Leerplatte — nur ohne Magazin (mit Magazin kommt der
+                                Nachschub aus dem obersten Fach, nicht aus den Lagerfächern) */}
+                            {canMarkPlate && (
+                              <button onClick={() => toggleEmptyPlate(key)}
+                                title={hasPlate
+                                  ? tr('Hier liegt KEINE leere Platte mehr')
+                                  : tr('Hier liegt eine leere Platte — die Farm holt sie von hier und legt nichts darauf ab')}
+                                className={`text-[9px] shrink-0 ml-0.5 ${hasPlate
+                                  ? 'text-emerald-500 hover:text-emerald-300'
+                                  : 'text-surface-700 hover:text-emerald-400'}`}>▭</button>
+                            )}
+                            {canBlock && !hasPlate && (
                               <button onClick={() => toggleSlotBlocked(key)} title={tr('Fach als belegt markieren — der Roboter legt hier nichts ab')}
                                 className="text-[9px] text-surface-700 hover:text-surface-300 shrink-0 ml-0.5">🔒</button>
                             )}
@@ -2349,6 +2410,15 @@ function AutoFarm({ setCurrentPage } = {}) {
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* Ohne Magazin kann man sich zubauen: liegt in JEDEM freien Fach eine
+                leere Platte, bleibt kein Ziel für den fertigen Druck übrig. */}
+            {noMagazine && slots.length > 0 &&
+              !slots.some(([k, s]) => s.status === 'free' && !plateSlots.has(k)) && (
+              <p className="mt-2 px-2 py-1.5 rounded-lg bg-amber-950/30 border border-amber-800/60 text-[10px] text-amber-300">
+                {tr('⚠ In jedem freien Fach liegt eine leere Platte — es bleibt kein Fach für den fertigen Druck. Mindestens ein Fach freilassen (▭ abwählen).')}
+              </p>
             )}
 
             {/* Rack legend */}
@@ -2366,6 +2436,11 @@ function AutoFarm({ setCurrentPage } = {}) {
                 <span className="text-[9px] text-surface-700 flex items-center gap-1">
                   🔒 {tr('Belegt')}
                 </span>
+                {noMagazine && (
+                  <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                    <span className="dot dot-green w-1.5 h-1.5 opacity-70" /> {tr('▭ Leerplatte')}
+                  </span>
+                )}
                 <span className="flex-1 text-right text-[9px] text-surface-700 font-mono">
                   {tr('{0} mm/Fach', slotH)}
                 </span>

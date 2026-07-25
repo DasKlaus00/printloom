@@ -47,7 +47,7 @@ export const TOP_SLOT_OPTIONS = [
   {
     id: 'storage',
     name: 'Alle Fächer = Lagerfächer',
-    desc: 'Kein Magazin: die leeren Platten liegen BEREITS in den Fächern. Die Farm greift sich eine von oben nach unten heraus und legt den fertigen Druck dort wieder ab. Ein Lagerfach mehr, aber Nachschub musst du selbst einlegen.',
+    desc: 'Kein Magazin: die leeren Platten liegen BEREITS in den Fächern. In der Farm-Ansicht markierst du je Fach mit ▭, wo eine leere Platte liegt — die Farm greift von oben nach unten daraus und legt den fertigen Druck in ein Fach OHNE Platte. Ein Lagerfach mehr, aber Nachschub legst du selbst ein.',
   },
 ]
 

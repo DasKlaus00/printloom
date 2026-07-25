@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import UploadedFile, RackConfiguration
 from app.services import storage
+from app.services import rack_logic
 from app.services.rack_logic import DEFAULT_SLOT_TOLERANCE_MM
 from app.paths import db_path
 
@@ -44,8 +45,12 @@ STATUSES = {
 
 
 def _default_slot():
+    # `empty_plate`: In diesem Fach liegt eine LEERE Druckplatte als Nachschub.
+    # Nur im Aufbau OHNE Magazin („alle Fächer = Lagerfächer") relevant — dort
+    # markiert der Nutzer selbst, welche Fächer bestückt sind. Das Fach zählt
+    # dann als physisch belegt, obwohl der Status „free" ist.
     return {"status": "free", "file_id": None, "file_name": None,
-            "object_height_mm": None, "note": ""}
+            "object_height_mm": None, "note": "", "empty_plate": False}
 
 
 def _default_data(num_racks=DEFAULT_NUM_RACKS, slots_per_rack=DEFAULT_SLOTS_PER_RACK):
@@ -66,6 +71,39 @@ def _default_data(num_racks=DEFAULT_NUM_RACKS, slots_per_rack=DEFAULT_SLOTS_PER_
         "max_plates":       4,
         "slots":            slots,
     }
+
+
+def _migrate_empty_plates(data: dict) -> bool:
+    """Aufbau OHNE Magazin: aus dem alten Zähler einmalig Fach-Markierungen machen.
+
+    Bis v1.0.162 war nur bekannt, WIE VIELE leere Platten in einem Regal liegen —
+    welche Fächer das sind, wurde geraten („die untersten n"). Seit v1.0.163 steht
+    es am Fach (`empty_plate`). Damit ein bestehender Aufbau nach dem Update nicht
+    plötzlich „keine Platten" meldet, wird die alte Annahme einmal übernommen.
+    Danach ist der Nutzer die Quelle der Wahrheit — es wird nie wieder überschrieben.
+    Der Merker `empty_plates_migrated` MUSS mitgespeichert werden, sonst würden die
+    Markierungen nach dem Griff der letzten Platte erneut gesetzt (Endlos-Nachschub).
+    Rückgabe: True, wenn sich etwas geändert hat (Aufrufer speichert dann).
+    """
+    if rack_logic.magazine_slot_of(data) > 0:
+        return False
+    if data.get("empty_plates_migrated") or rack_logic.marked_empty_plates(data):
+        return False
+    slots = data.get("slots") or {}
+    spr = int(data.get("slots_per_rack", DEFAULT_SLOTS_PER_RACK))
+    for i, cnt in enumerate(data.get("magazine_counts") or []):
+        try:
+            cnt = max(0, min(spr, int(cnt)))
+        except (TypeError, ValueError):
+            continue
+        for s in range(1, cnt + 1):
+            slot = slots.get(f"{i + 1}-{s}")
+            # Nur wirklich freie Fächer markieren — wo ein Druck liegt, liegt
+            # keine leere Platte.
+            if isinstance(slot, dict) and slot.get("status", "free") == "free":
+                slot["empty_plate"] = True
+    data["empty_plates_migrated"] = True
+    return True
 
 
 def _load() -> dict:
@@ -118,6 +156,8 @@ def _load() -> dict:
                 if len(counts) < nr:
                     counts += [data["magazine_defaults"][i] for i in range(len(counts), nr)]
                 data["magazine_counts"] = counts[:nr]
+            if _migrate_empty_plates(data):
+                _save(data)
             return data
         except Exception as e:
             logger.warning(f"rack_slots.json load failed: {e}")
@@ -421,6 +461,13 @@ def get_all(db: Session = Depends(get_db)):
     max_plates = data.get("max_plates", 4)
     mag_counts = data.get("magazine_counts", [DEFAULT_MAGAZINE_DEFAULT] * nr)
     mag_defs   = data.get("magazine_defaults", [DEFAULT_MAGAZINE_DEFAULT] * nr)
+    # Ohne Magazin zählen die MARKIERTEN Fächer als Bestand (nicht die Zähler) —
+    # so zeigt das Badge in der Farm-Ansicht in beiden Aufbauten dasselbe: wie
+    # viele leere Platten noch bereitliegen.
+    no_mag = rack_logic.magazine_slot_of(data) <= 0
+    empty_plates = [f"{r}-{s}" for r, s in rack_logic.marked_empty_plates(data)]
+    plate_count  = len(empty_plates) if no_mag else max(0, sum(mag_counts))
+    plate_total  = (nr * spr) if no_mag else max(0, sum(mag_defs))
     return {
         "num_racks":          nr,
         "slots_per_rack":     spr,
@@ -432,10 +479,12 @@ def get_all(db: Session = Depends(get_db)):
         "stack_slot":         data.get("stack_slot", DEFAULT_MAGAZINE_SLOT),
         "magazine_slot":      data.get("magazine_slot", DEFAULT_MAGAZINE_SLOT),
         "magazine_counts":    mag_counts,
-        "magazine_count":     max(0, sum(mag_counts)),
+        "magazine_count":     plate_count,
         # Fest konfigurierte Sollwerte + deren Summe (Badge-Nenner „X / magazine_total").
         "magazine_defaults":  mag_defs,
-        "magazine_total":     max(0, sum(mag_defs)),
+        "magazine_total":     plate_total,
+        # Ohne Magazin: welche Fächer halten eine leere Platte (Markierung des Nutzers).
+        "empty_plates":       empty_plates,
         "max_plates":         max_plates,
         "slots":              data["slots"],
         "statuses":           STATUSES,
@@ -466,6 +515,18 @@ def update_config(body: dict, db: Session = Depends(get_db)):
         data["magazine_slot"] = max(0, int(body["magazine_slot"]))
         if data["magazine_slot"]:
             data["stack_slot"] = data["magazine_slot"]  # keep in sync
+            # Mit Magazin gibt es keine Fach-Markierungen (der Nachschub kommt aus dem
+            # Stapel) — alte Markierungen löschen, damit sie nicht als „Platte liegt
+            # hier" hängen bleiben und Ablageplätze blockieren.
+            for s in (data.get("slots") or {}).values():
+                if isinstance(s, dict):
+                    s["empty_plate"] = False
+            data.pop("empty_plates_migrated", None)
+        else:
+            # Frisch auf „alle Fächer = Lagerfächer" umgestellt: NICHTS aus dem
+            # Magazin-Zähler erfinden. Der Nutzer markiert selbst, wo Platten liegen
+            # (Merker setzen = Migration gilt als erledigt).
+            data["empty_plates_migrated"] = True
     # Fest konfigurierte Sollwerte je Magazin. Werden sie gesetzt, gilt der Live-Bestand
     # als frisch bestückt → `magazine_counts` wird gleich auf die Sollwerte gesetzt
     # (der Nutzer legt hier fest „so viele Platten liegen im Magazin").
@@ -598,13 +659,37 @@ def update_slot(slot_id: str, body: dict, db: Session = Depends(get_db)):
     for field in ("status", "file_id", "file_name", "object_height_mm", "note"):
         if field in body:
             slot[field] = body[field]
+    no_mag = rack_logic.magazine_slot_of(data) <= 0
+    if "empty_plate" in body:
+        # „Hier liegt eine leere Platte" — nur ohne Magazin sinnvoll, sonst käme der
+        # Nachschub aus zwei Quellen. Ein Fach mit Druck drin kann keine leere Platte
+        # halten, deshalb nur auf freien Fächern setzbar.
+        want = bool(body["empty_plate"])
+        if want and not no_mag:
+            raise HTTPException(400, "Leerplatten-Markierung gibt es nur im Aufbau ohne "
+                                     "Magazin (alle Fächer = Lagerfächer)")
+        if want and slot.get("status", "free") != "free":
+            raise HTTPException(400, f"Fach {slot_id} ist nicht frei — dort liegt keine "
+                                     f"leere Platte")
+        slot["empty_plate"] = want
     # Taking a plate out of the rack auto-refills the magazine and fully clears
     # the slot — sonst bleibt die alte Objekthöhe stehen und erzeugt im Regal
     # weiter eine „Ghost"-Platte über dem (jetzt leeren) Fach.
     if slot.get("status") == "free" and old_status in _PLATE_PRESENT:
         slot.update({"file_id": None, "file_name": None,
                      "object_height_mm": None, "note": ""})
-        _refill_one(data, slot_id)
+        if no_mag:
+            # Ohne Magazin bleibt die Platte im Regal: Der Nutzer nimmt den fertigen
+            # Druck ab und legt dieselbe Platte zurück — das Fach hält also wieder
+            # eine LEERE Platte. (Mit Magazin wandert sie oben in den Stapel, siehe
+            # _refill_one.) Wer sie herausnimmt, klickt die Markierung einfach weg.
+            if "empty_plate" not in body:
+                slot["empty_plate"] = True
+        else:
+            _refill_one(data, slot_id)
+    # Ein Fach, in dem etwas liegt/gedruckt wird, hält keine leere Platte mehr.
+    if slot.get("status") in _PLATE_PRESENT or slot.get("status") == "locked":
+        slot["empty_plate"] = False
     _save(data)
     return {"success": True, "slot": slot}
 
@@ -624,6 +709,7 @@ def clear_slots(body: dict = None):
         ids = [k for k, s in slots.items() if s.get("status") == status]
     cleared = 0
     touched_racks = set()
+    no_mag = rack_logic.magazine_slot_of(data) <= 0
     for k in ids:
         if k in slots:
             prev = slots[k].get("status")
@@ -631,8 +717,13 @@ def clear_slots(body: dict = None):
                              "file_name": None, "object_height_mm": None})
             cleared += 1
             if prev in _PLATE_PRESENT:
-                _refill_one(data, k)   # taken-out plate → back into the magazine
-                touched_racks.add(k.split("-")[0])
+                if no_mag:
+                    # Ohne Magazin bleibt die Platte im Fach liegen (Druck abnehmen,
+                    # Platte zurück) → Fach hält wieder eine LEERE Platte.
+                    slots[k]["empty_plate"] = True
+                else:
+                    _refill_one(data, k)   # taken-out plate → back into the magazine
+                    touched_racks.add(k.split("-")[0])
     # Ist ein Rack nach dem Entnehmen KOMPLETT leer, steht sein Magazin exakt auf der
     # konfigurierten Sollzahl (alle Platten liegen dann als Leerplatten im Magazin) —
     # so landet „alle entnehmen" verlässlich wieder auf der Ursprungszahl, statt je nach

@@ -252,6 +252,12 @@ const EN_STRINGS = {
   'Wofür nutzt du die oberste Position?': 'What do you use the top position for?',
   'Oberstes Fach = Magazin': 'Top slot = magazine',
   'Alle Fächer = Lagerfächer': 'All slots = storage',
+  // Die Beschreibungen der beiden Bauarten fehlten auf Englisch (standen deutsch
+  // in der englischen UI) — nachgezogen mit der Markierung aus v1.0.163.
+  'Das oberste Fach hält einen Stapel LEERER Druckplatten. Die Farm holt sich daraus selbst Nachschub — echter unbeaufsichtigter Dauerbetrieb. Die Fächer darunter lagern die fertigen Drucke.':
+    'The top slot holds a stack of EMPTY build plates. The farm takes its own supply from there — real unattended operation. The slots below store the finished prints.',
+  'Kein Magazin: die leeren Platten liegen BEREITS in den Fächern. In der Farm-Ansicht markierst du je Fach mit ▭, wo eine leere Platte liegt — die Farm greift von oben nach unten daraus und legt den fertigen Druck in ein Fach OHNE Platte. Ein Lagerfach mehr, aber Nachschub legst du selbst ein.':
+    'No magazine: the empty plates ALREADY sit in the slots. In the farm view you mark with ▭ which slot holds an empty plate — the farm picks them top-down and stores the finished print in a slot WITHOUT a plate. One storage slot more, but you load the supply yourself.',
   'Anzahl Regale': 'Number of racks',
   'Wie viele Regal-Türme stehen neben dem Drucker? (Regal 1 = direkt am Drucker)':
     'How many rack towers stand next to the printer? (rack 1 = closest to the printer)',
@@ -367,6 +373,22 @@ const EN_STRINGS = {
   'Magazin R{0}: {1} Platten': 'Magazine R{0}: {1} plates',
   'Magazin-Zähler speichern fehlgeschlagen': 'Saving magazine count failed',
   'Magazin R{0} — Bestand nach dem Auffüllen hier setzen': 'Magazine R{0} — set the stock here after refilling',
+  // Leerplatten-Markierung im Aufbau ohne Magazin — seit v1.0.163
+  '▭ Leerplatte': '▭ Empty plate',
+  'Leere Platten in R{0} — je Fach mit ▭ markieren': 'Empty plates in R{0} — mark each slot with ▭',
+  'Leere Platte liegt hier — die Farm holt sich von hier Nachschub':
+    'An empty plate is in this slot — the farm takes its supply from here',
+  'Hier liegt eine leere Platte — die Farm holt sie von hier und legt nichts darauf ab':
+    'An empty plate is in this slot — the farm picks it up from here and never places anything on it',
+  'Hier liegt KEINE leere Platte mehr': 'There is NO empty plate in this slot any more',
+  'Fach {0}: Leerplatte liegt drin': 'Slot {0}: empty plate is in it',
+  'Fach {0}: keine Leerplatte mehr': 'Slot {0}: no empty plate any more',
+  'Markierung konnte nicht geändert werden': 'Could not change the marker',
+  'Leere Platten in den Fächern (mit ▭ markiert) — Nachschub der Farm':
+    'Empty plates in the slots (marked with ▭) — the farm’s supply',
+  'Platten im Magazin': 'Plates in the magazine',
+  '⚠ In jedem freien Fach liegt eine leere Platte — es bleibt kein Fach für den fertigen Druck. Mindestens ein Fach freilassen (▭ abwählen).':
+    '⚠ Every free slot holds an empty plate — no slot is left for the finished print. Keep at least one slot free (unmark ▭).',
   'Aktuelles Filament aus dem Extruder zurück ins AMS entladen': 'Unload the current filament from the extruder back into the AMS',
   'Filament S{0} laden…': 'Loading filament S{0}…',
   'Filament entladen…': 'Unloading filament…',

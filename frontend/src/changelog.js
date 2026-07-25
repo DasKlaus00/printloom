@@ -4,6 +4,27 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.163',
+    de: [
+      'NEU im Aufbau OHNE Magazin („alle Fächer = Lagerfächer"): In der Farm-Ansicht markierst du jetzt je Fach mit ▭, ob dort eine leere Platte liegt. Der Knopf erscheint NUR in dieser Bauart — mit Magazin bleibt es beim Magazin-Zähler.',
+      '„Platte holen" nimmt die Platte aus einem markierten Fach, immer das oberste zuerst — so muss der Arm nie über eine noch liegende Platte hinweg. Nach dem Griff verschwindet die Markierung automatisch.',
+      'Der fertige Druck wird immer in ein Fach OHNE Platte gelegt. Markierte Fächer sind als Ablageziel gesperrt, sonst käme der Druck auf eine liegende Platte.',
+      'Nimmst du einen fertigen Druck aus dem Regal, gilt das Fach wieder als „Leerplatte liegt drin" — du legst die abgeräumte Platte ja zurück. Nimmst du sie mit, klickst du die Markierung weg.',
+      'Vorher war nur eine ANZAHL je Regal bekannt und Printloom nahm an, die Platten lägen lückenlos in den untersten Fächern. Lücken oder ein Nachlegen in der Mitte führten dadurch zum Griff ins falsche Fach. Bestehende Aufbauten übernehmen die alte Annahme einmalig, danach zählt deine Markierung.',
+      'Warnung, wenn in jedem freien Fach eine leere Platte liegt — dann bleibt kein Ziel für den fertigen Druck übrig.',
+      'Die Beschreibungen der beiden Bauarten im Setup-Assistenten gab es nur auf Deutsch; sie sind jetzt auch auf Englisch da.',
+    ],
+    en: [
+      'NEW for the setup WITHOUT a magazine ("all slots = storage"): in the farm view you now mark per slot with ▭ whether an empty plate is in it. The button appears ONLY in this build — with a magazine the magazine counter stays.',
+      '"Grab plate" takes the plate from a marked slot, always the topmost one first — so the arm never has to travel over a plate that is still lying there. After the grab the marker clears itself.',
+      'The finished print always goes into a slot WITHOUT a plate. Marked slots are blocked as a target, otherwise the print would land on a lying plate.',
+      'Taking a finished print out of the rack marks that slot as holding an empty plate again — you do put the cleared plate back. If you take it with you, just unmark it.',
+      'Previously only a COUNT per rack was known and Printloom assumed the plates sat gap-free in the lowest slots. Gaps, or refilling in the middle, made it grab the wrong slot. Existing setups adopt the old assumption once; after that your marking counts.',
+      'Warning when every free slot holds an empty plate — no target would be left for the finished print.',
+      'The descriptions of the two builds in the setup wizard existed only in German; they are now available in English too.',
+    ],
+  },
+  {
     version: '1.0.162',
     de: [
       'NEU Plausibilitätsprüfung der Geometrie (Drucker-Tab → „🛡 Plausibilität & Achsgrenzen"): Printloom rechnet jede Bewegung vorab durch und meldet, wenn eine Position aus der Achse fährt — mit Achse, Wert und Grenze. Vorher nahm die Geometrie jede Zahl an, und ein Tippfehler (X 4250 statt 425) fiel erst auf, wenn der Arm schon fuhr.',
