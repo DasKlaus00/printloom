@@ -282,7 +282,6 @@ const EN_STRINGS = {
   'Spaghetti-Erkennung': 'Spaghetti detection',
   'Bauplatten-Erkennung': 'Build plate detection',
   'KI-Drucküberwachung': 'AI print monitoring',
-  'Abgelöste Teile überspringen': 'Skip detached objects',
   'Druckgeschwindigkeit': 'Print speed',
   'Leise': 'Silent',
   'Sport': 'Sport',

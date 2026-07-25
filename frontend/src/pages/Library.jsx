@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { onlineService, systemService, profileService, autofarmService } from '../services/api'
 import { useLanguage } from '../services/i18n'
+import { timeAgo } from '../services/timeAgo'
 
 /* ── Bibliothek ──────────────────────────────────────────────────────────────
    Eigener Tab für den Online-Katalog (Sprachpakete, Drucker-Profile, Sequenzen)
@@ -20,17 +21,6 @@ const KIND_META = {
   language: { icon: '🌐', label: 'Sprachpaket', cls: 'bg-sky-950/50 text-sky-300 border-sky-800/60' },
   profile:  { icon: '🖨', label: 'Profil',      cls: 'bg-violet-950/50 text-violet-300 border-violet-800/60' },
   sequence: { icon: '🔁', label: 'Sequenz',     cls: 'bg-amber-950/40 text-amber-300 border-amber-800/60' },
-}
-
-function timeAgo(ts, tr) {
-  if (!ts) return tr('noch nie')
-  const secs = Math.max(0, Math.floor(Date.now() / 1000 - ts))
-  if (secs < 90) return tr('gerade eben')
-  const mins = Math.floor(secs / 60)
-  if (mins < 60) return tr('vor {0} Min.', mins)
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 48) return tr('vor {0} Std.', hrs)
-  return tr('vor {0} Tagen', Math.floor(hrs / 24))
 }
 
 /* Kurz-Statistik zum Inhalt — damit man in der Vorschau sofort sieht, was drin ist. */

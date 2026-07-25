@@ -143,8 +143,6 @@ const XCAM_SETTINGS = [
     desc: 'Prüft per Marker, ob die richtige Druckplatte eingelegt ist.' },
   { key: 'printing_monitor',           label: 'KI-Drucküberwachung',
     desc: 'Allgemeine KI-Überwachung des Drucks.' },
-  { key: 'allow_skip_parts',           label: 'Abgelöste Teile überspringen',
-    desc: 'Druckt weiter und überspringt Objekte, die sich gelöst haben.' },
 ]
 
 const SPEED_OPTIONS = [

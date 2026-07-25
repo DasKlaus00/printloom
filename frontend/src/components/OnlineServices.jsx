@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { onlineService, systemService } from '../services/api'
 import { useLanguage } from '../services/i18n'
+import { timeAgo } from '../services/timeAgo'
 
 /* ── Online-Dienste (Opt-in) ─────────────────────────────────────────────────
    Printloom verbindet sich NIE ungefragt nach außen. Hier schaltet der Nutzer
@@ -32,17 +33,6 @@ function Toggle({ on, onClick, disabled, color = 'bg-blue-600' }) {
       <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
     </button>
   )
-}
-
-function timeAgo(ts, tr) {
-  if (!ts) return tr('noch nie')
-  const secs = Math.max(0, Math.floor(Date.now() / 1000 - ts))
-  if (secs < 90) return tr('gerade eben')
-  const mins = Math.floor(secs / 60)
-  if (mins < 60) return tr('vor {0} Min.', mins)
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 48) return tr('vor {0} Std.', hrs)
-  return tr('vor {0} Tagen', Math.floor(hrs / 24))
 }
 
 export default function OnlineServices({ setCurrentPage }) {

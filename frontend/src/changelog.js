@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.0.161',
+    de: [
+      'Entfernt: Die Einstellung „Abgelöste Teile überspringen" ist wieder raus. Das Feld steckt zwar im Datenstrom des Druckers, ist aber KEINE Einstellung, die man am Bambu-Display umschaltet — die Beschreibung in Printloom war irreführend.',
+      'Aufgeräumt: die relative Zeitangabe („vor 5 Min.") lag doppelt im Code und sitzt jetzt an einer Stelle.',
+    ],
+    en: [
+      'Removed: the "skip detached objects" setting is gone again. The field does appear in the printer’s data stream, but it is NOT a setting you toggle on the Bambu display — the description in Printloom was misleading.',
+      'Cleanup: the relative time label ("5 min ago") existed twice in the code and now lives in one place.',
+    ],
+  },
+  {
     version: '1.0.160',
     de: [
       'Die Bibliothek ist jetzt ein eigener Tab in der Seitenleiste (statt eines kleinen Blocks in System) und zeigt zu jedem Eintrag alle Daten: Autor, Version, Beschreibung, Art (Sprachpaket/Profil/Sequenz), Kennung und Quelle.',

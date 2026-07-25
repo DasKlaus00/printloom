@@ -10,7 +10,7 @@ testbar; das Senden übernimmt der Router über bambu_manager.publish_command.
 
 Quelle des Zustands ist der pushall-Report:
     print.xcam.{first_layer_inspector, spaghetti_detector, buildplate_marker_detector,
-               printing_monitor, allow_skip_parts, print_halt}
+               printing_monitor, print_halt}
     print.spd_lvl                    1=Silent 2=Standard 3=Sport 4=Ludicrous
     print.auto_recovery_step_loss    Auto-Recovery bei Schrittverlust
     print.lights_report[]            [{node: "chamber_light", mode: "on"|"off"}]
@@ -38,7 +38,9 @@ XCAM_MODULES = {
     "spaghetti_detector":          True,    # Spaghetti-/Fehldruck-Erkennung
     "buildplate_marker_detector":  False,   # Bauplatten-Erkennung (Platten-Marker)
     "printing_monitor":            False,   # KI-Drucküberwachung
-    "allow_skip_parts":            False,   # abgelöste Teile überspringen
+    # `allow_skip_parts` steckt zwar im xcam-Block des Druckers, ist aber KEINE
+    # Einstellung, die man am Drucker umschaltet (es gehört zum Objekt-Überspringen
+    # während eines Drucks). Bewusst NICHT anbieten — siehe v1.0.161.
 }
 
 SPEED_LEVELS = {1: "silent", 2: "standard", 3: "sport", 4: "ludicrous"}
