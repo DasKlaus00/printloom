@@ -14,6 +14,10 @@ import { confirmDialog } from '../services/confirm'
    Arm gegen die Mechanik, deshalb ist Entsperren eine bewusste Handlung — und
    bei laufender Farm gar nicht erst möglich. */
 
+// Randabstand der Schiene in % — ohne den würde das Modul bei X 0 (Home) genau
+// an der rechten Kante zur Hälfte abgeschnitten.
+const RAIL_PAD = 5
+
 const TYPE_META = {
   home:    { icon: '⌂', label: 'Home (Endschalter)', cls: 'border-surface-700 bg-surface-900' },
   rack:    { icon: '▤', label: 'Regal',              cls: 'border-emerald-800/60 bg-emerald-950/20' },
@@ -44,12 +48,19 @@ export default function Layout() {
   const running = !!data?.farm_running
   const mods    = draft ?? []
 
-  // Für die Schienen-Darstellung: X-Bereich aller Module (+ etwas Luft).
+  // Für die Schienen-Darstellung: X-Bereich aller Module. 0 ist immer dabei,
+  // denn Home ist der Anker.
   const span = useMemo(() => {
     const xs = mods.map(m => +m.x_ref || 0)
-    const max = Math.max(data?.limits?.x || 0, ...xs, 100)
-    return { min: 0, max: max * 1.05 }
+    return { min: 0, max: Math.max(data?.limits?.x || 0, ...xs, 100) }
   }, [mods, data])
+
+  // Anzeige-Reihenfolge wie auf der Schiene gelesen: links (größtes X, Drucker)
+  // nach rechts (X 0, Home). Gespeichert wird weiterhin aufsteigend.
+  const railOrder = useMemo(
+    () => [...mods].sort((a, b) => (+b.x_ref || 0) - (+a.x_ref || 0)),
+    [mods],
+  )
 
   const setX = (id, v) => setDraft(ms => ms.map(m => m.id === id ? { ...m, x_ref: v } : m))
   const setField = (id, k, v) => setDraft(ms => ms.map(m => m.id === id ? { ...m, [k]: v } : m))
@@ -169,31 +180,36 @@ export default function Layout() {
             </button>
           </div>
 
-          {/* Schiene */}
+          {/* Schiene — gezeichnet wie das Gerät steht: X 0 (Home) RECHTS, wachsende
+              X-Werte nach links. Sonst müsste man beim Einmessen im Kopf spiegeln. */}
           <div className="card p-4 space-y-3">
-            <p className="section-label">{tr('Schiene (X in mm)')}</p>
+            <p className="section-label">{tr('Schiene (X in mm) — 0 rechts')}</p>
             <div className="relative h-24 rounded-lg bg-surface-950 border border-surface-800 overflow-hidden">
               <div className="absolute left-0 right-0 top-1/2 h-px bg-surface-700" />
+              {/* Pfeil in Fahrtrichtung: von Home (rechts) weg nach links */}
+              <span className="absolute left-1 top-1/2 -translate-y-1/2 text-[10px] text-surface-700 leading-none">◀</span>
               {mods.map(m => {
                 const meta = TYPE_META[m.type] ?? TYPE_META.rack
                 const pct = Math.max(0, Math.min(100, ((+m.x_ref || 0) - span.min) / (span.max - span.min || 1) * 100))
                 return (
-                  <div key={m.id} className="absolute -translate-x-1/2 flex flex-col items-center gap-0.5"
-                    style={{ left: `${pct}%`, top: '18%' }} title={`${m.name} · X ${m.x_ref}`}>
+                  <div key={m.id} className="absolute translate-x-1/2 flex flex-col items-center gap-0.5"
+                    style={{ right: `${RAIL_PAD + pct * (100 - 2 * RAIL_PAD) / 100}%`, top: '18%' }}
+                    title={`${m.name} · X ${m.x_ref}`}>
                     <span className="text-base leading-none">{meta.icon}</span>
                     <span className="text-[9px] text-surface-400 whitespace-nowrap max-w-20 truncate">{m.name}</span>
                     <span className="text-[9px] font-mono text-surface-600">{m.x_ref}</span>
                   </div>
                 )
               })}
+              <span className="absolute right-1 bottom-0.5 text-[9px] font-mono text-surface-600">{tr('0 · Home')}</span>
               {data.limits?.x > 0 && (
-                <span className="absolute right-1 bottom-0.5 text-[9px] font-mono text-surface-700">
+                <span className="absolute left-1 bottom-0.5 text-[9px] font-mono text-surface-700">
                   {tr('Achsgrenze X {0}', data.limits.x)}
                 </span>
               )}
             </div>
             <p className="text-[10px] text-surface-600">
-              {tr('Home liegt bei X 0 (Endschalter, rechts am Gerät). Die Reihenfolge ergibt sich aus den X-Werten — es gibt nichts zu ziehen.')}
+              {tr('Home liegt bei X 0 (Endschalter, rechts am Gerät) — die Schiene ist deshalb von rechts nach links gezeichnet: je weiter links, desto größer X. Die Reihenfolge ergibt sich aus den X-Werten, es gibt nichts zu ziehen.')}
             </p>
           </div>
 
@@ -217,7 +233,7 @@ export default function Layout() {
               )}
             </div>
             <div className="space-y-1.5">
-              {mods.map(m => {
+              {railOrder.map(m => {
                 const meta = TYPE_META[m.type] ?? TYPE_META.rack
                 return (
                   <div key={m.id} className={`rounded-lg border px-3 py-2 flex flex-wrap items-center gap-3 ${meta.cls}`}>

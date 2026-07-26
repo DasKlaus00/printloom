@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.4',
+    de: [
+      'Farm-Layout: Die Schiene wird jetzt so gezeichnet, wie das Gerät steht — X 0 (Home/Endschalter) RECHTS, wachsende X-Werte nach links. Vorher lief die Darstellung andersherum als die Maschine, man musste beim Einmessen im Kopf spiegeln.',
+      'Die Modul-Liste steht in derselben Reihenfolge wie die Schiene (links = größtes X = Drucker, rechts = Home). Neu angelegte Module rutschen sofort an ihre Stelle, statt erst nach dem Speichern.',
+    ],
+    en: [
+      'Farm layout: the rail is now drawn the way the machine actually stands — X 0 (home/endstop) on the RIGHT, growing X values towards the left. Before, the drawing ran opposite to the machine, so you had to mirror it in your head while teaching positions.',
+      'The module list is in the same order as the rail (left = largest X = printer, right = home). Newly added modules jump to their place immediately instead of only after saving.',
+    ],
+  },
+  {
     version: '1.1.3',
     de: [
       'ROADMAP-PHASE 4 „Mehrere Drucker & unterschiedliche Regale" — Printloom ist nicht mehr auf einen Drucker und gleichmäßige Regal-Abstände festgelegt.',

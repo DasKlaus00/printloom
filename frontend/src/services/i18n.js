@@ -489,10 +489,11 @@ const EN_STRINGS = {
   'Layout entsperren': 'Unlock layout',
   'Falsche X-Werte fahren den Arm gegen die Mechanik. Nach dem Ändern jede Position einzeln testen (📐 Einmessen im Drucker-Tab). Fortfahren?':
     'Wrong X values drive the arm into the mechanics. After changing, test every position individually (📐 teach-in in the Printer tab). Continue?',
-  'Schiene (X in mm)': 'Rail (X in mm)',
+  'Schiene (X in mm) — 0 rechts': 'Rail (X in mm) — 0 on the right',
   'Achsgrenze X {0}': 'Axis limit X {0}',
-  'Home liegt bei X 0 (Endschalter, rechts am Gerät). Die Reihenfolge ergibt sich aus den X-Werten — es gibt nichts zu ziehen.':
-    'Home sits at X 0 (endstop, right-hand side). The order follows from the X values — there is nothing to drag.',
+  '0 · Home': '0 · home',
+  'Home liegt bei X 0 (Endschalter, rechts am Gerät) — die Schiene ist deshalb von rechts nach links gezeichnet: je weiter links, desto größer X. Die Reihenfolge ergibt sich aus den X-Werten, es gibt nichts zu ziehen.':
+    'Home sits at X 0 (endstop, right-hand side of the machine) — so the rail is drawn right to left: the further left, the larger X. The order follows from the X values, there is nothing to drag.',
   'Module': 'Modules',
   '+ Regal': '+ Rack',
   '+ Drucker': '+ Printer',
