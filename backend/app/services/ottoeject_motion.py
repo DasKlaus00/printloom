@@ -60,6 +60,11 @@ DEFAULT_GEOMETRY = {
     # dann wird eine Bewegung außerhalb der Achse gar nicht erst gesendet. Leer
     # gelassen wird nur nach unten geprüft (unter 0 ist immer falsch).
     "machine_limits": {},
+    # Absolute X-Referenzen aus dem Farm-Layout (seit v1.1.3), sofern eingerichtet:
+    #   {"rack_x": {"1": 543, "2": 293, ...}, "printer_x": 942}
+    # Leer = alte Formel (gleichmäßige Regal-Abstände). Wird beim Laden aus
+    # farm_layout.json überlagert, nicht von Hand gepflegt.
+    "layout": {},
 }
 
 
@@ -161,6 +166,23 @@ def magazine_slot(g: dict) -> int:
     return (int(g["storage_slots"]) + 1) if g.get("magazine") else 0
 
 
+def apply_layout(g: dict, layout: dict | None) -> dict:
+    """Absolute X-Referenzen aus dem Farm-Layout in die Geometrie überlagern.
+
+    Eine Quelle: das Layout. Die Geometrie behält die eingemessenen Feinwerte
+    (Y/Z, Andruck, Tür), bekommt aber die X-Positionen der Module. Ohne Layout
+    bleibt alles wie vorher (Formel)."""
+    if not layout:
+        return g
+    from app.services import farm_layout
+    rx = farm_layout.rack_x_map(layout)
+    px = farm_layout.printer_x(layout)
+    if rx or px is not None:
+        g["layout"] = {"rack_x": {str(k): v for k, v in rx.items()},
+                       **({"printer_x": px} if px is not None else {})}
+    return g
+
+
 def apply_rack_config(g: dict, rack_cfg: dict | None) -> dict:
     """Regalzahl / Fächer / Magazin-Fach aus der GLOBALEN Rack-Konfiguration übernehmen
     (Configuration → Rack Configuration) — eine Quelle. Physische mm (x_unclamp,
@@ -225,25 +247,55 @@ def magazine_z_offset(g: dict, rack: int) -> float:
 
 
 def _printer_x_off(g: dict) -> float:
-    # Drucker sitzt am druckerseitigen Ende (vor R1) und WANDERT mit der Regalzahl mit,
-    # weil der Home-Anker rechts fest ist → eject/load/Tür-X += (Regale−1)·rack_x_gap.
-    # Regalzahl kommt global aus der Rack-Konfiguration (apply_rack_config). Wer den Drucker
-    # fix stehen hat, nutzt den eigenen G-code (gcode_override, wird absolut gesendet).
+    """Versatz, der auf die gespeicherten Drucker-X (eject/load/move/Tür) addiert wird.
+
+    MIT LAYOUT (seit v1.1.3): Das Drucker-Modul hat eine absolute X-Referenz. Der
+    Versatz ist dann die Differenz zwischen dieser Referenz und der gespeicherten
+    Basis-X — so bleiben die eingemessenen Feinwerte (Y/Z und die X-Differenzen
+    innerhalb der Bewegung) erhalten, während der Drucker als Ganzes am Layout hängt.
+
+    OHNE LAYOUT (Altbestand): Der Drucker sitzt am druckerseitigen Ende (vor R1) und
+    wandert mit der Regalzahl mit, weil der Home-Anker rechts fest ist →
+    eject/load/Tür-X += (Regale−1)·rack_x_gap.
+    """
+    lay = g.get("layout") or {}
+    px = lay.get("printer_x")
+    if px is not None:
+        base = _num((g.get("printer") or {}).get("eject", {}).get("x"))
+        return _num(px) - base
     return (int(g.get("racks", 1)) - 1) * float(g["storage"]["rack_x_gap"])
+
+
+def rack_x(g: dict, rack: int) -> float:
+    """X-Position eines Regals.
+
+    Zwei Quellen, in dieser Reihenfolge:
+      1. LAYOUT (`layout.rack_x`, seit v1.1.3): jedes Regal hat seine eigene,
+         absolute X-Referenz. Damit sind ungleiche Abstände und mehrere Drucker
+         möglich — die Formel unten kann das nicht.
+      2. FORMEL (Altbestand): x_unclamp + (Regale − r)·rack_x_gap + Trim.
+         R1 = Regal DIREKT am Drucker, Rn = am Home-Anker (rechts).
+
+    Die Migration ins Layout erzeugt exakt die Werte der Formel — die Umstellung
+    verschiebt also keine einzige Position (siehe farm_layout.from_geometry).
+    """
+    lay = (g.get("layout") or {}).get("rack_x") or {}
+    if lay:
+        for key in (str(int(rack)), int(rack)):
+            if key in lay:
+                return _num(lay[key])
+    s = g["storage"]
+    nr = int(g.get("racks", 1) or 1)
+    xt = float(g.get("rack_x_trim", {}).get(str(rack), 0) or 0)
+    return float(s["x_unclamp"]) + (nr - int(rack)) * float(s["rack_x_gap"]) + xt
 
 
 def slot_position(g: dict, rack: int, slot: int) -> tuple[float, float, float, float]:
     """(x_unclamp, y_engage, z_flat, y_pullback_limit) für ein Fach — inkl. Skalierung."""
     s = g["storage"]
-    nr = int(g.get("racks", 1) or 1)
-    xt = float(g.get("rack_x_trim", {}).get(str(rack), 0) or 0)
     zt = float(g.get("rack_z_trim", {}).get(str(rack), 0) or 0)
     step = float(s["slot_gap"]) + SLOT_Z_EXTRA
-    # R1 = Regal DIREKT am Drucker (druckerseitiges Ende = x_unclamp + (racks-1)*gap),
-    # Rn = Regal am Home-Anker (x_unclamp, ganz rechts). So füllt die Farm R1→Rn vom
-    # Drucker weg nach rechts. Home fest, Drucker wandert mit (siehe _printer_x_off).
-    # Bei nur 1 Regal identisch zu früher (rack=1=nr → Offset 0 → x_unclamp).
-    x = float(s["x_unclamp"]) + (nr - int(rack)) * float(s["rack_x_gap"]) + xt
+    x = rack_x(g, rack)
     z = float(s["first_z_flat"]) + (int(slot) - 1) * step + zt
     return x, float(s["y_engage"]), z, float(s["y_pullback_limit"])
 

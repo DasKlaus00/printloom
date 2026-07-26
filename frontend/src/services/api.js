@@ -40,6 +40,17 @@ export const deviceService = {
   }),
 }
 
+/* Farm-Layout: Drucker & Regale als Module auf einer X-Schiene (seit v1.1.3).
+   Ohne eingerichtetes Layout rechnet Printloom wie bisher mit der Formel. */
+export const layoutService = {
+  get:      ()      => api.get('/layout/'),
+  save:     (lay)   => api.put('/layout/', lay),
+  migrate:  ()      => api.post('/layout/migrate'),
+  setLock:  (locked) => api.post('/layout/lock', { locked }),
+  reset:    ()      => api.delete('/layout/'),
+  printers: ()      => api.get('/layout/printers'),
+}
+
 export const configService = {
   getRackConfig:    ()       => api.get('/config/rack'),
   updateRackConfig: (data)   => api.put('/config/rack', data),
@@ -225,6 +236,9 @@ export const autofarmService = {
   dismissRecovery:  (body) => api.post('/autofarm/recovery/dismiss', body || {}),
   getHmsHistory:    (limit) => api.get('/autofarm/hms-history', { params: { limit: limit || 100 } }),
   clearHmsHistory:  ()     => api.delete('/autofarm/hms-history'),
+  // Mehrere Drucker: Übersicht + Verteilung der Warteschlange (seit v1.1.3)
+  farmPrinters:     ()     => api.get('/autofarm/printers'),
+  dispatch:         (apply) => api.post('/autofarm/dispatch', { apply: !!apply }),
   getSettings:   ()      => api.get('/autofarm/settings'),
   saveSettings:  (data)  => api.put('/autofarm/settings', data),
   getQueue:      ()      => api.get('/autofarm/queue'),

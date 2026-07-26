@@ -44,6 +44,14 @@ const icons = {
       <rect x="2" y="17" width="20" height="4" rx="1"/>
     </svg>
   ),
+  layout: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="2" y1="18" x2="22" y2="18"/>
+      <rect x="3" y="10" width="5" height="8" rx="1"/>
+      <rect x="10" y="12" width="4" height="6" rx="1"/>
+      <rect x="16" y="7" width="6" height="11" rx="1"/>
+    </svg>
+  ),
   drucker: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="6 9 6 2 18 2 18 9"/>
@@ -143,6 +151,7 @@ function buildPages(t, tr) {
     { id: 'filamente',     label: tr('Filamente'),        icon: 'filamente'   },
     { id: 'library',       label: tr('Bibliothek'),       icon: 'library'     },
     { id: 'drucker',       label: tr('Drucker'),          icon: 'drucker'     },
+    { id: 'layout',        label: tr('Farm-Layout'),      icon: 'layout'      },
     { id: 'configuration', label: t('nav.configuration'), icon: 'config'      },
     // Setup-Assistent bewusst NICHT hier — er sitzt in System (einmalige Einrichtung,
     // kein Alltags-Tab). Direktaufruf über /setup bleibt möglich.

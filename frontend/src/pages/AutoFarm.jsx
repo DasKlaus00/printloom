@@ -10,6 +10,7 @@ import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { usePageActive, useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
 import RecoveryBanner from '../components/RecoveryBanner'
+import PrinterOverview from '../components/PrinterOverview'
 
 /* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
    Webcam am Drucker → 404), statt ein kaputtes Bild-Icon zu zeigen. */
@@ -1810,6 +1811,9 @@ function AutoFarm({ setCurrentPage } = {}) {
       {/* Unterbrochener Lauf (Neustart/Update mitten im Zyklus) — ganz oben, weil
           es beantwortet werden muss, bevor irgendetwas wieder losfährt. */}
       <RecoveryBanner onDismissed={() => load()} />
+
+      {/* Mehrere Drucker + Arm-Status — nur mit eingerichtetem Farm-Layout */}
+      <PrinterOverview />
 
       {/* ── Top bar ────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 flex-wrap">

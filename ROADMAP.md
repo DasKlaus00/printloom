@@ -122,32 +122,47 @@ hängende Bewegung, Nutzer greift dazwischen.
 
 ---
 
-## Phase 4 — Mehrere Drucker & unterschiedliche Regale 🏗
+## ~~Phase 4 — Mehrere Drucker & unterschiedliche Regale~~ ✅ *(v1.1.3)*
 
 **Ziel:** Die strukturelle Erweiterung. Mehrere Drucker und Regale in einer Linie, ein
-OTTOeject bedient alles. Das ist die Phase, für die du den Design-Entwurf wolltest.
+OTTOeject bedient alles.
 
-**Fertig, wenn:** zwei Drucker gleichzeitig laufen, die Warteschlange sich selbst
-verteilt und der Arm die Stationen konfliktfrei abarbeitet.
+1. ~~**Layout-Modell.**~~ `farm_layout.json`: Module (Drucker / Regal / Home) mit eigener
+   absoluter X-Referenz; `ottoeject_motion.rack_x()` nimmt sie vor der Formel.
+2. ~~**Migration ohne Positionsänderung.**~~ `from_geometry()` erzeugt exakt die Werte der
+   Formel inkl. Δ-Korrekturen — durch einen Test abgesichert, der G-code und
+   Fach-Positionen vorher/nachher vergleicht.
+3. ~~**Lock-Schalter.**~~ Standardmäßig gesperrt, Entsperren mit Rückfrage, bei laufender
+   Farm blockiert (auch serverseitig).
+4. ~~**Geometrie je Drucker.**~~ Drucker-X hängt am Modul (`layout.printer_x`), die
+   eingemessenen Feinwerte bleiben erhalten. *(Sequenz je Drucker: siehe unten)*
+5. ~~**Job-Verteilung.**~~ `job_dispatch.py` (rein, testbar): frei vor beschäftigt, dann
+   kürzeste Warteschlange; feste Zuweisungen werden nie umgangen.
+6. ~~**Der Arm als geteilte Ressource.**~~ `arm_access`-Sperre um jede Bewegung, mit
+   Warteschlange und Anzeige, wer den Arm gerade hat.
+7. ~~**Übersicht.**~~ Drucker nebeneinander in der Farm-Ansicht, inkl. Arm-Status.
 
-**Voraussetzung:** Phase 3 (ohne verlässlichen Zustand skaliert nichts).
-
-1. 🏗 **Layout-Modell.** Module (Drucker / Regal / Home-Anker) auf einer X-Schiene, jedes
-   mit eigener X-Referenz — statt der heutigen Abstands-Formel. Racks dürfen
-   unterschiedlich sein (eigene Fachzahl/-höhe je Regal).
-2. 🏗 **Migration ohne Positionsänderung.** Bestehende Installation (Formel-Geometrie,
-   gleiche Racks) muss automatisch in ein äquivalentes Layout überführt werden.
-3. ⚡ **Lock-Schalter.** Layout standardmäßig gesperrt, Entsperren mit Bestätigung, bei
-   laufender Farm zwangsgesperrt — falsche X-Werte sind Crash-Gefahr.
-4. 🏗 **Geometrie und Sequenz je Drucker.** Heute global. Braucht auch die 14 Stellen im
-   Backend, die den Drucker per „nimm den ersten" holen.
-5. 🏗 **Job-Verteilung.** Freier Drucker mit passendem Material/Höhe bekommt den nächsten
-   Job; Fächer im zugehörigen Regal.
-6. 🏗 **Der Arm als geteilte Ressource.** Werden zwei Drucker gleichzeitig fertig, muss
-   jemand entscheiden, wer zuerst bedient wird — eine Warteschlange für Arm-Aufträge.
-7. ⚡ **Übersicht.** Status je Drucker nebeneinander, dazu wer als nächstes bedient wird.
+**Offen aus dieser Phase** (bewusst als eigener Schritt, weil es tief in den
+Farm-Zyklus greift): **eine eigene Sequenz je Drucker** und **echte Parallelität**
+(heute ein Zyklus zur Zeit — das Layout, die Verteilung und die Arm-Sperre sind die
+Voraussetzung dafür und stehen jetzt).
 
 ---
+
+## Phase 4b — Echte Parallelität *(nächster Schritt)*
+
+**Ziel:** Zwei Drucker laufen wirklich gleichzeitig. Das Layout, die Job-Verteilung
+und die Arm-Sperre aus Phase 4 sind die Voraussetzung — was fehlt, ist der Farm-Zyklus
+selbst.
+
+1. 🏗 **Zyklus je Drucker.** `_farm` ist ein globaler Zustand mit EINEM laufenden Job.
+   Für echte Parallelität braucht es einen Lauf pro Drucker (`_farms[device_id]`), die
+   sich über die vorhandene Arm-Sperre abwechseln.
+2. 🏗 **Sequenz je Drucker.** Heute eine globale Sequenz; mit unterschiedlichen Modellen
+   (Tür / keine Tür) gehört sie ans Drucker-Modul.
+3. ⚡ **Status je Drucker im Live-Kanal.** Der WebSocket pusht heute einen Farm-Zustand;
+   mit mehreren Läufen muss er sie einzeln ausweisen.
+4. ⚡ **Die 14 „nimm den ersten Drucker"-Stellen** im Backend auf das Modul umstellen.
 
 ## Phase 5 — Material & AMS zu Ende gedacht
 

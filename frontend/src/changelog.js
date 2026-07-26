@@ -4,6 +4,29 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.3',
+    de: [
+      'ROADMAP-PHASE 4 „Mehrere Drucker & unterschiedliche Regale" — Printloom ist nicht mehr auf einen Drucker und gleichmäßige Regal-Abstände festgelegt.',
+      'NEU Farm-Layout (eigener Tab): Drucker, Regale und der Home-Anker stehen als Module auf der X-Schiene, jedes mit seiner EIGENEN absoluten X-Position in mm. Bisher kam die Regal-Position aus einer Formel (gleicher Abstand für alle Regale) — damit war weder ein zweiter Drucker noch ein anders gebautes Regal möglich.',
+      'Migration ohne Positionsänderung: Ein Klick erzeugt das Layout aus der bisherigen Konfiguration und übernimmt EXAKT die Werte, die die Formel liefert — inklusive der Δ-Korrekturen je Regal. Es verschiebt sich keine einzige Position, niemand muss neu einmessen. Wer nichts umstellt, für den bleibt alles wie es war.',
+      'NEU Sperre: Das Layout ist standardmäßig gesperrt und lässt sich bei laufender Farm gar nicht erst entsperren — falsche X-Werte fahren den Arm gegen die Mechanik. Entsperren ist eine bewusste Handlung mit Rückfrage.',
+      'Das Layout wird wie die Geometrie geprüft: Position unter 0 mm, über der Achsgrenze, zwei Module zu dicht beieinander, Regal ohne Drucker, zwei Module auf demselben Gerät.',
+      'NEU Der OTTOeject ist als geteilte Ressource abgesichert: Jede Bewegung läuft durch eine Sperre, sodass zwei Drucker den Arm nicht gleichzeitig losschicken können. Wer wartet, steht in der Übersicht. Bei einem Drucker ändert sich dadurch nichts.',
+      'NEU Job-Verteilung: Die Warteschlange lässt sich auf die Drucker verteilen — erst als Vorschau, dann übernehmen. Eine feste Zuweisung wird nie stillschweigend umgangen: passt der zugewiesene Drucker gerade nicht, wartet der Job, statt woanders zu landen. Verteilt wird nach frei/beschäftigt und Länge der Warteschlange, mit Begründung je Drucker.',
+      'NEU Drucker-Übersicht in der Farm-Ansicht: Status je Drucker nebeneinander, freie Fächer, Warteschlange und wer gerade den Arm hat. Erscheint nur mit eingerichtetem Layout.',
+    ],
+    en: [
+      'ROADMAP PHASE 4 "Multiple printers & different racks" — Printloom is no longer tied to one printer and evenly spaced racks.',
+      'NEW Farm layout (own tab): printers, racks and the home anchor are modules on the X rail, each with its OWN absolute X position in mm. Rack positions used to come from a formula (same spacing for every rack), which allowed neither a second printer nor a differently built rack.',
+      'Migration without moving anything: one click creates the layout from the existing configuration and adopts EXACTLY the values the formula produces — including the per-rack Δ corrections. Not a single position shifts, nobody has to re-teach. If you change nothing, everything stays as it was.',
+      'NEW Lock: the layout is locked by default and cannot even be unlocked while the farm is running — wrong X values drive the arm into the mechanics. Unlocking is a deliberate action with a confirmation.',
+      'The layout is checked like the geometry: position below 0 mm, above the axis limit, two modules too close together, a rack without a printer, two modules on the same device.',
+      'NEW The OTTOeject is protected as a shared resource: every move goes through a lock, so two printers cannot send the arm off at the same time. Whoever is waiting is shown in the overview. With a single printer nothing changes.',
+      'NEW Job distribution: the queue can be spread across the printers — preview first, then apply. A fixed assignment is never silently bypassed: if the assigned printer does not fit right now, the job waits instead of landing elsewhere. Distribution goes by free/busy and queue length, with a reason per printer.',
+      'NEW Printer overview in the farm view: status per printer side by side, free slots, queue and who currently has the arm. Only appears once a layout is set up.',
+    ],
+  },
+  {
     version: '1.1.2',
     de: [
       'ROADMAP-PHASE 3 „Dauerbetrieb, dem man wegläuft" — die Farm übersteht jetzt, was in echt passiert: Neustart, Update, Notaus, hängende Bewegung.',

@@ -454,9 +454,21 @@ def _mirror_for_device(script: str) -> str:
         return script
 
 
+def _farm_layout() -> dict | None:
+    """Farm-Layout (absolute X je Modul), sofern eingerichtet — sonst None, dann
+    rechnet die Geometrie wie bisher mit der Formel."""
+    try:
+        from app.routers.layout import load_layout
+        lay = load_layout()
+        return lay if lay.get("modules") else None
+    except Exception:
+        return None
+
+
 def _load_geometry() -> dict:
     g = _motion.merge_defaults(_storage.read_json(GEOMETRY_PATH, None))
-    return _motion.apply_rack_config(g, _rack_config())
+    g = _motion.apply_rack_config(g, _rack_config())
+    return _motion.apply_layout(g, _farm_layout())
 
 
 def _geometry_from_request(request: dict) -> dict:

@@ -752,6 +752,49 @@ async def _send_print_cmd(cmd: str):
 
 
 # ── Step implementations ─────────────────────────────────────
+# ── Der OTTOeject ist EINE geteilte Ressource (Phase 4.6) ────────────────────
+# Mehrere Drucker können gleichzeitig drucken — der Arm kann immer nur an EINER
+# Station sein. Jede Bewegung läuft deshalb durch diese Sperre. Bei einem einzigen
+# Drucker ändert das nichts (die Sperre ist nie umkämpft); bei zweien verhindert
+# sie den Fall, der sonst sicher kommt: zwei Drucker werden gleichzeitig fertig,
+# beide schicken den Arm los.
+_arm_lock = asyncio.Lock()
+_arm_holder: Optional[str] = None      # wer den Arm gerade hat (für die Anzeige)
+_arm_waiting: list = []                # wer wartet (Reihenfolge = Warteschlange)
+
+
+class arm_access:
+    """`async with arm_access("printer-1", "Auswerfen"):` — belegt den Arm.
+
+    Reentrant über eine Ebene hinaus wird bewusst NICHT unterstützt: verschachtelte
+    Bewegungen gibt es nicht, und ein stiller Reentrant würde die Sperre wertlos
+    machen."""
+
+    def __init__(self, who: str = "", what: str = ""):
+        self.who, self.what = who or "farm", what or ""
+
+    async def __aenter__(self):
+        global _arm_holder
+        if _arm_lock.locked() and _arm_holder != self.who:
+            _arm_waiting.append(self.who)
+            _log(f"⏳ {self.who} wartet auf den OTTOeject (belegt von {_arm_holder})")
+        await _arm_lock.acquire()
+        if self.who in _arm_waiting:
+            _arm_waiting.remove(self.who)
+        _arm_holder = self.who
+        return self
+
+    async def __aexit__(self, *exc):
+        global _arm_holder
+        _arm_holder = None
+        _arm_lock.release()
+        return False
+
+
+def arm_status() -> dict:
+    return {"busy": _arm_lock.locked(), "holder": _arm_holder, "waiting": list(_arm_waiting)}
+
+
 class _MoveTimeout(RuntimeError):
     """Eine OTTOeject-Bewegung hat nicht innerhalb des Zeitlimits geantwortet.
     Eigener Typ, damit die Fehlerstrategie „move_timeout" darauf reagieren kann —
@@ -818,8 +861,11 @@ async def _do_macro(name: str, _recover: bool = True):
     # greifen kann (Phase 3.3).
     limit = _move_timeout()
     try:
-        async with httpx.AsyncClient(timeout=limit) as client:
-            r = await client.post(url, json={"script": send})
+        # Der Arm ist eine geteilte Ressource: nur EINE Bewegung zur Zeit, egal
+        # wie viele Drucker laufen (Phase 4.6).
+        async with arm_access(_farm.get("printer_module") or "farm", name[:40]):
+            async with httpx.AsyncClient(timeout=limit) as client:
+                r = await client.post(url, json={"script": send})
     except httpx.ReadTimeout:
         raise _MoveTimeout(f"{name}: keine Rückmeldung nach {int(limit)} s — Bewegung hängt")
     except httpx.HTTPError as e:
@@ -1931,6 +1977,15 @@ def _load_farm_geometry() -> dict:
         _motion.apply_rack_config(g, _rack_load())
     except Exception:
         pass
+    # Farm-Layout (absolute X je Modul) überlagern, sofern eingerichtet. Ohne
+    # Layout bleibt die bisherige Formel-Rechnung unverändert.
+    try:
+        from app.routers.layout import load_layout
+        _lay = load_layout()
+        if _lay.get("modules"):
+            _motion.apply_layout(g, _lay)
+    except Exception as e:
+        logger.warning(f"Farm-Layout nicht anwendbar ({e}) — rechne mit der Formel")
     # Migration: die Einlege-Op hieß früher „load", jetzt „place" (Alias). Alte
     # Opt-in-/Override-Einträge übernehmen, damit eine aktivierte Einlege-Position
     # nicht still auf das Geräte-Macro zurückfällt.
@@ -3306,6 +3361,100 @@ async def pause_farm():
         _farm["error"] = None
         await _send_print_cmd("resume")    # X1C-Druck fortsetzen
     return {"success": True, "paused": _farm["paused"]}
+
+
+def _printer_pool() -> list:
+    """Drucker aus dem Layout mit allem, was die Verteilung braucht: Auslastung,
+    freie Fächer in den zugeordneten Regalen, Bauraumhöhe aus dem Modell."""
+    try:
+        from app.routers.layout import load_layout
+        from app.services import farm_layout, printer_models
+    except Exception:
+        return []
+    lay = load_layout()
+    if not lay.get("modules"):
+        return []
+
+    data = _rack_data()
+    slots = data.get("slots") or {}
+    reserved = _rack_logic.reserved_source_slots(data)
+    taken = {j.get("slot") for j in _farm.get("jobs", [])
+             if j.get("status") not in ("done", "error") and j.get("slot")}
+
+    out = []
+    for m in farm_layout.printers(lay):
+        racks = farm_layout.racks_for_printer(lay, m["id"])
+        legacy = {r.get("legacy_rack") for r in racks if r.get("legacy_rack")}
+        free = 0
+        for key, s in slots.items():
+            try:
+                r = int(str(key).split("-")[0])
+            except (ValueError, IndexError):
+                continue
+            if legacy and r not in legacy:
+                continue
+            if s.get("status", "free") in ("free", "ready") and key not in reserved and key not in taken:
+                free += 1
+        cur = _farm.get("current_printer_module")
+        out.append({
+            "id": m["id"], "name": m["name"], "device_id": m.get("device_id"),
+            "enabled": m.get("enabled", True), "online": True,
+            "busy": bool(_farm.get("running")) and (cur is None or cur == m["id"]),
+            "queue_len": len([j for j in _farm.get("jobs", [])
+                              if j.get("status") == "pending"
+                              and (j.get("printer") or m["id"]) == m["id"]]),
+            "free_slots": free,
+            "max_height_mm": None,   # Bauraumhöhe je Modell: noch nicht hinterlegt
+            "model": m.get("model") or "",
+            "racks": sorted(legacy),
+        })
+    return out
+
+
+@router.get("/printers")
+async def farm_printers():
+    """Übersicht über die Drucker der Farm (Phase 4.7) — inkl. Arm-Status.
+    Ohne Layout eine leere Liste: dann läuft alles wie bisher mit einem Drucker."""
+    return {"printers": _printer_pool(), "arm": arm_status(),
+            "current": _farm.get("current_printer_module")}
+
+
+@router.post("/dispatch")
+async def dispatch_queue(body: dict = None):
+    """Warteschlange auf die Drucker verteilen (Vorschau oder übernehmen).
+
+    Body: {apply?: bool} — ohne `apply` wird nur gezeigt, wer wohin ginge.
+    Feste Zuweisungen des Nutzers bleiben unangetastet."""
+    from app.services import job_dispatch
+    body = body or {}
+    pool = _printer_pool()
+    if not pool:
+        raise HTTPException(400, "Kein Farm-Layout eingerichtet — es gibt nur einen Drucker")
+
+    jobs = [j for j in _farm.get("jobs", []) if j.get("status") == "pending"] \
+        or _read_config(QUEUE_PATH, {"jobs": []}).get("jobs", [])
+    plan = job_dispatch.distribute(pool, jobs)
+
+    if body.get("apply"):
+        by_id = {j.get("id"): j for j in jobs}
+        for jid, pid in plan.items():
+            if pid and jid in by_id:
+                by_id[jid]["printer"] = pid
+        if _farm.get("running"):
+            for j in _farm.get("jobs", []):
+                if j.get("id") in plan and plan[j["id"]]:
+                    j["printer"] = plan[j["id"]]
+        else:
+            _write_config(QUEUE_PATH, {"jobs": jobs})
+        _log(f"⇉ Warteschlange verteilt: {len([p for p in plan.values() if p])} Job(s) zugewiesen")
+
+    return {
+        "success": True,
+        "plan": [{"job_id": jid, "printer": pid} for jid, pid in plan.items()],
+        "printers": pool,
+        "unassigned": [jid for jid, pid in plan.items() if not pid],
+        "applied": bool(body.get("apply")),
+    }
 
 
 @router.get("/recovery")
