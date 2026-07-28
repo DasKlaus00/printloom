@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { controlService, printerService, deviceService, deviceSettingsService, klipperConfigService } from '../services/api'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, locale } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { usePageActive, useAutoRefresh } from '../services/useAutoRefresh'
@@ -565,7 +565,7 @@ export default function Steuerung() {
                     className="w-12 font-mono text-xs" />
                   <span className="text-[10px] text-surface-600">°C</span>
                 </div>
-                {lastUpdated && <p className="text-[10px] text-surface-600 font-mono">{lastUpdated.toLocaleTimeString()}</p>}
+                {lastUpdated && <p className="text-[10px] text-surface-600 font-mono">{lastUpdated.toLocaleTimeString(locale())}</p>}
                 <button onClick={() => setAutoRefresh(v => !v)}
                   title={farmRunning ? tr('Live über die Verbindung der laufenden Farm') : tr('Auto-Aktualisierung alle 15 s')}
                   className={`btn btn-sm ${autoRefresh ? 'btn-primary' : 'btn-ghost'}`}>

@@ -3,7 +3,7 @@ import { deviceService, printerService, rackManagerService, autofarmService } fr
 import { useQueueEta, fmtDur } from '../services/useQueueEta'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { useAutoRefresh } from '../services/useAutoRefresh'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, locale } from '../services/i18n'
 import HmsErrorText from '../components/HmsErrorText'
 
 function fmtMin(min) {
@@ -421,7 +421,7 @@ export default function Dashboard() {
                 <span className="text-[11px] font-mono text-blue-300">~{fmtDur(eta.totalSec)}</span>
                 {eta.finishAt && (
                   <span className="block text-[10px] text-surface-500 font-mono">
-                    {tr('fertig ~{0} Uhr', eta.finishAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }))}
+                    {tr('fertig ~{0} Uhr', eta.finishAt.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }))}
                   </span>
                 )}
                 {eta.known < eta.jobs && (
@@ -452,7 +452,7 @@ export default function Dashboard() {
       {stats && stats.total_jobs > 0 && (() => {
         const rate = Math.round((stats.successful_jobs / stats.total_jobs) * 100)
         const topErrors = Object.entries(stats.errors ?? {}).sort(([,a],[,b]) => b - a).slice(0, 3)
-        const since = stats.since ? new Date(stats.since).toLocaleDateString('de-DE') : null
+        const since = stats.since ? new Date(stats.since).toLocaleDateString(locale()) : null
         return (
           <div className="card">
             <div className="flex items-center justify-between mb-3">
@@ -543,7 +543,7 @@ export default function Dashboard() {
       {/* ══ Last refresh ══════════════════════════════════════ */}
       {lastRefresh && (
         <p className="text-center text-[9px] text-surface-800 font-mono">
-          {tr('Aktualisiert {0} · alle 15s', lastRefresh.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}
+          {tr('Aktualisiert {0} · alle 15s', lastRefresh.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}
         </p>
       )}
     </div>

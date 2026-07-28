@@ -202,3 +202,27 @@ def test_kaputte_moonraker_antwort():
 def test_moonraker_antwort_mit_muell_werten():
     assert gc.limits_from_toolhead({"axis_maximum": ["a", 340.0, 365.0]}) == \
         {"y": 340.0, "z": 365.0}
+
+
+# ── Übersetzbarkeit ──────────────────────────────────────────────────────────
+# Meldungen gehen als Vorlage + Werte an die Oberfläche, weil das Backend die
+# eingestellte Sprache nicht kennt (die steht im Browser). `message` ist nur die
+# fertige deutsche Fassung — beides darf nie auseinanderlaufen.
+def test_meldung_traegt_vorlage_und_werte():
+    p = gc.problem("demo", "warning", "Regal {0} hat nur {1} Fächer", [2, 6])
+    assert p["template"] == "Regal {0} hat nur {1} Fächer"
+    assert p["params"] == [2, 6]
+    assert p["message"] == "Regal 2 hat nur 6 Fächer"
+
+
+def test_jede_meldung_laesst_sich_uebersetzen():
+    """Kein Problem darf ohne Vorlage rausgehen, und die Vorlage muss den
+    fertigen Satz exakt reproduzieren — sonst zeigt die englische Oberfläche
+    etwas anderes als die deutsche."""
+    g = _geom(machine_limits={"x": 10, "y": 10, "z": 10})   # erzwingt Achsfehler
+    r = gc.check_geometry(g)
+    found = r["errors"] + r["warnings"]
+    assert found, "Test taugt nur mit mindestens einer Meldung"
+    for p in found:
+        assert p.get("template"), f"Meldung ohne Vorlage: {p}"
+        assert gc._fmt(p["template"], p.get("params") or []) == p["message"]

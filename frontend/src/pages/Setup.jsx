@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { deviceService, rackManagerService, autofarmService, controlService } from '../services/api'
-import { useLanguage, setLanguage, availableLanguages } from '../services/i18n'
+import { useLanguage, setLanguage, availableLanguages, trProblem } from '../services/i18n'
 import { TIMEZONES } from './Configuration'
 import { PRINTERS } from '../services/printers'
 import SetupHealth from '../components/SetupHealth'
@@ -36,29 +36,38 @@ function StepDots({ step }) {
 /* Ergebnis des Trockenlaufs: Schrittliste mit Ziel-Fach und Achs-Problemen.
    Bewusst kompakt — es geht um „passt das?", nicht um eine G-code-Anzeige. */
 function DryRunResult({ dry, tr }) {
-  if (dry.error) return <p className="text-xs text-red-400">{dry.error}</p>
+  if (dry.error) return <p className="text-xs text-red-400">{tr(dry.error)}</p>
   const errs = dry.errors ?? []
+  // Fach-Angaben baut die Oberfläche selbst aus Regal/Fach — das Backend kennt die
+  // eingestellte Sprache nicht (siehe trProblem in services/i18n).
+  const slotText = (rack, slot, fallback) =>
+    (rack != null && slot != null) ? tr('R{0} Fach {1}', rack, slot) : (fallback || '')
   return (
     <div className="space-y-2">
       <div className="text-[11px] text-surface-400 font-mono">
-        {tr('Quelle')}: {dry.start?.source} · {tr('Ziel-Fach')}: {dry.start?.target_slot || '—'} ·{' '}
+        {tr('Quelle')}: {slotText(dry.start?.source_rack, dry.start?.source_slot, dry.start?.source)} ·{' '}
+        {tr('Ziel-Fach')}: {dry.start?.target_slot || '—'} ·{' '}
         {tr('{0} Platten bereit', dry.start?.plates_available ?? 0)}
       </div>
       {(dry.warnings ?? []).map((w, i) => (
-        <p key={i} className="text-[11px] text-amber-300">⚠ {w}</p>
+        <p key={i} className="text-[11px] text-amber-300">⚠ {trProblem(w)}</p>
       ))}
       {errs.length > 0 && (
         <div className="rounded-lg border border-red-800 bg-red-950/30 p-2 space-y-1">
-          {errs.map((e, i) => <p key={i} className="text-[11px] text-red-300">{e.message}</p>)}
+          {errs.map((e, i) => <p key={i} className="text-[11px] text-red-300">{trProblem(e)}</p>)}
         </div>
       )}
       <ol className="space-y-0.5">
         {(dry.steps ?? []).map((s, i) => (
           <li key={i} className="flex items-center gap-2 text-[11px]">
             <span className="font-mono text-surface-700 w-6 text-right">{i + 1}</span>
-            <span className={s.problems?.length ? 'text-red-300' : 'text-surface-300'}>{s.label}</span>
-            {s.target && <span className="font-mono text-surface-600">{s.target}</span>}
-            {s.note && <span className="text-surface-600">· {s.note}</span>}
+            <span className={s.problems?.length ? 'text-red-300' : 'text-surface-300'}>{tr(s.label)}</span>
+            {(s.target || s.target_rack != null) && (
+              <span className="font-mono text-surface-600">
+                {slotText(s.target_rack, s.target_slot, s.target)}
+              </span>
+            )}
+            {s.note && <span className="text-surface-600">· {tr(s.note)}</span>}
           </li>
         ))}
       </ol>

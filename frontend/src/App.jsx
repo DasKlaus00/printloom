@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, Component, Suspense } from 'react'
 import { isChunkLoadError, reloadOnceForStaleChunk } from './services/reloadGuard'
+import { tr as translate } from './services/i18n'
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -19,14 +20,15 @@ class ErrorBoundary extends Component {
       const stale = isChunkLoadError(this.state.error)
       return (
         <div className="p-6 space-y-3">
+          {/* Klassen-Komponente → kein Hook; das freie tr() aus i18n greift trotzdem. */}
           <p className="text-red-400 font-semibold text-sm">
-            {stale ? 'Neue Version verfügbar' : 'Fehler auf dieser Seite'}
+            {stale ? translate('Neue Version verfügbar') : translate('Fehler auf dieser Seite')}
           </p>
           <p className="text-surface-500 text-xs font-mono">
-            {stale ? 'Die App wurde aktualisiert — bitte neu laden.' : String(this.state.error)}
+            {stale ? translate('Die App wurde aktualisiert — bitte neu laden.') : String(this.state.error)}
           </p>
           {/* Echter Seiten-Reload (nicht nur Re-Render) → holt frische index.html + Assets. */}
-          <button onClick={() => window.location.reload()} className="btn-secondary text-xs">Neu laden</button>
+          <button onClick={() => window.location.reload()} className="btn-secondary text-xs">{translate('Neu laden')}</button>
         </div>
       )
     }

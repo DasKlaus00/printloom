@@ -1045,14 +1045,14 @@ function Configuration() {
       {tab === 'devices' && (
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <p className="section-label mb-0">Devices</p>
+          <p className="section-label mb-0">{tr('Geräte')}</p>
           <div className="flex items-center gap-2">
             <button onClick={() => runDiscover()} disabled={discovering} className="btn btn-ghost btn-sm disabled:opacity-50"
               title={tr('Netzwerk nach Bambu-Druckern (SSDP) und Klipper/Moonraker durchsuchen')}>
               {discovering ? tr('Suche…') : tr('🔍 Netzwerk durchsuchen')}
             </button>
             <button onClick={() => (showForm ? closeForm() : setShowForm(true))} className="btn btn-primary btn-sm">
-              {showForm ? tr('Abbrechen') : '+ Add Device'}
+              {showForm ? tr('Abbrechen') : tr('+ Gerät hinzufügen')}
             </button>
           </div>
         </div>
@@ -1119,11 +1119,11 @@ function Configuration() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-surface-500 block mb-1">Device Name</label>
-                <input name="name" value={form.name} onChange={handleChange} placeholder="e.g. Bambu Lab X1C" required />
+                <label className="text-xs text-surface-500 block mb-1">{tr('Gerätename')}</label>
+                <input name="name" value={form.name} onChange={handleChange} placeholder={tr('z. B. Bambu Lab X1C')} required />
               </div>
               <div>
-                <label className="text-xs text-surface-500 block mb-1">Device Type{editId != null ? ` (${tr('nicht änderbar')})` : ''}</label>
+                <label className="text-xs text-surface-500 block mb-1">{tr('Gerätetyp')}{editId != null ? ` (${tr('nicht änderbar')})` : ''}</label>
                 <select name="device_type" value={form.device_type} onChange={handleChange} disabled={editId != null}
                   className={editId != null ? 'opacity-60 cursor-not-allowed' : ''}>
                   <option value="bambu_lab">Bambu Lab X1C</option>
@@ -1131,7 +1131,7 @@ function Configuration() {
                 </select>
               </div>
               <div>
-                <label className="text-xs text-surface-500 block mb-1">IP Address</label>
+                <label className="text-xs text-surface-500 block mb-1">{tr('IP-Adresse')}</label>
                 <input name="ip_address" value={form.ip_address} onChange={handleChange} placeholder="192.168.1.100" required />
               </div>
               <div>
@@ -1165,25 +1165,25 @@ function Configuration() {
                   )}
                 </div>
                 <div>
-                  <label className="text-xs text-surface-500 block mb-1">Serial Number</label>
+                  <label className="text-xs text-surface-500 block mb-1">{tr('Seriennummer')}</label>
                   <input name="serial_number" value={form.serial_number} onChange={handleChange} placeholder={tr('z. B. 00M…')} required />
                 </div>
                 <div>
-                  <label className="text-xs text-surface-500 block mb-1">Access Code</label>
+                  <label className="text-xs text-surface-500 block mb-1">{tr('Zugangscode')}</label>
                   <input name="access_code" type="password" value={form.access_code} onChange={handleChange}
                     required={editId == null}
                     placeholder={editId != null ? tr('leer lassen = unverändert') : ''} />
                 </div>
                 <div className="col-span-2 flex items-center gap-2">
                   <input type="checkbox" name="use_tls" id="use_tls" checked={form.use_tls} onChange={handleChange} className="w-auto" />
-                  <label htmlFor="use_tls" className="text-sm text-surface-400 cursor-pointer">Use TLS (recommended)</label>
+                  <label htmlFor="use_tls" className="text-sm text-surface-400 cursor-pointer">{tr('TLS verwenden (empfohlen)')}</label>
                 </div>
               </div>
             )}
 
             <div className="flex justify-end">
               <button type="submit" disabled={saving} className="btn btn-primary">
-                {saving ? tr('Speichert…') : (editId != null ? tr('Änderungen speichern') : 'Add Device')}
+                {saving ? tr('Speichert…') : (editId != null ? tr('Änderungen speichern') : tr('Gerät hinzufügen'))}
               </button>
             </div>
           </form>
@@ -1191,7 +1191,7 @@ function Configuration() {
 
         {/* Device list */}
         {devices.length === 0 ? (
-          <p className="text-sm text-surface-500 py-6 text-center">No devices configured</p>
+          <p className="text-sm text-surface-500 py-6 text-center">{tr('Noch kein Gerät angelegt')}</p>
         ) : (
           <div className="space-y-3">
             {devices.map(device => (

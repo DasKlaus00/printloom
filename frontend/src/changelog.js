@@ -4,6 +4,29 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.5',
+    de: [
+      'SPRACHE: Die Oberfläche folgt jetzt durchgängig der eingestellten Sprache. Vorher blieben etliche Stellen fest deutsch (oder fest englisch), egal was eingestellt war — 144 Texte fehlten schlicht in der Übersetzungstabelle und fielen still auf Deutsch zurück.',
+      'Behoben: Das Geräte-Formular unter „Konfiguration → Geräte" stand als einzige Stelle fest auf ENGLISCH („Device Name", „IP Address", „Access Code", „Use TLS", „No devices configured") — auch in der deutschen Oberfläche.',
+      'Übersetzt sind jetzt auch: Sequenz-Schritte, Trockenlauf, Fehlerstrategie, Drucker-Einstellungen, Wiederherstellungs-Hinweis nach Neustart, Push-Fehlermeldungen, Farbschema-Namen, AMS-Trefferqualität, Web-Push-Hinweise für iOS und die Fehlerseite der App.',
+      'Der Sequenz-Editor nutzt endlich die englischen Bezeichnungen, die das Backend zu jeder Operation schon immer mitgeliefert hat („Grab from magazine" statt „Aus Magazin holen").',
+      'Prüf-Meldungen aus dem Backend (Geometrie, Farm-Layout, Trockenlauf) sind übersetzbar geworden: Der Server kennt die eingestellte Sprache nicht — die steht im Browser — und schickt deshalb jetzt die Textvorlage samt Werten mit, statt einen fertigen deutschen Satz.',
+      'Datum und Uhrzeit folgen der Sprache (englisch = 07/24/2026), vorher stand an mehreren Stellen fest „de-DE".',
+      'Aufgeräumt: 71 doppelte Einträge in der Übersetzungstabelle entfernt — bei doppeltem Schlüssel gewann still der letzte. Ein Fall war widersprüchlich: „Übernehmen" heißt in der englischen Oberfläche jetzt überall „Apply" (vorher beim Geräte-Fund „Use").',
+      'Neuer Test wacht darüber: Er sammelt alle übersetzbaren Texte aus Frontend UND Backend und schlägt fehl, sobald einer ohne englische Fassung dazukommt.',
+    ],
+    en: [
+      'LANGUAGE: the interface now follows the selected language throughout. Before, plenty of places stayed German (or stayed English) no matter what was set — 144 strings were simply missing from the translation table and silently fell back to German.',
+      'Fixed: the device form under "Configuration → Devices" was the one place hard-wired to ENGLISH ("Device Name", "IP Address", "Access Code", "Use TLS", "No devices configured") — even in the German interface.',
+      'Now translated as well: sequence steps, dry run, error strategy, printer settings, the recovery notice after a restart, push error messages, colour-scheme names, AMS match quality, the iOS web-push hints and the app\'s error page.',
+      'The sequence editor finally uses the English labels the backend has always shipped for every operation ("Grab from magazine" instead of "Aus Magazin holen").',
+      'Check messages from the backend (geometry, farm layout, dry run) became translatable: the server does not know the selected language — that lives in the browser — so it now sends the text template plus its values instead of a finished German sentence.',
+      'Date and time follow the language (English = 07/24/2026); several places were hard-wired to "de-DE".',
+      'Cleanup: removed 71 duplicate entries from the translation table — with a duplicate key the last one silently won. One was contradictory: "Übernehmen" is now "Apply" everywhere in the English interface (it was "Use" on the device-discovery button).',
+      'A new test guards this: it collects every translatable string from the frontend AND the backend and fails as soon as one arrives without an English version.',
+    ],
+  },
+  {
     version: '1.1.4',
     de: [
       'Farm-Layout: Die Schiene wird jetzt so gezeichnet, wie das Gerät steht — X 0 (Home/Endschalter) RECHTS, wachsende X-Werte nach links. Vorher lief die Darstellung andersherum als die Maschine, man musste beim Einmessen im Kopf spiegeln.',

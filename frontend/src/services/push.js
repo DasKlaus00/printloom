@@ -1,11 +1,13 @@
 /* Web-Push client helpers: register SW, subscribe/unsubscribe, report state. */
 import { pushService } from './api'
+import { tr } from './i18n'
 
 export function pushSupported() {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 }
 
-// Returns null if push IS supported, otherwise a precise German reason string.
+// Returns null if push IS supported, otherwise a precise reason in the active
+// UI language.
 export function pushUnsupportedReason() {
   if (pushSupported()) return null
 
@@ -19,19 +21,15 @@ export function pushUnsupportedReason() {
   // only expose Web Push in a secure context — localhost is exempt, a LAN IP is not.
   if (!window.isSecureContext) {
     return isIOS
-      ? 'Kein sicherer Kontext: Du öffnest die Farm über HTTP (lokale IP). iOS erlaubt ' +
-        'Web-Push nur über HTTPS. Lösung: die Farm über HTTPS erreichbar machen (z. B. ' +
-        'Reverse-Proxy mit Zertifikat) — danach zum Home-Bildschirm hinzufügen.'
-      : 'Kein sicherer Kontext (HTTP). Web-Push braucht HTTPS — nur „localhost" ist ausgenommen.'
+      ? tr('Kein sicherer Kontext: Du öffnest die Farm über HTTP (lokale IP). iOS erlaubt Web-Push nur über HTTPS. Lösung: die Farm über HTTPS erreichbar machen (z. B. Reverse-Proxy mit Zertifikat) — danach zum Home-Bildschirm hinzufügen.')
+      : tr('Kein sicherer Kontext (HTTP). Web-Push braucht HTTPS — nur „localhost" ist ausgenommen.')
   }
 
   if (isIOS && !standalone) {
-    return 'Auf iPhone/iPad: Seite über „Teilen → Zum Home-Bildschirm" installieren und ' +
-           'die App vom Home-Screen-Icon aus öffnen (iOS 16.4+). Im normalen Safari-Tab gibt ' +
-           'es kein Web-Push.'
+    return tr('Auf iPhone/iPad: Seite über „Teilen → Zum Home-Bildschirm" installieren und die App vom Home-Screen-Icon aus öffnen (iOS 16.4+). Im normalen Safari-Tab gibt es kein Web-Push.')
   }
 
-  return 'Dieser Browser/dieses Gerät unterstützt keine Web-Push-Benachrichtigungen.'
+  return tr('Dieser Browser/dieses Gerät unterstützt keine Web-Push-Benachrichtigungen.')
 }
 
 function urlB64ToUint8Array(base64String) {
@@ -72,16 +70,16 @@ export async function syncSubscription() {
 }
 
 export async function subscribe() {
-  if (!pushSupported()) throw new Error('Push wird von diesem Browser/Gerät nicht unterstützt')
+  if (!pushSupported()) throw new Error(tr('Push wird von diesem Browser/Gerät nicht unterstützt'))
   const perm = await Notification.requestPermission()
-  if (perm !== 'granted') throw new Error('Benachrichtigungen wurden nicht erlaubt')
+  if (perm !== 'granted') throw new Error(tr('Benachrichtigungen wurden nicht erlaubt'))
 
   const reg = await getRegistration()
   await navigator.serviceWorker.ready
 
   const { data } = await pushService.getPublicKey()
   if (!data.available || !data.public_key) {
-    throw new Error('Server-Push nicht verfügbar (Abhängigkeiten fehlen)')
+    throw new Error(tr('Server-Push nicht verfügbar (Abhängigkeiten fehlen)'))
   }
 
   let sub = await reg.pushManager.getSubscription()

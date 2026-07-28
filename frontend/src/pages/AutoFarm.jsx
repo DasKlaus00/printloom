@@ -8,7 +8,7 @@ import { useQueueEta, fmtDur, jobPrintSec, ensureMeta, getCachedMeta, CHANGEOVER
 import { gateStart } from '../services/operatingHours'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { usePageActive, useAutoRefresh } from '../services/useAutoRefresh'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, tr as translate, locale } from '../services/i18n'
 import RecoveryBanner from '../components/RecoveryBanner'
 import PrinterOverview from '../components/PrinterOverview'
 
@@ -196,7 +196,7 @@ function CurrentStep({ farmStatus, idle }) {
       <p className="section-label mb-1">{tr('Aktueller Schritt')}</p>
       <div className="flex items-center gap-1.5">
         <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0" />
-        <p className="text-[9px] font-mono text-blue-300 truncate">{farmStatus.seq_step_label}</p>
+        <p className="text-[9px] font-mono text-blue-300 truncate">{tr(farmStatus.seq_step_label)}</p>
       </div>
     </div>
   )
@@ -268,7 +268,7 @@ function HlsVideo({ src, onError, className }) {
     }
     import('hls.js').then(({ default: Hls }) => {
       if (cancelled || !ref.current) return
-      if (!Hls.isSupported()) { onError?.('Browser kann HLS nicht abspielen'); return }
+      if (!Hls.isSupported()) { onError?.(translate('Browser kann HLS nicht abspielen')); return }
       // Aggressive Low-Latency-Konfig: nah an der Live-Kante bleiben statt zu puffern.
       hls = new Hls({
         liveDurationInfinity: true,
@@ -290,7 +290,7 @@ function HlsVideo({ src, onError, className }) {
       }
       hls.on(Hls.Events.FRAG_CHANGED, jumpLive)
       ref.current.play?.().catch(() => {})
-    }).catch(() => onError?.('HLS-Player konnte nicht geladen werden'))
+    }).catch(() => onError?.(translate('HLS-Player konnte nicht geladen werden')))
 
     // Wenn das Video ausgeblendet ist (andere Seite offen → display:none, der
     // Container hat keine Box → nicht „intersecting"), Wiedergabe & Download
@@ -666,7 +666,7 @@ function QueuePlanner({ jobs, tr }) {
   const totalSec  = Math.round(workMs / 1000)            // reine Arbeitszeit (ohne Wartelücken)
   const finishAt  = rows.length ? rows[rows.length - 1].end : new Date(now)
   const waiting   = ophOn && finishAt.getTime() > now + workMs + 1000   // Fenster-Wartezeit dabei?
-  const clk = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const clk = (d) => d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })
   // Kalendertage-Abstand zum Jetzt — für „heute / morgen / +N Tage", weil ein
   // Job durch Betriebszeiten erst an einem späteren Tag fertig werden kann.
   const dayOffset = (d) => {
@@ -1855,7 +1855,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                 style={{ width: `${Math.round(((seqProgress.idx + 1) / seqProgress.total) * 100)}%` }}
               />
             </div>
-            <span className="text-[10px] font-mono text-blue-300 truncate">{seqProgress.label}</span>
+            <span className="text-[10px] font-mono text-blue-300 truncate">{tr(seqProgress.label)}</span>
           </div>
         )}
 
@@ -1953,7 +1953,7 @@ function AutoFarm({ setCurrentPage } = {}) {
               {eta.ready && eta.jobs > 0 && (
                 <p className="text-[11px] text-surface-500 font-mono mt-0.5">
                   {fmtDur(eta.totalSec)
-                    ? <>{tr('~{0} gesamt', fmtDur(eta.totalSec))}{eta.finishAt && <span className="text-surface-600">{tr(' · fertig ~{0} Uhr', eta.finishAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</span>}</>
+                    ? <>{tr('~{0} gesamt', fmtDur(eta.totalSec))}{eta.finishAt && <span className="text-surface-600">{tr(' · fertig ~{0} Uhr', eta.finishAt.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }))}</span>}</>
                     : tr('Gesamtzeit unbekannt')}
                   {eta.known < eta.jobs && <span className="text-surface-600"> {tr('({0}/{1} mit Zeit)', eta.known, eta.jobs)}</span>}
                   {eta.histCount > 0 && <span className="text-emerald-500/80" title={tr('Basierend auf echten früheren Druckzeiten')}> {tr('· 📊 {0} aus Historie', eta.histCount)}</span>}
@@ -2179,7 +2179,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                       <div className="space-y-1">
                         <span
                           className="inline-block text-[9px] font-mono px-1 rounded border border-red-800/60 bg-red-950/30 text-red-400"
-                          title={jobAmsMissing(job).map(m => `${m.type ?? '?'} ${m.color ?? ''} (${m.reason})`).join(', ')}
+                          title={jobAmsMissing(job).map(m => `${m.type ?? '?'} ${m.color ?? ''} (${tr(m.reason)})`).join(', ')}
                         >{tr('⚠ Manuelle AMS-Festlegung')}</span>
                         <AmsMapper
                           filaments={job.filaments ?? []}
@@ -2467,7 +2467,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                 <p className="section-label shrink-0">{tr('Aktivität')}</p>
                 {seqProgress && (
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-900/40 border border-blue-700/60 text-blue-300 animate-pulse truncate">
-                    {seqProgress.label}
+                    {tr(seqProgress.label)}
                   </span>
                 )}
               </div>

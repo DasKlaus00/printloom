@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { layoutService, autofarmService } from '../services/api'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, trProblem } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 
 /* Farm-Layout (Phase 4)
@@ -215,10 +215,10 @@ export default function Layout() {
 
           {/* Probleme */}
           {errs.map((p, i) => (
-            <div key={`e${i}`} className="px-3 py-2 rounded-lg bg-red-950/40 border border-red-800 text-[11px] text-red-300">{p.message}</div>
+            <div key={`e${i}`} className="px-3 py-2 rounded-lg bg-red-950/40 border border-red-800 text-[11px] text-red-300">{trProblem(p)}</div>
           ))}
           {warns.map((p, i) => (
-            <div key={`w${i}`} className="px-3 py-2 rounded-lg bg-amber-950/30 border border-amber-800/60 text-[11px] text-amber-300">{p.message}</div>
+            <div key={`w${i}`} className="px-3 py-2 rounded-lg bg-amber-950/30 border border-amber-800/60 text-[11px] text-amber-300">{trProblem(p)}</div>
           ))}
 
           {/* Module */}

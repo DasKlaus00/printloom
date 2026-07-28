@@ -3557,9 +3557,13 @@ async def dry_run(payload: dict = None):
             raw = (step.get("value") or "")
             val = (raw.replace("{rack}", rack_num).replace("{slot}", slot_num)
                       .replace("{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot))
+            # target_rack/target_slot getrennt mitliefern: die Oberfläche baut daraus
+            # den Text in der eingestellten Sprache. `target`/`note` bleiben als
+            # fertiger deutscher Text für Logs und ältere Clients.
             entry = {"seq": name, "index": i, "type": t,
                      "label": step.get("label") or val[:60], "value": val,
-                     "target": "", "script": "", "problems": [], "note": ""}
+                     "target": "", "target_rack": None, "target_slot": None,
+                     "script": "", "problems": [], "note": ""}
 
             op, rack, slot = None, 1, 1
             if t == "app_op":
@@ -3569,7 +3573,7 @@ async def dry_run(payload: dict = None):
                     # Ohne Magazin wird der Magazin-Griff zum normalen Fach-Griff.
                     if op == "grab_magazine" and _magazine_slot_cfg() <= 0:
                         op = "grab"
-                        entry["note"] = "kein Magazin — greift aus dem Lagerfach"
+                        entry["note"] = "kein Magazin — greift aus dem Lagerfach"   # tr-Schlüssel
                 elif op == "store":
                     rack, slot = int(rack_num), int(slot_num)
             elif t == "macro":
@@ -3583,6 +3587,7 @@ async def dry_run(payload: dict = None):
             if op:
                 if op in ("grab", "grab_magazine", "store", "approach"):
                     entry["target"] = f"R{rack} Fach {slot}"
+                    entry["target_rack"], entry["target_slot"] = rack, slot
                 try:
                     entry["script"] = _motion.build_op(geom, op, rack=rack, slot=slot, check=False)
                     entry["problems"] = _geometry_check.check_script(entry["script"], geom, op, rack, slot)
@@ -3600,20 +3605,28 @@ async def dry_run(payload: dict = None):
         steps += _walk(seq_data.get("seq_next"), "seq_next")
 
     problems = [p for s in steps for p in s["problems"]]
+    # Warnungen als Vorlage + Werte (siehe geometry_check.problem) — sonst blieben
+    # sie in jeder Sprache deutsch.
     warnings = []
     if not target_slot:
-        warnings.append(f"Kein freies Fach für ein {height:.0f} mm hohes Objekt — die Farm "
-                        f"würde hier nach der eingestellten Fehlerstrategie reagieren.")
+        warnings.append(_geometry_check.problem(
+            "no_free_slot", "warning",
+            "Kein freies Fach für ein {0} mm hohes Objekt — die Farm würde hier nach der "
+            "eingestellten Fehlerstrategie reagieren.", [f"{height:.0f}"]))
     if plates <= 0:
-        warnings.append("Keine leeren Platten gemeldet — der Griff würde ins Magazin-Gate "
-                        "laufen (parken + pausieren).")
+        warnings.append(_geometry_check.problem(
+            "no_plates", "warning",
+            "Keine leeren Platten gemeldet — der Griff würde ins Magazin-Gate laufen "
+            "(parken + pausieren)."))
     if not steps:
-        warnings.append("Keine aktiven Schritte in der Sequenz.")
+        warnings.append(_geometry_check.problem(
+            "no_steps", "warning", "Keine aktiven Schritte in der Sequenz."))
 
     return {
         "success": True,
         "steps": steps,
         "start": {"target_slot": target_slot, "source": f"R{src_rack} Fach {src_slot}",
+                  "source_rack": src_rack, "source_slot": src_slot,
                   "from_magazine": from_mag, "plates_available": plates,
                   "height_mm": height},
         "geometry_check": check,

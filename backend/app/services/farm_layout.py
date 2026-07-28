@@ -31,6 +31,8 @@ erst entsperren (das entscheidet der Aufrufer, siehe routers/layout.py).
 """
 from __future__ import annotations
 
+from app.services.geometry_check import problem
+
 TYPES = ("printer", "rack", "home")
 
 # Zwei Module dürfen sich nicht dieselbe Stelle teilen — darunter ist es eine
@@ -166,45 +168,46 @@ def check(layout: dict, limits: dict = None) -> list:
     printers = [m for m in mods if m["type"] == "printer"]
     racks = [m for m in mods if m["type"] == "rack"]
     if not printers:
-        problems.append({"severity": "error", "code": "no_printer",
-                         "message": "Kein Drucker im Layout."})
+        problems.append(problem("no_printer", "error", "Kein Drucker im Layout."))
     if not racks:
-        problems.append({"severity": "warning", "code": "no_rack",
-                         "message": "Kein Regal im Layout — die Farm hat keinen Ablageplatz."})
+        problems.append(problem("no_rack", "warning",
+                                "Kein Regal im Layout — die Farm hat keinen Ablageplatz."))
 
     for m in mods:
         x = _num(m.get("x_ref"))
         if x < 0:
-            problems.append({"severity": "error", "code": "x_below_zero", "module": m["id"],
-                             "message": f"„{m['name']}“ steht bei X {x:g} mm — unter dem "
-                                        f"Endschalter (0 mm)."})
+            problems.append(problem(
+                "x_below_zero", "error",
+                "„{0}“ steht bei X {1} mm — unter dem Endschalter (0 mm).",
+                [m["name"], f"{x:g}"], module=m["id"]))
         if limits and limits.get("x") and x > limits["x"]:
-            problems.append({"severity": "error", "code": "x_above_limit", "module": m["id"],
-                             "message": f"„{m['name']}“ steht bei X {x:g} mm — über der "
-                                        f"Achsgrenze X {limits['x']:g} mm."})
+            problems.append(problem(
+                "x_above_limit", "error",
+                "„{0}“ steht bei X {1} mm — über der Achsgrenze X {2} mm.",
+                [m["name"], f"{x:g}", f"{limits['x']:g}"], module=m["id"]))
 
     ordered = sort_modules(mods)
     for a, b in zip(ordered, ordered[1:]):
         d = _num(b.get("x_ref")) - _num(a.get("x_ref"))
         if d < MIN_GAP_MM:
-            problems.append({
-                "severity": "error" if d <= 0 else "warning",
-                "code": "too_close", "module": b["id"],
-                "message": f"„{a['name']}“ und „{b['name']}“ stehen {d:g} mm auseinander "
-                           f"— unter {MIN_GAP_MM:g} mm ist das eine Verwechslung.",
-            })
+            problems.append(problem(
+                "too_close", "error" if d <= 0 else "warning",
+                "„{0}“ und „{1}“ stehen {2} mm auseinander — unter {3} mm ist das eine "
+                "Verwechslung.",
+                [a["name"], b["name"], f"{d:g}", f"{MIN_GAP_MM:g}"], module=b["id"]))
 
     ids = {m["id"] for m in mods}
     for r in racks:
         if r.get("printer") and r["printer"] not in ids:
-            problems.append({"severity": "warning", "code": "orphan_rack", "module": r["id"],
-                             "message": f"„{r['name']}“ ist einem Drucker zugeordnet, den es "
-                                        f"nicht (mehr) gibt."})
+            problems.append(problem(
+                "orphan_rack", "warning",
+                "„{0}“ ist einem Drucker zugeordnet, den es nicht (mehr) gibt.",
+                [r["name"]], module=r["id"]))
 
     dev_ids = [p.get("device_id") for p in printers if p.get("device_id") is not None]
     if len(dev_ids) != len(set(dev_ids)):
-        problems.append({"severity": "error", "code": "duplicate_device",
-                         "message": "Zwei Drucker-Module zeigen auf dasselbe Gerät."})
+        problems.append(problem("duplicate_device", "error",
+                                "Zwei Drucker-Module zeigen auf dasselbe Gerät."))
     return problems
 
 

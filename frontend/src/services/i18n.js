@@ -527,17 +527,15 @@ const EN_STRINGS = {
   'Verteilung ansehen': 'Preview distribution',
   '⇉ Jetzt verteilen': '⇉ Distribute now',
   '✓ übernommen': '✓ applied',
-  'Vorschau': 'Preview',
   'zugewiesen': 'assigned',
   '{0} ohne Drucker': '{0} without a printer',
   // Dauerbetrieb: unterbrochener Lauf, Arm-Zustand, Fehler-Historie — seit v1.1.2
   'Der letzte Lauf wurde unterbrochen': 'The last run was interrupted',
   'Job „{0}" stand bei: {1}': 'Job "{0}" was at: {1}',
   'Ein Lauf war aktiv, als Printloom beendet wurde.': 'A run was active when Printloom shut down.',
-  'Fach {0}': 'Slot {0}',
   'Platte ist abgenommen — quittieren': 'Plate removed — acknowledge',
   'Nur quittieren (Platte hängt noch)': 'Just acknowledge (plate still attached)',
-  'Drucker-Fehler (HMS)': 'Printer errors (HMS)',
+  'Drucker-Fehler (HMS)': 'Printer error (HMS)',
   'Bisher kein Drucker-Fehler aufgezeichnet.': 'No printer error recorded yet.',
   'Fehler-Historie leeren': 'Clear error history',
   'Alle aufgezeichneten Drucker-Fehler löschen?': 'Delete all recorded printer errors?',
@@ -596,7 +594,6 @@ const EN_STRINGS = {
     'Walks the sequence step by step WITHOUT sending anything to the printer or OTTOeject — showing which slot would be used and whether a move leaves the axis.',
   '▶ Trockenlauf starten': '▶ Start dry run',
   'Läuft…': 'Running…',
-  'Quelle': 'Source',
   'Ziel-Fach': 'Target slot',
   '{0} Platten bereit': '{0} plates ready',
   '✓ Kein Schritt würde aus der Achse fahren.': '✓ No step would leave the axis.',
@@ -625,7 +622,6 @@ const EN_STRINGS = {
   'geprüft': 'checked',
   'Achsgrenzen des OTTOeject (mm). Sind sie bekannt, prüft Printloom jede Bewegung VOR dem Senden und verweigert sie, wenn sie aus der Achse fährt. Leer = unbekannt → es wird nur geprüft, ob eine Bewegung unter 0 mm fährt.':
     'Axis limits of the OTTOeject (mm). Once known, Printloom checks every move BEFORE sending it and refuses moves that leave the axis. Empty = unknown → only moves below 0 mm are rejected.',
-  'unbekannt': 'unknown',
   'Lese…': 'Reading…',
   '⤓ Grenzen vom Gerät holen': '⤓ Read limits from device',
   'Leeren': 'Clear',
@@ -683,20 +679,15 @@ const EN_STRINGS = {
   'Auswurf X': 'Eject X', 'Auswurf Y': 'Eject Y', 'Auswurf Z': 'Eject Z',
   'Einlegen X': 'Load X', 'Einlegen Y': 'Load Y', 'Einlegen Z': 'Load Z',
   'X-Unclamp': 'X unclamp', 'Y-Engage': 'Y engage',
-  'Vorschau': 'Preview',
   'Drucker: {0} · {1} Fächer/Regal{2} · Fach 1 @ {3} mm · Schritt {4} mm':
     'Printer: {0} · {1} slots/rack{2} · slot 1 @ {3} mm · step {4} mm',
   ' (inkl. Magazin)': ' (incl. magazine)',
   'Kopieren': 'Copy', '✓ Kopiert': '✓ Copied', '↓ Download': '↓ Download',
   'Diese beiden Dateien in den Klipper-Config-Ordner der OTTOeject legen (neben ottoeject_macros.cfg) und Klipper neu starten. Feinjustierung pro Fach danach in „Steuerung".':
     'Put both files into the OTTOeject Klipper config folder (next to ottoeject_macros.cfg) and restart Klipper. Fine-tune per slot afterwards in “Control”.',
-  'Regal {0}': 'Rack {0}',
-  'Regal-Versatz X (mm)': 'Rack offset X (mm)',
   'global_rack_x_gap · pro Regal nach rechts': 'global_rack_x_gap · per rack to the right',
   'global_first_z_flat': 'global_first_z_flat',
   'Live: Fach anfahren (OTTOeject)': 'Live: approach slot (OTTOeject)',
-  '⌂ Referenzfahrt': '⌂ Home',
-  'Referenzfahrt…': 'Homing…',
   'Live-Aktionen (OTTOeject)': 'Live actions (OTTOeject)',
   'Erst Referenzfahrt. Dann im Bild ein Fach anklicken (Arm fährt davor, greift nicht) oder eine Drucker-Aktion wählen.':
     'Home first. Then click a slot in the diagram (arm moves in front, does not grab) or pick a printer action.',
@@ -715,10 +706,10 @@ const EN_STRINGS = {
   'Start-Koordinaten je Operation. Dieselben Werte nutzt der Config-Export UND der Live-G-code.':
     'Start coordinates per operation. The same values feed the config export AND the live G-code.',
   'Regal (Greifen / Ablegen)': 'Rack (grab / store)',
-  'Start-X (Regal 1)': 'Start X (rack 1)', 'x_unclamp': 'x_unclamp', 'Regal-Versatz X': 'Rack offset X',
+ 'Regal-Versatz X': 'Rack offset X',
   '⬆ Platte rausholen (Start am Drucker)': '⬆ Eject plate (start at printer)',
   '⬇ Platte einlegen (Start am Drucker)': '⬇ Load plate (start at printer)',
-  'Start-X': 'Start X', 'Y': 'Y', 'Z': 'Z', 'Pin-Abst.': 'Pin dist.', 'd_to_pin': 'd_to_pin',
+ 'Y': 'Y', 'Z': 'Z',
   'Drucker hinter letztem Regal (X = Start + (Racks−1)·Regal-Versatz)':
     'Printer behind last rack (X = start + (racks−1)·rack offset)',
   '🖨 Drucker sitzt hinter Regal {0} · Auswurf/Einlegen/Tür-X automatisch +{1} mm (ganz links, hinter dem letzten Regal)':
@@ -766,7 +757,6 @@ const EN_STRINGS = {
   'Beispiel-Teil geladen': 'Demo part loaded',
   'Beispiel-Teil ist bereits vorhanden': 'Demo part already exists',
   'Beispiel-Teil konnte nicht geladen werden': 'Could not load demo part',
-  'Drucker': 'Printer',
   'Klipper': 'Klipper',
   'Backend offline': 'Backend offline',
 
@@ -777,7 +767,6 @@ const EN_STRINGS = {
   'Projekt': 'Project',
   'Konfiguration': 'Configuration',
   'Sequenz-Editor': 'Sequence Editor',
-  'Profile': 'Profiles',
   'Setup-Assistent': 'Setup Wizard',
   'Update läuft…': 'Update in progress…',
   'Container wird neugestartet — bitte warten': 'Container is restarting — please wait',
@@ -820,11 +809,9 @@ const EN_STRINGS = {
   '{0} wartend · ~{1} gesamt': '{0} waiting · ~{1} total',
   'Kein aktiver Druck': 'No active print',
   'Pause': 'Paused',
-  'Bereit': 'Ready',
   'Nicht konfiguriert': 'Not configured',
   'Magazin': 'Magazine',
   'von {0} Platten': 'of {0} plates',
-  'Regal': 'Rack',
   'fertig / {0} Fächer': 'done / {0} slots',
   '{0} mm/Fach': '{0} mm/slot',
   'Warteschlange': 'Queue',
@@ -846,7 +833,6 @@ const EN_STRINGS = {
   'Druckzeit': 'Print time',
   'Schichten': 'Layers',
   'Düse': 'Nozzle',
-  'Quelle': 'Source',
   'GCode eingebettet': 'G-code embedded',
   'Ja': 'Yes',
   'Nein': 'No',
@@ -885,7 +871,6 @@ const EN_STRINGS = {
   'Suchen…': 'Search…',
 
   // ── Filamente ──
-  'Alle': 'All',
   'Filament bearbeiten': 'Edit filament',
   'Neues Filament': 'New filament',
   'Marke*': 'Brand*',
@@ -949,7 +934,6 @@ const EN_STRINGS = {
 
   // ── Profile ──
   'Kalibrierung': 'Calibration',
-  'Sequenzen': 'Sequences',
   'Regal-Konfig': 'Rack config',
   'Einstellungen': 'Settings',
   'Anderer / generisch': 'Other / generic',
@@ -995,8 +979,6 @@ const EN_STRINGS = {
   'Laden': 'Load',
 
   /* ── RackManager ── */
-  'Entsperren': 'Unlock',
-  'Sperren': 'Lock',
   'Auf Leer zurücksetzen': 'Reset to empty',
   'Neues Rack anlegen': 'Create new rack',
   'z.B. Rack B': 'e.g. Rack B',
@@ -1081,7 +1063,6 @@ const EN_STRINGS = {
   'nicht erreichbar': 'not reachable',
   'OTTOeject speichern →': 'Save OTTOeject →',
   'Wie ist dein Regal aufgebaut?': 'How is your rack set up?',
-  'Regale': 'Racks',
   'Fächer/Regal': 'Slots/rack',
   'Gesamt: {0} Fächer · bis {1} mm Objekthöhe je Fach': 'Total: {0} slots · up to {1} mm object height per slot',
   'Regal speichern →': 'Save rack →',
@@ -1217,7 +1198,6 @@ const EN_STRINGS = {
   'Seriennummer manuell nötig': 'Serial number needed manually',
   'Access-Code wird nie mitgesendet — den trägst du selbst ein.': 'The access code is never broadcast — you enter it yourself.',
   'bereits angelegt': 'already added',
-  'Übernehmen': 'Use',
   'Printloom läuft in einem Docker-Bridge-Netz und sieht dein LAN nicht automatisch (die erkannte IP ist die Container-Adresse 172.x). Gib dein LAN-Subnetz ein und suche erneut — oder nutze „network_mode: host".':
     'Printloom is running in a Docker bridge network and cannot see your LAN automatically (the detected IP is the container address 172.x). Enter your LAN subnet and scan again — or use "network_mode: host".',
   'Printloom läuft in einem Docker-Bridge-Netz und sieht dein LAN nicht automatisch. Gib dein LAN-Subnetz ein und suche erneut — oder nutze „network_mode: host".':
@@ -1227,14 +1207,11 @@ const EN_STRINGS = {
 
   /* ── Historie + Crash-Warnung + Queue ── */
   'Historie': 'History',
-  'Leeren': 'Clear',
   'anzeigen': 'show',
   'Status': 'Status',
   'Start': 'Start',
   'Ende': 'End',
   'Dauer': 'Duration',
-  'Modell': 'Model',
-  'Verstanden': 'Got it',
   'Geborgen': 'Recovered',
   'Alle abgeschlossenen Druck-Jobs mit Datum, Anfangs- und End-Uhrzeit.': 'All completed print jobs with date, start and end time.',
   'Historie leeren': 'Clear history',
@@ -1261,7 +1238,6 @@ const EN_STRINGS = {
   'Datei nicht mehr verfügbar': 'File no longer available',
   '+ Warteschlange': '+ Queue',
   'Dieses Modell erneut in die Warteschlange legen': 'Add this model to the queue again',
-  'Sichert die': 'Backs up the',
   'als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Drucker-/Kamera-/HA-Einstellungen, Drucker-Geometrie (X-Positionen & G-code-Overrides), Profile, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.':
     'as JSON: devices (printer & OTTOeject incl. credentials), printer/camera/HA settings, printer geometry (X positions & G-code overrides), profiles, calibration, sequences, farm settings, rack layout, filaments, schedules & language packs — export or restore.',
   '🌀 Bauraumlüftung dauerhaft aus': '🌀 Keep chamber fan off',
@@ -1289,13 +1265,11 @@ const EN_STRINGS = {
   '(deaktiviert)': '(disabled)',
   'min': 'min',
   'Homing-Datei (G28 + Z200)': 'Homing file (G28 + Z200)',
-  'Nicht konfiguriert': 'Not configured',
   '↺ Neu erstellen': '↺ Recreate',
   '+ Erstellen': '+ Create',
   'Generiert eine .3mf mit G28+Z200 — im Sequenzeditor als ⇫ Homing verwenden':
     'Generates a .3mf with G28+Z200 — use as ⇫ Homing in the sequence editor',
   'Regal gespeichert.': 'Rack saved.',
-  'Regal-Konfiguration': 'Rack configuration',
   'Größe, Fach-Höhen, Magazin-Fach und Platten-Anzahl pro Rack': 'Size, slot heights, magazine slot and plate count per rack',
   'Fächer/Rack': 'Slots/rack',
   'Fach-Höhe (mm)': 'Slot height (mm)',
@@ -1345,7 +1319,6 @@ const EN_STRINGS = {
 
   /* ── Steuerung (Control) ── */
   'Offline': 'Offline',
-  'aktiv': 'active',
   'Klipper Konfiguration': 'Klipper configuration',
   'Nur lesend — Mainsail config/': 'Read-only — Mainsail config/',
   'Klicke „Laden" um die Konfigurationsdateien anzuzeigen.': 'Click "Load" to show the configuration files.',
@@ -1387,8 +1360,6 @@ const EN_STRINGS = {
   'Externe URL': 'External URL',
   'Düsentemperatur': 'Nozzle temperature',
   'Betttemperatur': 'Bed temperature',
-  'Tür öffnen': 'Open door',
-  'Tür schließen': 'Close door',
   'Auswerfen': 'Eject',
   'Einlegen': 'Load',
   'Holen aus Fach': 'Grab from slot',
@@ -1476,7 +1447,6 @@ const EN_STRINGS = {
   '↺ Standard': '↺ Default',
   'Keine Schritte — über + Hinzufügen ergänzen': 'No steps — add via + Add',
   '∥ gleichzeitig': '∥ simultaneously',
-  '{0} Schritte': '{0} steps',
   '+ Hinzufügen:': '+ Add:',
   'Ziel-Fach des Jobs': "job's target slot",
   'Vorrat-Stapel (aus Regal-Einstellungen)': 'stock stack (from rack settings)',
@@ -1573,10 +1543,7 @@ const EN_STRINGS = {
 
   /* ── File Library ── */
   'Vorschau anzeigen': 'Show preview',
-  'Vorschau': 'Preview',
-  'Analyse fehlgeschlagen': 'Analysis failed',
   'AMS-Analyse': 'AMS analysis',
-  'Analysiere…': 'Analyzing…',
   'Keine Filament-Info gefunden': 'No filament info found',
   'Filament-Preset für AutoFarm': 'Filament preset for AutoFarm',
   'Filament-Preset': 'Filament preset',
@@ -1648,7 +1615,6 @@ const EN_STRINGS = {
   'Ordner konnte nicht gelöscht werden': 'Folder could not be deleted',
   'Umbenennen fehlgeschlagen': 'Rename failed',
   'Verschieben fehlgeschlagen': 'Move failed',
-  '{0} hochgeladen': '{0} uploaded',
   '{0} Dateien hochgeladen': '{0} files uploaded',
   '{0} hochgeladen, {1} fehlgeschlagen': '{0} uploaded, {1} failed',
   '"{0}" löschen?': 'Delete "{0}"?',
@@ -1768,11 +1734,9 @@ const EN_STRINGS = {
   'Zweite Kamera (unten) einblenden': 'Show second camera (bottom)',
   '● Live': '● Live',
   'Holen aus Magazin (Fach 7)': 'Grab from magazine (slot 7)',
-  'Magazin': 'Magazine',
   'Aus Magazin holen': 'Grab from magazine',
   'Live über die Verbindung der laufenden Farm': 'Live via the running farm’s connection',
   'Auto-Aktualisierung alle 15 s': 'Auto-refresh every 15 s',
-  'Was ist neu': 'What’s new',
   'Auto Farm gestartet': 'Auto Farm started',
   'Farm-State zurückgesetzt': 'Farm state reset',
   'Kein Bambu Lab Gerät konfiguriert — bitte erst unter Configuration einrichten':
@@ -1782,7 +1746,6 @@ const EN_STRINGS = {
   'Läuft · {0}': 'Running · {0}',
   '{0} Job(s) wartet': '{0} job(s) waiting',
   'Wartet auf Jobs…': 'Waiting for jobs…',
-  '{0} Fehler': '{0} errors',
   'Dashboard anpassen: Panels verschieben, Größe ändern, ein-/ausblenden':
     'Customize dashboard: move panels, resize, show/hide',
   '✓ Fertig': '✓ Done',
@@ -1800,7 +1763,6 @@ const EN_STRINGS = {
   'Ausblenden': 'Hide',
   'Einblenden': 'Show',
   'Positionen, Größen und Sichtbarkeit auf Standard zurücksetzen': 'Reset positions, sizes and visibility to default',
-  'Warteschlange': 'Queue',
   '~{0} gesamt': '~{0} total',
   ' · fertig ~{0} Uhr': ' · done ~{0}',
   'Gesamtzeit unbekannt': 'Total time unknown',
@@ -1815,7 +1777,6 @@ const EN_STRINGS = {
   'Vorlage löschen': 'Delete template',
   'Jobs in der': 'Add jobs in the',
   'hinzufügen →': '→',
-  'Platte {0}': 'Plate {0}',
   'Platte {0}/{1}': 'Plate {0}/{1}',
   'Platte {0} von {1}': 'Plate {0} of {1}',
   'P{0}/{1}': 'P{0}/{1}',
@@ -1827,7 +1788,6 @@ const EN_STRINGS = {
   'Höhe…': 'Height…',
   'Roh: {0} mm · {1} Schichten × {2} mm · +{3}% = {4} mm': 'Raw: {0} mm · {1} layers × {2} mm · +{3}% = {4} mm',
   'Höhe unbekannt': 'Height unknown',
-  'Fach': 'Slot',
   'Regal voll — kein freies Fach in der Vorschau': 'Rack full — no free slot in the preview',
   'Regal voll': 'Rack full',
   'Fach wird bei Ausführung automatisch zugewiesen': 'Slot is assigned automatically at runtime',
@@ -1842,7 +1802,6 @@ const EN_STRINGS = {
   'Sperr': 'Lock',
   'Fach leeren': 'Empty slot',
   'Leeren + nächsten Job zuweisen': 'Empty + assign next job',
-  '{0} mm/Fach': '{0} mm/slot',
   'Aktivität': 'Activity',
   'Persistentes Log-File herunterladen (alle Läufe)': 'Download persistent log file (all runs)',
   '↓ Log': '↓ Log',
@@ -1919,7 +1878,6 @@ const EN_STRINGS = {
   // ── Language packs ──
   'Pack braucht code + strings': 'Pack needs code + strings',
   'Template exportieren': 'Export template',
-  'Pack importieren': 'Import pack',
   'Template exportieren lädt eine JSON-Vorlage mit allen deutschen Strings und englischen Referenz-Übersetzungen. Einfach einer KI geben: „Übersetze alle Werte auf Französisch" — dann code + name anpassen und importieren.':
     'Export template downloads a JSON template with all German strings and English reference translations. Just hand it to an AI: "Translate all values to French" — then adjust code + name and import.',
 
@@ -1991,7 +1949,6 @@ const EN_STRINGS = {
   'Maschinenstundensatz (€/h)': 'Machine rate (€/h)',
   'Filamentpreis (€/kg)': 'Filament price (€/kg)',
   'Gespeichert.': 'Saved.',
-  'Kein Bambu-Gerät konfiguriert': 'No Bambu device configured',
   'kWh gesamt': 'kWh total',
   'Stromkosten': 'Power cost',
   'Strom + Maschine': 'Power + machine',
@@ -2003,7 +1960,6 @@ const EN_STRINGS = {
   // ── Fehlerstrategie (1.3) ──
   'Fehlerstrategie': 'Error strategy',
   'Festlegen, was die Farm bei jedem Fehlertyp automatisch tut': 'Define what the farm does automatically for each error type',
-  'Drucker-Fehler (HMS)': 'Printer error (HMS)',
   'Schwere/fatale Druckermeldung (z. B. Hardwarefehler)': 'Severe/fatal printer message (e.g. hardware fault)',
   'Druck fehlgeschlagen': 'Print failed',
   'Drucker meldet FAILED nach den Wiederholungen': 'Printer reports FAILED after the retries',
@@ -2030,6 +1986,202 @@ const EN_STRINGS = {
   'Push, wenn der Reconnect zum Drucker mehrfach scheitert': 'Push when reconnecting to the printer fails repeatedly',
   'Stillstand-Watchdog (Minuten ohne Fortschritt)': 'Stall watchdog (minutes without progress)',
   'min → pausiert bei möglicher Verstopfung': 'min → pauses on possible clog',
+
+  // ── Nachgetragen 1.1.5: Texte, die bisher ohne Uebersetzung auf Deutsch
+  // zurueckfielen, plus die Vorlagen der Backend-Meldungen (siehe trProblem). ──
+  'Neue Version verfügbar': 'New version available',
+  'Fehler auf dieser Seite': 'Error on this page',
+  'Die App wurde aktualisiert — bitte neu laden.':
+    'The app has been updated — please reload.',
+  'Neu laden': 'Reload',
+  'Lade …': 'Loading …',
+  'Hinweise zu Version {0}': 'Notices for version {0}',
+  '⟳ prüfen': '⟳ check',
+  'Im Greifer hängt eine LEERE Platte (aus Fach {0})':
+    'The gripper is holding an EMPTY plate (from slot {0})',
+  'Im Greifer hängt eine LEERE Platte': 'The gripper is holding an EMPTY plate',
+  'Im Greifer hängt eine Platte mit einem FERTIGEN Druck':
+    'The gripper is holding a plate with a FINISHED print',
+  'Der Greifer war leer': 'The gripper was empty',
+  'Erst nachsehen: Steht eine Platte im Greifer oder im Drucker? Danach hier bestätigen — die Farm referenziert vor der nächsten Bewegung selbst.':
+    'Check first: is there a plate in the gripper or in the printer? Then confirm here — the farm re-references itself before the next move.',
+  'Standard': 'Default',
+  '{0} {1} → {2} mm': '{0} {1} → {2} mm',
+  'Browser kann HLS nicht abspielen': 'This browser cannot play HLS',
+  'HLS-Player konnte nicht geladen werden': 'The HLS player could not be loaded',
+  'Regal gespeichert': 'Rack saved',
+  'Wartet': 'Waiting',
+  'Datei senden': 'Sending file',
+  '+ Gerät hinzufügen': '+ Add device',
+  'Gerätename': 'Device name',
+  'z. B. Bambu Lab X1C': 'e.g. Bambu Lab X1C',
+  'Gerätetyp': 'Device type',
+  'IP-Adresse': 'IP address',
+  'Seriennummer': 'Serial number',
+  'Zugangscode': 'Access code',
+  'TLS verwenden (empfohlen)': 'Use TLS (recommended)',
+  'Gerät hinzufügen': 'Add device',
+  'Noch kein Gerät angelegt': 'No device configured yet',
+  'Language Name': 'Language name',
+  '✓ Übernommen': '✓ Applied',
+  'Kalibrierung gestartet': 'Calibration started',
+  'Drucker hat diesen Wert noch nicht gemeldet':
+    'The printer has not reported this value yet',
+  '⚙ Drucker-Einstellungen ({0})': '⚙ Printer settings ({0})',
+  'Kein Bambu-Drucker unter „Geräte" angelegt.':
+    'No Bambu printer configured under “Devices”.',
+  'Drucker nicht erreichbar — Einstellungen können nicht gelesen werden. Setzen wird erst nach dem Verbinden wirksam.':
+    'Printer not reachable — settings cannot be read. Setting them takes effect once connected.',
+  '(aktuell unbekannt)': '(currently unknown)',
+  'Druckt nach einem Schrittverlust weiter statt abzubrechen.':
+    'Keeps printing after a lost step instead of aborting.',
+  'Beleuchtung im Bauraum (wird für die Kamera automatisch eingeschaltet).':
+    'Chamber lighting (switched on automatically for the camera).',
+  'Starte…': 'Starting…',
+  'Drucker-Bett homen…': 'Homing the print bed…',
+  '✓ Bett gehomt (G28)': '✓ Bed homed (G28)',
+  'Kein Bambu-Drucker unter „Geräte" angelegt — Bett-Steuerung nicht verfügbar.':
+    'No Bambu printer configured under “Devices” — bed control unavailable.',
+  '„Bett fahren" setzt das Bett absolut auf die Ziel-Z (G90/G1 Z), Z200 = Ladeposition für den Platten-Wechsel. „Bett homen" (G28) referenziert die Achsen neu — danach stimmt die Z-Höhe wieder. Drucker muss idle sein.':
+    '“Move bed” sets the bed to the absolute target Z (G90/G1 Z), Z200 = loading position for the plate change. “Home bed” (G28) re-references the axes — after that the Z height is correct again. The printer must be idle.',
+  '{0}: Printloom kann diesen Drucker nicht direkt steuern (nur Bambu Lab über MQTT) — Bett-Fahrt, Homing und Drucker-Einstellungen entfallen. Der OTTOeject wird normal bedient.':
+    '{0}: Printloom cannot control this printer directly (Bambu Lab over MQTT only) — bed movement, homing and printer settings are unavailable. The OTTOeject works as usual.',
+  'Sichere Anfahrt vor den Drucker — eigene Start-Position. Standard = Auswurf-Position; hier fein justierbar.':
+    'Safe approach in front of the printer — its own start position. Default = eject position; fine-tune it here.',
+  'Positionen': 'Positions',
+  'Drucker-X — setzt „Vor Drucker fahren“, „Platte auswerfen“ und „Platte einlegen“ gemeinsam':
+    'Printer X — sets “Move to printer”, “Eject plate” and “Place plate” together',
+  'Vor Drucker fahren…': 'Moving to printer…',
+  'Vor den Drucker fahren (Test)': 'Move in front of the printer (test)',
+  '🖨 Drucker (ganz links) = Start-X von „Vor Drucker fahren“, „Platte auswerfen“ und „Platte einlegen“ gemeinsam (absoluter Maschinen-X). Regale: Standard = Start-X + Regal-Versatz; ein geänderter Wert wird als Δ-Korrektur pro Regal gespeichert und gilt für alle Fächer & das Magazin dieses Regals — auch im eigenen G-code über den Platzhalter für die Regal-X-Position. Ändert sich Start-X/Versatz, wandert die Korrektur mit.':
+    '🖨 Printer (far left) = start X for “Move to printer”, “Eject plate” and “Place plate” together (absolute machine X). Racks: default = start X + rack offset; a changed value is stored as a Δ correction per rack and applies to every slot & the magazine of that rack — including in your own G-code via the placeholder for the rack X position. If start X/offset changes, the correction moves with it.',
+  'Kamera prüft die erste Schicht und hält den Druck bei Fehlern an.':
+    'The camera checks the first layer and stops the print on failure.',
+  'Erkennt Fehldrucke („Spaghetti") und hält den Druck an.':
+    'Detects failed prints (“spaghetti”) and stops the print.',
+  'Prüft per Marker, ob die richtige Druckplatte eingelegt ist.':
+    'Uses a marker to check that the correct build plate is inserted.',
+  'Allgemeine KI-Überwachung des Drucks.': 'General AI monitoring of the print.',
+  'Ludicrous': 'Ludicrous',
+  'Filament': 'Filament',
+  'Home (Endschalter)': 'Home (endstop)',
+  'Profil „{0}" importiert.': 'Profile “{0}” imported.',
+  'Mein Profil': 'My profile',
+  '▶ {0} — läuft…': '▶ {0} — running…',
+  'Bambu G-Code': 'Bambu G-code',
+  'Homing senden': 'Send homing',
+  'Auf Z200 warten (Homing-Ende)': 'Wait for Z200 (end of homing)',
+  'Feste Datei (ID)': 'Fixed file (ID)',
+  'Warte auf PAUSE (Z200)': 'Wait for PAUSE (Z200)',
+  'Auf Druckfehler warten': 'Wait for print failure',
+  'Fehler quittieren': 'Acknowledge error',
+  'R{0} Fach {1}': 'R{0} slot {1}',
+  '✓ X {0} · Y {1} · Z {2} mm': '✓ X {0} · Y {1} · Z {2} mm',
+  '{0} Regale × {1} Lagerfächer': '{0} racks × {1} storage slots',
+  'Magazin = Fach {0}': 'Magazine = slot {0}',
+  'kein Magazin': 'no magazine',
+  'Z-Schritt {0} mm': 'Z step {0} mm',
+  'Fachhöhe {0} mm': 'Slot height {0} mm',
+  'Nachschub: {0} leere Platten je Magazin (später änderbar).':
+    'Supply: {0} empty plates per magazine (changeable later).',
+  'Start-Bestückung: {0} Fächer je Regal mit leerer Platte. Die Farm greift von OBEN nach unten und legt den fertigen Druck in dasselbe Fach zurück.':
+    'Initial stock: {0} slots per rack with an empty plate. The farm grabs from the TOP downwards and puts the finished print back into the same slot.',
+  '⚠ Der Z-Schritt (Fach zu Fach) bestimmt, wo der Arm zugreift. Miss ihn am eigenen Regal nach und korrigiere ihn im Schritt „Regal" — ein falscher Wert lässt den Arm ins Blech fahren.':
+    '⚠ The Z step (slot to slot) determines where the arm reaches in. Measure it on your own rack and correct it in the “Rack” step — a wrong value drives the arm into the sheet metal.',
+  'Übernehmen →': 'Apply →',
+  'Als NÄCHSTES die Positionen am Drucker einstellen (Tür, Auswurf, Einlegen, Greifen) — dorthin führt der Knopf unten. Sequenzen danach im':
+    'NEXT set the positions at the printer (door, eject, place, grab) — the button below takes you there. Sequences afterwards in the',
+  'Bambu X1C': 'Bambu X1C',
+  'OTTOeject': 'OTTOeject',
+  'Bambu Lab X1C': 'Bambu Lab X1C',
+  'Bambu Lab P1S': 'Bambu Lab P1S',
+  'Bambu Lab P1P': 'Bambu Lab P1P',
+  'Bambu Lab A1': 'Bambu Lab A1',
+  'Elegoo Centauri Carbon': 'Elegoo Centauri Carbon',
+  'Anycubic Kobra S1': 'Anycubic Kobra S1',
+  'Creality K1C': 'Creality K1C',
+  'Flashforge AD5X': 'Flashforge AD5X',
+  'System': 'System',
+  'Version': 'Version',
+  'Installer wurde gestartet. Printloom wird geschlossen und aktualisiert — folge dem Installer und starte die App danach neu.':
+    'The installer has been started. Printloom will close and update — follow the installer and restart the app afterwards.',
+  '— kein automatisches Update im Hintergrund. Ein Klick lädt den passenden Installer vom GitHub-Release und startet ihn; die App wird geschlossen und aktualisiert.':
+    '— no automatic background update. One click downloads the matching installer from the GitHub release and starts it; the app closes and updates.',
+  'Backup & Restore': 'Backup & restore',
+  '{0} hinzugefügt': '{0} added',
+  'AMS nicht lesbar': 'AMS not readable',
+  'kein passendes Material': 'no matching material',
+  '25 mm Spalt zwischen den Haltern → 55 mm von Fach zu Fach. 7 Positionen je Regal. Passt zur Original-Kalibrierdatei des OTTOeject.':
+    '25 mm gap between the holders → 55 mm from slot to slot. 7 positions per rack. Matches the original OTTOeject calibration file.',
+  'Flache Halter: alle 25 mm ein Fach, ~260 mm von Aluprofil zu Aluprofil → 10 Positionen je Regal. Viel mehr Platten, aber nur ~20 mm Bauhöhe je Druck.':
+    'Flat holders: a slot every 25 mm, ~260 mm from extrusion to extrusion → 10 positions per rack. Many more plates, but only ~20 mm build height per print.',
+  'Custom Printer': 'Custom printer',
+  'Kein sicherer Kontext: Du öffnest die Farm über HTTP (lokale IP). iOS erlaubt Web-Push nur über HTTPS. Lösung: die Farm über HTTPS erreichbar machen (z. B. Reverse-Proxy mit Zertifikat) — danach zum Home-Bildschirm hinzufügen.':
+    'No secure context: you are opening the farm over HTTP (local IP). iOS only allows web push over HTTPS. Fix: make the farm reachable over HTTPS (e.g. a reverse proxy with a certificate) — then add it to the home screen.',
+  'Kein sicherer Kontext (HTTP). Web-Push braucht HTTPS — nur „localhost" ist ausgenommen.':
+    'No secure context (HTTP). Web push needs HTTPS — only “localhost” is exempt.',
+  'Auf iPhone/iPad: Seite über „Teilen → Zum Home-Bildschirm" installieren und die App vom Home-Screen-Icon aus öffnen (iOS 16.4+). Im normalen Safari-Tab gibt es kein Web-Push.':
+    'On iPhone/iPad: install the page via “Share → Add to Home Screen” and open the app from the home-screen icon (iOS 16.4+). A normal Safari tab has no web push.',
+  'Push wird von diesem Browser/Gerät nicht unterstützt':
+    'Push is not supported by this browser/device',
+  'Benachrichtigungen wurden nicht erlaubt': 'Notifications were not allowed',
+  'Fach {0}-{1} (Objekt zu hoch)': 'Slot {0}-{1} (object too tall)',
+  'Regal {0} hat nur {1} Fächer': 'Rack {0} only has {1} slots',
+  'Bambu Homing (G28+Z200, im Hintergrund)': 'Bambu homing (G28+Z200, in the background)',
+  'OTTOeject homen': 'Home OTTOeject',
+  'Parken': 'Park',
+  'Bambu Position Z200': 'Bambu position Z200',
+  'Platte zurücklegen': 'Put plate back',
+  'Dunkel': 'Dark',
+  'Slate': 'Slate',
+  'Mitternacht': 'Midnight',
+  'Hell': 'Light',
+  'vor {0} Min.': '{0} min ago',
+  'vor {0} Std.': '{0} h ago',
+  'vor {0} Tagen': '{0} days ago',
+  'Regalzahl ist kleiner als 1 — mindestens ein Regal wird gebraucht.':
+    'The rack count is below 1 — at least one rack is needed.',
+  'Fächer pro Regal ist kleiner als 1.': 'Slots per rack is below 1.',
+  'Fach-Abstand ergibt keinen Schritt nach oben ({0} mm) — alle Fächer lägen auf derselben Höhe. Gemessener Abstand von Fach zu Fach muss über {1} mm liegen.':
+    'The slot spacing produces no upward step ({0} mm) — every slot would sit at the same height. The measured distance from slot to slot must be greater than {1} mm.',
+  'Regal-Abstand ist 0 — bei mehreren Regalen lägen alle an derselben X-Position.':
+    'Rack spacing is 0 — with several racks they would all sit at the same X position.',
+  'Greif-Y ({0} mm) liegt nicht vor der Rückzugsposition ({1} mm) — der Arm würde beim Greifen nach hinten statt nach vorn fahren.':
+    'Grab Y ({0} mm) is not in front of the pullback position ({1} mm) — when grabbing, the arm would move backwards instead of forwards.',
+  'Magazin-Fach {0} liegt über dem letzten Fach ({1} Lagerfächer + 1) — prüfe die Regal-Konfiguration.':
+    'Magazine slot {0} sits above the last slot ({1} storage slots + 1) — check the rack configuration.',
+  'Klemm-Andruck ist negativ — der Arm drückt dann in die falsche Richtung. 0 = ohne Andruck.':
+    'The clamp push is negative — the arm would push in the wrong direction. 0 = no push.',
+  'Achsgrenzen unbekannt ({0}) — es wird nur geprüft, ob eine Bewegung unter 0 mm fährt. Einmal „Grenzen vom Gerät holen“, dann warnt Printloom auch, wenn eine Position über die Achse hinausgeht.':
+    'Axis limits unknown ({0}) — only moves below 0 mm are checked. Fetch the limits from the device once, then Printloom also warns when a position runs past the axis.',
+  'Regal {0} Fach {1}: „{2}“ fährt auf {3} {4} mm — unter den Endschalter (0 mm). Klipper würde die Bewegung mitten im Ablauf abbrechen.':
+    'Rack {0} slot {1}: “{2}” moves to {3} {4} mm — below the endstop (0 mm). Klipper would abort the move mid-sequence.',
+  '„{0}“ fährt auf {1} {2} mm — unter den Endschalter (0 mm). Klipper würde die Bewegung mitten im Ablauf abbrechen.':
+    '“{0}” moves to {1} {2} mm — below the endstop (0 mm). Klipper would abort the move mid-sequence.',
+  'Regal {0} Fach {1}: „{2}“ fährt auf {3} {4} mm — über die Achsgrenze {5} {6} mm. Klipper würde die Bewegung abbrechen.':
+    'Rack {0} slot {1}: “{2}” moves to {3} {4} mm — beyond the axis limit {5} {6} mm. Klipper would abort the move.',
+  '„{0}“ fährt auf {1} {2} mm — über die Achsgrenze {3} {4} mm. Klipper würde die Bewegung abbrechen.':
+    '“{0}” moves to {1} {2} mm — beyond the axis limit {3} {4} mm. Klipper would abort the move.',
+  'Kein Drucker im Layout.': 'No printer in the layout.',
+  'Kein Regal im Layout — die Farm hat keinen Ablageplatz.':
+    'No rack in the layout — the farm has nowhere to store plates.',
+  '„{0}“ steht bei X {1} mm — unter dem Endschalter (0 mm).':
+    '“{0}” sits at X {1} mm — below the endstop (0 mm).',
+  '„{0}“ steht bei X {1} mm — über der Achsgrenze X {2} mm.':
+    '“{0}” sits at X {1} mm — beyond the axis limit X {2} mm.',
+  '„{0}“ ist einem Drucker zugeordnet, den es nicht (mehr) gibt.':
+    '“{0}” is assigned to a printer that no longer exists.',
+  'Zwei Drucker-Module zeigen auf dasselbe Gerät.':
+    'Two printer modules point at the same device.',
+  'Kein freies Fach für ein {0} mm hohes Objekt — die Farm würde hier nach der eingestellten Fehlerstrategie reagieren.':
+    'No free slot for a {0} mm tall object — the farm would react according to the configured error strategy.',
+  'Keine leeren Platten gemeldet — der Griff würde ins Magazin-Gate laufen (parken + pausieren).':
+    'No empty plates reported — the grab would run into the magazine gate (park + pause).',
+  'Keine aktiven Schritte in der Sequenz.': 'No active steps in the sequence.',
+  'kein Magazin — greift aus dem Lagerfach': 'no magazine — grabs from the storage slot',
+  'läuft als Printloom-G-code (use_gcode)': 'runs as Printloom G-code (use_gcode)',
+  'Geräte-Macro (Printloom-G-code nicht aktiviert)':
+    'device macro (Printloom G-code not enabled)',
 }
 
 function deepMerge(base, over) {
@@ -2068,8 +2220,59 @@ export async function loadLangPacks() {
   } catch { /* keep cached packs on failure */ }
 }
 
+/* localStorage gibt es nicht überall (Tests, Service-Worker, „Cookies blockiert").
+   tr() wird inzwischen auch aus reinen Service-Modulen gerufen — eine Ausnahme
+   hier würde dort echte Logik mitreißen, deshalb still auf Deutsch zurückfallen. */
+export function currentLang() {
+  try { return localStorage.getItem(LANG_KEY) || 'de' } catch { return 'de' }
+}
+
+/* tr(germanText, …args): the app is authored in German; pass the exact German
+   source string and get the translation for the active language.
+   Missing entries fall back to the German source verbatim — so a forgotten
+   string is never broken, just untranslated. Dynamic language packs may add a
+   "strings" map ({ "<de source>": "<translation>" }) for other languages.
+
+   Diese Funktion steht bewusst AUSSERHALB von useLanguage(): Etliche Texte
+   stehen in Modul-Konstanten (Status-Tabellen, Schritt-Namen, Fehlergründe) oder
+   in reinen Service-Dateien ohne Komponente. Ohne freie Funktion blieben genau
+   die hartkodiert. Der Sprachwechsel lädt die Seite neu (siehe setLanguage),
+   deshalb ist ein Lesen zur Aufrufzeit immer aktuell. */
+export function tr(de, ...args) {
+  const lang = currentLang()
+  const map = lang === 'en' ? EN_STRINGS : (dynamicPacks[lang]?.strings || null)
+  let out = (map && map[de] != null) ? map[de] : de
+  args.forEach((a, i) => { out = out.replaceAll(`{${i}}`, String(a)) })
+  return out
+}
+
+/* Meldung aus dem Backend übersetzen.
+
+   Das Backend kennt die eingestellte Sprache nicht — die steht im Browser. Es
+   schickt deshalb zu Prüf-Meldungen (Geometrie, Layout) neben dem fertigen
+   deutschen Satz auch die VORLAGE mit {0}-Platzhaltern und die Werte einzeln.
+   Hier wird die Vorlage übersetzt und dann gefüllt. Werte, die selbst Text sind
+   (z. B. „Auswerfen"), sind wieder Übersetzungs-Schlüssel und laufen erneut
+   durch tr(); Zahlen bleiben, wie sie sind.
+   Ohne Vorlage (älteres Backend) bleibt der mitgelieferte Satz stehen. */
+export function trProblem(p) {
+  if (!p) return ''
+  if (typeof p === 'string') return tr(p)
+  if (!p.template) return p.message || ''
+  const args = (p.params || []).map(v => (typeof v === 'string' ? tr(v) : v))
+  return tr(p.template, ...args)
+}
+
+/* BCP-47-Kennung für Datum/Uhrzeit/Zahlen. Ohne die stünde in der englischen
+   Oberfläche weiter „24.07.2026" statt „07/24/2026". */
+const LOCALES = { de: 'de-DE', en: 'en-GB' }
+export function locale() {
+  const lang = currentLang()
+  return LOCALES[lang] || dynamicPacks[lang]?.locale || lang
+}
+
 export function useLanguage() {
-  const lang = localStorage.getItem(LANG_KEY) || 'de'
+  const lang = currentLang()
   const dict = dictFor(lang)
   const fallback = translations.de
   const t = (key) => {
@@ -2078,23 +2281,11 @@ export function useLanguage() {
     for (const p of parts) { r = r?.[p]; f = f?.[p] }
     return r ?? f ?? key
   }
-  // tr(germanText): the app is authored in German; pass the exact German source
-  // string and get the English translation when the UI language is "en".
-  // Missing entries fall back to the German source verbatim — so a forgotten
-  // string is never broken, just untranslated. Dynamic language packs may add a
-  // "strings" map ({ "<de source>": "<translation>" }) for other languages.
-  const stringMap = lang === 'en' ? EN_STRINGS : (dynamicPacks[lang]?.strings || null)
-  const tr = (de, ...args) => {
-    let out = (stringMap && stringMap[de] != null) ? stringMap[de] : de
-    // tr('… {0} …', a, b) → positional interpolation
-    args.forEach((a, i) => { out = out.replaceAll(`{${i}}`, String(a)) })
-    return out
-  }
-  return { lang, t, tr }
+  return { lang, t, tr, locale: locale() }
 }
 
 export function setLanguage(lang) {
-  localStorage.setItem(LANG_KEY, lang)
+  try { localStorage.setItem(LANG_KEY, lang) } catch {}
   window.location.reload()
 }
 

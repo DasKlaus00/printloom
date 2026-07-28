@@ -55,6 +55,29 @@ _SLOT_OPS = {o["key"] for o in motion.APP_OPS if o["rack_slot"]} | {"approach"}
 _CHECK_OPS = tuple(o["key"] for o in motion.APP_OPS) + ("approach", "park")
 
 
+def _fmt(template: str, params) -> str:
+    out = template
+    for i, p in enumerate(params):
+        out = out.replace("{%d}" % i, str(p))
+    return out
+
+
+def problem(code: str, severity: str, template: str, params=(), **extra) -> dict:
+    """Eine Meldung als VORLAGE + WERTE, nicht als fertiger Satz.
+
+    Das Backend kennt die eingestellte Sprache nicht — die steht im Browser. Ein
+    hier zusammengebauter deutscher Satz bliebe deshalb in jeder Sprache deutsch.
+    Also wandert die Vorlage (mit {0}, {1} …) samt Werten mit; die Oberfläche
+    übersetzt sie über dieselbe tr()-Tabelle wie ihre eigenen Texte.
+    `message` bleibt der fertige deutsche Satz — für Logs und ältere Clients.
+    Werte, die selbst Text sind (z. B. ein Operations-Name), sind ebenfalls
+    Übersetzungs-Schlüssel; die Oberfläche schickt sie noch einmal durch tr().
+    """
+    params = list(params)
+    return {"code": code, "severity": severity, "template": template,
+            "params": params, "message": _fmt(template, params), **extra}
+
+
 class GeometryError(ValueError):
     """Geometrie würde die Achse verlassen — Bewegung wird nicht gesendet.
     `problems` enthält die Einzelmeldungen (siehe `check_op`)."""
@@ -123,33 +146,34 @@ def _axis_problems(script, limits: dict, ctx: dict) -> list:
         if prev is None or (val < prev if kind == "below_zero" else val > prev):
             worst[key] = val
 
-    where = _where(ctx)
     out = []
     for (axis, kind), val in sorted(worst.items()):
         A = axis.upper()
+        # Der Ort („Regal 2 Fach 5: ‚Auswerfen'") steckt als Werte in der Vorlage,
+        # nicht als vorgefertigter Textbaustein — sonst bliebe er unübersetzbar.
+        label = _OP_LABELS.get(ctx.get("op"), ctx.get("op") or "Bewegung")
+        in_slot = bool(ctx.get("slot"))
+        head = ([ctx.get("rack", 1), ctx["slot"], label] if in_slot else [label])
         if kind == "below_zero":
-            out.append({
-                "code": "axis_below_zero", "severity": "error", "axis": axis, "value": val,
-                "limit": 0.0, **ctx,
-                "message": f"{where} fährt auf {A} {val:g} mm — unter den Endschalter (0 mm). "
-                           f"Klipper würde die Bewegung mitten im Ablauf abbrechen.",
-            })
+            tpl = ("Regal {0} Fach {1}: „{2}“ fährt auf {3} {4} mm — unter den Endschalter "
+                   "(0 mm). Klipper würde die Bewegung mitten im Ablauf abbrechen."
+                   if in_slot else
+                   "„{0}“ fährt auf {1} {2} mm — unter den Endschalter (0 mm). "
+                   "Klipper würde die Bewegung mitten im Ablauf abbrechen.")
+            out.append(problem("axis_below_zero", "error", tpl,
+                               head + [A, f"{val:g}"],
+                               axis=axis, value=val, limit=0.0, **ctx))
         else:
             lim = limits[axis]
-            out.append({
-                "code": "axis_above_limit", "severity": "error", "axis": axis, "value": val,
-                "limit": lim, **ctx,
-                "message": f"{where} fährt auf {A} {val:g} mm — über die Achsgrenze "
-                           f"{A} {lim:g} mm. Klipper würde die Bewegung abbrechen.",
-            })
+            tpl = ("Regal {0} Fach {1}: „{2}“ fährt auf {3} {4} mm — über die Achsgrenze "
+                   "{5} {6} mm. Klipper würde die Bewegung abbrechen."
+                   if in_slot else
+                   "„{0}“ fährt auf {1} {2} mm — über die Achsgrenze {3} {4} mm. "
+                   "Klipper würde die Bewegung abbrechen.")
+            out.append(problem("axis_above_limit", "error", tpl,
+                               head + [A, f"{val:g}", A, f"{lim:g}"],
+                               axis=axis, value=val, limit=lim, **ctx))
     return out
-
-
-def _where(ctx: dict) -> str:
-    label = _OP_LABELS.get(ctx.get("op"), ctx.get("op") or "Bewegung")
-    if ctx.get("slot"):
-        return f"Regal {ctx.get('rack', 1)} Fach {ctx['slot']}: „{label}\""
-    return f"„{label}\""
 
 
 # ── Einzelne Operation (Gate vor dem Senden) ─────────────────────────────────
@@ -191,36 +215,36 @@ def _structure_problems(g: dict) -> list:
     gap = _f(s.get("rack_x_gap"))
 
     if racks < 1:
-        out.append({"code": "no_racks", "severity": "error",
-                    "message": "Regalzahl ist kleiner als 1 — mindestens ein Regal wird gebraucht."})
+        out.append(problem("no_racks", "error",
+                           "Regalzahl ist kleiner als 1 — mindestens ein Regal wird gebraucht."))
     if slots < 1:
-        out.append({"code": "no_slots", "severity": "error",
-                    "message": "Fächer pro Regal ist kleiner als 1."})
+        out.append(problem("no_slots", "error", "Fächer pro Regal ist kleiner als 1."))
     if step <= 0:
-        out.append({"code": "no_slot_step", "severity": "error",
-                    "message": f"Fach-Abstand ergibt keinen Schritt nach oben "
-                               f"({step:g} mm) — alle Fächer lägen auf derselben Höhe. "
-                               f"Gemessener Abstand von Fach zu Fach muss über "
-                               f"{motion.SLOT_Z_EXTRA} mm liegen."})
+        out.append(problem("no_slot_step", "error",
+                           "Fach-Abstand ergibt keinen Schritt nach oben ({0} mm) — alle Fächer "
+                           "lägen auf derselben Höhe. Gemessener Abstand von Fach zu Fach muss "
+                           "über {1} mm liegen.",
+                           [f"{step:g}", motion.SLOT_Z_EXTRA]))
     if racks > 1 and gap <= 0:
-        out.append({"code": "no_rack_gap", "severity": "error",
-                    "message": "Regal-Abstand ist 0 — bei mehreren Regalen lägen alle "
-                               "an derselben X-Position."})
+        out.append(problem("no_rack_gap", "error",
+                           "Regal-Abstand ist 0 — bei mehreren Regalen lägen alle an derselben "
+                           "X-Position."))
     y_engage, y_pull = _f(s.get("y_engage")), _f(s.get("y_pullback_limit"))
     if y_engage <= y_pull:
-        out.append({"code": "y_engage_behind_pullback", "severity": "error",
-                    "message": f"Greif-Y ({y_engage:g} mm) liegt nicht vor der "
-                               f"Rückzugsposition ({y_pull:g} mm) — der Arm würde beim "
-                               f"Greifen nach hinten statt nach vorn fahren."})
+        out.append(problem("y_engage_behind_pullback", "error",
+                           "Greif-Y ({0} mm) liegt nicht vor der Rückzugsposition ({1} mm) — der "
+                           "Arm würde beim Greifen nach hinten statt nach vorn fahren.",
+                           [f"{y_engage:g}", f"{y_pull:g}"]))
     mag = motion.magazine_slot(g)
     if slots and mag > slots + 1:
-        out.append({"code": "magazine_above_rack", "severity": "warning",
-                    "message": f"Magazin-Fach {mag} liegt über dem letzten Fach "
-                               f"({slots} Lagerfächer + 1) — prüfe die Regal-Konfiguration."})
+        out.append(problem("magazine_above_rack", "warning",
+                           "Magazin-Fach {0} liegt über dem letzten Fach ({1} Lagerfächer + 1) — "
+                           "prüfe die Regal-Konfiguration.",
+                           [mag, slots]))
     if _f(g.get("clamp_push_mm"), 30) < 0:
-        out.append({"code": "negative_clamp_push", "severity": "warning",
-                    "message": "Klemm-Andruck ist negativ — der Arm drückt dann in die "
-                               "falsche Richtung. 0 = ohne Andruck."})
+        out.append(problem("negative_clamp_push", "warning",
+                           "Klemm-Andruck ist negativ — der Arm drückt dann in die falsche "
+                           "Richtung. 0 = ohne Andruck."))
     return out
 
 
@@ -252,12 +276,12 @@ def check_geometry(g: dict, *, max_problems: int = 40) -> dict:
     known = limits_known(limits)
     if not known:
         missing = ", ".join(a.upper() for a in AXES if not limits.get(a))
-        problems.append({
-            "code": "limits_unknown", "severity": "warning",
-            "message": f"Achsgrenzen unbekannt ({missing}) — es wird nur geprüft, ob eine "
-                       f"Bewegung unter 0 mm fährt. Einmal „Grenzen vom Gerät holen\", dann "
-                       f"warnt Printloom auch, wenn eine Position über die Achse hinausgeht.",
-        })
+        problems.append(problem(
+            "limits_unknown", "warning",
+            "Achsgrenzen unbekannt ({0}) — es wird nur geprüft, ob eine Bewegung unter 0 mm "
+            "fährt. Einmal „Grenzen vom Gerät holen“, dann warnt Printloom auch, wenn eine "
+            "Position über die Achse hinausgeht.",
+            [missing]))
     errors = [p for p in problems if p.get("severity") == "error"]
     warnings = [p for p in problems if p.get("severity") != "error"]
     return {"ok": not errors, "errors": errors, "warnings": warnings,

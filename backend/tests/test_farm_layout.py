@@ -160,6 +160,18 @@ def test_sauberes_layout_ohne_probleme():
     assert fl.check(lay, {"x": 1200}) == []
 
 
+def test_layout_meldungen_sind_uebersetzbar():
+    """Wie in der Geometrie-Prüfung: Vorlage + Werte, damit die Oberfläche in der
+    eingestellten Sprache anzeigen kann. `message` bleibt der deutsche Satz."""
+    from app.services.geometry_check import _fmt
+    lay = {"modules": [{"id": "r1", "type": "rack", "x_ref": -5, "legacy_rack": 1}]}
+    found = fl.check(lay, {"x": 900})
+    assert found
+    for p in found:
+        assert p.get("template"), f"Meldung ohne Vorlage: {p}"
+        assert _fmt(p["template"], p.get("params") or []) == p["message"]
+
+
 # ── Zuordnung Regal → Drucker ────────────────────────────────────────────────
 def test_regale_je_drucker():
     lay = {"modules": [

@@ -103,7 +103,8 @@ def test_ohne_platten_kommt_ein_hinweis(store):
     d = storage.read_json(str(store / "rack.json"))
     d["magazine_counts"] = [0]
     storage.write_json(str(store / "rack.json"), d)
-    assert any("leere" in w.lower() or "platten" in w.lower() for w in _run()["warnings"])
+    # Warnungen sind Vorlage + Werte (übersetzbar), nicht mehr nur Text.
+    assert any(w["code"] == "no_plates" for w in _run()["warnings"])
 
 
 def test_volles_regal_meldet_kein_fach(store):
@@ -113,7 +114,8 @@ def test_volles_regal_meldet_kein_fach(store):
     storage.write_json(str(store / "rack.json"), d)
     r = _run()
     assert r["start"]["target_slot"] == ""
-    assert any("Fach" in w for w in r["warnings"])
+    assert any(w["code"] == "no_free_slot" for w in r["warnings"])
+    assert any("Fach" in w["message"] for w in r["warnings"])
 
 
 def test_nur_eine_sequenz(store):
@@ -138,4 +140,4 @@ def test_leere_sequenz_meldet_es(store):
     storage.write_json(str(store / "seq.json"), {"seq_new": [], "seq_next": []})
     r = _run()
     assert r["steps"] == []
-    assert any("Schritte" in w for w in r["warnings"])
+    assert any(w["code"] == "no_steps" for w in r["warnings"])

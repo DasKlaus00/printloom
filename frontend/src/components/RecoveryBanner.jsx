@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { autofarmService } from '../services/api'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, locale } from '../services/i18n'
 
 /* Unterbrochener Lauf (Phase 3.1)
    ───────────────────────────────
@@ -37,7 +37,21 @@ export default function RecoveryBanner({ onDismissed }) {
   }
 
   const holding = rec.arm?.holding ?? 'none'
-  const when = rec.saved_at ? new Date(rec.saved_at).toLocaleString() : ''
+  const when = rec.saved_at ? new Date(rec.saved_at).toLocaleString(locale()) : ''
+
+  /* Der Greifer-Hinweis wird HIER gebaut, nicht aus rec.arm_hint übernommen:
+     das Backend kennt die eingestellte Sprache nicht (sie steht im Browser), also
+     kam von dort immer deutscher Fließtext. Die Bausteine (holding, from) liefert
+     es strukturiert mit — daraus lässt sich der Satz übersetzt zusammensetzen.
+     rec.arm_hint bleibt der Notnagel für ältere Backends. */
+  const armFrom = rec.arm?.from
+  const armHint =
+    holding === 'empty'
+      ? (armFrom ? tr('Im Greifer hängt eine LEERE Platte (aus Fach {0})', armFrom)
+                 : tr('Im Greifer hängt eine LEERE Platte'))
+      : holding === 'printed'
+        ? tr('Im Greifer hängt eine Platte mit einem FERTIGEN Druck')
+        : (rec.arm ? tr('Der Greifer war leer') : (rec.arm_hint || ''))
 
   return (
     <div className="rounded-xl border border-amber-700/70 bg-amber-950/30 p-4 space-y-3">
@@ -49,15 +63,17 @@ export default function RecoveryBanner({ onDismissed }) {
           </p>
           <p className="text-[12px] text-amber-100/80">
             {rec.job
-              ? tr('Job „{0}" stand bei: {1}', rec.job, rec.step || tr('unbekannt'))
+              ? tr('Job „{0}" stand bei: {1}', rec.job, rec.step ? tr(rec.step) : tr('unbekannt'))
               : tr('Ein Lauf war aktiv, als Printloom beendet wurde.')}
             {rec.slot ? ` · ${tr('Fach {0}', rec.slot)}` : ''}
             {when ? ` · ${when}` : ''}
           </p>
           <p className={`text-[12px] font-medium ${holding === 'none' ? 'text-surface-300' : 'text-amber-300'}`}>
-            {holding === 'none' ? '✓ ' : '✋ '}{rec.arm_hint}
+            {holding === 'none' ? '✓ ' : '✋ '}{armHint}
           </p>
-          <p className="text-[11px] text-surface-400">{rec.advice}</p>
+          <p className="text-[11px] text-surface-400">
+            {tr('Erst nachsehen: Steht eine Platte im Greifer oder im Drucker? Danach hier bestätigen — die Farm referenziert vor der nächsten Bewegung selbst.')}
+          </p>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">

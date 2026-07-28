@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, trProblem } from '../services/i18n'
 import { controlService, rackManagerService, deviceService, printerService } from '../services/api'
 import { PRINTERS, CUSTOM_PRINTER } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
@@ -1195,12 +1195,12 @@ export default function Drucker() {
 
                 {check?.errors?.map((p, i) => (
                   <div key={`e${i}`} className="px-3 py-2 rounded-lg bg-red-950/40 border border-red-800 text-[11px] text-red-300">
-                    {p.message}
+                    {trProblem(p)}
                   </div>
                 ))}
                 {check?.warnings?.map((p, i) => (
                   <div key={`w${i}`} className="px-3 py-2 rounded-lg bg-amber-950/30 border border-amber-800/60 text-[11px] text-amber-300">
-                    {p.message}
+                    {trProblem(p)}
                   </div>
                 ))}
                 {check && !check.errors?.length && !check.warnings?.length && (

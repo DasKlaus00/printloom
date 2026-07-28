@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { DEFAULT_SEQ_NEW, DEFAULT_SEQ_NEXT } from '../services/sequenceData'
 import { autofarmService, controlService } from '../services/api'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, tr as translate, currentLang } from '../services/i18n'
 
 // Printloom-eigene Operationen (Drucker-Tab-Geometrie → G-code) — frei in Sequenzen
 // nutzbar wie Makros. Fallback, falls das /app-ops-Backend (noch) nicht da ist.
@@ -26,7 +26,14 @@ function useAppOps() {
   }, [])
   return ops
 }
-const appOpLabel = (ops, key) => (ops.find(o => o.key === key) || {}).label_de || key
+/* Das Backend liefert zu jeder Operation label_de UND label_en mit — bisher wurde
+   immer label_de genommen, die englische Bezeichnung lag ungenutzt herum. Für
+   andere Sprachen greift tr() auf den deutschen Quelltext als Schlüssel. */
+const opLabel = (o) => {
+  if (!o) return ''
+  return (currentLang() === 'en' && o.label_en) ? o.label_en : translate(o.label_de || '')
+}
+const appOpLabel = (ops, key) => opLabel(ops.find(o => o.key === key)) || key
 
 // FastAPI-Fehler robust in Text wandeln: `detail` kann ein String, eine Pydantic-
 // Validierungsliste [{type,loc,msg,…}] oder ein Objekt sein. NIE direkt rendern —
@@ -36,7 +43,7 @@ function errText(e) {
   if (typeof d === 'string') return d
   if (Array.isArray(d)) return d.map(x => x?.msg || (typeof x === 'string' ? x : JSON.stringify(x))).join('; ')
   if (d && typeof d === 'object') return d.msg || JSON.stringify(d)
-  return e?.message || 'Fehler'
+  return e?.message || translate('Fehler')
 }
 
 const TYPE_META = {
@@ -114,8 +121,11 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
           </span>
 
           {/* Label */}
+          {/* Die Bezeichnung ist gespeicherte Sequenz-Daten (deutsch angelegt) und
+              bleibt es auch — übersetzt wird nur die ANZEIGE. Das Eingabefeld unten
+              zeigt weiter den echten gespeicherten Text. */}
           <span className={`text-xs font-mono flex-1 min-w-0 truncate ${isDisabled ? 'text-surface-700 line-through' : meta.color}`}>
-            {step.label}
+            {tr(step.label)}
           </span>
 
           {/* Disabled badge */}
@@ -331,7 +341,7 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
                   className="w-full text-xs font-mono"
                 >
                   {appOps.map(o => (
-                    <option key={o.key} value={o.key}>{tr(o.label_de)} — {o.key}</option>
+                    <option key={o.key} value={o.key}>{opLabel(o)} — {o.key}</option>
                   ))}
                 </select>
                 <p className="text-[10px] text-fuchsia-700 font-mono mt-1">
@@ -525,7 +535,7 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true,
       // Das Backend kehrt zurück, sobald die Bewegung GESTARTET ist (blockiert nicht bis
       // zum Ende der langen Fahrt) — running=true heißt „läuft noch auf der Maschine".
       const running = !!r?.data?.running
-      setRunFeedback({ ok: true, msg: running ? `▶ ${step.value} — läuft…` : `✓ ${step.value}` })
+      setRunFeedback({ ok: true, msg: running ? translate('▶ {0} — läuft…', step.value) : `✓ ${step.value}` })
     } catch (e) {
       setRunFeedback({ ok: false, msg: errText(e) })
     }

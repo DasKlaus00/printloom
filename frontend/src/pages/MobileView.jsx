@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { rackManagerService } from '../services/api'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, locale } from '../services/i18n'
 
 const STATUS_META = {
   free:     { label: 'Leer',     bg: 'bg-surface-800',    border: 'border-surface-700', text: 'text-surface-400',  dot: 'bg-gray-500'   },
@@ -57,7 +57,7 @@ export default function MobileView() {
   // Farm-Status live per WebSocket (mit HTTP-Poll-Fallback).
   useFarmStatusStream((data) => {
     setFarmState(data)
-    setLastUpdate(new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+    setLastUpdate(new Date().toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
   })
 
   // Regal deckt der WS-Kanal nicht ab → weiterhin leichter Poll.
@@ -65,7 +65,7 @@ export default function MobileView() {
     try {
       const r = await rackManagerService.getAll()
       setRackData(r.data)
-      setLastUpdate(new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+      setLastUpdate(new Date().toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
     } catch {}
   }, [])
 
@@ -90,8 +90,8 @@ export default function MobileView() {
   const farmPaused  = farmState?.paused
 
   const farmStatusLabel = farmRunning
-    ? (farmPaused ? 'Pausiert' : 'Läuft')
-    : 'Gestoppt'
+    ? (farmPaused ? tr('Pausiert') : tr('Läuft'))
+    : tr('Gestoppt')
   const farmStatusColor = farmRunning
     ? (farmPaused ? 'text-amber-300' : 'text-emerald-300')
     : 'text-surface-400'

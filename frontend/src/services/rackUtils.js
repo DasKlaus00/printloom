@@ -1,4 +1,5 @@
 // Shared rack slot utilities — used by AutoFarm and Projekt pages.
+import { tr } from './i18n'
 
 export function parseSlotKey(key) {
   const parts = String(key ?? '1-1').split('-')
@@ -100,13 +101,13 @@ export function checkClearance(slotKey, heightMm, rackData, slotH) {
 
   // Check if this slot is blocked by a tall object in a lower slot
   if (isBlockedFromBelow(rackNum, slotNum, rSlots, sh, tol)) {
-    blocked.push(`Fach ${rackNum}-${slotNum - 1} (Objekt zu hoch)`)
+    blocked.push(tr('Fach {0}-{1} (Objekt zu hoch)', rackNum, slotNum - 1))
   }
 
   // Check clearance slots above
   for (let i = 1; i < needed; i++) {
     const next = slotNum + i
-    if (next > spr) { blocked.push(`Rack ${rackNum} hat nur ${spr} Fächer`); break }
+    if (next > spr) { blocked.push(tr('Regal {0} hat nur {1} Fächer', rackNum, spr)); break }
     const k      = `${rackNum}-${next}`
     const status = rSlots[k]?.status ?? 'free'
     if (status !== 'free' && status !== 'ready') blocked.push(`Fach ${k} (${status})`)

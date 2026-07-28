@@ -8,8 +8,9 @@
 3. [Adding Features](#adding-features)
 4. [Code Standards](#code-standards)
 5. [Testing](#testing)
-6. [Common Tasks](#common-tasks)
-7. [Debugging](#debugging)
+6. [Sprachen (i18n)](#sprachen-i18n)
+7. [Common Tasks](#common-tasks)
+8. [Debugging](#debugging)
 
 ---
 
@@ -408,6 +409,54 @@ oder Zusagen bricht**, nicht die Menge an Code:
 Vitest liegt in `frontend/` (`npm test` = `vitest run`, `npm run test:watch`).
 Getestet werden vor allem die Rechenteile (`src/services/hardware.js`,
 Slot-/Höhen-Logik), nicht das Markup.
+
+`src/services/i18n.test.js` ist ein Wächter, kein Logik-Test: er liest die
+Quelldateien und schlägt fehl, sobald ein übersetzbarer Text ohne englische
+Fassung dazukommt (siehe unten).
+
+---
+
+## Sprachen (i18n)
+
+Die App ist auf **Deutsch geschrieben**; der deutsche Quelltext IST der
+Übersetzungs-Schlüssel. `tr('Fach {0}', n)` gibt in einer anderen Sprache die
+hinterlegte Fassung zurück und sonst den deutschen Text — ein vergessener
+Eintrag macht also nichts kaputt, er bleibt nur deutsch. Genau das macht ihn
+unsichtbar, deshalb der Test.
+
+**Regeln**
+
+- Jeder sichtbare Text läuft durch `tr(…)`. Auch `title=`, `placeholder=`,
+  `alert`/Toast und Fehlermeldungen.
+- `tr` gibt es zweimal: als Rückgabe von `useLanguage()` (in Komponenten) und
+  als freie Funktion `import { tr } from './services/i18n'` — für Modul-Konstanten,
+  Service-Dateien und Klassen-Komponenten. Beide sind dasselbe.
+- **Gespeicherte Daten werden nicht übersetzt.** Sequenz-Bezeichnungen liegen
+  deutsch in `sequences.json`; übersetzt wird nur die ANZEIGE (`tr(step.label)`),
+  das Eingabefeld zeigt weiter den echten Wert.
+- Datum/Uhrzeit über `locale()` formatieren, nie mit festem `'de-DE'`.
+- Neue englische Einträge kommen ans Ende von `EN_STRINGS` in
+  `frontend/src/services/i18n.js`. **Keine doppelten Schlüssel** — bei einem
+  Duplikat gewinnt still der letzte.
+
+**Backend-Meldungen**
+
+Das Backend kennt die eingestellte Sprache nicht (die steht im Browser). Texte,
+die in der Oberfläche landen, gehen deshalb als **Vorlage + Werte** raus:
+
+```python
+from app.services.geometry_check import problem
+problem("too_close", "warning",
+        "„{0}“ und „{1}“ stehen {2} mm auseinander", [a, b, d])
+```
+
+`message` bleibt der fertige deutsche Satz (Logs, ältere Clients), `template`
+und `params` sind das Übersetzbare. Die Oberfläche rendert das mit
+`trProblem(p)`; Werte, die selbst Text sind, laufen dabei nochmal durch `tr()`.
+
+Nicht übersetzt ist bewusst das **Farm-Log** (`farm_status.log`): technische
+Ablaufprotokolle mit hunderten Zeilen, die beim Suchen nach Fehlern helfen —
+dafür wäre eine Vorlage je Zeile mehr Last als Nutzen.
 
 ---
 

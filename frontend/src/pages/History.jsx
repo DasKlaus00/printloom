@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { autofarmService } from '../services/api'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, locale } from '../services/i18n'
 import { usePageActive } from '../services/useAutoRefresh'
 import { confirmDialog } from '../services/confirm'
 
@@ -81,8 +81,8 @@ export default function History() {
     setTimeout(() => setFeedback(null), 4000)
   }
 
-  const dateStr = (d) => d ? d.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
-  const timeStr = (d) => d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'
+  const dateStr = (d) => d ? d.toLocaleDateString(locale(), { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
+  const timeStr = (d) => d ? d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) : '—'
 
   return (
     <div className="space-y-6">
@@ -229,7 +229,7 @@ function HmsHistory() {
           {items.map((h, i) => (
             <div key={i} className="flex items-start gap-2 text-[11px]">
               <span className="font-mono text-surface-600 whitespace-nowrap">
-                {h.ts ? new Date(h.ts).toLocaleString() : '—'}
+                {h.ts ? new Date(h.ts).toLocaleString(locale()) : '—'}
               </span>
               <span className={`font-mono px-1.5 py-0.5 rounded border shrink-0 ${SEV[h.severity] || 'text-surface-400 border-surface-700'}`}>
                 {h.code}
