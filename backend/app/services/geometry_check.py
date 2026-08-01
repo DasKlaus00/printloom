@@ -241,10 +241,28 @@ def _structure_problems(g: dict) -> list:
                            "Magazin-Fach {0} liegt über dem letzten Fach ({1} Lagerfächer + 1) — "
                            "prüfe die Regal-Konfiguration.",
                            [mag, slots]))
-    if _f(g.get("clamp_push_mm"), 30) < 0:
+    push = _f(g.get("clamp_push_mm"), 30)
+    if push < 0:
         out.append(problem("negative_clamp_push", "warning",
                            "Klemm-Andruck ist negativ — der Arm drückt dann in die falsche "
                            "Richtung. 0 = ohne Andruck."))
+    elif push == 0:
+        # Der Andruck IST der Griff: Greifen/Ablegen fahren nach dem Eintauchen um
+        # diesen Weg in X, damit der Greifer in die Halterung der Platte einhakt
+        # (siehe grab_from_rack: „G1 X{x_unclamp − push}"). Bei 0 zielt diese Zeile
+        # auf die Position, an der der Arm schon steht — sie bewegt nichts. Der Arm
+        # fährt dann vor, hebt an und kommt LEER zurück, ohne Fehlermeldung.
+        # Nur melden, wenn die gebaute Bewegung überhaupt benutzt wird (mit eigenem
+        # G-code für alle vier Griff-Operationen ist der Wert bedeutungslos).
+        ov = g.get("gcode_override") or {}
+        built_in = [o for o in ("grab", "store", "eject", "place")
+                    if not str(ov.get(o) or "").strip()]
+        if built_in:
+            out.append(problem(
+                "no_clamp_push", "warning",
+                "Andruck-Weg ist 0 — dann fährt der Arm beim Greifen und Ablegen nicht in "
+                "die Halterung, der Greifer hakt nicht ein und die Platte bleibt liegen "
+                "(der Arm kommt leer zurück). Original: 30 mm."))
     return out
 
 

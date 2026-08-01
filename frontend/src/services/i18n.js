@@ -2182,6 +2182,13 @@ const EN_STRINGS = {
   'läuft als Printloom-G-code (use_gcode)': 'runs as Printloom G-code (use_gcode)',
   'Geräte-Macro (Printloom-G-code nicht aktiviert)':
     'device macro (Printloom G-code not enabled)',
+
+  // ── 1.1.6: Andruck-Weg 0 = kein Griff ──
+  'Greifer-Andruck · 0 = kein Griff!': 'Gripper push · 0 = no grab!',
+  'Andruck-Weg: der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original 30. ACHTUNG: Genau diese Bewegung IST der Griff — bei 0 hakt der Greifer nicht ein, der Arm fährt vor und kommt leer zurück. 0 ist nur sinnvoll, wenn du für Greifen/Ablegen eigenen G-code hinterlegt hast.':
+    'Push distance: on grab/place the arm moves this far beyond X to press the gripper into the bracket (eject/place: +, grab/store: −). Original 30. CAUTION: that move IS the grab — at 0 the gripper never engages, the arm moves in and comes back empty. 0 only makes sense if you have your own G-code for grab/store.',
+  'Andruck-Weg ist 0 — dann fährt der Arm beim Greifen und Ablegen nicht in die Halterung, der Greifer hakt nicht ein und die Platte bleibt liegen (der Arm kommt leer zurück). Original: 30 mm.':
+    'Push distance is 0 — the arm then never moves into the bracket when grabbing or storing, the gripper does not engage and the plate stays where it is (the arm comes back empty). Original: 30 mm.',
 }
 
 function deepMerge(base, over) {

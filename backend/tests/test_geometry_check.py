@@ -149,6 +149,37 @@ def test_negativer_andruck_ist_nur_hinweis():
     assert any(p["code"] == "negative_clamp_push" for p in r["warnings"])
 
 
+# ── Andruck-Weg 0 ────────────────────────────────────────────────────────────
+# Der Andruck IST der Griff. Bei 0 zielt „G1 X{x_unclamp − push}" auf die Stelle,
+# an der der Arm schon steht — die Zeile bewegt nichts, der Greifer hakt nicht ein
+# und der Arm kommt LEER zurück. Das lief vorher ohne jede Rückmeldung durch.
+def test_andruck_null_erzeugt_eine_leerbewegung():
+    g = motion.merge_defaults(_geom(clamp_push_mm=0))
+    script = motion.build_op(g, "grab", rack=1, slot=1, check=False)
+    x_rack = motion.rack_x(motion._sanitize_geometry(g), 1)
+    # Die Anfahrt und die Griff-Zeile zeigen auf dieselbe X → keine Bewegung.
+    assert script.count(f"G1 X{motion._n(x_rack)} F800") == 1
+
+
+def test_andruck_null_wird_gemeldet():
+    r = gc.check_geometry(_geom(clamp_push_mm=0))
+    assert any(p["code"] == "no_clamp_push" for p in r["warnings"])
+
+
+def test_andruck_null_ohne_meldung_bei_eigenem_gcode():
+    """Wer für alle vier Griff-Operationen eigenen G-code hinterlegt hat, benutzt die
+    gebaute Bewegung gar nicht — dann ist der Wert bedeutungslos und die Meldung Lärm."""
+    r = gc.check_geometry(_geom(clamp_push_mm=0, gcode_override={
+        "grab": "G1 X1", "store": "G1 X1", "eject": "G1 X1", "place": "G1 X1"}))
+    assert not any(p["code"] == "no_clamp_push" for p in r["warnings"])
+
+
+def test_andruck_30_ist_unauffaellig():
+    r = gc.check_geometry(_geom(clamp_push_mm=30))
+    assert not any(p["code"] in ("no_clamp_push", "negative_clamp_push")
+                   for p in r["warnings"])
+
+
 def test_leere_geometrie_crasht_nicht():
     for g in ({}, None):
         r = gc.check_geometry(g)

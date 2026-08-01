@@ -986,10 +986,10 @@ export default function Drucker() {
                   <NumField label={tr('Höhe Fach 1 (mm)')} hint={tr('first_z_flat')} step={0.5} value={firstZ} onChange={setFirstZ} />
                   <NumField label={tr('Fach-Abstand (mm)')} hint={tr('Z-Schritt = +30')} value={gap} onChange={setGap} />
                   <NumField label={tr('Regal-Versatz X (mm)')} hint={tr('rack_x_gap · pro Regal')} value={rackGap} onChange={setRackGap} />
-                  <NumField label={tr('Andruck-Weg (mm)')} hint={tr('Greifer-Andruck · 0 = Greifpunkt = Start-X')} value={clampPush} onChange={setClampPush} />
+                  <NumField label={tr('Andruck-Weg (mm)')} hint={tr('Greifer-Andruck · 0 = kein Griff!')} value={clampPush} onChange={setClampPush} />
                 </div>
                 <p className="text-[9px] text-surface-600">
-                  {tr('Andruck-Weg: der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original 30. Auf 0 stellen, wenn der Greifer genau bei Start-X fassen soll.')}
+                  {tr('Andruck-Weg: der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original 30. ACHTUNG: Genau diese Bewegung IST der Griff — bei 0 hakt der Greifer nicht ein, der Arm fährt vor und kommt leer zurück. 0 ist nur sinnvoll, wenn du für Greifen/Ablegen eigenen G-code hinterlegt hast.')}
                 </p>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[11px] text-surface-400">{tr('Platte')}</span>

@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.6',
+    de: [
+      'Andruck-Weg 0 fällt nicht mehr still durch: Steht „Andruck-Weg (mm)" im Drucker-Tab auf 0, greift der Arm NICHT — er fährt vor das Fach, hebt an und kommt leer zurück, ohne Fehlermeldung. Grund: genau diese X-Bewegung ist der Griff; bei 0 zielt sie auf die Stelle, an der der Arm schon steht.',
+      'Die Geometrie-Prüfung meldet das jetzt als Hinweis — und zwar nur dann, wenn die gebaute Bewegung überhaupt benutzt wird (mit eigenem G-code für Greifen/Ablegen/Auswerfen/Einlegen ist der Wert bedeutungslos).',
+      'Der Hilfetext am Feld war irreführend („0 = Greifpunkt = Start-X" klang nach einer normalen Einstellung) und sagt jetzt klar, was 0 bedeutet.',
+    ],
+    en: [
+      'A push distance of 0 no longer slips through silently: with "Push distance (mm)" set to 0 in the printer tab the arm does NOT grab — it moves in front of the slot, lifts and comes back empty, without any error. Reason: that very X move IS the grab; at 0 it targets the spot the arm is already at.',
+      'The geometry check now reports this as a notice — and only when the built-in move is actually used (with your own G-code for grab/store/eject/place the value is irrelevant).',
+      'The field\'s help text was misleading ("0 = grab point = start X" read like a normal option) and now says plainly what 0 means.',
+    ],
+  },
+  {
     version: '1.1.5',
     de: [
       'SPRACHE: Die Oberfläche folgt jetzt durchgängig der eingestellten Sprache. Vorher blieben etliche Stellen fest deutsch (oder fest englisch), egal was eingestellt war — 144 Texte fehlten schlicht in der Übersetzungstabelle und fielen still auf Deutsch zurück.',
