@@ -4,10 +4,27 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.10',
+    de: [
+      'DIE ABSCHNITTE FOLGEN JETZT DER KONFIGURATION. Wie viele Drucker es gibt, steht in der Geräteliste (Konfiguration → Geräte) — genau wie die Regalzahl in der Rack-Konfiguration steht. Der Drucker-Tab zeigt einen Abschnitt je angelegtem Gerät und je Regal.',
+      'Der Knopf „+ Drucker hinzufügen" ist deshalb weg: er wäre eine zweite Stelle gewesen, an der dieselbe Angabe steht. Wer einen zweiten Drucker anlegt, sieht ihn hier sofort — ohne Neuladen.',
+      'Name und Modell eines Druckers kommen jetzt vom Gerät und werden hier nur angezeigt. Ohne angelegtes Gerät bleiben beide Felder änderbar, damit sich die Anlage auch vorher einmessen lässt.',
+      'Wird ein Gerät gelöscht, verschwindet sein Abschnitt — und Regale, die ihm zugeordnet waren, werden wieder frei statt auf einen Drucker zu zeigen, den es nicht mehr gibt.',
+      'Die Farm startet nicht mehr, wenn für den gewählten Drucker noch keine Positionen eingemessen sind und sie App-G-code fahren soll — vorher hätte sie die Koordinaten des ersten Druckers benutzt, also gegen die falsche Maschine gegriffen.',
+    ],
+    en: [
+      'THE SECTIONS NOW FOLLOW THE CONFIGURATION. How many printers there are lives in the device list (Configuration → Devices) — just as the rack count lives in the rack configuration. The printer tab shows one section per configured device and per rack.',
+      'The "+ Add printer" button is therefore gone: it would have been a second place holding the same fact. Create a second printer and it shows up here immediately — no reload.',
+      'A printer\'s name and model now come from the device and are only displayed here. Without a device both fields stay editable, so the setup can be taught in beforehand.',
+      'Deleting a device removes its section — and racks that were assigned to it are freed instead of pointing at a printer that no longer exists.',
+      'The farm refuses to start when the selected printer has no taught positions yet and app G-code is enabled — previously it would have used the first printer\'s coordinates, i.e. reached for the wrong machine.',
+    ],
+  },
+  {
     version: '1.1.9',
     de: [
       'ZWEITER DRUCKER MÖGLICH — und der Drucker-Tab ist komplett neu aufgebaut. Er heißt jetzt „Drucker & Regale", ist einspaltig, und ganz oben steht die Schiene mit dem ganzen Aufbau. Ein Klick auf ein Modul springt zu seinem Abschnitt.',
-      'Jeder Drucker hat einen eigenen ausklappbaren Abschnitt: Name, Gerät, Modell, dann die fünf Positionen (Tür auf, Tür zu, Vor Drucker fahren, Auswerfen, Einlegen) — je Operation mit eigener Geschwindigkeit, eigenem G-code und eigener Farm-Freigabe. „+ Drucker hinzufügen" legt einen zweiten an.',
+      'Jeder Drucker hat einen eigenen ausklappbaren Abschnitt mit den fünf Positionen (Tür auf, Tür zu, Vor Drucker fahren, Auswerfen, Einlegen) — je Operation mit eigener Geschwindigkeit, eigenem G-code und eigener Farm-Freigabe.',
       'Jedes Regal hat ebenfalls einen eigenen Abschnitt: X-Position, Y-Engage, Höhe von Fachboden 1, Fach-Abstand — und zu welchem Drucker es gehört. Regale dürfen also unterschiedlich gebaut sein.',
       'Alle Positionen sind jetzt ABSOLUT (die Zahl, die der Arm anfährt). Vorher war die Drucker-X eine Basis, zu der beim Fahren ein Regal-Versatz addiert wurde — ein zusätzliches Regal verschob damit still den Drucker. Das passiert nicht mehr.',
       'Deine eingemessenen Werte bleiben auf den Millimeter gleich: Beim ersten Öffnen wird die alte Form einmalig in die neue umgerechnet. Ein Test vergleicht den G-code aller Operationen über alle Regale und Fächer vorher/nachher.',
@@ -17,7 +34,7 @@ export const CHANGELOG = [
     ],
     en: [
       'A SECOND PRINTER IS NOW POSSIBLE — and the printer tab has been rebuilt from scratch. It is called "Printers & racks", uses a single column, and the rail showing the whole setup sits right at the top. Clicking a module jumps to its section.',
-      'Every printer gets its own collapsible section: name, device, model, then the five positions (open door, close door, move to printer, eject, place) — each with its own speed, its own G-code and its own farm release. "+ Add printer" creates a second one.',
+      'Every printer gets its own collapsible section with the five positions (open door, close door, move to printer, eject, place) — each with its own speed, its own G-code and its own farm release.',
       'Every rack gets its own section too: X position, Y engage, height of shelf 1, slot spacing — and which printer it belongs to. Racks may therefore be built differently.',
       'All positions are now ABSOLUTE (the number the arm drives to). Before, the printer X was a base value with a rack offset added while driving — so adding a rack silently moved the printer. That no longer happens.',
       'Your taught values stay identical to the millimetre: on first open the old form is converted once. A test compares the G-code of every operation across every rack and slot, before and after.',

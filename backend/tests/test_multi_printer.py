@@ -243,6 +243,49 @@ def test_fach_abstand_wird_je_regal_geprueft():
     assert bad and bad[0].get("rack") == 2
 
 
+# ── Start-Sperre: kein Block für dieses Gerät ────────────────────────────────
+def _farm_with(geom, monkeypatch):
+    pytest.importorskip("fastapi")
+    from app.routers import autofarm
+    monkeypatch.setattr(autofarm, "_load_farm_geometry", lambda: geom)
+    return autofarm
+
+
+def test_start_verweigert_drucker_ohne_eigene_positionen(monkeypatch):
+    """Sonst führe die Farm für Drucker 2 die Koordinaten von Drucker 1 — also
+    gegen die falsche Maschine."""
+    from fastapi import HTTPException
+    g = _zwei_drucker()
+    g["printers"][0]["device_id"] = 1
+    g["printers"][0]["use_gcode"] = {"eject": True}
+    del g["printers"][1]                       # Gerät 9 hat keinen Block
+    af = _farm_with(g, monkeypatch)
+    with pytest.raises(HTTPException) as e:
+        af._assert_printer_geometry(9)
+    assert e.value.status_code == 400
+    af._assert_printer_geometry(1)             # der eingemessene Drucker startet
+
+
+def test_start_geht_ohne_geraete_zuordnung(monkeypatch):
+    """Bestandsanlage: ein Block, keinem Gerät zugeordnet — der Rückfall auf den
+    ersten Drucker ist hier richtig und darf den Start nicht blockieren."""
+    g = motion.expand(motion.merge_defaults(ALT))
+    g["printers"][0]["use_gcode"] = {"eject": True}
+    af = _farm_with(g, monkeypatch)
+    af._assert_printer_geometry(7)
+
+
+def test_start_geht_wenn_die_farm_nur_macros_faehrt(monkeypatch):
+    """Ohne aktivierte App-Position spielt die Geometrie für die Farm keine Rolle."""
+    g = _zwei_drucker()
+    g["printers"][0]["device_id"] = 1
+    g["printers"][0]["use_gcode"] = {o: False for o in motion.PRINTER_OPS}
+    g["use_gcode"] = {"grab": True}          # Regal-Ops zählen hier nicht
+    del g["printers"][1]
+    af = _farm_with(g, monkeypatch)
+    af._assert_printer_geometry(9)
+
+
 # ── Der ganze Weg: Datei → Oberfläche → speichern → fahren ───────────────────
 def test_speichern_und_wieder_laden_aendert_nichts(tmp_path, monkeypatch):
     """Der Rundlauf, den die Oberfläche jedes Mal macht: laden, (unverändert)

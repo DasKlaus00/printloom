@@ -2001,13 +2001,45 @@ def _farm_printer(geom: dict = None):
     des ersten fahren, und das ist ein Crash, kein Schönheitsfehler."""
     try:
         geom = geom or _farm.get("geometry") or _load_farm_geometry()
-        bid = _farm.get("bambu_id")
-        if bid is not None:
-            for p in _motion.printer_list(geom):
-                if p.get("device_id") is not None and int(p["device_id"]) == int(bid):
-                    return p["id"]
+        return _farm_printer_of(_motion.printer_list(geom), _farm.get("bambu_id"))
     except Exception:
-        pass
+        return None
+
+
+def _assert_printer_geometry(bambu_id) -> None:
+    """Start verweigern, wenn für DIESES Gerät kein Drucker-Block existiert und die
+    Farm App-G-code fahren soll.
+
+    Ohne diese Prüfung greift der Rückfall „erster Drucker" — der ist richtig, solange
+    die Geometrie nur einen (noch keinem Gerät zugeordneten) Block hat. Sobald aber
+    Blöcke MIT Geräte-Zuordnung existieren und keiner passt, ist das kein Rückfall
+    mehr, sondern ein Griff an die falsche Maschine."""
+    try:
+        geom = _load_farm_geometry()
+        blocks = _motion.printer_list(geom)
+        assigned = [p for p in blocks if p.get("device_id") is not None]
+        if not assigned or _farm_printer_of(blocks, bambu_id):
+            return
+        used = [o for o in _motion.PRINTER_OPS if _motion.op_uses_gcode(geom, o)]
+        if not used:
+            return          # Farm fährt hier ohnehin die Geräte-Macros
+    except HTTPException:
+        raise
+    except Exception:
+        return              # Prüfung darf den Start nie an sich selbst scheitern lassen
+    raise HTTPException(
+        400,
+        "Für diesen Drucker sind im Drucker-Tab noch keine Positionen hinterlegt. "
+        "Bitte dort den Abschnitt dieses Druckers einmessen und testen — sonst würde "
+        "die Farm die Positionen eines anderen Druckers fahren.")
+
+
+def _farm_printer_of(blocks, bambu_id):
+    if bambu_id is None:
+        return None
+    for p in blocks:
+        if p.get("device_id") is not None and int(p["device_id"]) == int(bambu_id):
+            return p["id"]
     return None
 
 
@@ -2993,6 +3025,11 @@ async def start_farm(req: StartRequest):
 
     _settings = _read_config(SETTINGS_PATH, _DEFAULT_SETTINGS)
     _hms_ignore = {hms.normalize_code(c) for c in (_settings.get("hms_ignore") or [])}
+
+    # Fährt die Farm App-G-code, muss sie den Block DIESES Druckers haben. Seit
+    # v1.1.9 gibt es mehrere; ein Gerät ohne eigenen Block würde sonst still die
+    # Koordinaten des ersten Druckers fahren — also gegen den falschen Drucker.
+    _assert_printer_geometry(req.bambu_id)
 
     _farm.update({
         "running":         True,

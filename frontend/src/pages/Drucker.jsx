@@ -392,12 +392,11 @@ function BedControls({ dev, busy, onGcode }) {
 /* ── Ein Drucker ────────────────────────────────────────────────────────────────
    Alles zu diesem Drucker an einer Stelle: welches Gerät, welches Modell, die fünf
    Positionen, je Operation Geschwindigkeit / eigener G-code / Farm-Freigabe. */
-function PrinterSection({ p, index, total, open, onToggle, onPatch, onRemove, devices,
+function PrinterSection({ p, index, dev, open, onToggle, onPatch,
                           models, busy, onTest, onLoadGcode, onGcodeText, onClearGcode,
                           teachOp, onTeach, onTeachApply, onTeachClose, geometry, onBedGcode }) {
   const { tr } = useLanguage()
   const model = models.find(m => m.id === p.model) || null
-  const dev = devices.find(d => d.id === p.device_id) || null
   const hasDoor = !!p.door
   const active = PRINTER_OPS.filter(o => p.use_gcode?.[o]).length
 
@@ -448,30 +447,35 @@ function PrinterSection({ p, index, total, open, onToggle, onPatch, onRemove, de
       </>}
       subtitle={tr('Tür, Anfahrt, Auswerfen und Einlegen für diesen Drucker.')}>
 
-      {/* Kopf: Name, Gerät, Modell */}
-      <div className="grid gap-2 sm:grid-cols-3">
-        <label className="block">
-          <span className="text-[11px] text-surface-400">{tr('Name')}</span>
-          <input type="text" value={p.name || ''} onChange={e => onPatch({ name: e.target.value })}
-            className="w-full text-sm mt-0.5" />
-        </label>
-        <label className="block">
-          <span className="text-[11px] text-surface-400">{tr('Gerät')}</span>
-          <select value={p.device_id ?? ''} className="w-full text-sm mt-0.5"
-            onChange={e => onPatch({ device_id: e.target.value === '' ? null : +e.target.value })}>
-            <option value="">{tr('— kein Gerät —')}</option>
-            {devices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-        </label>
-        <label className="block">
-          <span className="text-[11px] text-surface-400">{tr('Modell')}</span>
-          <select value={p.model || ''} className="w-full text-sm mt-0.5"
-            onChange={e => onPatch({ model: e.target.value })}>
-            <option value="">{tr('— unbekannt —')}</option>
-            {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-          </select>
-        </label>
-      </div>
+      {/* Kopf: Name und Modell gehören dem GERÄT (Konfiguration → Geräte) — hier nur
+          angezeigt, damit dieselbe Angabe nicht an zwei Stellen gepflegt wird. Ohne
+          zugeordnetes Gerät (noch keins angelegt) sind beide hier änderbar. */}
+      {dev ? (
+        <div className="flex items-center gap-2 flex-wrap text-[11px]">
+          <span className="text-surface-400">{tr('Gerät')}:</span>
+          <span className="text-surface-200">{dev.name}</span>
+          {model && <span className="text-surface-500">· {model.label}</span>}
+          <span className="text-[9px] text-surface-600">
+            {tr('Name und Modell werden unter Konfiguration → Geräte gepflegt.')}
+          </span>
+        </div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-[11px] text-surface-400">{tr('Name')}</span>
+            <input type="text" value={p.name || ''} onChange={e => onPatch({ name: e.target.value })}
+              className="w-full text-sm mt-0.5" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] text-surface-400">{tr('Modell')}</span>
+            <select value={p.model || ''} className="w-full text-sm mt-0.5"
+              onChange={e => onPatch({ model: e.target.value })}>
+              <option value="">{tr('— unbekannt —')}</option>
+              {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
       <div className="flex items-center gap-2 flex-wrap">
         <label className="flex items-center gap-2 cursor-pointer select-none">
           <Toggle on={!!p.enclosed} onClick={() => onPatch({ enclosed: !p.enclosed })} />
@@ -493,10 +497,6 @@ function PrinterSection({ p, index, total, open, onToggle, onPatch, onRemove, de
             title={tr('Y/Z und Tür-Form der Modell-Vorlage übernehmen; die eingemessene X bleibt')}
             className="text-[11px] text-blue-400 hover:text-blue-300">{tr('⤓ Werte aus Modell-Vorlage')}</button>
         )}
-        {total > 1 && (
-          <button onClick={onRemove}
-            className="text-[11px] text-surface-500 hover:text-red-400 ml-auto">{tr('🗑 Drucker entfernen')}</button>
-        )}
       </div>
       {p.model && !model?.preset && (
         <p className="text-[10px] text-surface-500">
@@ -505,7 +505,7 @@ function PrinterSection({ p, index, total, open, onToggle, onPatch, onRemove, de
       )}
       {dev == null && (
         <p className="text-[10px] text-amber-400/90">
-          {tr('Ohne Gerät kann Printloom diesen Drucker nicht überwachen (Druckstatus, Bett, Einstellungen). Geräte werden unter Konfiguration → Geräte angelegt.')}
+          {tr('Noch kein Drucker unter Konfiguration → Geräte angelegt. Einmessen und Testen geht trotzdem; Druckstatus, Bett und Drucker-Einstellungen brauchen das Gerät. Sobald es angelegt ist, gehören diese Werte dazu.')}
         </p>
       )}
 
@@ -695,6 +695,7 @@ export default function Drucker() {
   const [rackCfg, setRackCfg] = useState({ num_racks: 3, slots_per_rack: 6, magazine_slot: 7 })
   const [rackReady, setRackReady] = useState(false)
   const [devices, setDevices] = useState([])
+  const [devicesReady, setDevicesReady] = useState(false)
   const [models, setModels]   = useState([])
 
   const [openSec, setOpenSec] = useState(null)   // welcher Abschnitt ist offen
@@ -757,38 +758,85 @@ export default function Drucker() {
   const patchRack = (nr, patch) => setRackGeo(m => ({
     ...m, [String(nr)]: { ...rackOf(nr), ...m[String(nr)], ...patch } }))
 
-  const addPrinter = () => setPrinters(ps => {
-    const n = ps.length + 1
-    const base = ps[ps.length - 1]
-    // Neuer Drucker 400 mm weiter Richtung Home — irgendwo muss er anfangen, und
-    // übereinander wäre garantiert falsch. Eingemessen wird er ohnehin.
-    const shift = (o, dx) => (o ? { ...o, x: r1(num(o.x) - dx) } : null)
-    return [...ps, {
-      id: `printer-${Date.now().toString(36)}`,
-      name: tr('Drucker {0}', String(n).padStart(2, '0')),
-      model: '', preset: '', device_id: null, enclosed: base?.enclosed ?? true,
-      eject: shift(base?.eject, 400) || { x: 425, y: 340, z: 17.5 },
-      load: shift(base?.load, 400) || { x: 425, y: 340, z: 17.5 },
-      move: shift(base?.move || base?.eject, 400) || { x: 425, y: 340, z: 17.5 },
-      door: base?.door ? { open: shift(base.door.open, 400), close: shift(base.door.close, 400) } : null,
+  /* Wie viele Drucker es gibt, steht in der Geräteliste (Konfiguration → Geräte) —
+     genau wie die Regalzahl in der Rack-Konfiguration steht. Dieser Tab legt also
+     keine Drucker an, sondern füllt für jedes angelegte Gerät die Positionen. Ein
+     eigener „+ Drucker"-Knopf hier wäre eine zweite Stelle für dieselbe Angabe. */
+  const seedPrinter = (base, dev, i) => {
+    // Irgendwo muss ein neuer Drucker anfangen: 400 mm weiter Richtung Home als der
+    // vorherige — übereinander wäre garantiert falsch. Eingemessen wird er ohnehin.
+    const shift = (o) => (o ? { ...o, x: r1(num(o.x) - 400) } : null)
+    return {
+      id: `printer-${dev?.id ?? i + 1}`,
+      name: dev?.name || tr('Drucker {0}', String(i + 1).padStart(2, '0')),
+      model: dev?.model || '', preset: '', device_id: dev?.id ?? null,
+      enclosed: base?.enclosed ?? true,
+      eject: shift(base?.eject) || { x: 425, y: 340, z: 17.5 },
+      load: shift(base?.load) || { x: 425, y: 340, z: 17.5 },
+      move: shift(base?.move || base?.eject) || { x: 425, y: 340, z: 17.5 },
+      door: base?.door ? { open: shift(base.door.open), close: shift(base.door.close) } : null,
       use_gcode: {}, gcode_override: {}, speed_factors: {},
-    }]
-  })
-  const removePrinter = (id) => {
-    if (printers.length <= 1) return          // ohne Drucker gäbe es nichts zu bedienen
-    setPrinters(ps => ps.filter(p => p.id !== id))
-    // Regale, die auf diesen Drucker zeigten, wieder freigeben — sonst hinge die
-    // Zuordnung an einer ID, die es nicht mehr gibt.
-    setRackGeo(m => Object.fromEntries(Object.entries(m).map(
-      ([k, v]) => [k, v?.printer === id ? { ...v, printer: null } : v])))
+    }
   }
+
+  /* Blöcke auf die Geräteliste abgleichen: je Gerät einer, in Gerätereihenfolge.
+     Blöcke zu inzwischen gelöschten Geräten bleiben HINTEN stehen (nicht angezeigt) —
+     wer ein Gerät versehentlich löscht und neu anlegt, verliert sonst die
+     eingemessenen Positionen. Gibt unverändert dieselbe Referenz zurück, sonst
+     würde der Effekt unten sich selbst immer wieder auslösen. */
+  const reconcile = (ps, devs) => {
+    if (!devs.length) return ps
+    const taken = new Set()
+    const out = []
+    for (const [i, d] of devs.entries()) {
+      let idx = ps.findIndex((p, k) => !taken.has(k) && p.device_id === d.id)
+      if (idx < 0) idx = ps.findIndex((p, k) => !taken.has(k) && p.device_id == null)
+      if (idx < 0) { out.push(seedPrinter(out[out.length - 1] || ps[0], d, i)); continue }
+      taken.add(idx)
+      const p = ps[idx]
+      out.push(p.device_id === d.id && p.name === d.name && (p.model || '') === (d.model || '')
+        ? p
+        // Name und Modell gehören dem Gerät — hier stünden sie sonst ein zweites Mal.
+        : { ...p, device_id: d.id, name: d.name, model: d.model || p.model || '' })
+    }
+    const next = [...out, ...ps.filter((_, k) => !taken.has(k))]
+    return (next.length === ps.length && next.every((p, i) => p === ps[i])) ? ps : next
+  }
+
+  useEffect(() => {
+    if (!hydrated.current || !printers.length || !devicesReady) return
+    setPrinters(ps => reconcile(ps, devices))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [devices, printers, devicesReady])
+
+  // Angezeigt (und gespeichert) wird ein Block je Gerät; ohne jedes Gerät genau einer,
+  // damit sich die Anlage auch vor dem Anlegen des Druckers einmessen lässt.
+  const shownPrinters = useMemo(() => (
+    devices.length ? printers.slice(0, devices.length) : printers.slice(0, 1)
+  ), [printers, devices.length])
+
+  // Regale, die auf einen nicht mehr vorhandenen Drucker zeigen, wieder freigeben —
+  // sonst hinge die Zuordnung an einer ID, die es nicht mehr gibt.
+  useEffect(() => {
+    if (!devicesReady || !shownPrinters.length) return
+    const ids = new Set(shownPrinters.map(p => p.id))
+    setRackGeo(m => {
+      const bad = Object.entries(m).filter(([, v]) => v?.printer && !ids.has(v.printer))
+      if (!bad.length) return m
+      return Object.fromEntries(Object.entries(m).map(
+        ([k, v]) => [k, v?.printer && !ids.has(v.printer) ? { ...v, printer: null } : v]))
+    })
+  }, [shownPrinters, devicesReady])
 
   // ── Geometrie: EINE Quelle für Live-G-code UND (opt-in) die Farm ──
   const geometry = useMemo(() => ({
-    printer_id: printers[0]?.preset || '',
-    printer_name: printers[0]?.name || '',
-    enclosed: !!printers[0]?.enclosed,
-    printers: printers.map(p => ({
+    printer_id: shownPrinters[0]?.preset || '',
+    printer_name: shownPrinters[0]?.name || '',
+    enclosed: !!shownPrinters[0]?.enclosed,
+    // Gespeichert wird genau ein Block je angelegtem Gerät. Ein Block ohne Gerät
+    // (gelöschter Drucker) fällt damit weg — sonst stünde er weiter in der Farm-
+    // Übersicht und in der Prüfung, obwohl es das Gerät nicht mehr gibt.
+    printers: shownPrinters.map(p => ({
       ...p,
       eject: { x: num(p.eject?.x), y: num(p.eject?.y), z: num(p.eject?.z) },
       load: { x: num(p.load?.x), y: num(p.load?.y), z: num(p.load?.z) },
@@ -817,7 +865,7 @@ export default function Drucker() {
     clamp_push_mm: num(clampPush, 30),
     machine_limits: { ...limits },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [printers, rackGeo, rackList, storage, yPullback, useGcode, gcodeOverride,
+  }), [shownPrinters, rackGeo, rackList, storage, yPullback, useGcode, gcodeOverride,
        speedFactor, speedFactors, clampPush, limits, rackXTrim])
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
@@ -847,9 +895,10 @@ export default function Drucker() {
     }).catch(() => {}).finally(() => { hydrated.current = true })
   }, [])
   useEffect(() => {
-    // Erst speichern, wenn BEIDES geladen ist: Geometrie und Regalzahl. Sonst würde
-    // eine noch geratene Regalzahl die Regal-Blöcke der übrigen Regale wegschreiben.
-    if (!hydrated.current || !printers.length || !rackReady) return
+    // Erst speichern, wenn ALLES geladen ist: Geometrie, Regalzahl und Geräteliste.
+    // Sonst würde eine noch geratene Regalzahl die übrigen Regal-Blöcke wegschreiben
+    // — oder eine noch leere Geräteliste den zweiten Drucker.
+    if (!hydrated.current || !printers.length || !rackReady || !devicesReady) return
     // Speichern liefert die Plausibilitätsprüfung mit zurück (Achsgrenzen) — so sieht
     // der Nutzer sofort, wenn ein Wert eine Bewegung aus der Achse fahren würde.
     const t = setTimeout(() => {
@@ -858,7 +907,7 @@ export default function Drucker() {
         .catch(() => {})
     }, 600)
     return () => clearTimeout(t)
-  }, [geometry, printers.length, rackReady])
+  }, [geometry, printers.length, rackReady, devicesReady])
 
   // Regalzahl / Fächer / Magazin-Fach global aus der Rack-Konfiguration (Configuration).
   useEffect(() => {
@@ -876,13 +925,19 @@ export default function Drucker() {
   }, [])
 
   // Geräte + Modell-Liste (Konfiguration → Geräte). Der Drucker-Tab legt keine
-  // Geräte an — er ordnet sie nur zu.
+  // Geräte an — er zeigt einen Abschnitt JE angelegtem Drucker und füllt dessen
+  // Positionen. Deshalb auf Änderungen horchen: wer drüben einen zweiten Drucker
+  // anlegt, soll ihn hier sofort sehen.
   useEffect(() => {
-    deviceService.listDevices()
+    const load = () => deviceService.listDevices()
       .then(r => setDevices((r?.data || []).filter(d => d.device_type === 'bambu_lab')
         .map(d => ({ id: d.id, name: d.name, model: d.model || '' }))))
       .catch(() => {})
+      .finally(() => setDevicesReady(true))
+    load()
     deviceService.listModels().then(r => setModels(r.data?.models || [])).catch(() => {})
+    window.addEventListener('printloom:devicesChanged', load)
+    return () => window.removeEventListener('printloom:devicesChanged', load)
   }, [])
 
   // ── Live: OTTOeject-Operation aus der AKTUELLEN Geometrie senden ──
@@ -994,7 +1049,7 @@ export default function Drucker() {
       .catch(() => setGcodeOverride(m => ({ ...m, [op]: '' })))
   }
 
-  const activeFarm = printers.reduce((n, p) => n + PRINTER_OPS.filter(o => p.use_gcode?.[o]).length, 0)
+  const activeFarm = shownPrinters.reduce((n, p) => n + PRINTER_OPS.filter(o => p.use_gcode?.[o]).length, 0)
     + RACK_OPS.filter(o => useGcode[o]).length
 
   // Einmessen: Drucker-Positionen sind seit v1.1.9 absolut — die Ist-Position wandert
@@ -1037,10 +1092,10 @@ export default function Drucker() {
         <FarmRail
           racks={rackList.map(nr => {
             const g = rackOf(nr)
-            const owner = printers.find(p => p.id === g.printer)
+            const owner = shownPrinters.find(p => p.id === g.printer)
             return { nr, x: r1(num(g.x)), name: g.name, printerName: owner?.name || '' }
           })}
-          printers={printers.map(p => ({ id: p.id, name: p.name, x: r1(num(p.eject?.x)) }))}
+          printers={shownPrinters.map(p => ({ id: p.id, name: p.name, x: r1(num(p.eject?.x)) }))}
           limitX={+limits.x || 0} push={num(clampPush, 30)}
           activeId={openSec} onSelect={(id) => jumpTo(id)} />
       </div>
@@ -1088,18 +1143,21 @@ export default function Drucker() {
         )}
       </div>
 
-      {/* ── Drucker ── */}
+      {/* ── Drucker: einer je angelegtem Gerät ── */}
       <div className="flex items-center justify-between px-1">
         <p className="section-label">{tr('Drucker')}</p>
-        <button onClick={addPrinter} className="text-[11px] text-blue-400 hover:text-blue-300">
-          {tr('+ Drucker hinzufügen')}
-        </button>
+        <span className="text-[10px] text-surface-600">
+          {devices.length
+            ? tr('{0} Drucker — Anzahl in Konfiguration → Geräte', devices.length)
+            : tr('Noch kein Drucker angelegt — Konfiguration → Geräte')}
+        </span>
       </div>
-      {printers.map((p, i) => (
-        <PrinterSection key={p.id} p={p} index={i} total={printers.length}
+      {shownPrinters.map((p, i) => (
+        <PrinterSection key={p.id} p={p} index={i}
+          dev={devices.find(d => d.id === p.device_id) || null}
           open={openSec === p.id} onToggle={() => toggleSec(p.id)}
-          onPatch={patch => patchPrinter(p.id, patch)} onRemove={() => removePrinter(p.id)}
-          devices={devices} models={models} busy={jog.busy} onTest={sendOp}
+          onPatch={patch => patchPrinter(p.id, patch)}
+          models={models} busy={jog.busy} onTest={sendOp}
           onLoadGcode={loadPrinterGcode} onGcodeText={setPrinterGcode} onClearGcode={clearPrinterGcode}
           teachOp={teachOp}
           onTeach={(op) => setTeachOp(t => {
@@ -1124,7 +1182,7 @@ export default function Drucker() {
       {rackList.map(nr => (
         <RackSection key={nr} nr={nr} geo={rackOf(nr)}
           open={openSec === `rack-${nr}`} onToggle={() => toggleSec(`rack-${nr}`)}
-          onPatch={patch => patchRack(nr, patch)} printers={printers}
+          onPatch={patch => patchRack(nr, patch)} printers={shownPrinters}
           slots={rackCfg.slots_per_rack} magazineSlot={magazineSlot}
           magazineCount={Math.max(0, +(rackCfg.magazine_counts?.[nr - 1] ?? 0))}
           busy={jog.busy} onTest={sendOp} onMagazine={() => grabFromMagazine(nr)}

@@ -994,6 +994,9 @@ function Configuration() {
       }
       closeForm()
       await load()
+      // Andere Seiten hängen an der Geräteliste — der Drucker-Tab zeigt einen
+      // Abschnitt JE angelegtem Drucker und muss das sofort mitbekommen.
+      window.dispatchEvent(new CustomEvent('printloom:devicesChanged'))
     } catch (e) {
       setError(e.response?.data?.detail ?? (editId != null ? 'Failed to update device' : 'Failed to add device'))
     } finally {
@@ -1005,6 +1008,7 @@ function Configuration() {
     if (!(await confirmDialog({ title: tr('Gerät löschen'), message: tr('Dieses Gerät wirklich löschen?'), confirmLabel: tr('Löschen') }))) return
     await deviceService.deleteDevice(id)
     await load()
+    window.dispatchEvent(new CustomEvent('printloom:devicesChanged'))
   }
 
   const handleTest = async (id) => {

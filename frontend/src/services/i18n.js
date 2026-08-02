@@ -2240,6 +2240,14 @@ const EN_STRINGS = {
     'Without a device Printloom cannot monitor this printer (print status, bed, settings). Devices are created under Configuration → Devices.',
   'Diesem Drucker ist kein Gerät zugeordnet — oben auswählen.':
     'No device is assigned to this printer — pick one above.',
+  '{0} Drucker — Anzahl in Konfiguration → Geräte':
+    '{0} printers — the count lives under Configuration → Devices',
+  'Noch kein Drucker angelegt — Konfiguration → Geräte':
+    'No printer created yet — Configuration → Devices',
+  'Name und Modell werden unter Konfiguration → Geräte gepflegt.':
+    'Name and model are maintained under Configuration → Devices.',
+  'Noch kein Drucker unter Konfiguration → Geräte angelegt. Einmessen und Testen geht trotzdem; Druckstatus, Bett und Drucker-Einstellungen brauchen das Gerät. Sobald es angelegt ist, gehören diese Werte dazu.':
+    'No printer has been created under Configuration → Devices yet. Teaching and testing still work; print status, bed and printer settings need the device. Once it exists, these values belong to it.',
   'X': 'X',
   'X/Y/Z = ERSTER Fahrpunkt der Bewegung. Der Rest der Türbewegung folgt daraus (Pin = Bogenradius).':
     'X/Y/Z = FIRST travel point of the move. The rest of the door motion follows from it (pin = arc radius).',
