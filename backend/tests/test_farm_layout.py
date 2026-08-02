@@ -1,9 +1,11 @@
-"""Farm-Layout: Module mit eigener X-Referenz statt einer Abstands-Formel.
+"""Farm-Layout: Drucker und Regale als Module auf einer X-Schiene.
 
-Der wichtigste Test der ganzen Datei ist `test_migration_verschiebt_keine_position`:
-Ein laufender Aufbau muss nach der Umstellung EXAKT dieselben Koordinaten fahren.
-Wäre das nicht so, müsste jeder Nutzer nach dem Update neu einmessen — und der
-erste Fehlversuch würde den Arm gegen den Drucker fahren."""
+Seit v1.1.8 hält das Layout keine eigenen X-Positionen mehr, sondern leitet sie
+aus der Drucker-Geometrie ab. Vorher stand jede Position zweimal in der App und
+beide Stellen wurden getrennt gepflegt: der Test-Knopf im Drucker-Tab fuhr nach
+der Formel, die Farm nach dem Layout. Die Tests hier halten fest, dass es nur
+noch EINE Quelle gibt und dass die Ableitung exakt das trifft, was der Arm
+fährt."""
 import pytest
 
 from app.services import farm_layout as fl
@@ -20,8 +22,8 @@ GEOM = {
 CFG = {"num_racks": 3, "slots_per_rack": 6, "slot_height_mm": 50, "magazine_slot": 7}
 
 
-# ── Migration ────────────────────────────────────────────────────────────────
-def test_migration_erzeugt_alle_module():
+# ── Ableitung aus der Geometrie ──────────────────────────────────────────────
+def test_ableitung_erzeugt_alle_module():
     lay = fl.from_geometry(GEOM, CFG, [{"id": 1, "name": "X1C", "model": "x1c"}])
     types = [m["type"] for m in lay["modules"]]
     assert types.count("rack") == 3
@@ -30,7 +32,7 @@ def test_migration_erzeugt_alle_module():
     assert lay["locked"] is True          # neu erzeugtes Layout ist gesperrt
 
 
-def test_migration_uebernimmt_die_formel_inklusive_trim():
+def test_ableitung_uebernimmt_die_formel_inklusive_trim():
     lay = fl.from_geometry(GEOM, CFG)
     xs = fl.rack_x_map(lay)
     # x = x_unclamp + (racks − r)·gap + trim
@@ -40,8 +42,8 @@ def test_migration_uebernimmt_die_formel_inklusive_trim():
     assert fl.printer_x(lay) == 442 + 2 * 250
 
 
-def test_migration_verschiebt_keine_position():
-    """DER Test: gleiche Koordinaten vor und nach der Umstellung."""
+def test_ableitung_verschiebt_keine_position():
+    """DER Test: die abgeleitete Sicht ändert die gefahrenen Koordinaten NICHT."""
     g = motion.merge_defaults({**GEOM, "storage_slots": 6, "magazine_slot": 7})
     vorher = {r: motion.slot_position(g, r, s) for r in (1, 2, 3) for s in (1, 6)}
     vorher_gcode = {op: motion.build_op(g, op, rack=2, slot=3, check=False)
@@ -58,37 +60,84 @@ def test_migration_verschiebt_keine_position():
     assert nachher_gcode == vorher_gcode, "G-code hat sich geändert"
 
 
-def test_ohne_layout_bleibt_die_formel():
+def test_test_knopf_und_farm_fahren_dasselbe():
+    """Der eigentliche Fehler, der zur Zusammenlegung führte.
+
+    Der Test-Knopf im Drucker-Tab schickt die Geometrie MIT (ungespeicherte
+    Werte), die Farm liest die gespeicherte. Vorher wurde nur auf einem der
+    beiden Wege das Layout überlagert — derselbe Knopf konnte je nach Weg
+    andere Positionen fahren. Beide Wege müssen identischen G-code erzeugen."""
+    stored = {**GEOM, "storage_slots": 6, "magazine_slot": 7}
+
+    # Weg 1: gespeicherte Geometrie (Farm-Zyklus)
+    g_farm = motion.apply_layout(motion.merge_defaults(dict(stored)), None)
+    # Weg 2: Geometrie aus dem Request (Test-Knopf), zusätzlich mit einem noch
+    # gespeicherten Alt-Überlagerungsblock, wie ihn v1.1.3–v1.1.7 anlegten.
+    g_test = motion.apply_layout(
+        motion.merge_defaults({**stored, "layout": {"rack_x": {"1": 4242}}}), None)
+
+    for op in ("grab", "store", "eject", "place", "move_to_printer"):
+        assert (motion.build_op(g_farm, op, rack=1, slot=2, check=False)
+                == motion.build_op(g_test, op, rack=1, slot=2, check=False))
+
+
+# ── EINE Quelle für X (seit v1.1.8) ──────────────────────────────────────────
+# Vorher hielt das Layout eigene X-Referenzen, die die Geometrie überlagerten.
+# Gepflegt wurden beide getrennt: der Test-Knopf im Drucker-Tab fuhr nach der
+# Formel, die Farm nach dem Layout. Jetzt gibt es nur noch die Geometrie.
+def test_x_kommt_immer_aus_der_geometrie():
     g = motion.merge_defaults(GEOM)
     assert motion.rack_x(g, 1) == 43 + 2 * 250
-    assert g.get("layout") == {}
+    assert "layout" not in g
 
 
-def test_layout_schlaegt_die_formel():
-    g = motion.merge_defaults({**GEOM, "layout": {"rack_x": {"1": 1000}}})
-    assert motion.rack_x(g, 1) == 1000
-    assert motion.rack_x(g, 3) == 43        # ohne Eintrag weiter per Formel
+def test_alter_layout_block_wird_ignoriert():
+    """Altbestand: In gespeicherten Geometrien kann noch ein Überlagerungs-Block
+    stehen. Der darf die Positionen NICHT mehr verändern."""
+    g = motion.apply_layout(
+        motion.merge_defaults({**GEOM, "layout": {"rack_x": {"1": 1000},
+                                                  "printer_x": 900}}), None)
+    assert motion.rack_x(g, 1) == 43 + 2 * 250
+    assert "X1000" not in motion.build_op(g, "grab", rack=1, slot=1, check=False)
 
 
-def test_ungleiche_abstaende_sind_moeglich():
-    """Genau das kann die Formel nicht — der Grund für das ganze Layout."""
-    lay = {"modules": [
-        {"id": "rack-1", "type": "rack", "x_ref": 600, "legacy_rack": 1},
-        {"id": "rack-2", "type": "rack", "x_ref": 310, "legacy_rack": 2},
-        {"id": "rack-3", "type": "rack", "x_ref": 40,  "legacy_rack": 3},
-    ]}
-    g = motion.apply_layout(motion.merge_defaults(GEOM), lay)
+def test_ungleiche_abstaende_ueber_die_korrektur():
+    """Ungleiche Regal-Abstände brauchen keine zweite Positionsverwaltung — die
+    Δ-Korrektur je Regal (Drucker-Tab) kann jede beliebige X-Position abbilden."""
+    g = motion.merge_defaults({**GEOM, "rack_x_trim": {"1": 57, "2": 17, "3": -3}})
     assert (motion.rack_x(g, 1), motion.rack_x(g, 2), motion.rack_x(g, 3)) == (600, 310, 40)
 
 
-def test_drucker_x_folgt_dem_layout():
-    """Der Drucker hängt am Modul; die eingemessenen Feinwerte (X-Differenz
-    zwischen eject und load) bleiben erhalten."""
-    g = motion.merge_defaults({**GEOM, "layout": {"printer_x": 900}})
-    eject = motion.build_op(g, "eject", check=False)
-    place = motion.build_op(g, "place", check=False)
-    assert "X900" in eject                       # Auswurf steht auf der Modul-X
-    assert "X883" in place                       # load lag 17 mm davor → bleibt
+def test_abgeleitete_module_treffen_die_bewegung():
+    """Was das Layout anzeigt, muss exakt das sein, was der Arm fährt."""
+    g = motion.merge_defaults({**GEOM, "rack_x_trim": {"1": 57, "2": 17, "3": -3}})
+    lay = fl.from_geometry(g, CFG)
+    assert fl.rack_x_map(lay) == {1: 600.0, 2: 310.0, 3: 40.0}
+    assert fl.printer_x(lay) == 442 + 2 * 250
+
+
+def test_sync_behaelt_zuordnung_nimmt_aber_die_geometrie_x():
+    """Namen und Zuordnungen des Nutzers bleiben; eine veraltete X aus der Datei
+    darf sich NICHT gegen die Geometrie durchsetzen."""
+    stored = {"locked": False, "modules": [
+        {"id": "rack-2", "type": "rack", "x_ref": 9999, "name": "Hohes Regal",
+         "printer": "printer-1", "legacy_rack": 2},
+        {"id": "printer-1", "type": "printer", "x_ref": 1, "name": "X1C links",
+         "device_id": 7},
+    ]}
+    lay = fl.sync_from_geometry(stored, GEOM, CFG)
+    by_id = {m["id"]: m for m in lay["modules"]}
+    assert by_id["rack-2"]["x_ref"] == 43 + 250 - 1.5  # Geometrie inkl. Δ gewinnt
+    assert by_id["rack-2"]["name"] == "Hohes Regal"    # eigener Name bleibt
+    assert by_id["printer-1"]["device_id"] == 7        # Gerät bleibt
+    assert by_id["printer-1"]["x_ref"] == 442 + 2 * 250
+    assert lay["locked"] is False
+
+
+def test_sync_ohne_gespeichertes_layout():
+    lay = fl.sync_from_geometry(None, GEOM, CFG)
+    assert [m["id"] for m in lay["modules"]][0] == "home"
+    assert fl.rack_x_map(lay) == {1: 543.0, 2: 291.5, 3: 43.0}
 
 
 # ── Normalisieren ────────────────────────────────────────────────────────────

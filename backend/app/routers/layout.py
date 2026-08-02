@@ -1,12 +1,14 @@
 """Farm-Layout: Drucker und Regale als Module auf einer X-Schiene.
 
-Die eigentliche Logik steht in app/services/farm_layout.py (rein, testbar). Hier
-liegt nur das Speichern, die Sperre und die Migration aus der alten Formel.
+Seit v1.1.8 hält das Layout KEINE eigenen X-Positionen mehr. Es gab sie doppelt —
+im Drucker-Tab (Start-X + Versatz + Δ je Regal) und hier als Modul-Referenz —,
+gepflegt wurden sie getrennt, und wer welchen Wert fährt, war von außen nicht zu
+sehen. Jetzt leiten sich die Module aus der Geometrie ab (sync_from_geometry);
+gespeichert wird nur, was es dort nicht gibt: Namen, welches Gerät an einem
+Drucker-Modul hängt und welche Regale zu welchem Drucker gehören.
 
-Sperre (Phase 4.3): Falsche X-Werte fahren den Arm gegen die Mechanik. Das Layout
-ist deshalb standardmäßig gesperrt, und bei LAUFENDER Farm lässt es sich weder
-entsperren noch ändern — mitten im Zyklus die Positionen zu verschieben wäre der
-sicherste Weg in einen Crash.
+Eingestellt wird alles im Drucker-Tab. Diese Endpunkte liefern die abgeleitete
+Sicht (Übersicht, Job-Verteilung) und nehmen nur noch die Zuordnungen entgegen.
 """
 import logging
 
@@ -27,9 +29,37 @@ LAYOUT_PATH = db_path("farm_layout.json")
 GEOMETRY_PATH = db_path("ottoeject_geometry.json")
 
 
-def load_layout() -> dict:
-    """Gespeichertes Layout (leer, wenn noch keines eingerichtet wurde)."""
-    return farm_layout.clean(storage.read_json(LAYOUT_PATH, None) or farm_layout.default_layout())
+def _geometry() -> dict:
+    return _motion.merge_defaults(storage.read_json(GEOMETRY_PATH, None))
+
+
+def _devices(db: Session = None) -> list:
+    """Bambu-Geräte für die Drucker-Module. Ohne übergebene Session eine eigene
+    öffnen: `load_layout` wird auch aus dem Farm-Zyklus gerufen (kein Request),
+    und ohne Gerät bliebe das Drucker-Modul ohne device_id — dann fände die
+    Job-Verteilung den Drucker nicht."""
+    own = db is None
+    if own:
+        from app.db.database import SessionLocal
+        db = SessionLocal()
+    try:
+        return [{"id": d.id, "name": d.name, "model": d.model}
+                for d in db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB).all()]
+    except Exception:
+        return []
+    finally:
+        if own:
+            db.close()
+
+
+def load_layout(db: Session = None) -> dict:
+    """Aktuelles Layout — IMMER frisch aus der Geometrie abgeleitet.
+
+    Dadurch kann es gar nicht mehr von den Werten im Drucker-Tab abweichen. Aus
+    der Datei kommen nur die Angaben, die es in der Geometrie nicht gibt (Namen,
+    Geräte-Zuordnung, Regal → Drucker)."""
+    stored = storage.read_json(LAYOUT_PATH, None)
+    return farm_layout.sync_from_geometry(stored, _geometry(), _rack_cfg(), _devices(db))
 
 
 def has_layout() -> bool:
@@ -67,73 +97,70 @@ def _limits() -> dict:
 
 
 @router.get("/")
-async def get_layout():
-    lay = load_layout()
+async def get_layout(db: Session = Depends(get_db)):
+    """Abgeleitete Sicht auf die Farm. Die X-Werte stehen im Drucker-Tab."""
+    lay = load_layout(db)
     return {
         "layout": lay,
         "configured": bool(lay["modules"]),
         "problems": farm_layout.check(lay, _limits()) if lay["modules"] else [],
         "farm_running": _farm_running(),
         "limits": _limits(),
+        # Seit v1.1.8: X wird hier nicht mehr gepflegt (siehe Modulkopf).
+        "derived": True,
     }
 
 
 @router.post("/migrate")
 async def migrate_layout(db: Session = Depends(get_db)):
-    """Bestehende Ein-Drucker-Installation in ein gleichwertiges Layout überführen.
-
-    Die X-Werte kommen aus genau der Formel, die bisher gerechnet wurde — die
-    Positionen ändern sich also NICHT. Ohne diesen Schritt bleibt alles beim Alten.
-    """
-    if has_layout():
-        raise HTTPException(400, "Layout existiert bereits — zum Neuaufbau erst zurücksetzen")
-    geom = _motion.merge_defaults(storage.read_json(GEOMETRY_PATH, None))
-    devices = [{"id": d.id, "name": d.name, "model": d.model}
-               for d in db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB).all()]
-    lay = _save(farm_layout.from_geometry(geom, _rack_cfg(), devices))
-    logger.info("Farm-Layout aus der Formel-Geometrie erzeugt: %d Module", len(lay["modules"]))
-    return {"success": True, "layout": lay, "problems": farm_layout.check(lay, _limits())}
+    """Alt-Endpunkt: das Layout wird inzwischen immer abgeleitet. Bleibt als
+    No-Op erhalten, damit ein noch offener alter Tab keinen Fehler zeigt."""
+    return {"success": True, "layout": load_layout(db),
+            "problems": farm_layout.check(load_layout(db), _limits())}
 
 
 @router.put("/")
-async def put_layout(body: dict):
-    """Layout speichern. Nur im entsperrten Zustand und nur bei stehender Farm."""
+async def put_layout(body: dict, db: Session = Depends(get_db)):
+    """Zuordnungen speichern (Namen, Gerät je Drucker-Modul, Regal → Drucker).
+
+    X-Werte im Body werden bewusst IGNORIERT — sie kommen aus der Geometrie
+    (Drucker-Tab). Zwei Quellen für dieselbe Zahl waren genau das Problem."""
     if _farm_running():
         raise HTTPException(409, "Farm läuft — das Layout kann nicht geändert werden")
-    current = load_layout()
-    if current["modules"] and current["locked"] and body.get("locked", True):
-        raise HTTPException(409, "Layout ist gesperrt — erst entsperren")
-    lay = _save({**body, "locked": bool(body.get("locked", True))})
-    problems = farm_layout.check(lay, _limits())
-    return {"success": True, "layout": lay, "problems": problems}
+    # Nur die layout-eigenen Felder übernehmen, alles andere neu ableiten.
+    lay = farm_layout.sync_from_geometry(body, _geometry(), _rack_cfg(), _devices(db))
+    lay["locked"] = bool(body.get("locked", True))
+    _save(lay)
+    return {"success": True, "layout": lay,
+            "problems": farm_layout.check(lay, _limits())}
 
 
 @router.post("/lock")
-async def set_lock(body: dict = None):
+async def set_lock(body: dict = None, db: Session = Depends(get_db)):
     """Sperre setzen/lösen. Entsperren geht nur, wenn die Farm steht."""
     body = body or {}
     lock = bool(body.get("locked", True))
     if not lock and _farm_running():
         raise HTTPException(409, "Farm läuft — das Layout bleibt gesperrt")
-    lay = load_layout()
+    lay = load_layout(db)
     lay["locked"] = lock
     return {"success": True, "layout": _save(lay)}
 
 
 @router.delete("/")
-async def reset_layout():
-    """Layout verwerfen → Printloom rechnet wieder mit der alten Formel."""
+async def reset_layout(db: Session = Depends(get_db)):
+    """Zuordnungen verwerfen → alles wieder direkt aus der Geometrie."""
     if _farm_running():
         raise HTTPException(409, "Farm läuft — das Layout kann nicht zurückgesetzt werden")
     storage.write_json(LAYOUT_PATH, farm_layout.default_layout())
-    return {"success": True}
+    return {"success": True, "layout": load_layout(db)}
 
 
 @router.get("/printers")
 async def layout_printers(db: Session = Depends(get_db)):
     """Drucker-Module mit ihrem Gerät — Grundlage für die Übersicht und die
     Job-Verteilung."""
-    lay = load_layout()
+    lay = load_layout(db)
     devices = {d.id: d for d in db.query(Device).filter(
         Device.device_type == PrinterType.BAMBU_LAB).all()}
     out = []

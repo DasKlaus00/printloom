@@ -454,21 +454,16 @@ def _mirror_for_device(script: str) -> str:
         return script
 
 
-def _farm_layout() -> dict | None:
-    """Farm-Layout (absolute X je Modul), sofern eingerichtet — sonst None, dann
-    rechnet die Geometrie wie bisher mit der Formel."""
-    try:
-        from app.routers.layout import load_layout
-        lay = load_layout()
-        return lay if lay.get("modules") else None
-    except Exception:
-        return None
-
-
 def _load_geometry() -> dict:
+    """Gespeicherte Geometrie — die EINZIGE Quelle für alle X-Positionen.
+
+    Bis v1.1.7 wurde hier zusätzlich das Farm-Layout überlagert, im Test-Pfad
+    unten aber NICHT. Derselbe Knopf konnte damit je nach Weg unterschiedliche
+    Positionen fahren. Seit v1.1.8 leitet sich das Layout aus der Geometrie ab,
+    diese Überlagerung entfällt ersatzlos."""
     g = _motion.merge_defaults(_storage.read_json(GEOMETRY_PATH, None))
     g = _motion.apply_rack_config(g, _rack_config())
-    return _motion.apply_layout(g, _farm_layout())
+    return _motion.apply_layout(g, None)
 
 
 def _geometry_from_request(request: dict) -> dict:
@@ -477,7 +472,7 @@ def _geometry_from_request(request: dict) -> dict:
     geom = request.get("geometry")
     if geom is None:
         return _load_geometry()
-    return _motion.apply_rack_config(geom, _rack_config())
+    return _motion.apply_layout(_motion.apply_rack_config(geom, _rack_config()), None)
 
 
 @router.get("/ottoeject/geometry")

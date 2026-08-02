@@ -58,7 +58,6 @@ const MobileView      = React.lazy(() => import('./pages/MobileView'))
 const Projekt         = React.lazy(() => import('./pages/Projekt'))
 const History         = React.lazy(() => import('./pages/History'))
 const Library         = React.lazy(() => import('./pages/Library'))
-const FarmLayout      = React.lazy(() => import('./pages/Layout'))
 import { healthService, systemService, deviceService, printerService } from './services/api'
 import { PageActiveContext } from './services/useAutoRefresh'
 import Toaster from './components/Toaster'
@@ -81,7 +80,9 @@ const PATH_TO_PAGE = {
   '/bibliothek':    'library',
   '/projekt':       'projekt',
   '/rack':          'rack',
-  '/layout':        'layout',
+  // „Farm-Layout" ist seit v1.1.8 Teil des Drucker-Tabs (eine Quelle für alle
+  // X-Positionen) — alte Lesezeichen landen dort.
+  '/layout':        'drucker',
   '/drucker':       'drucker',
   '/configuration': 'configuration',
   '/filamente':     'filamente',
@@ -103,7 +104,6 @@ const PAGE_TO_PATH = {
   library:       '/bibliothek',
   projekt:       '/projekt',
   rack:          '/rack',
-  layout:        '/layout',
   drucker:       '/drucker',
   configuration: '/configuration',
   filamente:     '/filamente',
@@ -432,7 +432,6 @@ function App() {
             {page('library',       Library, { setCurrentPage })}
             {page('projekt',       Projekt)}
             {page('rack',          RackManager)}
-            {page('layout',        FarmLayout)}
             {page('drucker',       Drucker)}
             {page('configuration', Configuration)}
             {page('system',        System, { onUpdateAvailable: setUpdateAvailable, onUpdatePhase: setUpdateOverlay, setCurrentPage })}

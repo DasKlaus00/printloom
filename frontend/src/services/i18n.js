@@ -2193,6 +2193,13 @@ const EN_STRINGS = {
     'Rack {0} sits at X {1} mm — too close to the endstop. When grabbing and storing, the arm moves the push distance ({2} mm) further towards zero and would end up at X {3} mm. This rack needs at least {2} mm of clearance from the endstop (X 0); "Approach" still works because it does not make that move.',
   'Der Drucker steht bei X {0} mm — beim Auswerfen und Einlegen fährt der Arm um den Andruck-Weg ({1} mm) weiter und käme auf X {2} mm, über die Achsgrenze X {3} mm.':
     'The printer sits at X {0} mm — when ejecting and placing, the arm moves the push distance ({1} mm) further and would end up at X {2} mm, beyond the axis limit X {3} mm.',
+
+  // ── 1.1.8: Schiene im Drucker-Tab (früher eigener Tab „Farm-Layout") ──
+  'Home': 'Home',
+  'Home liegt bei X 0 (Endschalter, rechts am Gerät) — deshalb ist die Schiene von rechts nach links gezeichnet. Die Positionen kommen aus den Feldern oben; es gibt keine zweite Stelle, an der sie stehen.':
+    'Home sits at X 0 (endstop, right-hand side of the machine) — that is why the rail is drawn right to left. The positions come from the fields above; there is no second place where they live.',
+  '⚠ Rot markiert: weniger als der Andruck-Weg ({0} mm) vom Endschalter entfernt — Greifen und Ablegen sind dort nicht möglich.':
+    '⚠ Marked red: less than the push distance ({0} mm) away from the endstop — grabbing and storing are impossible there.',
 }
 
 function deepMerge(base, over) {

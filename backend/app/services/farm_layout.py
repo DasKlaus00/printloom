@@ -59,33 +59,32 @@ def default_layout() -> dict:
     return {"locked": True, "modules": [], "migrated_from": None}
 
 
-# ── Migration aus der Formel-Geometrie ───────────────────────────────────────
+# ── Ableitung aus der Drucker-Geometrie ──────────────────────────────────────
 def from_geometry(geometry: dict, rack_cfg: dict = None, devices: list = None) -> dict:
-    """Bestehende Ein-Drucker-Installation → gleichwertiges Layout.
+    """Layout aus der Drucker-Geometrie ABLEITEN — keine eigene Datenhaltung für X.
 
-    Die X-Werte kommen aus GENAU der Formel, die bisher gerechnet wurde, inklusive
-    `rack_x_trim`. Ergebnis: identische Positionen, nur anders gespeichert. Genau
-    das ist die Bedingung dafür, dass ein laufender Aufbau nach dem Update ohne
-    Neu-Einmessen weiterläuft.
+    Bis v1.1.7 gab es die X-Positionen zweimal: im Drucker-Tab (Start-X + Versatz
+    + Δ je Regal) und noch einmal als eigene X-Referenz je Modul im Farm-Layout.
+    Beide wurden getrennt gepflegt und liefen auseinander — der Test-Knopf fuhr
+    nach der Formel, die Farm nach dem Layout. Deshalb gibt es nur noch EINE
+    Quelle: die Geometrie. Die Modul-X werden hier ausgerechnet, mit genau der
+    Funktion, die auch die Bewegung benutzt (`motion.rack_x`).
     """
-    g = geometry or {}
-    s = g.get("storage") or {}
-    cfg = rack_cfg or {}
+    from app.services import ottoeject_motion as motion
 
-    racks = max(1, _int(cfg.get("num_racks") or g.get("racks"), 1))
-    x_unclamp = _num(s.get("x_unclamp"), 43)
-    gap = _num(s.get("rack_x_gap"), 250)
-    trims = g.get("rack_x_trim") or {}
+    g = motion.merge_defaults(geometry or {})
+    motion.apply_rack_config(g, rack_cfg or None)
+    cfg = rack_cfg or {}
+    racks = max(1, _int(g.get("racks"), 1))
 
     modules = [{"id": "home", "type": "home", "name": "Home", "x_ref": 0.0}]
 
     for r in range(1, racks + 1):
-        x = x_unclamp + (racks - r) * gap + _num(trims.get(str(r)), 0)
         modules.append({
             "id": f"rack-{r}",
             "type": "rack",
             "name": f"Regal {r}",
-            "x_ref": round(x, 3),
+            "x_ref": round(motion.rack_x(g, r), 3),
             "slots": max(1, _int(cfg.get("slots_per_rack") or g.get("storage_slots"), 6)),
             "slot_height_mm": _num(cfg.get("slot_height_mm"), 50),
             # Fach-Abstand und erste Fachhöhe bleiben vorerst global (Geometrie) —
@@ -95,9 +94,9 @@ def from_geometry(geometry: dict, rack_cfg: dict = None, devices: list = None) -
             "legacy_rack": r,                 # Verbindung zur bisherigen Fach-Adresse „r-s"
         })
 
-    # Der Drucker sitzt am druckerseitigen Ende: bisher eject.x + (Regale−1)·gap.
+    # Drucker-X wie in der Bewegung: gespeicherte Basis + Regal-Versatz.
     p = (g.get("printer") or {}).get("eject") or {}
-    printer_x = _num(p.get("x"), 442) + (racks - 1) * gap
+    printer_x = _num(p.get("x"), 442) + motion._printer_x_off(g)
     dev = (devices or [{}])[0] if devices else {}
     modules.append({
         "id": "printer-1",
@@ -108,7 +107,39 @@ def from_geometry(geometry: dict, rack_cfg: dict = None, devices: list = None) -
         "model": dev.get("model") or "",
         "enabled": True,
     })
-    return {"locked": True, "modules": sort_modules(modules), "migrated_from": "formula"}
+    return {"locked": True, "modules": sort_modules(modules), "migrated_from": "geometry"}
+
+
+# Felder, die NUR im Layout leben (die Geometrie kennt sie nicht) und deshalb
+# über eine Neuableitung hinweg erhalten bleiben müssen.
+_KEEP = ("name", "device_id", "model", "enabled", "printer")
+
+
+def sync_from_geometry(stored: dict, geometry: dict, rack_cfg: dict = None,
+                       devices: list = None) -> dict:
+    """Frisch aus der Geometrie ableiten, die eigenen Angaben des Nutzers behalten.
+
+    X, Regalzahl und Fachzahl kommen IMMER aus der Geometrie bzw. der
+    Rack-Konfiguration — das ist der Sinn der Zusammenlegung. Erhalten bleibt nur,
+    was es dort nicht gibt: vergebene Namen, welches Gerät an einem Drucker-Modul
+    hängt und welche Regale zu welchem Drucker gehören.
+    """
+    fresh = from_geometry(geometry, rack_cfg, devices)
+    old = {m["id"]: m for m in clean(stored)["modules"]} if stored else {}
+    for m in fresh["modules"]:
+        prev = old.get(m["id"])
+        if not prev:
+            continue
+        for k in _KEEP:
+            if prev.get(k) not in (None, ""):
+                m[k] = prev[k]
+    ids = {m["id"] for m in fresh["modules"]}
+    for m in fresh["modules"]:
+        # Zuordnung auf ein inzwischen gelöschtes Drucker-Modul → zurück auf Standard.
+        if m["type"] == "rack" and m.get("printer") not in ids:
+            m["printer"] = "printer-1" if "printer-1" in ids else None
+    fresh["locked"] = bool((stored or {}).get("locked", True))
+    return fresh
 
 
 # ── Normalisieren / Prüfen ───────────────────────────────────────────────────

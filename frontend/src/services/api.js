@@ -40,15 +40,16 @@ export const deviceService = {
   }),
 }
 
-/* Farm-Layout: Drucker & Regale als Module auf einer X-Schiene (seit v1.1.3).
-   Ohne eingerichtetes Layout rechnet Printloom wie bisher mit der Formel. */
+/* Farm-Layout: Drucker & Regale als Module auf einer X-Schiene.
+   Seit v1.1.8 wird es aus der Drucker-Geometrie ABGELEITET — eingestellt wird
+   alles im Drucker-Tab, hier gibt es nur noch die fertige Sicht (Übersicht,
+   Job-Verteilung) und die Zuordnung Regal → Drucker. */
 export const layoutService = {
-  get:      ()      => api.get('/layout/'),
-  save:     (lay)   => api.put('/layout/', lay),
-  migrate:  ()      => api.post('/layout/migrate'),
+  get:      ()       => api.get('/layout/'),
+  save:     (lay)    => api.put('/layout/', lay),
   setLock:  (locked) => api.post('/layout/lock', { locked }),
-  reset:    ()      => api.delete('/layout/'),
-  printers: ()      => api.get('/layout/printers'),
+  reset:    ()       => api.delete('/layout/'),
+  printers: ()       => api.get('/layout/printers'),
 }
 
 export const configService = {

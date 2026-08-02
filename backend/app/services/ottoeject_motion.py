@@ -60,11 +60,6 @@ DEFAULT_GEOMETRY = {
     # dann wird eine Bewegung außerhalb der Achse gar nicht erst gesendet. Leer
     # gelassen wird nur nach unten geprüft (unter 0 ist immer falsch).
     "machine_limits": {},
-    # Absolute X-Referenzen aus dem Farm-Layout (seit v1.1.3), sofern eingerichtet:
-    #   {"rack_x": {"1": 543, "2": 293, ...}, "printer_x": 942}
-    # Leer = alte Formel (gleichmäßige Regal-Abstände). Wird beim Laden aus
-    # farm_layout.json überlagert, nicht von Hand gepflegt.
-    "layout": {},
 }
 
 
@@ -167,19 +162,16 @@ def magazine_slot(g: dict) -> int:
 
 
 def apply_layout(g: dict, layout: dict | None) -> dict:
-    """Absolute X-Referenzen aus dem Farm-Layout in die Geometrie überlagern.
+    """Nur noch ein Aufräumer (seit v1.1.8).
 
-    Eine Quelle: das Layout. Die Geometrie behält die eingemessenen Feinwerte
-    (Y/Z, Andruck, Tür), bekommt aber die X-Positionen der Module. Ohne Layout
-    bleibt alles wie vorher (Formel)."""
-    if not layout:
-        return g
-    from app.services import farm_layout
-    rx = farm_layout.rack_x_map(layout)
-    px = farm_layout.printer_x(layout)
-    if rx or px is not None:
-        g["layout"] = {"rack_x": {str(k): v for k, v in rx.items()},
-                       **({"printer_x": px} if px is not None else {})}
+    Bis v1.1.7 hat das Farm-Layout die X-Positionen der Geometrie ÜBERLAGERT.
+    Damit gab es zwei Quellen für dieselbe Zahl: Drucker-Tab und Layout-Seite.
+    Sie wurden getrennt gepflegt und liefen auseinander — der Test-Knopf im
+    Drucker-Tab fuhr nach der Formel, die Farm nach dem Layout, und niemand sah,
+    welcher Wert gilt. Jetzt ist die Geometrie die einzige Quelle; das Layout
+    wird daraus abgeleitet (farm_layout.from_geometry). Ein evtl. noch
+    gespeicherter Überlagerungs-Block wird hier entfernt."""
+    g.pop("layout", None)
     return g
 
 
@@ -249,41 +241,24 @@ def magazine_z_offset(g: dict, rack: int) -> float:
 def _printer_x_off(g: dict) -> float:
     """Versatz, der auf die gespeicherten Drucker-X (eject/load/move/Tür) addiert wird.
 
-    MIT LAYOUT (seit v1.1.3): Das Drucker-Modul hat eine absolute X-Referenz. Der
-    Versatz ist dann die Differenz zwischen dieser Referenz und der gespeicherten
-    Basis-X — so bleiben die eingemessenen Feinwerte (Y/Z und die X-Differenzen
-    innerhalb der Bewegung) erhalten, während der Drucker als Ganzes am Layout hängt.
-
-    OHNE LAYOUT (Altbestand): Der Drucker sitzt am druckerseitigen Ende (vor R1) und
-    wandert mit der Regalzahl mit, weil der Home-Anker rechts fest ist →
-    eject/load/Tür-X += (Regale−1)·rack_x_gap.
+    Der Drucker sitzt am druckerseitigen Ende (vor R1) und wandert mit der
+    Regalzahl mit, weil der Home-Anker rechts fest ist →
+    eject/load/Tür-X += (Regale−1)·rack_x_gap. Im Drucker-Tab steht deshalb die
+    ABSOLUTE Maschinen-X (Basis + dieser Versatz).
     """
-    lay = g.get("layout") or {}
-    px = lay.get("printer_x")
-    if px is not None:
-        base = _num((g.get("printer") or {}).get("eject", {}).get("x"))
-        return _num(px) - base
     return (int(g.get("racks", 1)) - 1) * float(g["storage"]["rack_x_gap"])
 
 
 def rack_x(g: dict, rack: int) -> float:
-    """X-Position eines Regals.
+    """X-Position eines Regals — die EINZIGE Quelle dafür.
 
-    Zwei Quellen, in dieser Reihenfolge:
-      1. LAYOUT (`layout.rack_x`, seit v1.1.3): jedes Regal hat seine eigene,
-         absolute X-Referenz. Damit sind ungleiche Abstände und mehrere Drucker
-         möglich — die Formel unten kann das nicht.
-      2. FORMEL (Altbestand): x_unclamp + (Regale − r)·rack_x_gap + Trim.
-         R1 = Regal DIREKT am Drucker, Rn = am Home-Anker (rechts).
+        x_unclamp + (Regale − r)·rack_x_gap + Δ-Korrektur[r]
 
-    Die Migration ins Layout erzeugt exakt die Werte der Formel — die Umstellung
-    verschiebt also keine einzige Position (siehe farm_layout.from_geometry).
+    R1 = Regal DIREKT am Drucker, Rn = am Home-Anker (rechts). Die Δ-Korrektur je
+    Regal (`rack_x_trim`, Drucker-Tab) macht beliebige, ungleiche Abstände
+    möglich — dafür braucht es keine zweite Positionsverwaltung. Genau die gab es
+    bis v1.1.7 im Farm-Layout, mit der Folge, dass beide auseinanderliefen.
     """
-    lay = (g.get("layout") or {}).get("rack_x") or {}
-    if lay:
-        for key in (str(int(rack)), int(rack)):
-            if key in lay:
-                return _num(lay[key])
     s = g["storage"]
     nr = int(g.get("racks", 1) or 1)
     xt = float(g.get("rack_x_trim", {}).get(str(rack), 0) or 0)

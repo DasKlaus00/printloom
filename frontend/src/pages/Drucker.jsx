@@ -4,6 +4,7 @@ import { controlService, rackManagerService, deviceService, printerService } fro
 import { PRINTERS, CUSTOM_PRINTER } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
 import TeachIn from '../components/TeachIn'
+import FarmRail from '../components/FarmRail'
 
 /* ── Drucker-Tab ────────────────────────────────────────────────────────────────
    Ein Drucker pro Printloom. Modell wählen → Positionen je Aufgabe (Tür auf/zu,
@@ -1075,6 +1076,21 @@ export default function Drucker() {
                     <p className="text-[9px] text-surface-600">
                       {tr('🖨 Drucker (ganz links) = Start-X von „Vor Drucker fahren“, „Platte auswerfen“ und „Platte einlegen“ gemeinsam (absoluter Maschinen-X). Regale: Standard = Start-X + Regal-Versatz; ein geänderter Wert wird als Δ-Korrektur pro Regal gespeichert und gilt für alle Fächer & das Magazin dieses Regals — auch im eigenen G-code über den Platzhalter für die Regal-X-Position. Ändert sich Start-X/Versatz, wandert die Korrektur mit.')}
                     </p>
+                    {/* Schiene aus GENAU diesen Feldern — kein eigener Speicher, damit
+                        Anzeige und gefahrene Position nicht auseinanderlaufen können.
+                        Ersetzt die frühere Seite „Farm-Layout" (siehe FarmRail). */}
+                    <div className="pt-1.5">
+                      <FarmRail
+                        racks={Array.from({ length: numRacks }, (_, i) => i + 1).map(r => ({
+                          nr: r,
+                          x: Math.round((num(xUnclamp) + (numRacks - r) * num(rackGap)
+                                         + (+(rackXTrim[String(r)] ?? 0) || 0)) * 10) / 10,
+                        }))}
+                        printerX={r1(num(eject.x) + xOff)}
+                        printerName={printerName}
+                        limitX={+limits.x || 0}
+                        push={num(clampPush, 30)} />
+                    </div>
                   </div>
                 )}
 

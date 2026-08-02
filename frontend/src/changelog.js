@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.8',
+    de: [
+      'FARM-LAYOUT UND DRUCKER SIND JETZT EINS. Der eigene Tab „Farm-Layout" ist weg — die Schienen-Ansicht sitzt direkt im Drucker-Tab unter den X-Feldern, aus denen sie entsteht.',
+      'Grund: Jede X-Position stand zweimal in der App — im Drucker-Tab (Start-X + Versatz + Δ je Regal) und noch einmal als eigene X-Referenz je Modul im Farm-Layout. Beide wurden getrennt gepflegt und liefen auseinander. Schlimmer: der Test-Knopf im Drucker-Tab fuhr nach der einen Quelle, die Farm nach der anderen — derselbe Knopf konnte also unterschiedliche Positionen anfahren, ohne dass man sah, welcher Wert gilt.',
+      'Jetzt gibt es genau EINE Quelle: die Drucker-Geometrie. Das Layout (Übersicht, Job-Verteilung, Regal → Drucker) wird daraus abgeleitet und kann gar nicht mehr abweichen.',
+      'Die Schiene zeichnet direkt die Werte aus den Feldern daneben — schon beim Tippen, ohne Speichern. Regale, die näher am Endschalter stehen als der Andruck-Weg, werden rot markiert: dort ist Greifen und Ablegen unmöglich.',
+      'Deine eingemessenen Positionen bleiben unverändert: Es gelten die Werte aus dem Drucker-Tab, mit denen du auch bisher getestet hast. Ein evtl. abweichender Wert aus der alten Layout-Seite wird verworfen. Namen und die Zuordnung Regal → Drucker bleiben erhalten.',
+      'Alte Lesezeichen auf „/layout" landen automatisch im Drucker-Tab.',
+    ],
+    en: [
+      'FARM LAYOUT AND PRINTER ARE NOW ONE. The separate "Farm layout" tab is gone — the rail view sits in the printer tab, right below the X fields it is built from.',
+      'Reason: every X position existed twice in the app — in the printer tab (start X + offset + Δ per rack) and again as its own per-module X reference in the farm layout. Both were maintained separately and drifted apart. Worse: the test button in the printer tab used one source while the farm used the other — the same button could drive to different positions, with no way to see which value applied.',
+      'There is now exactly ONE source: the printer geometry. The layout (overview, job distribution, rack → printer) is derived from it and can no longer disagree.',
+      'The rail draws the values from the fields next to it — live while typing, no save needed. Racks closer to the endstop than the push distance are marked red: grabbing and storing are impossible there.',
+      'Your taught positions stay unchanged: the values from the printer tab apply — the same ones you have been testing with. A diverging value from the old layout page is discarded. Names and the rack → printer assignment are kept.',
+      'Old bookmarks to "/layout" now land in the printer tab.',
+    ],
+  },
+  {
     version: '1.1.7',
     de: [
       'Die Geometrie-Prüfung sagt jetzt, WARUM ein Regal nicht gegriffen werden kann: Steht ein Regal näher am Endschalter als der Andruck-Weg, ist der Griff unmöglich — der Arm müsste hinter X 0 fahren. Bisher stand da nur „fährt auf X −25 mm"; jetzt steht der Grund und der nötige Mindestabstand dabei.',

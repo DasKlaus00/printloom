@@ -127,24 +127,30 @@ hängende Bewegung, Nutzer greift dazwischen.
 **Ziel:** Die strukturelle Erweiterung. Mehrere Drucker und Regale in einer Linie, ein
 OTTOeject bedient alles.
 
-1. ~~**Layout-Modell.**~~ `farm_layout.json`: Module (Drucker / Regal / Home) mit eigener
-   absoluter X-Referenz; `ottoeject_motion.rack_x()` nimmt sie vor der Formel.
-2. ~~**Migration ohne Positionsänderung.**~~ `from_geometry()` erzeugt exakt die Werte der
-   Formel inkl. Δ-Korrekturen — durch einen Test abgesichert, der G-code und
+1. ~~**Layout-Modell.**~~ Module (Drucker / Regal / Home) auf einer X-Schiene.
+   *Korrigiert in v1.1.8:* Die Module halten **keine eigenen X-Werte** mehr, sondern
+   werden aus der Drucker-Geometrie abgeleitet (siehe Lehrgeld unten).
+2. ~~**Positionen ändern sich nicht.**~~ Durch einen Test abgesichert, der G-code und
    Fach-Positionen vorher/nachher vergleicht.
-3. ~~**Lock-Schalter.**~~ Standardmäßig gesperrt, Entsperren mit Rückfrage, bei laufender
-   Farm blockiert (auch serverseitig).
-4. ~~**Geometrie je Drucker.**~~ Drucker-X hängt am Modul (`layout.printer_x`), die
-   eingemessenen Feinwerte bleiben erhalten. *(Sequenz je Drucker: siehe unten)*
+3. ~~**Lock-Schalter.**~~ Bei laufender Farm blockiert (auch serverseitig).
+4. ~~**Geometrie je Drucker.**~~ Drucker-X im Drucker-Tab, die eingemessenen Feinwerte
+   bleiben erhalten. *(Sequenz je Drucker: siehe unten)*
 5. ~~**Job-Verteilung.**~~ `job_dispatch.py` (rein, testbar): frei vor beschäftigt, dann
    kürzeste Warteschlange; feste Zuweisungen werden nie umgangen.
 6. ~~**Der Arm als geteilte Ressource.**~~ `arm_access`-Sperre um jede Bewegung, mit
    Warteschlange und Anzeige, wer den Arm gerade hat.
 7. ~~**Übersicht.**~~ Drucker nebeneinander in der Farm-Ansicht, inkl. Arm-Status.
 
+**Lehrgeld (v1.1.8).** Das Layout bekam eine EIGENE X-Referenz je Modul, obwohl die
+Δ-Korrektur je Regal im Drucker-Tab dasselbe schon konnte. Damit stand jede Position
+zweimal in der App, gepflegt an zwei Stellen — und weil nur einer der beiden
+Code-Pfade das Layout überlagerte, fuhr der Test-Knopf anders als die Farm. Seit
+v1.1.8 gibt es eine Quelle (Geometrie), das Layout wird abgeleitet. Regel für alles
+Weitere: **eine Zahl, ein Speicherort.**
+
 **Offen aus dieser Phase** (bewusst als eigener Schritt, weil es tief in den
 Farm-Zyklus greift): **eine eigene Sequenz je Drucker** und **echte Parallelität**
-(heute ein Zyklus zur Zeit — das Layout, die Verteilung und die Arm-Sperre sind die
+(heute ein Zyklus zur Zeit — die Verteilung und die Arm-Sperre sind die
 Voraussetzung dafür und stehen jetzt).
 
 ---

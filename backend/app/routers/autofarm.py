@@ -1977,15 +1977,10 @@ def _load_farm_geometry() -> dict:
         _motion.apply_rack_config(g, _rack_load())
     except Exception:
         pass
-    # Farm-Layout (absolute X je Modul) überlagern, sofern eingerichtet. Ohne
-    # Layout bleibt die bisherige Formel-Rechnung unverändert.
-    try:
-        from app.routers.layout import load_layout
-        _lay = load_layout()
-        if _lay.get("modules"):
-            _motion.apply_layout(g, _lay)
-    except Exception as e:
-        logger.warning(f"Farm-Layout nicht anwendbar ({e}) — rechne mit der Formel")
+    # Seit v1.1.8 gibt es keine zweite X-Quelle mehr: das Farm-Layout wird aus
+    # genau dieser Geometrie abgeleitet, statt sie zu überlagern. Damit fahren
+    # Test-Knopf (Drucker-Tab) und Farm garantiert dieselben Positionen.
+    _motion.apply_layout(g, None)
     # Migration: die Einlege-Op hieß früher „load", jetzt „place" (Alias). Alte
     # Opt-in-/Override-Einträge übernehmen, damit eine aktivierte Einlege-Position
     # nicht still auf das Geräte-Macro zurückfällt.
