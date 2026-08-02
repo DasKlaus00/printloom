@@ -105,8 +105,9 @@ def test_pro_achse_nur_eine_meldung():
     """Sonst käme bei 10 Regalen dieselbe Ursache dutzendfach."""
     g = _geom(racks=5, machine_limits={"x": 100, "y": 407, "z": 365})
     g["printer"]["door"] = None
+    # .get: in der Liste stehen auch Struktur-Meldungen ohne Achse.
     x_errs = [p for p in gc.check_geometry(g)["errors"]
-              if p["axis"] == "x" and p.get("op") == "grab"]
+              if p.get("axis") == "x" and p.get("op") == "grab"]
     assert len(x_errs) == 1
 
 
@@ -178,6 +179,51 @@ def test_andruck_30_ist_unauffaellig():
     r = gc.check_geometry(_geom(clamp_push_mm=30))
     assert not any(p["code"] in ("no_clamp_push", "negative_clamp_push")
                    for p in r["warnings"])
+
+
+# ── Platz für den Andruck-Weg ────────────────────────────────────────────────
+# Steht ein Regal näher als der Andruck-Weg am Endschalter, ist der Griff
+# unmöglich: „Anfahren" klappt (keine Andruck-Bewegung), „Greifen"/„Ablegen"
+# werden abgelehnt. Die reine Achsmeldung sagt nur „X −25 mm" — hier muss der
+# Grund samt Mindestabstand stehen.
+def _rack3_dicht():
+    """3 Regale, Regal 3 (am Endschalter) per Trim auf X 5."""
+    return _geom(racks=3, clamp_push_mm=30,
+                 storage={"x_unclamp": -488, "rack_x_gap": 250, "y_engage": 335,
+                          "first_z_flat": 25, "slot_gap": 25, "y_pullback_limit": 5},
+                 rack_x_trim={"1": 613, "2": 550, "3": 493})
+
+
+def test_regal_zu_dicht_am_endschalter():
+    r = gc.check_geometry(_rack3_dicht())
+    hit = [p for p in r["errors"] if p["code"] == "rack_too_close_to_home"]
+    assert len(hit) == 1
+    assert hit[0]["params"][0] == 3                  # betrifft Regal 3
+    assert "30" in hit[0]["message"]                 # nennt den Mindestabstand
+
+
+def test_anfahren_bleibt_moeglich_greifen_nicht():
+    """Genau der beobachtete Unterschied — die Prüfung muss ihn abbilden."""
+    g = _rack3_dicht()
+    assert gc.check_op(g, "approach", rack=3, slot=1) == []
+    for op in ("grab", "store"):
+        assert any(p["code"] == "axis_below_zero" for p in gc.check_op(g, op, rack=3, slot=1))
+
+
+def test_genug_abstand_ist_still():
+    g = _rack3_dicht()
+    g["rack_x_trim"]["3"] = 493 + 30                 # Regal 3 auf X 35 schieben
+    r = gc.check_geometry(g)
+    assert not any(p["code"] == "rack_too_close_to_home" for p in r["errors"])
+    assert gc.check_op(g, "grab", rack=3, slot=1) == []
+
+
+def test_drucker_zu_dicht_an_der_achsgrenze():
+    g = _geom(clamp_push_mm=30, machine_limits={"x": 500, "y": 400, "z": 400},
+              printer={"eject": {"x": 490, "y": 300, "z": 20},
+                       "load": {"x": 490, "y": 300, "z": 20}})
+    r = gc.check_geometry(g)
+    assert any(p["code"] == "printer_too_close_to_limit" for p in r["errors"])
 
 
 def test_leere_geometrie_crasht_nicht():

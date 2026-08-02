@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.7',
+    de: [
+      'Die Geometrie-Prüfung sagt jetzt, WARUM ein Regal nicht gegriffen werden kann: Steht ein Regal näher am Endschalter als der Andruck-Weg, ist der Griff unmöglich — der Arm müsste hinter X 0 fahren. Bisher stand da nur „fährt auf X −25 mm"; jetzt steht der Grund und der nötige Mindestabstand dabei.',
+      'Das erklärt auch den verwirrenden Unterschied: „Anfahren" funktioniert bei so einem Regal, „Greifen"/„Ablegen"/„Aus Magazin holen" nicht — Anfahren macht die Andruck-Bewegung gar nicht.',
+      'Dasselbe für die andere Seite: Steht der Drucker zu nah an der oberen Achsgrenze, wird das jetzt vor dem Auswerfen/Einlegen gemeldet statt erst beim Abbruch.',
+    ],
+    en: [
+      'The geometry check now says WHY a rack cannot be grabbed: if a rack sits closer to the endstop than the push distance, the grab is impossible — the arm would have to travel past X 0. It used to say only "moves to X −25 mm"; now it gives the reason and the required clearance.',
+      'That also explains the confusing difference: "Approach" works for such a rack while "Grab"/"Store"/"Grab from magazine" do not — approach never makes the push move.',
+      'Same for the other end: if the printer sits too close to the upper axis limit, that is now reported before ejecting/placing instead of only on abort.',
+    ],
+  },
+  {
     version: '1.1.6',
     de: [
       'Andruck-Weg 0 fällt nicht mehr still durch: Steht „Andruck-Weg (mm)" im Drucker-Tab auf 0, greift der Arm NICHT — er fährt vor das Fach, hebt an und kommt leer zurück, ohne Fehlermeldung. Grund: genau diese X-Bewegung ist der Griff; bei 0 zielt sie auf die Stelle, an der der Arm schon steht.',

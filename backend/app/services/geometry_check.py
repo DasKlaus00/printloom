@@ -263,6 +263,37 @@ def _structure_problems(g: dict) -> list:
                 "Andruck-Weg ist 0 — dann fährt der Arm beim Greifen und Ablegen nicht in "
                 "die Halterung, der Greifer hakt nicht ein und die Platte bleibt liegen "
                 "(der Arm kommt leer zurück). Original: 30 mm."))
+
+    # Andruck-Weg braucht PLATZ. Greifen/Ablegen fahren um diesen Weg Richtung
+    # Endschalter (−), Auswerfen/Einlegen vom Endschalter weg (+). Steht ein Regal
+    # zu dicht am Nullpunkt, ist die Griff-Bewegung unmöglich — die Achsprüfung
+    # meldet dann zwar „X −25 mm", sagt aber nicht WARUM. Diese Meldung schon:
+    # sie nennt den nötigen Mindestabstand. Genau das war der Fall, in dem
+    # „Anfahren" ging (keine Andruck-Bewegung) und „Greifen" nicht.
+    if push > 0:
+        limits = limits_from(g)
+        for r in range(1, max(1, racks) + 1):
+            try:
+                rx = motion.rack_x(g, r)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if rx - push < 0:
+                out.append(problem(
+                    "rack_too_close_to_home", "error",
+                    "Regal {0} steht bei X {1} mm — zu dicht am Endschalter. Beim Greifen "
+                    "und Ablegen fährt der Arm um den Andruck-Weg ({2} mm) weiter Richtung "
+                    "Null und käme auf X {3} mm. Das Regal braucht mindestens {2} mm "
+                    "Abstand zum Endschalter (X 0); „Anfahren“ geht trotzdem, weil es "
+                    "diese Bewegung nicht macht.",
+                    [r, f"{rx:g}", f"{push:g}", f"{rx - push:g}"]))
+        px = _f((g.get("printer") or {}).get("eject", {}).get("x")) + motion._printer_x_off(g)
+        if limits.get("x") and px + push > limits["x"]:
+            out.append(problem(
+                "printer_too_close_to_limit", "error",
+                "Der Drucker steht bei X {0} mm — beim Auswerfen und Einlegen fährt der Arm "
+                "um den Andruck-Weg ({1} mm) weiter und käme auf X {2} mm, über die "
+                "Achsgrenze X {3} mm.",
+                [f"{px:g}", f"{push:g}", f"{px + push:g}", f"{limits['x']:g}"]))
     return out
 
 

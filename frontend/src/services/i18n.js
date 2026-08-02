@@ -2189,6 +2189,10 @@ const EN_STRINGS = {
     'Push distance: on grab/place the arm moves this far beyond X to press the gripper into the bracket (eject/place: +, grab/store: −). Original 30. CAUTION: that move IS the grab — at 0 the gripper never engages, the arm moves in and comes back empty. 0 only makes sense if you have your own G-code for grab/store.',
   'Andruck-Weg ist 0 — dann fährt der Arm beim Greifen und Ablegen nicht in die Halterung, der Greifer hakt nicht ein und die Platte bleibt liegen (der Arm kommt leer zurück). Original: 30 mm.':
     'Push distance is 0 — the arm then never moves into the bracket when grabbing or storing, the gripper does not engage and the plate stays where it is (the arm comes back empty). Original: 30 mm.',
+  'Regal {0} steht bei X {1} mm — zu dicht am Endschalter. Beim Greifen und Ablegen fährt der Arm um den Andruck-Weg ({2} mm) weiter Richtung Null und käme auf X {3} mm. Das Regal braucht mindestens {2} mm Abstand zum Endschalter (X 0); „Anfahren“ geht trotzdem, weil es diese Bewegung nicht macht.':
+    'Rack {0} sits at X {1} mm — too close to the endstop. When grabbing and storing, the arm moves the push distance ({2} mm) further towards zero and would end up at X {3} mm. This rack needs at least {2} mm of clearance from the endstop (X 0); "Approach" still works because it does not make that move.',
+  'Der Drucker steht bei X {0} mm — beim Auswerfen und Einlegen fährt der Arm um den Andruck-Weg ({1} mm) weiter und käme auf X {2} mm, über die Achsgrenze X {3} mm.':
+    'The printer sits at X {0} mm — when ejecting and placing, the arm moves the push distance ({1} mm) further and would end up at X {2} mm, beyond the axis limit X {3} mm.',
 }
 
 function deepMerge(base, over) {
