@@ -147,17 +147,25 @@ def _axis_problems(script, limits: dict, ctx: dict) -> list:
             worst[key] = val
 
     out = []
+    ctx = dict(ctx)
+    pname = ctx.pop("printer_name", None)
     for (axis, kind), val in sorted(worst.items()):
         A = axis.upper()
         # Der Ort („Regal 2 Fach 5: ‚Auswerfen'") steckt als Werte in der Vorlage,
         # nicht als vorgefertigter Textbaustein — sonst bliebe er unübersetzbar.
         label = _OP_LABELS.get(ctx.get("op"), ctx.get("op") or "Bewegung")
         in_slot = bool(ctx.get("slot"))
-        head = ([ctx.get("rack", 1), ctx["slot"], label] if in_slot else [label])
+        # Bei mehreren Druckern muss dabeistehen, WELCHER gemeint ist — sonst sucht
+        # man den Fehler am falschen Gerät.
+        head = ([ctx.get("rack", 1), ctx["slot"], label] if in_slot
+                else [label, pname] if pname else [label])
         if kind == "below_zero":
             tpl = ("Regal {0} Fach {1}: „{2}“ fährt auf {3} {4} mm — unter den Endschalter "
                    "(0 mm). Klipper würde die Bewegung mitten im Ablauf abbrechen."
                    if in_slot else
+                   "„{0}“ ({1}) fährt auf {2} {3} mm — unter den Endschalter (0 mm). "
+                   "Klipper würde die Bewegung mitten im Ablauf abbrechen."
+                   if pname else
                    "„{0}“ fährt auf {1} {2} mm — unter den Endschalter (0 mm). "
                    "Klipper würde die Bewegung mitten im Ablauf abbrechen.")
             out.append(problem("axis_below_zero", "error", tpl,
@@ -168,6 +176,9 @@ def _axis_problems(script, limits: dict, ctx: dict) -> list:
             tpl = ("Regal {0} Fach {1}: „{2}“ fährt auf {3} {4} mm — über die Achsgrenze "
                    "{5} {6} mm. Klipper würde die Bewegung abbrechen."
                    if in_slot else
+                   "„{0}“ ({1}) fährt auf {2} {3} mm — über die Achsgrenze {4} {5} mm. "
+                   "Klipper würde die Bewegung abbrechen."
+                   if pname else
                    "„{0}“ fährt auf {1} {2} mm — über die Achsgrenze {3} {4} mm. "
                    "Klipper würde die Bewegung abbrechen.")
             out.append(problem("axis_above_limit", "error", tpl,
@@ -177,24 +188,31 @@ def _axis_problems(script, limits: dict, ctx: dict) -> list:
 
 
 # ── Einzelne Operation (Gate vor dem Senden) ─────────────────────────────────
-def check_script(script, g: dict, op: str, rack: int = 1, slot: int = 1) -> list:
+def check_script(script, g: dict, op: str, rack: int = 1, slot: int = 1, printer=None) -> list:
     """Fertigen G-code gegen die Achsgrenzen prüfen → Liste von Problemen (leer = ok).
     Das ist der Einstieg für das Gate in build_op (dort liegt der G-code schon vor)."""
     ctx = {"op": op}
     if op in _SLOT_OPS:
         ctx.update({"rack": int(rack or 1), "slot": int(slot or 1)})
+    elif motion.canon_op(op) in motion.PRINTER_OPS:
+        pl = motion.printer_list(g)
+        if len(pl) > 1:      # bei einem Drucker wäre der Name nur Lärm
+            pb = motion.printer_block(g, printer)
+            ctx.update({"printer": pb["id"], "printer_name": pb["name"]})
     return _axis_problems(script, limits_from(g), ctx)
 
 
-def check_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None) -> list:
+def check_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None,
+             printer=None) -> list:
     """Nur die Achsgrenzen EINER Operation prüfen → Liste von Problemen (leer = ok).
     Wird von build_op benutzt, deshalb hier bewusst ohne Struktur-Prüfung: schnell
     und ohne Rekursion."""
     try:
-        script = motion.build_op(g, op, rack=rack, slot=slot, nolift=nolift, check=False)
+        script = motion.build_op(g, op, rack=rack, slot=slot, nolift=nolift,
+                                 check=False, printer=printer)
     except ValueError:
         return []       # unbekannte Op o. Ä. — meldet build_op selbst
-    return check_script(script, g, op, rack, slot)
+    return check_script(script, g, op, rack, slot, printer)
 
 
 # ── Ganze Geometrie (Speichern / Anzeige) ────────────────────────────────────
@@ -211,30 +229,53 @@ def _structure_problems(g: dict) -> list:
 
     racks = int(_f(g.get("racks"), 1) or 1)
     slots = int(_f(g.get("storage_slots"), 0))
-    step = _f(s.get("slot_gap")) + motion.SLOT_Z_EXTRA
-    gap = _f(s.get("rack_x_gap"))
+    multi = racks > 1
 
     if racks < 1:
         out.append(problem("no_racks", "error",
                            "Regalzahl ist kleiner als 1 — mindestens ein Regal wird gebraucht."))
     if slots < 1:
         out.append(problem("no_slots", "error", "Fächer pro Regal ist kleiner als 1."))
-    if step <= 0:
-        out.append(problem("no_slot_step", "error",
-                           "Fach-Abstand ergibt keinen Schritt nach oben ({0} mm) — alle Fächer "
-                           "lägen auf derselben Höhe. Gemessener Abstand von Fach zu Fach muss "
-                           "über {1} mm liegen.",
-                           [f"{step:g}", motion.SLOT_Z_EXTRA]))
-    if racks > 1 and gap <= 0:
-        out.append(problem("no_rack_gap", "error",
-                           "Regal-Abstand ist 0 — bei mehreren Regalen lägen alle an derselben "
-                           "X-Position."))
-    y_engage, y_pull = _f(s.get("y_engage")), _f(s.get("y_pullback_limit"))
-    if y_engage <= y_pull:
-        out.append(problem("y_engage_behind_pullback", "error",
-                           "Greif-Y ({0} mm) liegt nicht vor der Rückzugsposition ({1} mm) — der "
-                           "Arm würde beim Greifen nach hinten statt nach vorn fahren.",
-                           [f"{y_engage:g}", f"{y_pull:g}"]))
+
+    # Werte JE REGAL prüfen: seit v1.1.9 darf jedes Regal eigene Höhen und Abstände
+    # haben, also reicht ein Blick auf die gemeinsamen Werte nicht mehr.
+    y_pull = _f(s.get("y_pullback_limit"))
+    seen_x = {}
+    for r in range(1, max(1, racks) + 1):
+        try:
+            rb = motion.rack_block(g, r)
+        except (KeyError, TypeError, ValueError):
+            continue
+        step = rb["slot_gap"] + motion.SLOT_Z_EXTRA
+        if step <= 0:
+            out.append(problem(
+                "no_slot_step", "error",
+                ("Regal {2}: Fach-Abstand ergibt keinen Schritt nach oben ({0} mm) — alle "
+                 "Fächer lägen auf derselben Höhe. Gemessener Abstand von Fach zu Fach muss "
+                 "über {1} mm liegen."
+                 if multi else
+                 "Fach-Abstand ergibt keinen Schritt nach oben ({0} mm) — alle Fächer "
+                 "lägen auf derselben Höhe. Gemessener Abstand von Fach zu Fach muss "
+                 "über {1} mm liegen."),
+                [f"{step:g}", motion.SLOT_Z_EXTRA] + ([r] if multi else []), rack=r))
+        if rb["y_engage"] <= y_pull:
+            out.append(problem(
+                "y_engage_behind_pullback", "error",
+                ("Regal {2}: Greif-Y ({0} mm) liegt nicht vor der Rückzugsposition ({1} mm) — "
+                 "der Arm würde beim Greifen nach hinten statt nach vorn fahren."
+                 if multi else
+                 "Greif-Y ({0} mm) liegt nicht vor der Rückzugsposition ({1} mm) — der "
+                 "Arm würde beim Greifen nach hinten statt nach vorn fahren."),
+                [f"{rb['y_engage']:g}", f"{y_pull:g}"] + ([r] if multi else []), rack=r))
+        key = round(rb["x"], 2)
+        if key in seen_x:
+            out.append(problem(
+                "no_rack_gap", "error",
+                "Regal {0} und Regal {1} stehen beide bei X {2} mm — zwei Regale können "
+                "nicht an derselben Stelle stehen.",
+                [seen_x[key], r, f"{key:g}"], rack=r))
+        else:
+            seen_x[key] = r
     mag = motion.magazine_slot(g)
     if slots and mag > slots + 1:
         out.append(problem("magazine_above_rack", "warning",
@@ -254,9 +295,8 @@ def _structure_problems(g: dict) -> list:
         # fährt dann vor, hebt an und kommt LEER zurück, ohne Fehlermeldung.
         # Nur melden, wenn die gebaute Bewegung überhaupt benutzt wird (mit eigenem
         # G-code für alle vier Griff-Operationen ist der Wert bedeutungslos).
-        ov = g.get("gcode_override") or {}
         built_in = [o for o in ("grab", "store", "eject", "place")
-                    if not str(ov.get(o) or "").strip()]
+                    if not str(motion.op_override(g, o) or "").strip()]
         if built_in:
             out.append(problem(
                 "no_clamp_push", "warning",
@@ -286,14 +326,29 @@ def _structure_problems(g: dict) -> list:
                     "Abstand zum Endschalter (X 0); „Anfahren“ geht trotzdem, weil es "
                     "diese Bewegung nicht macht.",
                     [r, f"{rx:g}", f"{push:g}", f"{rx - push:g}"]))
-        px = _f((g.get("printer") or {}).get("eject", {}).get("x")) + motion._printer_x_off(g)
-        if limits.get("x") and px + push > limits["x"]:
+        for pb in motion.printer_list(g):
+            px = _f((pb.get("eject") or {}).get("x"))
+            if limits.get("x") and px + push > limits["x"]:
+                out.append(problem(
+                    "printer_too_close_to_limit", "error",
+                    "„{0}“ steht bei X {1} mm — beim Auswerfen und Einlegen fährt der Arm "
+                    "um den Andruck-Weg ({2} mm) weiter und käme auf X {3} mm, über die "
+                    "Achsgrenze X {4} mm.",
+                    [pb["name"], f"{px:g}", f"{push:g}", f"{px + push:g}", f"{limits['x']:g}"],
+                    printer=pb["id"]))
+
+    # Zwei Drucker an derselben Stelle — fast immer ein vergessener zweiter Block.
+    seen = {}
+    for pb in motion.printer_list(g):
+        key = round(_f((pb.get("eject") or {}).get("x")), 2)
+        if key in seen:
             out.append(problem(
-                "printer_too_close_to_limit", "error",
-                "Der Drucker steht bei X {0} mm — beim Auswerfen und Einlegen fährt der Arm "
-                "um den Andruck-Weg ({1} mm) weiter und käme auf X {2} mm, über die "
-                "Achsgrenze X {3} mm.",
-                [f"{px:g}", f"{push:g}", f"{px + push:g}", f"{limits['x']:g}"]))
+                "printers_same_x", "error",
+                "„{0}“ und „{1}“ stehen beide bei X {2} mm — zwei Drucker können nicht an "
+                "derselben Stelle stehen.",
+                [seen[key], pb["name"], f"{key:g}"], printer=pb["id"]))
+        else:
+            seen[key] = pb["name"]
     return out
 
 
@@ -311,11 +366,17 @@ def check_geometry(g: dict, *, max_problems: int = 40) -> dict:
     slots = max(1, min(40, int(_int(g.get("storage_slots"), 6))))
     mag = motion.magazine_slot(g)
 
+    printers = [p["id"] for p in motion.printer_list(g)]
     for op in _CHECK_OPS:
         if op in _SLOT_OPS:
             for rack in range(1, racks + 1):
                 for slot in _test_slots(op, slots, mag):
                     problems += check_op(g, op, rack=rack, slot=slot)
+        elif motion.canon_op(op) in motion.PRINTER_OPS:
+            # Drucker-Operationen für JEDEN Drucker prüfen — sonst bliebe ein
+            # falsch eingemessener zweiter Drucker unbemerkt.
+            for pid in printers:
+                problems += check_op(g, op, printer=pid)
         else:
             problems += check_op(g, op)
         if len(problems) > max_problems * 4:
@@ -365,7 +426,7 @@ def _dedupe(problems: list) -> list:
     best = {}
     order = []
     for p in problems:
-        key = (p.get("code"), p.get("axis"), p.get("op"))
+        key = (p.get("code"), p.get("axis"), p.get("op"), p.get("printer"))
         cur = best.get(key)
         if cur is None:
             best[key] = p

@@ -463,7 +463,10 @@ def _load_geometry() -> dict:
     diese Überlagerung entfällt ersatzlos."""
     g = _motion.merge_defaults(_storage.read_json(GEOMETRY_PATH, None))
     g = _motion.apply_rack_config(g, _rack_config())
-    return _motion.apply_layout(g, None)
+    # Seit v1.1.9 in der vollen Form (ein Block je Drucker/Regal, absolute Werte):
+    # so liest die Oberfläche genau die Zahlen, die auch gefahren werden — die
+    # Umrechnung des Alt-Modells passiert genau hier, an einer Stelle.
+    return _motion.expand(_motion.apply_layout(g, None))
 
 
 def _geometry_from_request(request: dict) -> dict:
@@ -599,8 +602,9 @@ async def run_ottoeject_op(request: dict, db: Session = Depends(get_db)):
     """Eine OTTOeject-Bewegung aus der gespeicherten Geometrie erzeugen und live senden.
 
     Body: {op: grab|store|eject|load|open_door|close_door|approach|park|home,
-           rack?, slot?, nolift?, geometry?, force?}
+           rack?, slot?, printer?, nolift?, geometry?, force?}
     `geometry` optional = Vorschau/Test mit ungespeicherten Werten (sonst gespeicherte).
+    `printer` = id des Druckers bei Drucker-Operationen (ohne Angabe: der erste).
     `force` = Achsprüfung übergehen (nur für den bewussten Ausnahmefall).
     """
     op = (request.get("op") or "").strip()
@@ -614,6 +618,7 @@ async def run_ottoeject_op(request: dict, db: Session = Depends(get_db)):
             slot=int(request.get("slot", 1) or 1),
             nolift=request.get("nolift"),
             check=not request.get("force"),
+            printer=request.get("printer"),
         )
     except _geometry_check.GeometryError as e:
         # Bewegung würde die Achse verlassen → NICHT senden. Klipper würde sie mitten
@@ -641,15 +646,17 @@ async def preview_ottoeject_op(request: dict):
     geom = _geometry_from_request(request)
     rack = int(request.get("rack", 1) or 1)
     slot = int(request.get("slot", 1) or 1)
+    printer = request.get("printer")
     try:
         # Vorschau prüft NICHT (check=False): sie soll auch unplausiblen G-code zeigen
         # können — die Probleme kommen daneben als `problems` mit.
         script = _motion.build_op(geom, op, rack=rack, slot=slot,
-                                  nolift=request.get("nolift"), check=False)
+                                  nolift=request.get("nolift"), check=False,
+                                  printer=printer)
     except ValueError as e:
         raise HTTPException(400, str(e))
     # Vorschau zeigt exakt das, was gesendet würde (inkl. gespiegelter RACK=-Nummern).
     # Geprüft wird der eben gebaute G-code (das Spiegeln ändert nur RACK=-Nummern,
     # keine Koordinaten) — kein zweiter Aufbau nötig.
     return {"success": True, "op": op, "script": _mirror_for_device(script),
-            "problems": _geometry_check.check_script(script, geom, op, rack, slot)}
+            "problems": _geometry_check.check_script(script, geom, op, rack, slot, printer)}

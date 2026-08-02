@@ -4,6 +4,29 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.9',
+    de: [
+      'ZWEITER DRUCKER MÖGLICH — und der Drucker-Tab ist komplett neu aufgebaut. Er heißt jetzt „Drucker & Regale", ist einspaltig, und ganz oben steht die Schiene mit dem ganzen Aufbau. Ein Klick auf ein Modul springt zu seinem Abschnitt.',
+      'Jeder Drucker hat einen eigenen ausklappbaren Abschnitt: Name, Gerät, Modell, dann die fünf Positionen (Tür auf, Tür zu, Vor Drucker fahren, Auswerfen, Einlegen) — je Operation mit eigener Geschwindigkeit, eigenem G-code und eigener Farm-Freigabe. „+ Drucker hinzufügen" legt einen zweiten an.',
+      'Jedes Regal hat ebenfalls einen eigenen Abschnitt: X-Position, Y-Engage, Höhe von Fachboden 1, Fach-Abstand — und zu welchem Drucker es gehört. Regale dürfen also unterschiedlich gebaut sein.',
+      'Alle Positionen sind jetzt ABSOLUT (die Zahl, die der Arm anfährt). Vorher war die Drucker-X eine Basis, zu der beim Fahren ein Regal-Versatz addiert wurde — ein zusätzliches Regal verschob damit still den Drucker. Das passiert nicht mehr.',
+      'Deine eingemessenen Werte bleiben auf den Millimeter gleich: Beim ersten Öffnen wird die alte Form einmalig in die neue umgerechnet. Ein Test vergleicht den G-code aller Operationen über alle Regale und Fächer vorher/nachher.',
+      'Die Auswahlliste „Drucker-Modell" links ist weg. Das Modell steht jetzt am Drucker selbst; „⤓ Werte aus Modell-Vorlage" übernimmt Y/Z und die Tür-Form der Vorlage und lässt die eingemessene X in Ruhe.',
+      'Die Prüfung schaut jetzt jeden Drucker einzeln an (vorher nur den ersten) und meldet zwei Module an derselben Stelle. Bei mehreren Druckern steht in der Meldung, welcher gemeint ist.',
+      'Der Farm-Zyklus fährt die Positionen des Druckers, mit dem er gestartet wurde. Gleichzeitig laufen weiterhin nicht zwei Drucker — das ist der nächste Schritt.',
+    ],
+    en: [
+      'A SECOND PRINTER IS NOW POSSIBLE — and the printer tab has been rebuilt from scratch. It is called "Printers & racks", uses a single column, and the rail showing the whole setup sits right at the top. Clicking a module jumps to its section.',
+      'Every printer gets its own collapsible section: name, device, model, then the five positions (open door, close door, move to printer, eject, place) — each with its own speed, its own G-code and its own farm release. "+ Add printer" creates a second one.',
+      'Every rack gets its own section too: X position, Y engage, height of shelf 1, slot spacing — and which printer it belongs to. Racks may therefore be built differently.',
+      'All positions are now ABSOLUTE (the number the arm drives to). Before, the printer X was a base value with a rack offset added while driving — so adding a rack silently moved the printer. That no longer happens.',
+      'Your taught values stay identical to the millimetre: on first open the old form is converted once. A test compares the G-code of every operation across every rack and slot, before and after.',
+      'The "printer model" list on the left is gone. The model now lives on the printer itself; "⤓ Values from model template" takes Y/Z and the door shape from the template and leaves the measured X alone.',
+      'The check now inspects every printer individually (previously only the first) and reports two modules in the same place. With several printers the message says which one it means.',
+      'The farm cycle drives the positions of the printer it was started with. Two printers still do not run at the same time — that is the next step.',
+    ],
+  },
+  {
     version: '1.1.8',
     de: [
       'FARM-LAYOUT UND DRUCKER SIND JETZT EINS. Der eigene Tab „Farm-Layout" ist weg — die Schienen-Ansicht sitzt direkt im Drucker-Tab unter den X-Feldern, aus denen sie entsteht.',

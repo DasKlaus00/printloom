@@ -1668,7 +1668,8 @@ async def _run_prep(steps: list, slot: str, device: Device):
                              (int(rack_num), int(slot_num)) if op == "store" else (1, 1)
                     geom = _farm.get("geometry") or _load_farm_geometry()
                     _log(f"▶ Printloom-Op: {op}")
-                    await _do_macro(_motion.build_op(geom, op, rack=rk, slot=sl))
+                    await _do_macro(_motion.build_op(geom, op, rack=rk, slot=sl,
+                                                     printer=_farm_printer(geom)))
                 else:
                     _log(f"Warnung Vorstart: unbekannte Printloom-Op {op!r}")
             elif t == "gcode":
@@ -1991,6 +1992,25 @@ def _load_farm_geometry() -> dict:
     return g
 
 
+def _farm_printer(geom: dict = None):
+    """Welcher Drucker-Block gehört zum laufenden Gerät (seit v1.1.9 mehrere möglich)?
+
+    Der Zyklus bedient GENAU EINEN Drucker (den aus dem Start-Aufruf). Steht in der
+    Geometrie ein Block mit genau dieser Geräte-ID, fährt die Farm dessen Positionen —
+    sonst den ersten. Ohne diese Zuordnung würde ein zweiter Drucker die Koordinaten
+    des ersten fahren, und das ist ein Crash, kein Schönheitsfehler."""
+    try:
+        geom = geom or _farm.get("geometry") or _load_farm_geometry()
+        bid = _farm.get("bambu_id")
+        if bid is not None:
+            for p in _motion.printer_list(geom):
+                if p.get("device_id") is not None and int(p["device_id"]) == int(bid):
+                    return p["id"]
+    except Exception:
+        pass
+    return None
+
+
 def _macro_to_op(val: str, rack_num: str, slot_num: str, stack_rack: str, stack_slot: str):
     """Bekanntes Farm-Macro → (op, rack, slot) für ottoeject_motion.build_op, sonst None.
     Nur diese Operationen können opt-in als Printloom-G-code laufen; OTTOEJECT_HOME und
@@ -2092,9 +2112,10 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             op_map = _macro_to_op(val, rack_num, slot_num, stack_rack, stack_slot)
             if op_map:
                 geom = _farm.get("geometry") or _load_farm_geometry()
-                if geom.get("use_gcode", {}).get(op_map[0]):
+                if _motion.op_uses_gcode(geom, op_map[0], _farm_printer(geom)):
                     op_used = op_map[0]
-                    send_val = _motion.build_op(geom, op_used, rack=op_map[1], slot=op_map[2])
+                    send_val = _motion.build_op(geom, op_used, rack=op_map[1], slot=op_map[2],
+                                                printer=_farm_printer(geom))
         except Exception as e:
             send_val, op_used = val, None
             logger.warning(f"use_gcode-Auswertung fehlgeschlagen ({e}) — nutze Macro {val!r}")
@@ -2139,7 +2160,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         rk, sl = (int(stack_rack), int(stack_slot)) if is_grab else \
                  (int(rack_num), int(slot_num)) if is_store else (1, 1)
         geom = _farm.get("geometry") or _load_farm_geometry()
-        script = _motion.build_op(geom, op, rack=rk, slot=sl)
+        script = _motion.build_op(geom, op, rack=rk, slot=sl, printer=_farm_printer(geom))
         _log(f"▶ Printloom-Op: {op}" + (f" (Regal {rk} Fach {sl})" if (is_grab or is_store) else ""))
         await _do_macro(script)   # Klipper HTTP blocks until movement is complete
         if is_grab:
@@ -3573,7 +3594,7 @@ async def dry_run(payload: dict = None):
                     rack, slot = int(rack_num), int(slot_num)
             elif t == "macro":
                 mapped = _macro_to_op(val, rack_num, slot_num, stack_rack, stack_slot)
-                if mapped and (geom.get("use_gcode") or {}).get(mapped[0]):
+                if mapped and _motion.op_uses_gcode(geom, mapped[0], _farm_printer(geom)):
                     op, rack, slot = mapped
                     entry["note"] = "läuft als Printloom-G-code (use_gcode)"
                 elif mapped:
@@ -3584,8 +3605,11 @@ async def dry_run(payload: dict = None):
                     entry["target"] = f"R{rack} Fach {slot}"
                     entry["target_rack"], entry["target_slot"] = rack, slot
                 try:
-                    entry["script"] = _motion.build_op(geom, op, rack=rack, slot=slot, check=False)
-                    entry["problems"] = _geometry_check.check_script(entry["script"], geom, op, rack, slot)
+                    pid = _farm_printer(geom)
+                    entry["script"] = _motion.build_op(geom, op, rack=rack, slot=slot,
+                                                       check=False, printer=pid)
+                    entry["problems"] = _geometry_check.check_script(
+                        entry["script"], geom, op, rack, slot, pid)
                 except ValueError as e:
                     entry["problems"] = [{"severity": "error", "message": str(e)}]
             elif t == "delay":

@@ -76,53 +76,59 @@ def from_geometry(geometry: dict, rack_cfg: dict = None, devices: list = None) -
     motion.apply_rack_config(g, rack_cfg or None)
     cfg = rack_cfg or {}
     racks = max(1, _int(g.get("racks"), 1))
+    blocks = motion.printer_list(g)
+    first = blocks[0]["id"]
 
     modules = [{"id": "home", "type": "home", "name": "Home", "x_ref": 0.0}]
 
     for r in range(1, racks + 1):
+        rb = motion.rack_block(g, r)
         modules.append({
             "id": f"rack-{r}",
             "type": "rack",
-            "name": f"Regal {r}",
-            "x_ref": round(motion.rack_x(g, r), 3),
+            "name": rb["name"] or f"Regal {r}",
+            "x_ref": round(rb["x"], 3),
             "slots": max(1, _int(cfg.get("slots_per_rack") or g.get("storage_slots"), 6)),
             "slot_height_mm": _num(cfg.get("slot_height_mm"), 50),
-            # Fach-Abstand und erste Fachhöhe bleiben vorerst global (Geometrie) —
-            # je Regal einstellbar zu machen ist ein eigener Schritt.
+            "first_z": round(rb["first_z"], 3),
+            "slot_gap": round(rb["slot_gap"], 3),
             "magazine_slot": max(0, _int(cfg.get("magazine_slot") or g.get("magazine_slot"), 0)),
-            "printer": "printer-1",           # Standard: alle Regale gehören dem Drucker
+            # Zuordnung steht seit v1.1.9 in der Geometrie (Drucker-Tab). Ohne
+            # Angabe gehört das Regal dem ersten Drucker.
+            "printer": rb["printer"] or first,
             "legacy_rack": r,                 # Verbindung zur bisherigen Fach-Adresse „r-s"
         })
 
-    # Drucker-X wie in der Bewegung: gespeicherte Basis + Regal-Versatz.
-    p = (g.get("printer") or {}).get("eject") or {}
-    printer_x = _num(p.get("x"), 442) + motion._printer_x_off(g)
-    dev = (devices or [{}])[0] if devices else {}
-    modules.append({
-        "id": "printer-1",
-        "type": "printer",
-        "name": dev.get("name") or g.get("printer_name") or "Drucker",
-        "x_ref": round(printer_x, 3),
-        "device_id": dev.get("id"),
-        "model": dev.get("model") or "",
-        "enabled": True,
-    })
+    # Drucker: jeder Block bringt seine absolute X mit (siehe motion.printer_list).
+    by_dev = {d.get("id"): d for d in (devices or []) if d.get("id") is not None}
+    for i, pb in enumerate(blocks):
+        dev = by_dev.get(pb.get("device_id")) or ((devices or [{}])[0] if i == 0 and not pb.get("device_id") else {})
+        modules.append({
+            "id": pb["id"],
+            "type": "printer",
+            "name": pb["name"] or dev.get("name") or "Drucker",
+            "x_ref": round(_num((pb.get("eject") or {}).get("x"), 442), 3),
+            "device_id": pb.get("device_id") if pb.get("device_id") is not None else dev.get("id"),
+            "model": pb.get("model") or dev.get("model") or "",
+            "enabled": True,
+        })
     return {"locked": True, "modules": sort_modules(modules), "migrated_from": "geometry"}
 
 
 # Felder, die NUR im Layout leben (die Geometrie kennt sie nicht) und deshalb
-# über eine Neuableitung hinweg erhalten bleiben müssen.
-_KEEP = ("name", "device_id", "model", "enabled", "printer")
+# über eine Neuableitung hinweg erhalten bleiben müssen. Seit v1.1.9 gehören Name,
+# Gerät und die Zuordnung Regal → Drucker der Geometrie (Drucker-Tab) — sie stehen
+# hier nur noch dann, wenn die Geometrie nichts dazu sagt.
+_KEEP = ("device_id", "enabled")
 
 
 def sync_from_geometry(stored: dict, geometry: dict, rack_cfg: dict = None,
                        devices: list = None) -> dict:
     """Frisch aus der Geometrie ableiten, die eigenen Angaben des Nutzers behalten.
 
-    X, Regalzahl und Fachzahl kommen IMMER aus der Geometrie bzw. der
-    Rack-Konfiguration — das ist der Sinn der Zusammenlegung. Erhalten bleibt nur,
-    was es dort nicht gibt: vergebene Namen, welches Gerät an einem Drucker-Modul
-    hängt und welche Regale zu welchem Drucker gehören.
+    Alles, was die Geometrie kennt (X, Namen, Zuordnung, Regal-/Fachzahl), kommt
+    von dort — das ist der Sinn der Zusammenlegung. Ein gespeicherter Wert wird nur
+    dann noch eingesetzt, wenn die Ableitung an dieser Stelle nichts liefert.
     """
     fresh = from_geometry(geometry, rack_cfg, devices)
     old = {m["id"]: m for m in clean(stored)["modules"]} if stored else {}
@@ -131,7 +137,7 @@ def sync_from_geometry(stored: dict, geometry: dict, rack_cfg: dict = None,
         if not prev:
             continue
         for k in _KEEP:
-            if prev.get(k) not in (None, ""):
+            if m.get(k) in (None, "") and prev.get(k) not in (None, ""):
                 m[k] = prev[k]
     ids = {m["id"] for m in fresh["modules"]}
     for m in fresh["modules"]:
@@ -171,6 +177,10 @@ def clean(layout: dict) -> dict:
             mod.update({
                 "slots": max(1, min(20, _int(raw.get("slots"), 6))),
                 "slot_height_mm": max(1.0, _num(raw.get("slot_height_mm"), 50)),
+                # Höhe des ersten Fachs und Fach-Abstand dieses Regals (seit v1.1.9
+                # je Regal einstellbar) — nur zur Anzeige, gefahren wird aus der Geometrie.
+                "first_z": _num(raw.get("first_z"), 0),
+                "slot_gap": _num(raw.get("slot_gap"), 0),
                 "magazine_slot": max(0, min(20, _int(raw.get("magazine_slot"), 0))),
                 "printer": str(raw.get("printer") or "") or None,
                 "legacy_rack": _int(raw.get("legacy_rack"), 0) or None,

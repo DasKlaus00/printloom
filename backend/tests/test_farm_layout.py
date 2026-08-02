@@ -116,22 +116,37 @@ def test_abgeleitete_module_treffen_die_bewegung():
     assert fl.printer_x(lay) == 442 + 2 * 250
 
 
-def test_sync_behaelt_zuordnung_nimmt_aber_die_geometrie_x():
-    """Namen und Zuordnungen des Nutzers bleiben; eine veraltete X aus der Datei
-    darf sich NICHT gegen die Geometrie durchsetzen."""
+def test_sync_nimmt_die_geometrie_und_behaelt_nur_das_geraet():
+    """Seit v1.1.9 stehen auch Name und Zuordnung in der Geometrie (Drucker-Tab).
+    Aus der Datei kommt nur noch, was die Ableitung offen lässt — hier das Gerät."""
     stored = {"locked": False, "modules": [
-        {"id": "rack-2", "type": "rack", "x_ref": 9999, "name": "Hohes Regal",
+        {"id": "rack-2", "type": "rack", "x_ref": 9999, "name": "Alter Name",
          "printer": "printer-1", "legacy_rack": 2},
         {"id": "printer-1", "type": "printer", "x_ref": 1, "name": "X1C links",
          "device_id": 7},
     ]}
-    lay = fl.sync_from_geometry(stored, GEOM, CFG)
+    geom = {**GEOM, "rack_geo": {"2": {"name": "Hohes Regal"}}}
+    lay = fl.sync_from_geometry(stored, geom, CFG)
     by_id = {m["id"]: m for m in lay["modules"]}
     assert by_id["rack-2"]["x_ref"] == 43 + 250 - 1.5  # Geometrie inkl. Δ gewinnt
-    assert by_id["rack-2"]["name"] == "Hohes Regal"    # eigener Name bleibt
-    assert by_id["printer-1"]["device_id"] == 7        # Gerät bleibt
+    assert by_id["rack-2"]["name"] == "Hohes Regal"    # Name aus der Geometrie
+    assert by_id["printer-1"]["device_id"] == 7        # Gerät bleibt (Geometrie hat keins)
     assert by_id["printer-1"]["x_ref"] == 442 + 2 * 250
     assert lay["locked"] is False
+
+
+def test_sync_geraet_aus_der_geometrie_schlaegt_die_datei():
+    """Steht das Gerät am Drucker-Block, gilt das — sonst hätte man wieder zwei
+    Stellen, an denen dieselbe Zuordnung gepflegt wird."""
+    stored = {"modules": [{"id": "printer-1", "type": "printer", "x_ref": 1,
+                           "device_id": 7}]}
+    geom = {**GEOM, "printers": [{"id": "printer-1", "name": "X1C",
+                                  "device_id": 3, "eject": {"x": 942, "y": 319, "z": 21},
+                                  "load": {"x": 925, "y": 340, "z": 17.5}}]}
+    lay = fl.sync_from_geometry(stored, geom, CFG)
+    p = {m["id"]: m for m in lay["modules"]}["printer-1"]
+    assert p["device_id"] == 3
+    assert p["x_ref"] == 942
 
 
 def test_sync_ohne_gespeichertes_layout():

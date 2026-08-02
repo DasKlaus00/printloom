@@ -8,13 +8,28 @@ Die Bewegungsabläufe sind 1:1 aus den getesteten OTTOmat3D-Macros portiert
 (ottoeject_macros.cfg): _GRAB_FROM_SLOT, _GRAB_FROM_SLOT_NOLIFT, _STORE_TO_SLOT,
 _EJECT_FROM_PRINTER, _LOAD_ONTO_PRINTER, _OPEN_DOOR, _CLOSE_DOOR.
 
-Skalierung: Home ist ganz RECHTS (fester Anker), der Drucker sitzt LINKS und wandert
-mit der Regalzahl mit. R1 = Regal DIREKT am Drucker (druckerseitiges Ende), Rn = Regal
-am Home-Anker (x_unclamp). Zusatzregale werden Richtung Drucker eingefügt; gefüllt wird
-R1→Rn = vom Drucker weg nach rechts (im Bild links→rechts):
-    rack_x(rack)  = x_unclamp + (racks-rack)*rack_x_gap + rack_x_trim[rack]
-    z_flat(slot)  = first_z_flat + (slot-1)*(slot_gap+30) + rack_z_trim[rack]
-    printer_x_off = (racks-1)*rack_x_gap   (Drucker wandert mit; Home rechts ist fest)
+Aufbau: Home ist ganz RECHTS (X 0, Endschalter — fester Anker), die Module stehen
+in einer Reihe nach links. R1 = Regal DIREKT am Drucker, Rn = Regal am Home-Anker.
+
+Positionen (seit v1.1.9)
+────────────────────────
+Jeder Drucker und jedes Regal hat seine EIGENE, ABSOLUTE X-Position in mm:
+
+    geometry["printers"] = [{"id": "printer-1", "eject": {...}, "load": {...}, …}, …]
+    geometry["rack_geo"] = {"1": {"x": …, "y_engage": …, "first_z": …, "slot_gap": …}}
+
+Vorher gab es genau EINEN Drucker und die Regal-X kamen aus einer Formel
+(x_unclamp + (Regale−r)·rack_x_gap + Δ), während die Drucker-X als BASIS gespeichert
+war und beim Fahren um (Regale−1)·rack_x_gap verschoben wurde. Das ging nur, solange
+alle Regale gleich breit sind und genau ein Drucker am Ende steht — bei zwei Druckern
+oder unterschiedlichen Regalen beschreibt die Formel den Aufbau nicht mehr. Außerdem
+verschob ein zusätzliches Regal stillschweigend die Drucker-Position.
+
+Bestandsanlagen ohne diese Blöcke werden weiter über die Formel gerechnet
+(`_legacy_printer` / `rack_x`) — sie liefert exakt dieselben Zahlen wie vorher, damit
+sich beim Update keine einzige Position verschiebt.
+
+    z_flat(slot) = first_z(rack) + (slot-1)*(slot_gap(rack)+30) + rack_z_trim[rack]
 """
 from __future__ import annotations
 import math
@@ -34,8 +49,15 @@ DEFAULT_GEOMETRY = {
         "x_unclamp": 43, "y_engage": 335, "first_z_flat": 7,
         "slot_gap": 25, "y_pullback_limit": 5, "rack_x_gap": 250,
     },
-    "rack_x_trim": {},       # {"2": -1, ...} optionale Feinkorrektur pro Regal
+    "rack_x_trim": {},       # {"2": -1, ...} optionale Feinkorrektur pro Regal (Alt-Modell)
     "rack_z_trim": {},
+    # Werte JE REGAL (seit v1.1.9): {"1": {"x", "y_engage", "first_z", "slot_gap",
+    # "printer", "name"}, …}. Was hier fehlt, kommt aus `storage` bzw. der Formel —
+    # so rechnen Bestandsanlagen unverändert weiter.
+    "rack_geo": {},
+    # Mehrere Drucker (seit v1.1.9). Leer = Alt-Modell: der einzelne Block `printer`
+    # unten, dessen X noch die BASIS ohne Regal-Versatz ist (siehe _legacy_printer).
+    "printers": [],
     "printer": {
         "eject": {"x": 442, "y": 319, "z": 21},
         "load":  {"x": 425, "y": 340, "z": 17.5},
@@ -135,6 +157,35 @@ def _sanitize_geometry(g: dict) -> dict:
             if isinstance(node, dict):
                 for k, dv in d["printer"]["door"][kind].items():
                     node[k] = _num(node.get(k), dv)
+    # Mehrere Drucker: jeder Block wie oben robust machen (halbfertige Eingabefelder).
+    if isinstance(g.get("printers"), list):
+        for blk in g["printers"]:
+            if not isinstance(blk, dict):
+                continue
+            for key in ("eject", "load", "move"):
+                node = blk.get(key)
+                if isinstance(node, dict):
+                    for k, dv in d["printer"]["eject"].items():
+                        node[k] = _num(node.get(k), dv)
+            bdoor = blk.get("door")
+            if isinstance(bdoor, dict):
+                for kind in ("open", "close"):
+                    node = bdoor.get(kind)
+                    if isinstance(node, dict):
+                        for k, dv in d["printer"]["door"][kind].items():
+                            node[k] = _num(node.get(k), dv)
+            bsf = blk.get("speed_factors")
+            if isinstance(bsf, dict):
+                blk["speed_factors"] = {k: _num(v, 100) for k, v in bsf.items() if v is not None}
+    # Werte je Regal: nur vorhandene Schlüssel anfassen — ein fehlender Schlüssel
+    # bedeutet „gilt der gemeinsame Wert", nicht „0".
+    if isinstance(g.get("rack_geo"), dict):
+        for blk in g["rack_geo"].values():
+            if not isinstance(blk, dict):
+                continue
+            for k in ("x", "y_engage", "first_z", "slot_gap"):
+                if blk.get(k) is not None:
+                    blk[k] = _num(blk[k], 0)
     return g
 
 
@@ -149,6 +200,10 @@ def merge_defaults(g: dict | None) -> dict:
             for kk, vv in v.items():
                 if isinstance(vv, dict) and isinstance(out[k].get(kk), dict):
                     out[k][kk] = {**out[k][kk], **vv}
+        elif isinstance(v, list):
+            # Listen (printers) kopieren: _sanitize_geometry macht die Zahlenfelder
+            # robust und würde sonst in den Dictionaries des Aufrufers schreiben.
+            out[k] = deepcopy(v)
         else:
             out[k] = v
     return out
@@ -200,6 +255,216 @@ def apply_rack_config(g: dict, rack_cfg: dict | None) -> dict:
     return g
 
 
+# ── Drucker & Regale als Module (seit v1.1.9) ───────────────────────────────
+# Operationen, die zu einem DRUCKER gehören — sie fahren dessen Positionen und
+# nutzen dessen eigenen G-code/Geschwindigkeit. Alles andere (Greifen/Ablegen/
+# Magazin/Anfahren) gehört zum Regal und ist druckerunabhängig.
+PRINTER_OPS = ("open_door", "close_door", "move_to_printer", "eject", "place")
+
+# Alias → kanonischer Name. „load"/„move" sind die alten Schreibweisen aus den
+# Geräte-Macros; gespeichert wird immer der kanonische Name.
+_OP_ALIASES = {"load": "place", "move": "move_to_printer",
+               "opendoor": "open_door", "closedoor": "close_door",
+               "grab_mag": "grab_magazine"}
+
+
+def canon_op(op) -> str:
+    o = str(op or "").strip().lower()
+    return _OP_ALIASES.get(o, o)
+
+
+def _printer_x_off(g: dict) -> float:
+    """Regal-Versatz des ALTEN Modells (nur noch für Bestandsanlagen).
+
+    Bis v1.1.8 war die Drucker-X eine BASIS: der Drucker saß hinter dem letzten
+    Regal und wanderte mit der Regalzahl mit, also X += (Regale−1)·rack_x_gap.
+    Seit v1.1.9 speichert jeder Drucker seine absolute X; dieser Versatz wird nur
+    noch gebraucht, um einen Alt-Block einmalig in absolute Werte umzurechnen
+    (siehe `_legacy_printer`). Für neue Geometrien ist er bedeutungslos.
+    """
+    return (int(g.get("racks", 1)) - 1) * float(g["storage"]["rack_x_gap"])
+
+
+def _sub(d, dflt) -> dict | None:
+    """X/Y/Z(/D)-Block übernehmen; None/kein dict → Default (darf None sein)."""
+    if not isinstance(d, dict):
+        return deepcopy(dflt) if isinstance(dflt, dict) else None
+    return {k: _num(v) for k, v in d.items() if k in ("x", "y", "z", "d")}
+
+
+def _norm_printer(raw: dict, idx: int) -> dict:
+    """Einen Drucker-Block auf feste Felder bringen. Koordinaten sind ABSOLUT."""
+    raw = raw if isinstance(raw, dict) else {}
+    dp = DEFAULT_GEOMETRY["printer"]
+    door = raw.get("door")
+    out = {
+        "id": str(raw.get("id") or f"printer-{idx + 1}"),
+        "name": str(raw.get("name") or f"Drucker {idx + 1}"),
+        "model": str(raw.get("model") or ""),
+        "preset": str(raw.get("preset") or ""),
+        "device_id": raw.get("device_id"),
+        "enclosed": bool(raw.get("enclosed", True)),
+        "eject": _sub(raw.get("eject"), dp["eject"]),
+        "load": _sub(raw.get("load"), dp["load"]),
+        "move": _sub(raw.get("move"), None),
+        "door": None,
+        "use_gcode": dict(raw.get("use_gcode") or {}),
+        "gcode_override": dict(raw.get("gcode_override") or {}),
+        "speed_factors": dict(raw.get("speed_factors") or {}),
+    }
+    if isinstance(door, dict) and (door.get("open") or door.get("close")):
+        out["door"] = {"open": _sub(door.get("open"), dp["door"]["open"]),
+                       "close": _sub(door.get("close"), dp["door"]["close"])}
+    return out
+
+
+def _legacy_printer(g: dict) -> dict:
+    """Alt-Modell (EIN Drucker, X als Basis) → Drucker-Block mit absoluter X.
+
+    Der Versatz, den die Bewegung früher beim Fahren addierte, wird hier EINMAL
+    eingerechnet. Damit fährt eine Bestandsanlage nach dem Update exakt dieselben
+    Koordinaten wie vorher — nur stehen sie jetzt so da, wie sie gefahren werden.
+    """
+    off = _printer_x_off(g)
+    p = g.get("printer") or {}
+
+    def shift(node):
+        if not isinstance(node, dict):
+            return None
+        out = {k: _num(v) for k, v in node.items() if k in ("x", "y", "z", "d")}
+        out["x"] = _num(node.get("x")) + off
+        return out
+
+    door = p.get("door") if isinstance(p.get("door"), dict) else None
+    ug, ov = g.get("use_gcode") or {}, g.get("gcode_override") or {}
+    sf = g.get("speed_factors") or {}
+    keys = set(PRINTER_OPS) | {"load", "move"}
+    return _norm_printer({
+        "id": "printer-1",
+        "name": g.get("printer_name") or "Drucker",
+        "model": g.get("printer_model") or "",
+        "preset": g.get("printer_id") or "",
+        "enclosed": g.get("enclosed", True),
+        "eject": shift(p.get("eject")), "load": shift(p.get("load")),
+        "move": shift(p.get("move")),
+        "door": {"open": shift(door.get("open")), "close": shift(door.get("close"))} if door else None,
+        "use_gcode": {canon_op(k): v for k, v in ug.items() if k in keys},
+        "gcode_override": {canon_op(k): v for k, v in ov.items() if k in keys},
+        "speed_factors": {canon_op(k): v for k, v in sf.items() if k in keys},
+    }, 0)
+
+
+def printer_list(g: dict) -> list:
+    """Alle Drucker, normalisiert und mit ABSOLUTEN Koordinaten (mindestens einer).
+
+    Bewusst bei jedem Zugriff frisch abgeleitet statt einmal beim Laden: der
+    Alt-Fallback braucht die Regalzahl, und die kommt erst aus der globalen
+    Rack-Konfiguration (apply_rack_config) — also nach merge_defaults.
+    """
+    raw = g.get("printers")
+    if isinstance(raw, list) and raw:
+        return [_norm_printer(p, i) for i, p in enumerate(raw) if isinstance(p, dict)] \
+            or [_legacy_printer(g)]
+    return [_legacy_printer(g)]
+
+
+def printer_block(g: dict, ref=None) -> dict:
+    """Ein Drucker: per id, per Index (0-basiert) oder ohne Angabe der erste."""
+    ps = printer_list(g)
+    if ref is None or ref == "":
+        return ps[0]
+    if isinstance(ref, dict):
+        ref = ref.get("id")
+    txt = str(ref)
+    for p in ps:
+        if p["id"] == txt:
+            return p
+    if txt.lstrip("-").isdigit():
+        i = int(txt)
+        if 0 <= i < len(ps):
+            return ps[i]
+    return ps[0]
+
+
+def rack_block(g: dict, rack: int) -> dict:
+    """Werte EINES Regals — eigene, sonst die gemeinsamen aus `storage`."""
+    s = g.get("storage") or {}
+    ds = DEFAULT_GEOMETRY["storage"]
+    raw = (g.get("rack_geo") or {}).get(str(int(rack)))
+    raw = raw if isinstance(raw, dict) else {}
+
+    def pick(key, skey):
+        v = raw.get(key)
+        return _num(v) if v is not None else _num(s.get(skey), ds[skey])
+
+    return {
+        "nr": int(rack),
+        "name": str(raw.get("name") or "") or None,
+        "x": rack_x(g, rack),
+        "y_engage": pick("y_engage", "y_engage"),
+        "first_z": pick("first_z", "first_z_flat"),
+        "slot_gap": pick("slot_gap", "slot_gap"),
+        "printer": raw.get("printer") or None,
+    }
+
+
+def rack_numbers(g: dict) -> list:
+    return list(range(1, max(1, int(_num(g.get("racks"), 1))) + 1))
+
+
+def racks_of_printer(g: dict, printer_id: str) -> list:
+    """Regal-Nummern dieses Druckers. Ohne jede Zuordnung gilt: gemeinsamer Pool
+    (jeder Drucker darf jedes Regal) — sonst stünde eine frische Anlage ohne
+    Ablageplatz da."""
+    all_nr = rack_numbers(g)
+    assigned = [r for r in all_nr if rack_block(g, r)["printer"] == printer_id]
+    if assigned:
+        return assigned
+    free = [r for r in all_nr if not rack_block(g, r)["printer"]]
+    return free or all_nr
+
+
+def expand(g: dict) -> dict:
+    """Geometrie in der VOLLEN Form: für jeden Drucker und jedes Regal ein
+    ausgeschriebener Block mit absoluten Koordinaten.
+
+    Damit muss die Oberfläche die Umrechnung des Alt-Modells (Basis + Regal-Versatz,
+    Formel + Δ) nicht ein zweites Mal können — sie liest genau die Zahlen, die auch
+    gefahren werden. Muss NACH apply_rack_config laufen, sonst stimmt die Regalzahl
+    nicht. Idempotent: eine bereits volle Geometrie kommt unverändert zurück.
+    """
+    g = merge_defaults(g)
+    blocks = printer_list(g)
+    g["printers"] = deepcopy(blocks)
+    rg = {}
+    for r in rack_numbers(g):
+        b = rack_block(g, r)
+        prev = (g.get("rack_geo") or {}).get(str(r))
+        rg[str(r)] = {
+            **(prev if isinstance(prev, dict) else {}),
+            "x": round(b["x"], 3), "y_engage": b["y_engage"],
+            "first_z": b["first_z"], "slot_gap": b["slot_gap"],
+            "printer": b["printer"] or blocks[0]["id"],
+        }
+        if b["name"]:
+            rg[str(r)]["name"] = b["name"]
+    g["rack_geo"] = rg
+    return g
+
+
+def op_uses_gcode(g: dict, op: str, printer=None) -> bool:
+    """Fährt die Farm diese Operation als Printloom-G-code (statt Geräte-Macro)?
+    Drucker-Operationen fragen den jeweiligen Drucker, Regal-Operationen die
+    gemeinsame Liste."""
+    op = canon_op(op)
+    if op in PRINTER_OPS:
+        v = (printer_block(g, printer).get("use_gcode") or {}).get(op)
+        if v is not None:
+            return bool(v)
+    ug = g.get("use_gcode") or {}
+    return bool(ug.get(op) if ug.get(op) is not None else ug.get("load" if op == "place" else op))
+
+
 # Regal-Nr. in GERÄTE-Macro-Aufrufen (RACK=…) spiegeln: Printloom zählt seit v1.0.103
 # R1 = Regal DIREKT am Drucker, die Klipper-Macros auf dem OTTOeject (slots.cfg vom
 # alten Konfigurator) zählen Regal 1 = am Homing-Punkt (ganz rechts) — genau andersherum.
@@ -238,27 +503,21 @@ def magazine_z_offset(g: dict, rack: int) -> float:
     return -cnt * sag
 
 
-def _printer_x_off(g: dict) -> float:
-    """Versatz, der auf die gespeicherten Drucker-X (eject/load/move/Tür) addiert wird.
-
-    Der Drucker sitzt am druckerseitigen Ende (vor R1) und wandert mit der
-    Regalzahl mit, weil der Home-Anker rechts fest ist →
-    eject/load/Tür-X += (Regale−1)·rack_x_gap. Im Drucker-Tab steht deshalb die
-    ABSOLUTE Maschinen-X (Basis + dieser Versatz).
-    """
-    return (int(g.get("racks", 1)) - 1) * float(g["storage"]["rack_x_gap"])
-
-
 def rack_x(g: dict, rack: int) -> float:
     """X-Position eines Regals — die EINZIGE Quelle dafür.
 
+    Steht in `rack_geo[r]["x"]` ein eigener Wert, gilt der (absolut, so wie er
+    gefahren wird). Sonst die Formel des Alt-Modells:
+
         x_unclamp + (Regale − r)·rack_x_gap + Δ-Korrektur[r]
 
-    R1 = Regal DIREKT am Drucker, Rn = am Home-Anker (rechts). Die Δ-Korrektur je
-    Regal (`rack_x_trim`, Drucker-Tab) macht beliebige, ungleiche Abstände
-    möglich — dafür braucht es keine zweite Positionsverwaltung. Genau die gab es
-    bis v1.1.7 im Farm-Layout, mit der Folge, dass beide auseinanderliefen.
+    R1 = Regal DIREKT am Drucker, Rn = am Home-Anker (rechts). Der Fallback ist
+    kein zweiter Speicher, sondern die Startbelegung für Anlagen, die noch keine
+    eigenen Regal-Werte haben — er liefert exakt dieselben Zahlen wie bisher.
     """
+    raw = (g.get("rack_geo") or {}).get(str(int(rack)))
+    if isinstance(raw, dict) and raw.get("x") is not None:
+        return _num(raw["x"])
     s = g["storage"]
     nr = int(g.get("racks", 1) or 1)
     xt = float(g.get("rack_x_trim", {}).get(str(rack), 0) or 0)
@@ -266,13 +525,16 @@ def rack_x(g: dict, rack: int) -> float:
 
 
 def slot_position(g: dict, rack: int, slot: int) -> tuple[float, float, float, float]:
-    """(x_unclamp, y_engage, z_flat, y_pullback_limit) für ein Fach — inkl. Skalierung."""
-    s = g["storage"]
+    """(x_unclamp, y_engage, z_flat, y_pullback_limit) für ein Fach.
+
+    X/Y/Fachhöhe/Fach-Abstand kommen aus dem Regal (`rack_block`), damit
+    unterschiedlich gebaute Regale nebeneinander stehen dürfen. Der Rückzugs-Y
+    hängt an der PLATTE, nicht am Regal, und bleibt deshalb gemeinsam.
+    """
+    r = rack_block(g, rack)
     zt = float(g.get("rack_z_trim", {}).get(str(rack), 0) or 0)
-    step = float(s["slot_gap"]) + SLOT_Z_EXTRA
-    x = rack_x(g, rack)
-    z = float(s["first_z_flat"]) + (int(slot) - 1) * step + zt
-    return x, float(s["y_engage"]), z, float(s["y_pullback_limit"])
+    z = r["first_z"] + (int(slot) - 1) * (r["slot_gap"] + SLOT_Z_EXTRA) + zt
+    return r["x"], r["y_engage"], z, float((g.get("storage") or {}).get("y_pullback_limit", 5))
 
 
 def _clamp_push(g: dict) -> float:
@@ -337,18 +599,18 @@ def store_to_rack(g: dict, rack: int, slot: int) -> list[str]:
     ]
 
 
-def move_to_printer(g: dict) -> list[str]:
+def move_to_printer(g: dict, printer=None) -> list[str]:
     """Nur VOR den Drucker fahren (sichere Anfahrt) — greift/wirft nicht.
     Eigene Operation für einen schnellen, feinjustierbaren Wechsel: erst hierher fahren,
     dann eject bzw. place mit eigener Geschwindigkeit. Eigene Anfahr-Position `move`
-    (Fallback: eject-Position); Drucker sitzt hinter dem letzten Regal → +printer_x_off."""
-    p = g["printer"].get("move") or g["printer"]["eject"]
-    off = _printer_x_off(g)
-    x = float(p["x"]) + off
+    (Fallback: eject-Position)."""
+    pb = printer_block(g, printer)
+    p = pb.get("move") or pb["eject"]
+    x = float(p["x"])
     y_engage, z_flat = float(p["y"]), float(p["z"])
     y_pb = float(g["storage"]["y_pullback_limit"])
     return [
-        f"M117 Moving to {g.get('printer_name','printer')}...",
+        f"M117 Moving to {pb['name']}...",
         f"G1 Z{_n(z_flat)} Y{_n(y_pb)} F3000", "M400",   # sichere Höhe + auf y_pullback zurückziehen (=5)
         f"G1 X{_n(x)} F3000", "M400",                     # auf Drucker-X ausrichten; Y bleibt bei y_pullback
         # ENDET bei Y=y_pullback (5) — NICHT vorne an der Druckerfront (Nutzerwunsch):
@@ -356,15 +618,15 @@ def move_to_printer(g: dict) -> list[str]:
     ]
 
 
-def eject_from_printer(g: dict) -> list[str]:
-    p = g["printer"]["eject"]
-    off = _printer_x_off(g)
-    x_unclamp = float(p["x"]) + off
+def eject_from_printer(g: dict, printer=None) -> list[str]:
+    pb = printer_block(g, printer)
+    p = pb["eject"]
+    x_unclamp = float(p["x"])
     y_engage, z_flat = float(p["y"]), float(p["z"])
     y_pb = float(g["storage"]["y_pullback_limit"])
     x_mid = x_unclamp + _clamp_push(g)
     return [
-        f"M117 Removing build plate from {g.get('printer_name','printer')}...",
+        f"M117 Removing build plate from {pb['name']}...",
         f"G1 Z{_n(z_flat)} Y{_n(y_engage-90)} F3000", "M400",
         f"G1 Y{_n(y_engage-80)} F3000", "M400",
         f"G1 X{_n(x_unclamp)} F3000", "M400",
@@ -382,15 +644,15 @@ def eject_from_printer(g: dict) -> list[str]:
     ]
 
 
-def load_onto_printer(g: dict) -> list[str]:
-    p = g["printer"]["load"]
-    off = _printer_x_off(g)
-    x_unclamp = float(p["x"]) + off
+def load_onto_printer(g: dict, printer=None) -> list[str]:
+    pb = printer_block(g, printer)
+    p = pb["load"]
+    x_unclamp = float(p["x"])
     y_engage, z_flat = float(p["y"]), float(p["z"])
     y_pb = float(g["storage"]["y_pullback_limit"])
     x_mid = x_unclamp + _clamp_push(g)
     return [
-        f"M117 Moving build plate to {g.get('printer_name','printer')}...",
+        f"M117 Moving build plate to {pb['name']}...",
         f"G1 Z{_n(z_flat+55)} Y{_n(y_pb)} F1000", "M400",
         f"G1 X{_n(x_mid)} F3000", "M400",
         f"G1 Y50 Z{_n(z_flat+40)} F1000", "M400",
@@ -410,17 +672,16 @@ def _door_arc_x(x_start, d, y_arc, y_start):
     return (x_start + d) - int(math.sqrt(inside)) if inside > 0 else (x_start + d)
 
 
-def open_door(g: dict) -> list[str]:
+def open_door(g: dict, printer=None) -> list[str]:
     # 1:1 nachgebaut aus dem Original-Macro `_OPEN_DOOR` (ottoeject_macros.cfg).
     # FELDER = ERSTER FAHRPUNKT (Nutzerwahl): die eingegebenen X/Y/Z sind der erste Move
     # (Anfahrt), NICHT der interne Greif-Bezug. Bewegung identisch — nur intern zurück-
     # gerechnet: erster Move = (x_start+5, y_start−30, z_engage−40) → also x_start = X−5,
     # y_start = Y+30, z_engage = Z+40.
-    door = (g["printer"].get("door") or {}).get("open")
+    door = (printer_block(g, printer).get("door") or {}).get("open")
     if not door:
         return ["M117 (no door macro)"]
-    off = _printer_x_off(g)
-    x_start = float(door["x"]) + off - 5
+    x_start = float(door["x"]) - 5
     y_start = float(door["y"]) + 30
     z_engage = float(door["z"]) + 40
     d = float(door["d"])
@@ -450,19 +711,18 @@ def open_door(g: dict) -> list[str]:
     ]
 
 
-def close_door(g: dict) -> list[str]:
+def close_door(g: dict, printer=None) -> list[str]:
     # FELDER = ERSTER FAHRPUNKT (Nutzerwahl): X/Y/Z sind der erste Move — dort, wo der Arm
     # die OFFENE Tür greift (Bogen-Seite). Da dieser Punkt am ANDEREN Ende des Bogens liegt,
     # nutze ich die Original-Schwenkform als BEZUG (Standard-Schließposition ref_ys) und
     # VERSCHIEBE die ganze Bewegung (dx/dy) so, dass der erste Move exakt (X,Y) trifft.
     # Arc-sicher: Start, Ende & Mittelpunkt (I/J relativ) wandern gleich mit → G2 gültig.
     # Bewegung/Schwenkform bleiben identisch; Pin (d) = Bogenradius. Fallback open (Altbestand).
-    doors = g["printer"].get("door") or {}
+    doors = printer_block(g, printer).get("door") or {}
     door = doors.get("close") or doors.get("open")
     if not door:
         return ["M117 (no door macro)"]
-    off = _printer_x_off(g)
-    Fx = float(door["x"]) + off      # erster Move X (absolut)
+    Fx = float(door["x"])            # erster Move X (absolut)
     Fy = float(door["y"])            # erster Move Y
     Fz = float(door["z"])            # erster Move Z
     d = float(door["d"])
@@ -510,14 +770,18 @@ def park() -> list[str]:
 
 
 # ── Dispatcher ──────────────────────────────────────────────────────────────
-def _speed_prefix(g: dict, op: str | None = None) -> str:
-    """M220-Vorschubfaktor (%) für den App-G-code. Reihenfolge: speed_factors[op] →
-    globaler speed_factor → 100. 100 = normal → kein Prefix."""
+def _speed_prefix(g: dict, op: str | None = None, printer=None) -> str:
+    """M220-Vorschubfaktor (%) für den App-G-code. Reihenfolge: Drucker-eigener Wert
+    (nur Drucker-Ops) → speed_factors[op] → globaler speed_factor → 100.
+    100 = normal → kein Prefix."""
     val = None
     if op:
+        key = canon_op(op)
+        if key in PRINTER_OPS:
+            val = (printer_block(g, printer).get("speed_factors") or {}).get(key)
         sf = g.get("speed_factors")
-        if isinstance(sf, dict):
-            val = sf.get(op)
+        if val is None and isinstance(sf, dict):
+            val = sf.get(op, sf.get(key))
     if val is None:
         val = g.get("speed_factor", 100)
     try:
@@ -543,10 +807,27 @@ def _guard(script: str, g: dict, op: str, rack: int, slot: int, check: bool) -> 
     return script
 
 
+def op_override(g: dict, op: str, printer=None):
+    """Eigener G-code dieser Operation (oder None). Drucker-Operationen liegen beim
+    jeweiligen Drucker, Regal-Operationen gemeinsam."""
+    key = canon_op(op)
+    if key in PRINTER_OPS:
+        ov = (printer_block(g, printer).get("gcode_override") or {})
+        v = ov.get(key, ov.get(op))
+        if isinstance(v, str) and v.strip():
+            return v
+        if key in ov or op in ov:
+            return None     # Drucker hat einen (leeren) Eintrag → gilt, kein Rückfall
+    ov = g.get("gcode_override") or {}
+    v = ov.get(op, ov.get(key))
+    return v if isinstance(v, str) and v.strip() else None
+
+
 def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None,
-             check: bool = True) -> str:
+             check: bool = True, printer=None) -> str:
     """G-code einer Operation aus der Geometrie. `check=False` überspringt die
-    Achsprüfung (Vorschau/Anzeige — die soll auch kaputte Werte zeigen können)."""
+    Achsprüfung (Vorschau/Anzeige — die soll auch kaputte Werte zeigen können).
+    `printer` = id/Index des Druckers bei Drucker-Operationen (ohne Angabe: der erste)."""
     g = _sanitize_geometry(merge_defaults(g))
     op = (op or "").lower()
     if op == "speed":   # nur den globalen Vorschubfaktor live setzen
@@ -557,12 +838,12 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None,
     # als +1020 ab Ist-Position ausgeführt → „Move out of range". G90 macht ALLE
     # Op-Koordinaten verlässlich absolut. G90 an den ANFANG (vor M220), damit der
     # Transport-Guard (startswith G90) es erkennt und kein zweites G90 voranstellt.
-    speed = "G90\n" + _speed_prefix(g, op)   # Vorschub PRO Operation (Fallback global)
+    speed = "G90\n" + _speed_prefix(g, op, printer)   # Vorschub PRO Operation (Fallback global)
     # Eigener G-code hat Vorrang, sobald für DIESE Operation ein Override gesetzt ist —
     # beim „Custom Printer" ist das der einzige Modus, bei benannten Druckern eine
     # optionale Feinjustage pro Op (Tür/Move/Eject/Place). Kein Override → berechnete
     # Bewegung aus den Positions-Werten.
-    ov = (g.get("gcode_override") or {}).get(op)
+    ov = op_override(g, op, printer)
     if isinstance(ov, str) and ov.strip():
         # Platzhalter, damit EIN eigener G-code über alle Regale/Fächer skaliert — statt fixer
         # Koordinaten, die jedes Regal an denselben Punkt schicken. Werte aus der Kalibrierung
@@ -593,15 +874,15 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None,
     elif op == "store":
         lines = store_to_rack(g, rack, slot)
     elif op in ("move_to_printer", "move"):
-        lines = move_to_printer(g)
+        lines = move_to_printer(g, printer)
     elif op == "eject":
-        lines = eject_from_printer(g)
+        lines = eject_from_printer(g, printer)
     elif op in ("place", "load"):   # place = neuer Name, load = Alias (Rückwärtskompat.)
-        lines = load_onto_printer(g)
+        lines = load_onto_printer(g, printer)
     elif op in ("open_door", "opendoor"):
-        lines = open_door(g)
+        lines = open_door(g, printer)
     elif op in ("close_door", "closedoor"):
-        lines = close_door(g)
+        lines = close_door(g, printer)
     elif op == "approach":
         lines = approach_slot(g, rack, slot)
     elif op == "park":

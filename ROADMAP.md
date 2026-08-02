@@ -148,10 +148,23 @@ Code-Pfade das Layout überlagerte, fuhr der Test-Knopf anders als die Farm. Sei
 v1.1.8 gibt es eine Quelle (Geometrie), das Layout wird abgeleitet. Regel für alles
 Weitere: **eine Zahl, ein Speicherort.**
 
+8. ~~**Konfiguration je Modul.**~~ *(v1.1.9)* Die Geometrie hält jetzt einen Block
+   **je Drucker** (`printers[]`) und **je Regal** (`rack_geo{}`) mit ABSOLUTEN
+   Koordinaten. Damit gibt es einen zweiten Drucker mit eigenen Positionen, eigenem
+   G-code je Operation und eigener Farm-Freigabe; Regale haben eigene X/Y/Fachhöhe/
+   Fach-Abstand und eine Zuordnung zu einem Drucker. Der Drucker-Tab ist einspaltig
+   mit der Schiene oben und einem ausklappbaren Abschnitt je Modul. *Vorher* war die
+   Drucker-X eine Basis, die beim Fahren um `(Regale−1)·rack_x_gap` verschoben wurde:
+   ein zusätzliches Regal verschob still den Drucker, und zwei Drucker gab es nicht.
+   Ein Test hält fest, dass eine Bestandsanlage sich durch die Umstellung um keinen
+   Millimeter verschiebt (`test_multi_printer.py`).
+
 **Offen aus dieser Phase** (bewusst als eigener Schritt, weil es tief in den
 Farm-Zyklus greift): **eine eigene Sequenz je Drucker** und **echte Parallelität**
 (heute ein Zyklus zur Zeit — die Verteilung und die Arm-Sperre sind die
-Voraussetzung dafür und stehen jetzt).
+Voraussetzung dafür und stehen jetzt). Der Zyklus fährt seit v1.1.9 die Positionen
+**des Druckers, mit dem er gestartet wurde** (`_farm_printer`) — die Konfiguration
+für mehrere Drucker steht damit, es läuft nur noch einer zur Zeit.
 
 ---
 

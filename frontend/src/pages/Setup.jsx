@@ -253,12 +253,7 @@ export default function Setup({ setCurrentPage }) {
       })
       // slot_gap sitzt in der Geometrie → lesen, patchen, zurückschreiben
       // (putGeometry ersetzt die Datei, deshalb nie blind ein Teilobjekt senden).
-      const g = (await controlService.getGeometry())?.data?.geometry
-      if (g) {
-        await controlService.putGeometry({
-          ...g, storage: { ...(g.storage || {}), slot_gap: cfg.slot_gap },
-        })
-      }
+      await writeSlotGap(cfg.slot_gap)
       setSpr(cfg.slots_per_rack); setH(cfg.slot_height_mm)
       setPitch(cfg.pitch); setMagSlot(cfg.magazine_slot)
       window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
@@ -272,6 +267,20 @@ export default function Setup({ setCurrentPage }) {
   // (Anfahr-Positionen, Tür ja/nein) und die passende Sequenz. Bisher musste der
   // Nutzer die Vorlage auf der Drucker-Seite selbst noch einmal auswählen — und
   // bei einem offenen Drucker die Tür-Schritte von Hand abschalten.
+  /* Fach-Abstand schreiben. Seit v1.1.9 kann JEDES Regal einen eigenen haben
+     (geometry.rack_geo) — im Einrichten wird bewusst der gemeinsame Wert für alle
+     Regale gesetzt: hier baut man eine Anlage aus gleichen Regalen auf. Wer später
+     ein anders gebautes Regal dazustellt, ändert dessen Wert im Drucker-Tab. */
+  const writeSlotGap = async (gap) => {
+    const g = (await controlService.getGeometry())?.data?.geometry
+    if (!g) return
+    const rg = { ...(g.rack_geo || {}) }
+    for (const k of Object.keys(rg)) rg[k] = { ...rg[k], slot_gap: gap }
+    await controlService.putGeometry({
+      ...g, rack_geo: rg, storage: { ...(g.storage || {}), slot_gap: gap },
+    })
+  }
+
   const applyPrinterPackage = async (modelId) => {
     const m = models.find(x => x.id === modelId)
     if (!m) return
@@ -279,15 +288,24 @@ export default function Setup({ setCurrentPage }) {
     if (preset) {
       try {
         const cur = (await controlService.getGeometry())?.data?.geometry || {}
+        // Seit v1.1.9 stehen die Drucker-Positionen ABSOLUT im Block `printers[0]`
+        // (vorher als Basis in `printer`, die beim Fahren um den Regal-Versatz
+        // verschoben wurde). Die Vorlage kennt nur die Basis — deshalb hier denselben
+        // Versatz einrechnen, damit der Vorschlag so aussieht wie bisher. Eingemessen
+        // wird er ohnehin noch (Drucker-Tab → 📐).
+        const off = (Math.max(1, +(cur.racks || 1)) - 1) * (+(cur.storage?.rack_x_gap) || 0)
+        const abs = (p) => ({ ...p, x: Math.round((p.x + off) * 10) / 10 })
+        const first = (Array.isArray(cur.printers) && cur.printers[0]) || {}
         await controlService.putGeometry({
           ...cur,
           printer_id: preset.id, printer_name: preset.name, enclosed: preset.enclosed,
-          printer: {
-            ...(cur.printer || {}),
-            eject: { ...preset.eject }, load: { ...preset.load },
-            move:  { ...preset.eject },
-            door:  preset.door ? { open: { ...preset.door.open }, close: { ...preset.door.close } } : null,
-          },
+          printers: [{
+            ...first,
+            id: first.id || 'printer-1', name: preset.name, preset: preset.id,
+            model: modelId, enclosed: preset.enclosed,
+            eject: abs(preset.eject), load: abs(preset.load), move: abs(preset.eject),
+            door: preset.door ? { open: abs(preset.door.open), close: abs(preset.door.close) } : null,
+          }, ...(Array.isArray(cur.printers) ? cur.printers.slice(1) : [])],
         })
       } catch { /* Vorlage ist Komfort — Setup darf daran nicht scheitern */ }
     }
@@ -374,12 +392,7 @@ export default function Setup({ setCurrentPage }) {
         num_racks: +nr, slots_per_rack: +spr, slot_height_mm: +h, magazine_slot: +magSlot,
       })
       // Fach-Abstand in die Geometrie (read-modify-write, s. applyComponents)
-      const g = (await controlService.getGeometry())?.data?.geometry
-      if (g) {
-        await controlService.putGeometry({
-          ...g, storage: { ...(g.storage || {}), slot_gap: pitchToGap(pitch) },
-        })
-      }
+      await writeSlotGap(pitchToGap(pitch))
       window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
       next()
     } catch (e) {

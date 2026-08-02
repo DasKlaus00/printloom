@@ -2200,6 +2200,122 @@ const EN_STRINGS = {
     'Home sits at X 0 (endstop, right-hand side of the machine) — that is why the rail is drawn right to left. The positions come from the fields above; there is no second place where they live.',
   '⚠ Rot markiert: weniger als der Andruck-Weg ({0} mm) vom Endschalter entfernt — Greifen und Ablegen sind dort nicht möglich.':
     '⚠ Marked red: less than the push distance ({0} mm) away from the endstop — grabbing and storing are impossible there.',
+
+  // ── 1.1.9: mehrere Drucker, Abschnitt je Modul, Werte je Regal ──
+  'Drucker & Regale': 'Printers & racks',
+  'Der ganze Aufbau auf einer Seite: was steht wo auf der Schiene, und welche Position fährt der Arm dort an.':
+    'The whole setup on one page: what sits where on the rail, and which position the arm drives to there.',
+  'Der OTTOeject fährt auf EINER Schiene an allen Modulen entlang. Jedes Modul — jeder Drucker und jedes Regal — hat hier seinen eigenen Abschnitt mit seiner eigenen Position in mm. Was in einem Abschnitt steht, fährt der Arm genau so; es gibt keine zweite Stelle, an der dieselbe Zahl noch einmal steht.':
+    'The OTTOeject travels along ONE rail past every module. Each module — every printer and every rack — has its own section here with its own position in mm. Whatever a section says is exactly what the arm drives; there is no second place holding the same number.',
+  'Referenzfahrt — danach kennt der Arm seinen Nullpunkt (rechts).':
+    'Home the arm — after that it knows its zero point (on the right).',
+  'Abschnitt aufklappen, mit 📐 einmessen oder Werte eintippen, mit „▶ Test" prüfen.':
+    'Open a section, teach the position with 📐 or type the values, check it with "▶ Test".',
+  'Erst wenn eine Bewegung sauber läuft: „Farm nutzt diese Position" einschalten.':
+    'Only once a move runs cleanly: switch on "Farm uses this position".',
+  '⚠ Falsche Werte können den Arm gegen den Drucker fahren. Jede Operation erst einzeln testen — Printloom prüft vorher nur, ob eine Bewegung die Achse verlässt, nicht ob sie mechanisch passt.':
+    '⚠ Wrong values can drive the arm into the printer. Test every operation on its own first — Printloom only checks beforehand whether a move leaves the axis, not whether it fits mechanically.',
+  'M220-Fallback · pro Operation eigene Geschwindigkeit einstellbar':
+    'M220 fallback · each operation can have its own speed',
+  '+ Drucker hinzufügen': '+ Add printer',
+  'Geometrie wird geladen …': 'Loading geometry …',
+  'Ohne Namen': 'Unnamed',
+  '{0}× Farm': '{0}× farm',
+  'Geräte-Macros': 'Device macros',
+  'Tür, Anfahrt, Auswerfen und Einlegen für diesen Drucker.':
+    'Door, approach, eject and place for this printer.',
+  'Gerät': 'Device',
+  '— kein Gerät —': '— no device —',
+  '— unbekannt —': '— unknown —',
+  'Geschlossen (mit Tür)': 'Enclosed (with door)',
+  '+ Tür-Positionen anlegen': '+ Add door positions',
+  'Tür-Positionen entfernen': 'Remove door positions',
+  'Y/Z und Tür-Form der Modell-Vorlage übernehmen; die eingemessene X bleibt':
+    'Take Y/Z and the door shape from the model template; the measured X stays',
+  '⤓ Werte aus Modell-Vorlage': '⤓ Values from model template',
+  '🗑 Drucker entfernen': '🗑 Remove printer',
+  'Für dieses Modell gibt es keine fertige Vorlage — die Positionen einmessen (📐 an jeder Karte).':
+    'There is no ready-made template for this model — teach the positions (📐 on each card).',
+  'Ohne Gerät kann Printloom diesen Drucker nicht überwachen (Druckstatus, Bett, Einstellungen). Geräte werden unter Konfiguration → Geräte angelegt.':
+    'Without a device Printloom cannot monitor this printer (print status, bed, settings). Devices are created under Configuration → Devices.',
+  'Diesem Drucker ist kein Gerät zugeordnet — oben auswählen.':
+    'No device is assigned to this printer — pick one above.',
+  'X': 'X',
+  'X/Y/Z = ERSTER Fahrpunkt der Bewegung. Der Rest der Türbewegung folgt daraus (Pin = Bogenradius).':
+    'X/Y/Z = FIRST travel point of the move. The rest of the door motion follows from it (pin = arc radius).',
+  'X/Y/Z = ERSTER Fahrpunkt (dort greift der Arm die OFFENE Tür — Bogen-Seite). Die Schließform folgt automatisch (Pin = Bogenradius).':
+    'X/Y/Z = FIRST travel point (where the arm grabs the OPEN door — arc side). The closing shape follows automatically (pin = arc radius).',
+  'Sichere Anfahrt vor den Drucker — eigene Start-Position. Ohne eigene Werte gilt die Auswurf-Position.':
+    'Safe approach in front of the printer — its own start position. Without own values the eject position applies.',
+  'Drucker-Bett → Z{0}': 'Printer bed → Z{0}',
+  'Drucker-Bett homen': 'Home printer bed',
+  'Z200 = Ladeposition für den Platten-Wechsel. Drucker muss idle sein.':
+    'Z200 = load position for the plate change. The printer must be idle.',
+
+  // Regal-Abschnitt
+  'am Drucker': 'at the printer',
+  'zu dicht am Endschalter': 'too close to the endstop',
+  '{0} Fächer · Höhe Fach 1 {1} mm · Abstand {2} mm':
+    '{0} slots · height of slot 1 {1} mm · spacing {2} mm',
+  'X-Position (mm)': 'X position (mm)',
+  'absolut auf der Schiene': 'absolute on the rail',
+  'Y-Engage (mm)': 'Y engage (mm)',
+  'wie weit der Arm ins Fach fährt': 'how far the arm reaches into the slot',
+  'Höhe Fachboden 1 (mm)': 'Height of shelf 1 (mm)',
+  'Name (optional)': 'Name (optional)',
+  'Gehört zu Drucker': 'Belongs to printer',
+  '— alle Drucker —': '— all printers —',
+  'Die Zuordnung entscheidet, wo die Farm die fertigen Platten dieses Druckers einlagert und woher sie leere holt. „Alle Drucker" = gemeinsamer Pool.':
+    'The assignment decides where the farm stores this printer\'s finished plates and where it takes empty ones from. "All printers" = shared pool.',
+  'X {0} mm liegt näher am Endschalter als der Andruck-Weg ({1} mm) — Greifen und Ablegen gehen hier nicht, nur Anfahren. Regal weiter weg stellen oder den Andruck-Weg verkleinern.':
+    'X {0} mm is closer to the endstop than the push distance ({1} mm) — grabbing and storing are impossible here, only approaching. Move the rack further away or reduce the push distance.',
+  'Einmessen & Test': 'Teach-in & test',
+  'Regal {0}, Fach 1': 'Rack {0}, slot 1',
+  'Der Greifer soll genau vor Fach 1 dieses Regals stehen. Daraus folgen X, Y-Engage und die Höhe von Fachboden 1; die übrigen Fächer rechnet Printloom aus dem Fach-Abstand.':
+    'The gripper should sit exactly in front of slot 1 of this rack. X, Y engage and the height of shelf 1 follow from that; Printloom computes the other slots from the slot spacing.',
+  'R{0} Fach {1} anfahren…': 'Approach R{0} slot {1}…',
+  '▶ Magazin': '▶ Magazine',
+  '„Anfahren" fährt nur vors Fach (greift nicht). Magazin = oberstes Fach ({0}) wird ohne Anheben gegriffen; die Entnahme zählt den Bestand runter.':
+    '"Approach" only drives in front of the slot (no grab). Magazine = top slot ({0}) is grabbed without lifting; taking one counts the stock down.',
+  'Zugeordnet: {0}.': 'Assigned to: {0}.',
+  '{0} Regale · {1} Fächer · Magazin-Fach {2} — Anzahl in Konfiguration → Rack Configuration':
+    '{0} racks · {1} slots · magazine slot {2} — counts under Configuration → Rack Configuration',
+
+  // Gemeinsame Werte + Prüfung
+  '🔧 Greifer & Platte (für alle Module)': '🔧 Gripper & plate (for all modules)',
+  'Andruck-Weg {0} mm · Platte {1} mm': 'Push distance {0} mm · plate {1} mm',
+  'bestimmt den Rückzugs-Y ({0} mm)': 'sets the pullback Y ({0} mm)',
+  'Andruck-Weg: der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original 30. ACHTUNG: Genau diese Bewegung IST der Griff — bei 0 hakt der Greifer nicht ein, der Arm fährt vor und kommt leer zurück.':
+    'Push distance: on grab/store the arm moves this far beyond X to press the gripper into the bracket (eject/place: +, grab/store: −). Original 30. CAUTION: that move IS the grab — at 0 the gripper never engages, the arm moves in and comes back empty.',
+  'Greifen & Ablegen (alle Regale)': 'Grab & store (all racks)',
+  'Farm: Greifen als App-G-code': 'Farm: grab as app G-code',
+  'Farm: Ablegen als App-G-code': 'Farm: store as app G-code',
+  'Prüft jede Bewegung aller Drucker und Regale, bevor sie gesendet wird.':
+    'Checks every move of every printer and rack before it is sent.',
+  'Geprüft werden alle Operationen über alle Drucker, Regale und das erste/letzte Fach — dort liegen die Extremwerte. Ob eine Position mechanisch passt (z. B. genau vor dem Fach), kann nur das Einmessen zeigen.':
+    'All operations are checked across every printer, every rack and the first/last slot — that is where the extremes are. Whether a position fits mechanically (e.g. exactly in front of the slot) can only be shown by teaching it in.',
+
+  // Schiene
+  'Home liegt bei X 0 (Endschalter, rechts am Gerät) — deshalb ist die Schiene von rechts nach links gezeichnet. Die Positionen kommen aus den Abschnitten unten; es gibt keine zweite Stelle, an der sie stehen. Ein Klick springt zum Abschnitt.':
+    'Home sits at X 0 (endstop, right-hand side of the machine) — that is why the rail is drawn right to left. The positions come from the sections below; there is no second place where they live. A click jumps to the section.',
+  '⚠ Zwei Module stehen an derselben X-Position — das kann nur eines von beiden sein.':
+    '⚠ Two modules sit at the same X position — it can only be one of them.',
+
+  // Backend-Vorlagen (siehe trProblem)
+  'Regal {0} und Regal {1} stehen beide bei X {2} mm — zwei Regale können nicht an derselben Stelle stehen.':
+    'Rack {0} and rack {1} both sit at X {2} mm — two racks cannot be in the same place.',
+  '„{0}“ steht bei X {1} mm — beim Auswerfen und Einlegen fährt der Arm um den Andruck-Weg ({2} mm) weiter und käme auf X {3} mm, über die Achsgrenze X {4} mm.':
+    '"{0}" sits at X {1} mm — when ejecting and placing, the arm moves the push distance ({2} mm) further and would end up at X {3} mm, beyond the axis limit X {4} mm.',
+  '„{0}“ und „{1}“ stehen beide bei X {2} mm — zwei Drucker können nicht an derselben Stelle stehen.':
+    '"{0}" and "{1}" both sit at X {2} mm — two printers cannot be in the same place.',
+  '„{0}“ ({1}) fährt auf {2} {3} mm — unter den Endschalter (0 mm). Klipper würde die Bewegung mitten im Ablauf abbrechen.':
+    '"{0}" ({1}) moves to {2} {3} mm — below the endstop (0 mm). Klipper would abort the move mid-sequence.',
+  '„{0}“ ({1}) fährt auf {2} {3} mm — über die Achsgrenze {4} {5} mm. Klipper würde die Bewegung abbrechen.':
+    '"{0}" ({1}) moves to {2} {3} mm — beyond the axis limit {4} {5} mm. Klipper would abort the move.',
+  'Regal {2}: Fach-Abstand ergibt keinen Schritt nach oben ({0} mm) — alle Fächer lägen auf derselben Höhe. Gemessener Abstand von Fach zu Fach muss über {1} mm liegen.':
+    'Rack {2}: the slot spacing produces no upward step ({0} mm) — all slots would sit at the same height. The measured slot-to-slot distance must be more than {1} mm.',
+  'Regal {2}: Greif-Y ({0} mm) liegt nicht vor der Rückzugsposition ({1} mm) — der Arm würde beim Greifen nach hinten statt nach vorn fahren.':
+    'Rack {2}: the engage Y ({0} mm) is not in front of the pullback position ({1} mm) — the arm would move backwards instead of forwards when grabbing.',
 }
 
 function deepMerge(base, over) {
