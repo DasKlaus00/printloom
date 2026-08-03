@@ -875,6 +875,16 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
     settings = _device_settings(db, device_id)
     boundary = "ottoframe"
 
+    # DB-Sitzung JETZT freigeben. Bei einer StreamingResponse räumt FastAPI die
+    # get_db-Abhängigkeit erst auf, wenn der Stream endet — ein offener Kamera-Stream
+    # hielt also stundenlang eine Verbindung aus dem SQLite-Pool fest. Zwei Tabs mit
+    # Kamera plus die üblichen Abfragen ließen den Pool volllaufen, und dann warten
+    # ALLE Requests (auch die ausgelieferten JS-Chunks) — „die Seite lädt nicht".
+    # `device` ist danach losgelöst; die geladenen Spalten bleiben lesbar (close()
+    # verfällt keine Attribute), und mehr braucht der Stream nicht.
+    db.expunge(device)
+    db.close()
+
     # Turn the chamber light on (non-blocking, so it can't delay the first frame).
     _ensure_chamber_light_async(device)
 
@@ -971,6 +981,9 @@ async def ha_camera_stream(device_id: int, db: Session = Depends(get_db)):
     cfg = _get_ha_cam_cfg(db, device_id)
     if not cfg:
         raise HTTPException(400, "Home-Assistant-Kamera nicht konfiguriert (URL/Token/Entity fehlt)")
+    # Wie beim eigenen Kamera-Stream: die Sitzung sofort zurückgeben, sonst bleibt
+    # sie über die gesamte Stream-Dauer aus dem Pool ausgebucht.
+    db.close()
     ha_url, token, entity = cfg
     upstream = f"{ha_url}/api/camera_proxy_stream/{entity}"
     headers = {"Authorization": f"Bearer {token}"}
@@ -1098,9 +1111,10 @@ def _get_bambu_device(device_id: int, db: Session) -> Device:
 
 
 @router.get("/plates/{file_id}")
-async def list_file_plates(file_id: int, db: Session = Depends(get_db)):
+def list_file_plates(file_id: int, db: Session = Depends(get_db)):
     """List the plate numbers inside a multi-plate .3mf (empty for single/.gcode).
-    `names` = vom Slicer vergebene Platten-Namen ({"1": "…"}), soweit vorhanden."""
+    `names` = vom Slicer vergebene Platten-Namen ({"1": "…"}), soweit vorhanden.
+    Synchron (def) → Threadpool: öffnet das ZIP-Archiv zweimal."""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")

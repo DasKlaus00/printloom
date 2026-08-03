@@ -1,6 +1,15 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api' })
+// Ohne Default-Timeout wartet axios UNBEGRENZT. Steht das Backend kurz (Update,
+// überlastet, Netz weg), blieb die Oberfläche für immer im Ladezustand hängen —
+// selbst wenn der Server längst wieder antwortet, denn der alte Request kam nie
+// zurück und kein Poll setzte nach. 45 s liegt weit über jedem gesunden Request
+// und weit unter der Geduld eines Menschen. Einzelne Aufrufe, die legitim länger
+// dauern (Upload, Update, Makro-Fahrt), setzen ihren eigenen Wert — siehe unten.
+const DEFAULT_TIMEOUT_MS = 45000
+const NO_TIMEOUT = 0            // axios: 0 = unbegrenzt
+
+const api = axios.create({ baseURL: '/api', timeout: DEFAULT_TIMEOUT_MS })
 
 // Nach einem Auto-Reload (Watchtower-Update → Container gerade neu gestartet) kann
 // die erste Geräteabfrage ins noch nicht bereite Backend laufen — vorher blieb die
@@ -60,8 +69,10 @@ export const configService = {
 }
 
 export const fileService = {
+  // Kein Timeout: eine 40-MB-.3mf über WLAN darf so lange dauern, wie sie dauert.
   uploadFile:   (formData, folderId = null) => api.post('/files/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: NO_TIMEOUT,
     ...(folderId != null ? { params: { folder_id: folderId } } : {}),
   }),
   listFiles:    (skip = 0, limit = 100) => api.get('/files/', { params: { skip, limit } }),
@@ -88,7 +99,9 @@ export const folderService = {
 }
 
 export const controlService = {
-  executeMacro:        (data)  => api.post('/control/macro', data),
+  // Moonraker antwortet erst, wenn die Fahrt DURCH ist (Backend wartet bis 120 s) —
+  // dieser Aufruf darf den Default-Timeout also nicht erben.
+  executeMacro:        (data)  => api.post('/control/macro', data, { timeout: 150000 }),
   listMacros:          ()      => api.get('/control/macros'),
   listAppOps:          ()      => api.get('/control/app-ops'),
   emergencyStop:       ()      => api.post('/control/emergency-stop'),
@@ -132,7 +145,9 @@ function _getPrinterStatus(deviceId) {
 }
 
 export const printerService = {
-  sendFile:             (deviceId, fileId, useAms = true, amsSlot = null, plate = null) => api.post(`/printer/send/${deviceId}/${fileId}`, null, { params: { use_ams: useAms, ...(amsSlot !== null && amsSlot !== undefined && { ams_slot: amsSlot }), ...(plate !== null && plate !== undefined && { plate }) } }),
+  // Kein Timeout: der Request wartet auf den FTP-Upload zum Drucker (bei einer
+  // großen .3mf über WLAN gern mehrere Minuten).
+  sendFile:             (deviceId, fileId, useAms = true, amsSlot = null, plate = null) => api.post(`/printer/send/${deviceId}/${fileId}`, null, { timeout: NO_TIMEOUT, params: { use_ams: useAms, ...(amsSlot !== null && amsSlot !== undefined && { ams_slot: amsSlot }), ...(plate !== null && plate !== undefined && { plate }) } }),
   sendGcode:            (deviceId, gcode)  => api.post(`/printer/gcode/${deviceId}`, null, { params: { gcode } }),
   getStatus:            (deviceId)         => _getPrinterStatus(deviceId),
   cameraStreamUrl:      (deviceId)         => `/api/printer/camera/${deviceId}`,
@@ -187,7 +202,9 @@ export const systemService = {
   getVersion:       (channel, force) => api.get('/system/version', {
                       params: { ...(channel && { channel }), ...(force && { force: 1 }) } }),
   getRunningVersion:() => api.get('/system/running-version'),
-  triggerUpdate:    (channel) => api.post('/system/update', channel ? { channel } : {}),
+  // Kein Timeout: Image ziehen + Container neu starten dauert Minuten.
+  triggerUpdate:    (channel) => api.post('/system/update', channel ? { channel } : {},
+                                          { timeout: NO_TIMEOUT }),
   getNotifications: () => api.get('/system/notifications'),
   saveNotifications:(data) => api.post('/system/notifications', data),
   sendNotification: (data) => api.post('/system/notify', data),

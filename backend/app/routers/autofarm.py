@@ -3298,6 +3298,12 @@ async def _ws_broadcaster():
             await asyncio.sleep(1.0)
     finally:
         _ws_task = None
+        # Rennen schließen: Verbindet sich ein Client GENAU zwischen der leeren
+        # `while`-Prüfung und diesem finally, sah farm_ws den Task noch als laufend
+        # und startete keinen neuen — der Client hätte nur den Erst-Snapshot bekommen
+        # und die Farm-Ansicht wäre eingefroren geblieben (bis zum Neuverbinden).
+        if _ws_clients:
+            _ws_task = asyncio.create_task(_ws_broadcaster())
 
 
 @router.websocket("/ws")

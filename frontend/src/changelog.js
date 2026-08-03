@@ -4,6 +4,33 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.12',
+    de: [
+      'DIE SEITE LÄDT WIEDER SOFORT. Wer die Datei-Bibliothek öffnete, brachte damit die ganze App ins Stocken: Printloom startete pro Datei gleichzeitig Vorschaubild, Zeitangabe UND den vollständigen Crash-Check — und der liest bei einer 40-MB-Datei den kompletten G-code. Diese Arbeit lief direkt im Herzstück des Servers, das nebenbei auch die Seite selbst ausliefert. Solange sie lief, kam nichts anderes durch: weiße Seite, Warten, Neuladen.',
+      'Jetzt läuft alles Datei-lastige nebenher statt mittendrin, und höchstens zwei Vollscans gleichzeitig. Die Bibliothek bleibt dadurch genauso schnell, aber der Rest der App bleibt bedienbar, während sie lädt.',
+      'Der Crash-Check merkt sich sein Ergebnis jetzt dauerhaft. Vorher war es nach jedem Neustart und nach jedem Update weg, und beim ersten Öffnen der Bibliothek wurde jede Datei wieder komplett durchgelesen — genau der Moment, in dem es am meisten störte.',
+      'Vorschaubilder werden zwischengespeichert und dürfen vom Browser behalten werden. Bisher wurde für JEDES Bild bei JEDEM Öffnen das Archiv neu geöffnet.',
+      'Die Datenbank arbeitet jetzt im WAL-Modus mit mehr gleichzeitigen Verbindungen. Vorher blockierte ein Schreibvorgang sämtliche Lesevorgänge, und ab 15 gleichzeitigen Zugriffen stand jeder weitere Aufruf bis zu 30 Sekunden still — auch der, der die Seite lädt.',
+      'Ein offener Kamera-Stream belegte eine Datenbank-Verbindung, solange er lief (also stundenlang). Zwei Tabs mit Kamera reichten, um den Rest auszubremsen. Der Stream gibt sie jetzt sofort wieder frei.',
+      'Große Dateien werden beim Hochladen stückweise auf die Platte geschrieben statt zuerst komplett in den Arbeitsspeicher. Der Upload blockiert damit nichts mehr.',
+      'Die Oberfläche hängt nicht mehr für immer, wenn eine Anfrage unbeantwortet bleibt (Backend startet neu, Netz weg): nach 45 Sekunden gilt sie als gescheitert und die Anzeige erholt sich. Upload, Update und Druck-Übertragung sind bewusst ausgenommen — die dürfen dauern.',
+      'Farm-Ansicht: Verband sich ein Browser in genau dem Moment neu, in dem der letzte andere ging, blieb sie eingefroren stehen, bis man neu lud.',
+      'Crash-Warnung bei Multi-Plate-Dateien: Es wurde die Höhe der Fundplatte gemeldet statt der höchsten Platte der Datei.',
+    ],
+    en: [
+      'THE PAGE LOADS INSTANTLY AGAIN. Opening the file library used to bring the whole app to a crawl: Printloom kicked off the preview image, the time estimate AND the full crash check for every file at once — and on a 40 MB file that reads the entire G-code. All of it ran right inside the core of the server, which also serves the page itself. While it ran, nothing else got through: blank page, waiting, reloading.',
+      'File-heavy work now runs alongside instead of inside that core, and at most two full scans at a time. The library stays just as quick, but the rest of the app stays usable while it loads.',
+      'The crash check now remembers its result permanently. Previously it was lost on every restart and every update, so the first time you opened the library every file was read through again — exactly when it hurt most.',
+      'Preview images are cached and the browser is allowed to keep them. Until now every image reopened the archive on every visit.',
+      'The database now runs in WAL mode with more concurrent connections. Before, a single write blocked all reads, and beyond 15 concurrent accesses every further call stalled for up to 30 seconds — including the one loading the page.',
+      'An open camera stream held a database connection for as long as it ran (i.e. hours). Two tabs with a camera were enough to slow everything else down. The stream now releases it immediately.',
+      'Large uploads are written to disk in chunks instead of being read into memory in full first. Uploading no longer blocks anything.',
+      'The interface no longer hangs forever when a request goes unanswered (backend restarting, network gone): after 45 seconds it counts as failed and the display recovers. Upload, update and sending a print are deliberately exempt — those are allowed to take their time.',
+      'Farm view: if a browser reconnected at exactly the moment the last other one left, it stayed frozen until you reloaded.',
+      'Crash warning on multi-plate files: it reported the height of the plate where the hit was found instead of the tallest plate in the file.',
+    ],
+  },
+  {
     version: '1.1.11',
     de: [
       'KEIN OBJEKT MEHR GEGEN DIE PLATTE DARÜBER. Liegt im Fach über dem Ziel schon eine Platte — Magazin, markierte Leerplatte oder ein eingelagerter Druck — darf das Objekt nur noch die halbe Fachhöhe hoch sein. Neuer Wert unter Konfiguration → Regal: „Nutzhöhe unter belegtem Fach (%)", Standard 50.',

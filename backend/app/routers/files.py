@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import UploadedFile
@@ -11,6 +12,7 @@ import io
 import json
 import os
 import re
+import threading
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
@@ -20,11 +22,38 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Die Datei-Bibliothek feuert beim Öffnen PRO Zeile mehrere Analysen los (Thumbnail,
+# quick-meta, Crash-Check). Ein Crash-Check liest den KOMPLETTEN G-code einer Platte —
+# bei einer 40-MB-.3mf sind das Millionen Zeilen reine Python-Arbeit. Laufen davon
+# mehrere gleichzeitig, streiten sie um den GIL und hungern den Event-Loop aus: dann
+# beantwortet der Server auch /api/health und die JS-Chunks nicht mehr rechtzeitig —
+# die Seite „lädt nicht". Zwei gleichzeitig halten die Bibliothek flott, ohne den
+# Rest der App lahmzulegen; der Rest wartet kurz und trifft danach meist den Cache.
+_HEAVY_SCAN = threading.BoundedSemaphore(2)
+
 # Create uploads directory if it doesn't exist (zentral über app.paths aufgelöst)
 from app.paths import UPLOADS_DIR as UPLOAD_DIR
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".3mf", ".stl", ".gcode"}
+
+_UPLOAD_CHUNK = 1024 * 1024      # 1 MB
+
+
+def _save_upload(src, dest: Path) -> int:
+    """Hochgeladenen Strom stückweise nach `dest` schreiben und die Größe liefern.
+    Läuft im Threadpool (siehe upload_file) — hier darf blockiert werden."""
+    total = 0
+    src.seek(0)
+    with open(dest, "wb") as out:
+        while True:
+            chunk = src.read(_UPLOAD_CHUNK)
+            if not chunk:
+                break
+            out.write(chunk)
+            total += len(chunk)
+    return total
+
 
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(file: UploadFile = File(...), folder_id: Optional[int] = None, db: Session = Depends(get_db)):
@@ -42,19 +71,20 @@ async def upload_file(file: UploadFile = File(...), folder_id: Optional[int] = N
         # Generate unique filename
         unique_filename = f"{uuid.uuid4()}{file_ext}"
         file_path = UPLOAD_DIR / unique_filename
-        
-        # Save file
-        contents = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(contents)
-        
+
+        # In Stücken auf die Platte — und zwar im Threadpool. Vorher wurde die GANZE
+        # Datei in den RAM gelesen und dann synchron geschrieben: eine 40-MB-.3mf
+        # blockierte damit den Event-Loop für die Dauer des Schreibens (die ganze App
+        # stand still) und belegte den Speicher doppelt.
+        size = await run_in_threadpool(_save_upload, file.file, file_path)
+
         # Store in database
         db_file = UploadedFile(
             filename=unique_filename,
             original_filename=file.filename,
             file_type=file_ext,
             file_path=str(file_path),
-            file_size=len(contents),
+            file_size=size,
             folder_id=folder_id,
         )
         db.add(db_file)
@@ -181,8 +211,9 @@ async def get_file(file_id: int, db: Session = Depends(get_db)):
     return file
 
 @router.get("/{file_id}/ams-info")
-async def get_file_ams_info(file_id: int, db: Session = Depends(get_db)):
-    """Analyse AMS-Mapping, Filamenttypen und -farben aus der Datei."""
+def get_file_ams_info(file_id: int, db: Session = Depends(get_db)):
+    """Analyse AMS-Mapping, Filamenttypen und -farben aus der Datei.
+    Synchron (def) → Threadpool: liest das ZIP-Archiv, gehört nicht in den Event-Loop."""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
@@ -230,9 +261,17 @@ async def get_file_ams_info(file_id: int, db: Session = Depends(get_db)):
         return {"filament_count": 0, "filaments": [], "ams_mapping": [], "ams_mapping_str": "", "error": str(e)}
 
 
+_THUMB_CACHE: dict = {}          # file_id → (sig, png_bytes)
+_THUMB_CACHE_MAX = 200           # ~200 × wenige KB — vernachlässigbar
+
+
 @router.get("/{file_id}/thumbnail")
-async def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
-    """Schnell das Vorschaubild aus einer .3mf Datei extrahieren."""
+def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
+    """Schnell das Vorschaubild aus einer .3mf Datei extrahieren.
+
+    Bewusst SYNCHRON (def) → FastAPI führt es im Threadpool aus. Als `async def`
+    lief das Öffnen des ZIP-Archivs direkt im Event-Loop, und die Bibliothek
+    schickt beim Öffnen ein Thumbnail-Request PRO Datei."""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
@@ -240,6 +279,15 @@ async def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Nur .3mf Dateien haben Thumbnails")
     if not os.path.exists(file.file_path):
         raise HTTPException(status_code=404, detail="Datei nicht auf Disk")
+    # Das Bild ändert sich für eine hochgeladene Datei nie (Dateiname = UUID), die
+    # Signatur (Pfad/Größe/mtime) fängt einen Austausch trotzdem ab.
+    try:
+        sig = _qmeta_sig(file.file_path)
+        cached = _THUMB_CACHE.get(file_id)
+        if cached and cached[0] == sig:
+            return _png(cached[1])
+    except OSError:
+        sig = None
     try:
         with zipfile.ZipFile(file.file_path, 'r') as zf:
             names = zf.namelist()
@@ -267,11 +315,22 @@ async def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
             if not thumb_path:
                 raise HTTPException(status_code=404, detail="Kein Thumbnail in dieser .3mf Datei")
             png_bytes = zf.read(thumb_path)
-        return StreamingResponse(io.BytesIO(png_bytes), media_type="image/png")
+        if sig:
+            if len(_THUMB_CACHE) >= _THUMB_CACHE_MAX:
+                _THUMB_CACHE.clear()       # simpel und ausreichend: nie unbegrenzt wachsen
+            _THUMB_CACHE[file_id] = (sig, png_bytes)
+        return _png(png_bytes)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Thumbnail-Extraktion fehlgeschlagen: {e}")
+
+
+def _png(data: bytes) -> Response:
+    """Vorschaubild mit Browser-Cache ausliefern. Ohne den Header holte der Browser
+    bei JEDEM Öffnen der Bibliothek alle Bilder neu — jedes Mal ein ZIP-Zugriff."""
+    return Response(content=data, media_type="image/png",
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 # P5: geparste quick-meta cachen — Datei-Header werden sonst bei jedem Aufruf neu
@@ -338,8 +397,9 @@ def _plate_predictions(zf) -> dict:
 
 
 @router.get("/{file_id}/quick-meta")
-async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
-    """Druckzeit und Filamentverbrauch schnell aus Datei-Header lesen."""
+def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
+    """Druckzeit und Filamentverbrauch schnell aus Datei-Header lesen.
+    Synchron (def) → Threadpool: öffnet das ZIP-Archiv."""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
@@ -402,8 +462,9 @@ _PLATES_META_CACHE: dict = {}   # file_id → (sig, result)
 
 
 @router.get("/{file_id}/plates-meta")
-async def get_plates_meta(file_id: int, db: Session = Depends(get_db)):
+def get_plates_meta(file_id: int, db: Session = Depends(get_db)):
     """Metadaten JE PLATTE einer Multi-Plate-.3mf: Zeit, Höhe, Filament, Schichten.
+    Synchron (def) → Threadpool: liest je Platte einen Header aus dem ZIP-Archiv.
 
     Liest pro Platte den plate_N.gcode-Header (64 KB) — Höhe/Zeit sind damit
     plattengenau statt (wie früher) die Werte der ersten Platte für alle.
@@ -470,6 +531,54 @@ CRASH_X_MARGIN  = 10.0     # mm — Streifen links/rechts, in dem der Arm fährt
 CRASH_X_MAX     = 256.0    # mm — Bettbreite X (X1C); per Query überschreibbar
 
 _CRASH_CACHE: dict = {}    # (file_id, plate, x_max) → (sig, result)
+_CRASH_CACHE_LOCK = threading.Lock()
+
+
+def _crash_cache_file() -> Path:
+    from app.paths import DB_DIR
+    return DB_DIR / "crash_cache.json"
+
+
+def _crash_key_str(key) -> str:
+    return "|".join("" if k is None else str(k) for k in key)
+
+
+def _load_crash_cache() -> None:
+    """Gespeicherte Crash-Ergebnisse übernehmen. Ohne das scannte Printloom nach
+    JEDEM Neustart (auch nach jedem Update) beim ersten Öffnen der Bibliothek wieder
+    jede Datei komplett durch — genau die Last, die die App ausbremst. Die Signatur
+    (Pfad/Größe/mtime) bleibt maßgeblich: passt sie nicht, wird neu gescannt."""
+    try:
+        from app.services import storage
+        raw = storage.read_json(str(_crash_cache_file()), {})
+        if not isinstance(raw, dict):
+            return
+    except Exception:
+        return
+    for k, entry in raw.items():
+        try:
+            fid, plate, x_max = k.split("|")
+            key = (int(fid), int(plate) if plate else None, float(x_max))
+            sig = tuple(entry["sig"])
+            if not os.path.exists(sig[0]):
+                continue                      # Datei gelöscht → Eintrag verfällt
+            _CRASH_CACHE[key] = ((sig[0], int(sig[1]), int(sig[2])), entry["result"])
+        except Exception:
+            continue
+
+
+def _save_crash_cache() -> None:
+    try:
+        from app.services import storage
+        data = {_crash_key_str(k): {"sig": list(v[0]), "result": v[1]}
+                for k, v in list(_CRASH_CACHE.items())}
+        storage.write_json(str(_crash_cache_file()), data)
+    except Exception as e:
+        logger.debug(f"crash cache not persisted: {e}")
+
+
+_load_crash_cache()
+
 _NUM = r'[-+]?\d*\.?\d+'
 _RE_Z = re.compile(r'[Zz](' + _NUM + r')')
 _RE_X = re.compile(r'[Xx](' + _NUM + r')')
@@ -521,57 +630,76 @@ def _scan_gcode_for_crash(line_iter, x_max: float,
     return {"crash_risk": False, "max_z_mm": round(max_z, 1)}
 
 
+def _scan_file_for_crash(path: str, file_type: str, plate, x_max: float) -> Optional[dict]:
+    """Den eigentlichen G-code-Scan ausführen (ohne Cache/DB). None = nichts zu prüfen."""
+    if file_type != '.3mf':
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            return _scan_gcode_for_crash(f, x_max)
+    with zipfile.ZipFile(path, 'r') as zf:
+        names = zf.namelist()
+        if plate:
+            targets = [n for n in names
+                       if re.match(rf'Metadata/plate_{plate}\.gcode$', n, re.IGNORECASE)]
+        else:
+            # Ohne Plattenangabe ALLE Platten prüfen (bei Multi-Plate reicht eine
+            # gefährliche Platte, damit die Datei als riskant gilt).
+            targets = sorted([n for n in names if re.match(r'Metadata/plate_\d+\.gcode$', n, re.IGNORECASE)],
+                             key=lambda n: int(re.search(r'plate_(\d+)', n).group(1)))
+            if not targets:
+                single = next((n for n in names if n.lower().endswith('.gcode')), None)
+                targets = [single] if single else []
+        if not targets:
+            return None
+        result = {"crash_risk": False, "max_z_mm": 0.0}
+        for gname in targets:
+            with zf.open(gname) as gf:
+                r = _scan_gcode_for_crash(
+                    io.TextIOWrapper(gf, encoding='utf-8', errors='ignore'), x_max)
+            max_z = max(result.get("max_z_mm") or 0.0, r.get("max_z_mm") or 0.0)
+            if r.get("crash_risk"):
+                m = re.search(r'plate_(\d+)', gname)
+                r["plate"] = int(m.group(1)) if m else None
+                # Höchste Z-Höhe über ALLE bisher geprüften Platten behalten — die
+                # Fundplatte allein wäre die falsche Zahl in der Warnung.
+                r["max_z_mm"] = max_z
+                return r
+            result["max_z_mm"] = max_z
+        return result
+
+
 @router.get("/{file_id}/crash-check")
 def crash_check(file_id: int, plate: int = None, x_max: float = CRASH_X_MAX,
                 db: Session = Depends(get_db)):
     """Prüft, ob der Druck den OTTOeject-Arm rammt: Objekt höher als 30 mm UND ragt
     links/rechts in den 10-mm-Randstreifen (auch Verfahrwege). Ergebnis wird gecacht.
     Bewusst SYNCHRON (def): der volle G-code-Scan blockiert sonst den Event-Loop —
-    so führt FastAPI ihn im Threadpool aus (viele Datei-Zeilen gleichzeitig unkritisch)."""
+    so führt FastAPI ihn im Threadpool aus."""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     if file.file_type not in ('.3mf', '.gcode') or not os.path.exists(file.file_path):
         return {"crash_risk": False, "max_z_mm": None}
+    path, file_type = file.file_path, file.file_type
+    cache_key = (file_id, plate, x_max)
     try:
-        sig = _qmeta_sig(file.file_path)
-        cache_key = (file_id, plate, x_max)
+        sig = _qmeta_sig(path)
         cached = _CRASH_CACHE.get(cache_key)
         if cached and cached[0] == sig:
             return cached[1]
     except OSError:
         sig = None
     try:
-        if file.file_type == '.3mf':
-            with zipfile.ZipFile(file.file_path, 'r') as zf:
-                names = zf.namelist()
-                if plate:
-                    targets = [n for n in names
-                               if re.match(rf'Metadata/plate_{plate}\.gcode$', n, re.IGNORECASE)]
-                else:
-                    # Ohne Plattenangabe ALLE Platten prüfen (bei Multi-Plate reicht eine
-                    # gefährliche Platte, damit die Datei als riskant gilt).
-                    targets = sorted([n for n in names if re.match(r'Metadata/plate_\d+\.gcode$', n, re.IGNORECASE)],
-                                     key=lambda n: int(re.search(r'plate_(\d+)', n).group(1)))
-                    if not targets:
-                        single = next((n for n in names if n.lower().endswith('.gcode')), None)
-                        targets = [single] if single else []
-                if not targets:
-                    return {"crash_risk": False, "max_z_mm": None}
-                result = {"crash_risk": False, "max_z_mm": 0.0}
-                for gname in targets:
-                    with zf.open(gname) as gf:
-                        r = _scan_gcode_for_crash(
-                            io.TextIOWrapper(gf, encoding='utf-8', errors='ignore'), x_max)
-                    result["max_z_mm"] = max(result.get("max_z_mm") or 0.0, r.get("max_z_mm") or 0.0)
-                    if r.get("crash_risk"):
-                        m = re.search(r'plate_(\d+)', gname)
-                        r["plate"] = int(m.group(1)) if m else None
-                        result = r
-                        break
-        else:
-            with open(file.file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                result = _scan_gcode_for_crash(f, x_max)
+        # Höchstens _HEAVY_SCAN Scans gleichzeitig — sonst hungern N parallele
+        # Bibliothekszeilen den Event-Loop aus (siehe Kommentar bei _HEAVY_SCAN).
+        with _HEAVY_SCAN:
+            # Nach dem Warten nochmal in den Cache schauen: sehr wahrscheinlich hat ihn
+            # inzwischen ein anderer Request für dieselbe Datei gefüllt.
+            cached = _CRASH_CACHE.get(cache_key) if sig else None
+            if cached and cached[0] == sig:
+                return cached[1]
+            result = _scan_file_for_crash(path, file_type, plate, x_max)
+        if result is None:
+            return {"crash_risk": False, "max_z_mm": None}
     except Exception as e:
         logger.warning(f"crash-check failed for {file_id}: {e}")
         return {"crash_risk": False, "max_z_mm": None, "error": str(e)}
@@ -579,13 +707,17 @@ def crash_check(file_id: int, plate: int = None, x_max: float = CRASH_X_MAX,
     result["x_margin_mm"] = CRASH_X_MARGIN
     result["x_max_mm"] = x_max
     if sig:
-        _CRASH_CACHE[cache_key] = (sig, result)
+        with _CRASH_CACHE_LOCK:
+            _CRASH_CACHE[cache_key] = (sig, result)
+            _save_crash_cache()
     return result
 
 
 @router.get("/{file_id}/deep-analyze")
-async def deep_analyze_file(file_id: int, db: Session = Depends(get_db)):
-    """Vollständige Analyse einer .3mf / .gcode Datei — alle Slicer-Metadaten."""
+def deep_analyze_file(file_id: int, db: Session = Depends(get_db)):
+    """Vollständige Analyse einer .3mf / .gcode Datei — alle Slicer-Metadaten.
+    Synchron (def) → Threadpool, und wie der Crash-Check durch _HEAVY_SCAN begrenzt:
+    die Analyse liest die Datei komplett."""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
@@ -602,10 +734,11 @@ async def deep_analyze_file(file_id: int, db: Session = Depends(get_db)):
     }
 
     try:
-        if file.file_type == '.3mf':
-            result.update(_analyze_3mf(file.file_path))
-        else:
-            result.update(_analyze_gcode_file(file.file_path))
+        with _HEAVY_SCAN:
+            if file.file_type == '.3mf':
+                result.update(_analyze_3mf(file.file_path))
+            else:
+                result.update(_analyze_gcode_file(file.file_path))
     except Exception as e:
         logger.warning(f"deep-analyze failed for {file_id}: {e}")
         result["error"] = str(e)

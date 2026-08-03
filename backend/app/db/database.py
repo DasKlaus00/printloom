@@ -1,5 +1,5 @@
 import sqlite3
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.paths import DB_DIR
@@ -29,7 +29,49 @@ _rename_legacy_db()
 
 DATABASE_URL = f"sqlite:///{DB_DIR}/printloom.db"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# Warum die Pool-/PRAGMA-Werte gesetzt sind ("die Seite lädt manchmal ewig"):
+#
+# 1. POOL. SQLAlchemy 2.0 nimmt für datei-basiertes SQLite einen QueuePool mit
+#    Standard 5+10 = 15 Verbindungen und wartet danach 30 s auf eine freie. Uvicorn
+#    fährt aber bis zu 40 Threads für synchrone Endpunkte, dazu Hintergrund-Threads
+#    (Farm-Runner, Kamera, MQTT). Sobald mehrere langsame Requests gleichzeitig eine
+#    Sitzung halten (Datei-Bibliothek: Thumbnail + Crash-Check + quick-meta je Datei),
+#    war der Pool leer und JEDER weitere Request stand 30 s — auch /api/health und die
+#    ausgelieferten JS-Chunks. Genau das ist das „Seite lädt nicht"-Bild. Mehr
+#    Verbindungen kosten bei SQLite fast nichts (ein Dateihandle), und ein kurzer
+#    pool_timeout meldet einen echten Stau als Fehler, statt ihn 30 s zu verstecken.
+# 2. WAL. Im Standard-Journal (delete) sperrt EIN Schreiber ALLE Leser. Mit WAL lesen
+#    und schreiben parallel — bei einer App, die im Sekundentakt Status schreibt und
+#    gleichzeitig überall liest, ist das der Unterschied zwischen flüssig und hakelig.
+# 3. busy_timeout. Ohne ihn wirft SQLite bei einer belegten Sperre SOFORT
+#    „database is locked" statt kurz zu warten.
+engine = create_engine(
+    DATABASE_URL,
+    # timeout = wie lange SQLite selbst auf eine Sperre wartet (Sekunden).
+    connect_args={"check_same_thread": False, "timeout": 15},
+    pool_size=20, max_overflow=40, pool_timeout=10, pool_pre_ping=True,
+)
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_conn, _record):
+    """WAL + Wartezeit je NEUER Verbindung setzen (PRAGMAs gelten pro Verbindung).
+    journal_mode ist persistent in der Datei, wird aber bewusst jedes Mal gesetzt —
+    so gilt es auch für eine frisch angelegte Datenbank."""
+    cur = dbapi_conn.cursor()
+    try:
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=15000")
+        # NORMAL statt FULL: unter WAL sicher gegen App-Abstürze (nur ein
+        # Stromausfall im falschen Moment kostet die letzten Transaktionen) und
+        # spürbar weniger fsync-Last auf SD-Karten/USB-Sticks.
+        cur.execute("PRAGMA synchronous=NORMAL")
+    except Exception:
+        pass          # ältere/eingeschränkte SQLite-Builds: Standardverhalten reicht
+    finally:
+        cur.close()
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
