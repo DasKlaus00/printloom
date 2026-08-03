@@ -275,6 +275,14 @@ Kein eigener Zeitpunkt, sondern Regeln. Am Ende wird sowas nie gemacht.
 - **Kommentare erklären das WARUM.** Das ist die Stärke dieser Codebasis und hat mehrfach
   Zeit gespart — beibehalten.
 - **Version + zweisprachiger Changelog bei jedem Release.**
+- **Die BEWEGUNG bemessen, nicht den Ruhezustand.** *(Lehrgeld v1.1.11)* Die Fach-Planung
+  rechnete mit der Objekthöhe, wie das Objekt im Regal steht. Die Platte fährt aber nicht
+  waagerecht auf ihre Endhöhe ein: sie kommt ~25 mm höher herein und wird abgesenkt, und
+  beim Holen wird sie genauso angehoben (`store_to_rack` / `grab_from_rack`). Während der
+  Fahrt braucht ein Objekt also deutlich mehr Luft als danach. Beim Füllen von unten nach
+  oben fällt das nicht auf — das Fach darüber ist in dem Moment noch leer. Über dem
+  Magazin (nie leer) fällt es sofort auf. **Wer Platz plant, muss den Weg dorthin
+  einrechnen, nicht nur das Ziel.**
 
 ---
 

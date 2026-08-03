@@ -4,6 +4,27 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.11',
+    de: [
+      'KEIN OBJEKT MEHR GEGEN DIE PLATTE DARÜBER. Liegt im Fach über dem Ziel schon eine Platte — Magazin, markierte Leerplatte oder ein eingelagerter Druck — darf das Objekt nur noch die halbe Fachhöhe hoch sein. Neuer Wert unter Konfiguration → Regal: „Nutzhöhe unter belegtem Fach (%)", Standard 50.',
+      'Grund: Die Platte fährt nicht waagerecht auf ihre Endhöhe ins Fach, sondern kommt etwa 25 mm höher herein und wird abgesenkt — beim Holen wird sie genauso angehoben. Während der Fahrt braucht ein Objekt also deutlich mehr Luft als danach. Beim Füllen von unten nach oben fällt das nicht auf, weil das Fach darüber in dem Moment noch leer ist. Über dem Magazin, das nie leer ist, fällt es sofort auf.',
+      'Das Magazin gilt dabei IMMER als belegt, auch bei Zähler 0 — es wird von Hand nachgefüllt, jederzeit. Eine Höhe, die nur bei leerem Magazin passt, wäre nach dem nächsten Auffüllen falsch, ohne dass es jemand merkt.',
+      'Das kostet Platz: ein 60-mm-Objekt braucht jetzt ein freies Fach über sich, statt sich mit der nächsten Platte zu drängen. Wessen Mechanik mehr hergibt, stellt den Prozentsatz höher — 100 % heißt volle Fachhöhe (aber ohne die Höhen-Toleranz, die genau den Platz beschreibt, den es unter einer Platte nicht gibt).',
+      'Der G-code fürs ABLEGEN und GREIFEN lässt sich jetzt sinnvoll bearbeiten: „⚙ Eigenen G-code bearbeiten" lädt die eingebaute Bewegung als Vorlage mit PLATZHALTERN statt fertiger Koordinaten. Die Zuordnung „Regal 1 Fach 3" bleibt damit Sache von Printloom — nur die Bewegung danach gehört dir.',
+      'Platzhalter können jetzt rechnen: {slot_z+25} ist die Fachhöhe plus 25 mm, {y_engage-35} entsprechend. Ohne das ließe sich die eingebaute Bewegung gar nicht als bearbeitbare Vorlage ausdrücken — sie fährt genau solche Versätze.',
+      'Ein Test hält fest, dass die unveränderte Vorlage Zeichen für Zeichen dieselbe Bewegung erzeugt wie die eingebaute — über alle Regale und Fächer, auch bei unterschiedlich gebauten Regalen.',
+    ],
+    en: [
+      'NO MORE OBJECTS PUSHED INTO THE PLATE ABOVE. If the slot above the target already holds a plate — magazine, marked empty plate or a stored print — the object may only be half the slot height. New value under Configuration → Rack: "Usable height below an occupied slot (%)", default 50.',
+      'Reason: the plate does not slide in level at its final height — it enters about 25 mm higher and is then lowered, and it is lifted the same way when fetched. During that movement an object needs considerably more clearance than afterwards. Filling bottom-up hides this, because the slot above is still empty at that moment. Below the magazine, which is never empty, it shows immediately.',
+      'The magazine always counts as occupied, even at a count of 0 — it is refilled by hand, at any time. A height that only fits an empty magazine would be wrong after the next top-up, with nobody noticing.',
+      'This costs space: a 60 mm object now needs a free slot above it instead of squeezing under the next plate. If your mechanics allow more, raise the percentage — 100 % means the full slot height (but without the height tolerance, which describes exactly the room that is not there below a plate).',
+      'The G-code for STORING and GRABBING can now be edited usefully: "⚙ Edit custom G-code" loads the built-in movement as a template with PLACEHOLDERS instead of fixed coordinates. Which rack and which slot stays Printloom\'s job — only the movement after that is yours.',
+      'Placeholders can do arithmetic now: {slot_z+25} is the slot height plus 25 mm, {y_engage-35} likewise. Without that the built-in movement could not be expressed as an editable template at all — it drives exactly those offsets.',
+      'A test pins down that the unmodified template produces character-for-character the same movement as the built-in one — across every rack and slot, including differently built racks.',
+    ],
+  },
+  {
     version: '1.1.10',
     de: [
       'DIE ABSCHNITTE FOLGEN JETZT DER KONFIGURATION. Wie viele Drucker es gibt, steht in der Geräteliste (Konfiguration → Geräte) — genau wie die Regalzahl in der Rack-Konfiguration steht. Der Drucker-Tab zeigt einen Abschnitt je angelegtem Gerät und je Regal.',

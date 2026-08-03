@@ -362,6 +362,7 @@ function RegalKonfiguration() {
   const [spr,            setSpr]            = useState(6)
   const [h,              setH]              = useState(50)
   const [margin,         setMargin]         = useState(15)
+  const [stackedPct,     setStackedPct]     = useState(50)
   const [magazineSlot,   setMagazineSlot]   = useState(7)
   const [magazineCounts, setMagazineCounts] = useState([6, 6, 6])
   const [saving,         setSaving]         = useState(false)
@@ -375,6 +376,7 @@ function RegalKonfiguration() {
       setSpr(d.slots_per_rack ?? 6)
       setH(d.slot_height_mm ?? 50)
       setMargin(d.height_margin_pct ?? 15)
+      setStackedPct(d.slot_stacked_pct ?? 50)
       setMagazineSlot(d.magazine_slot ?? 7)
       // Fest konfigurierte Sollzahl je Magazin (nicht der schwankende Live-Bestand).
       const defs = d.magazine_defaults ?? d.magazine_counts ?? []
@@ -402,6 +404,7 @@ function RegalKonfiguration() {
         slots_per_rack:   +spr,
         slot_height_mm:   +h,
         height_margin_pct: +margin,
+        slot_stacked_pct: +stackedPct,
         magazine_slot:    +magazineSlot,
         magazine_defaults: magazineCounts.map(Number),
       })
@@ -442,6 +445,24 @@ function RegalKonfiguration() {
           <span className="text-[10px] text-surface-500">%</span>
           {h > 0 && <span className="text-[9px] text-surface-700 font-mono">{tr('z.B. 100 mm → {0} mm effektiv', Math.round(100 * (1 + margin/100)))}</span>}
         </div>
+      </div>
+      {/* Liegt oben schon eine Platte, braucht die einfahrende Platte mehr Luft,
+          als das Objekt im Ruhezustand hoch ist (sie kommt erhöht herein). */}
+      <div>
+        <label className="text-[10px] text-surface-500 block mb-1">
+          {tr('Nutzhöhe unter belegtem Fach (%)')} <span className="text-surface-700">{tr('— z. B. unter dem Magazin')}</span>
+        </label>
+        <div className="flex items-center gap-2">
+          <input type="number" min="0" max="100" step="5" value={stackedPct}
+            onChange={e => setStackedPct(e.target.value)} className="w-20 font-mono text-xs" />
+          <span className="text-[10px] text-surface-500">%</span>
+          {h > 0 && <span className="text-[9px] text-surface-700 font-mono">
+            {tr('→ max. {0} mm unter einer Platte', Math.round(h * stackedPct / 100))}
+          </span>}
+        </div>
+        <p className="text-[9px] text-surface-600 mt-1">
+          {tr('Die Platte fährt nicht waagerecht auf ihre Endhöhe ein, sondern kommt etwa 25 mm höher herein und wird abgesenkt — beim Holen wird sie genauso angehoben. Solange von unten nach oben gefüllt wird, ist das Fach darüber in dem Moment noch leer. Über dem Magazin (immer belegt) und unter einem schon belegten Fach fehlt diese Luft, deshalb zählt dort nur ein Teil der Fachhöhe.')}
+        </p>
       </div>
       <div className="border-t border-surface-800/40 pt-2 space-y-2">
         <div className="flex items-center gap-2">

@@ -807,6 +807,94 @@ def _guard(script: str, g: dict, op: str, rack: int, slot: int, check: bool) -> 
     return script
 
 
+# ── Platzhalter im eigenen G-code ───────────────────────────────────────────
+# Damit EIN eigener G-code über alle Regale und Fächer skaliert, statt fixe
+# Koordinaten zu enthalten, die jedes Regal an dieselbe Stelle schicken. Seit
+# v1.1.11 mit Rechenweg: {slot_z+25} ist die Fachhöhe plus 25 mm. Ohne das ließe
+# sich die eingebaute Bewegung (die genau solche Versätze fährt) nicht als
+# bearbeitbare Vorlage ausdrücken.
+_PLACEHOLDER_RE = re.compile(
+    r"\{(rack_x|slot_z|mag_z|y_engage|y_pullback|rack|slot)\s*([+-]\s*\d+(?:\.\d+)?)?\}")
+
+
+def fill_placeholders(text: str, g: dict, rack: int, slot: int) -> str:
+    rx, ry, rz, ypb = slot_position(g, rack, slot)
+    mag = magazine_slot(g)
+    # {mag_z} inkl. Durchbiegungs-Absenkung (pro Platte im Magazin, s. magazine_z_offset)
+    magz = (slot_position(g, rack, mag)[2] + magazine_z_offset(g, rack)) if mag > 0 else rz
+    values = {"rack_x": rx, "slot_z": rz, "mag_z": magz, "y_engage": ry,
+              "y_pullback": ypb, "rack": int(rack), "slot": int(slot)}
+
+    def _sub(m):
+        name, off = m.group(1), m.group(2)
+        val = values[name]
+        if off:
+            if name in ("rack", "slot"):
+                return m.group(0)      # Nummern rechnen nicht — das wäre ein anderes Fach
+            val = float(val) + float(off.replace(" ", ""))
+        return f"{val:g}" if isinstance(val, float) else str(val)
+
+    return _PLACEHOLDER_RE.sub(_sub, text)
+
+
+# Weit auseinanderliegende Marker: der erzeugte G-code rechnet mit Versätzen von
+# höchstens ein paar hundert mm, damit bleibt jeder Wert eindeutig einem Marker
+# zuzuordnen (siehe _to_placeholders).
+_TPL_MARK = {"rack_x": 100000.0, "y_engage": 200000.0, "slot_z": 300000.0,
+             "y_pullback": 400000.0}
+_COORD_RE = re.compile(r"\b([XYZ])(-?\d+(?:\.\d+)?)", re.IGNORECASE)
+
+
+def _to_placeholders(script: str) -> str:
+    """Marker-Zahlen wieder in Platzhalter zurückübersetzen."""
+    def _sub(m):
+        try:
+            v = float(m.group(2))
+        except ValueError:
+            return m.group(0)
+        for name, base in _TPL_MARK.items():
+            d = round(v - base, 3)
+            if abs(d) < 5000:
+                return f"{m.group(1)}{{{name}}}" if d == 0 else f"{m.group(1)}{{{name}{d:+g}}}"
+        return m.group(0)
+    return _COORD_RE.sub(_sub, script)
+
+
+def op_template(g: dict, op: str, rack: int = 1, slot: int = 1) -> str:
+    """Die EINGEBAUTE Bewegung als bearbeitbare Vorlage — mit Platzhaltern statt
+    fertiger Koordinaten.
+
+    Ohne das wäre ein eigener G-code fürs Ablegen unbrauchbar: die Vorschau eines
+    Fachs enthält dessen konkrete Zahlen, ein daraus bearbeiteter G-code führe
+    jedes Regal und jedes Fach an dieselbe Stelle. So bleibt die Zuordnung
+    „Regal 1 Fach 3" Sache von Printloom, und nur die Bewegung danach gehört dem
+    Nutzer. G90/M220 fehlen bewusst — die setzt build_op selbst davor.
+    """
+    g = merge_defaults(deepcopy(g or {}))
+    g["gcode_override"] = {}          # die Vorlage ist die berechnete Bewegung
+    for p in g.get("printers") or []:
+        if isinstance(p, dict):
+            p["gcode_override"] = {}
+    rg = dict(g.get("rack_geo") or {})
+    rg[str(rack)] = {**(rg.get(str(rack)) or {}),
+                     "x": _TPL_MARK["rack_x"], "y_engage": _TPL_MARK["y_engage"],
+                     "first_z": _TPL_MARK["slot_z"]}
+    g["rack_geo"] = rg
+    g["storage"] = {**(g.get("storage") or {}), "y_pullback_limit": _TPL_MARK["y_pullback"]}
+    g["magazine_counts"] = []         # keine Durchbiegung in die Vorlage einrechnen
+    script = build_op(g, op, rack=rack, slot=1, check=False)
+    lines = [ln for ln in _to_placeholders(script).splitlines()
+             if not ln.startswith("G90") and not ln.startswith("M220")]
+    # Das abschließende M400 bleibt bewusst doppelt stehen: build_op hängt es an den
+    # eingebauten Ablauf an, der selbst schon damit endet. Wer die Vorlage unverändert
+    # übernimmt, bekommt dadurch Zeichen für Zeichen dieselbe Sendung — das ist mehr
+    # wert als eine aufgeräumt aussehende Vorlage.
+    # Auch der Anzeigetext soll mitwandern statt „rack 1 slot 1" zu behaupten.
+    out = re.sub(r"(?im)^(M117\s+.*?)\brack\s+\d+\s+slot\s+\d+",
+                 r"\1rack {rack} slot {slot}", "\n".join(lines))
+    return out.strip()
+
+
 def op_override(g: dict, op: str, printer=None):
     """Eigener G-code dieser Operation (oder None). Drucker-Operationen liegen beim
     jeweiligen Drucker, Regal-Operationen gemeinsam."""
@@ -850,18 +938,7 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None,
         # (x_unclamp/rack_x_gap/first_z_flat/slot_gap); R1 = druckerseitig (siehe slot_position):
         #   {rack_x}=X-Position des Regals · {slot_z}=Z-Höhe des Fachs · {mag_z}=Z des Magazin-
         #   fachs · {y_engage}/{y_pullback}=Y-Werte · {rack}/{slot}=Nummern.
-        rx, ry, rz, ypb = slot_position(g, rack, slot)
-        _mag = magazine_slot(g)
-        # {mag_z} inkl. Durchbiegungs-Absenkung (pro Platte im Magazin, s. magazine_z_offset)
-        magz = (slot_position(g, rack, _mag)[2] + magazine_z_offset(g, rack)) if _mag > 0 else rz
-        s = ov
-        for k, v in (
-            ("{rack_x}", f"{rx:g}"), ("{slot_z}", f"{rz:g}"), ("{mag_z}", f"{magz:g}"),
-            ("{y_engage}", f"{ry:g}"), ("{y_pullback}", f"{ypb:g}"),
-            ("{rack}", str(int(rack))), ("{slot}", str(int(slot))),
-        ):
-            s = s.replace(k, v)
-        s = s.strip()
+        s = fill_placeholders(ov, g, rack, slot).strip()
         return _guard(speed + (s if s.rstrip().endswith("M400") else s + "\nM400"),
                       g, op, rack, slot, check)
     if op == "grab":

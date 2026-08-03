@@ -1,14 +1,39 @@
 """Reine Fächer-/Höhen-Logik der Regal-Planung — bewusst OHNE FastAPI-Importe,
 damit sie lokal (ohne volle Backend-Umgebung) getestet werden kann.
 
-Toleranz (`tolerance_mm`): ein Objekt darf so viele mm über die Oberkante seines
-obersten Fachs ragen, bevor ein weiteres Fach reserviert wird. Konfigurierbar
-über die Regal-Einstellung `slot_tolerance_mm`; Default = DEFAULT_SLOT_TOLERANCE_MM.
+Zwei Höhen-Grenzen, und der Unterschied ist der ganze Punkt:
+
+  FREIE DECKE (`tolerance_mm`)
+    Über dem Objekt ist noch kein Fachboden belegt. Dann darf es um die Toleranz
+    über die Oberkante seines obersten Fachs ragen, bevor ein weiteres Fach
+    reserviert wird. Konfigurierbar über `slot_tolerance_mm`.
+
+  PLATTE DARÜBER (`stacked_pct`, Standard 50 %)
+    Im Fach darüber liegt bereits eine Platte — Magazin, markierte Leerplatte oder
+    ein eingelagerter Druck. Dann gilt nur noch ein Bruchteil der Fachhöhe.
+    Grund: Die Platte fährt NICHT waagerecht auf ihre Endhöhe ein, sondern kommt
+    ~25 mm höher herein und wird abgesenkt (ottoeject_motion.store_to_rack). Beim
+    Herausholen wird sie genauso angehoben. Ein Objekt braucht während der Fahrt
+    also deutlich mehr Luft als im Ruhezustand. Solange von unten nach oben
+    gefüllt wird, ist das Fach darüber in diesem Moment noch leer und der Hub hat
+    Platz — deshalb fällt es dort nicht auf. Über dem Magazin (das nie leer ist)
+    und unter einem schon belegten Fach fällt es sofort auf.
+
 MUSS konzeptionell mit frontend/src/services/rackUtils.js übereinstimmen.
 """
 import math
 
 DEFAULT_SLOT_TOLERANCE_MM = 20.0
+DEFAULT_STACKED_PCT = 50.0
+
+
+def stacked_pct_of(data: dict) -> float:
+    """Nutzbarer Anteil der Fachhöhe, wenn oben schon eine Platte liegt (%)."""
+    try:
+        v = float((data or {}).get("slot_stacked_pct", DEFAULT_STACKED_PCT))
+    except (TypeError, ValueError):
+        return DEFAULT_STACKED_PCT
+    return max(0.0, min(100.0, v))
 
 
 def slots_needed(height_mm: float, slot_h: float,
@@ -19,14 +44,62 @@ def slots_needed(height_mm: float, slot_h: float,
     return max(1, math.ceil((height_mm - tolerance_mm) / (slot_h or 50)))
 
 
+def height_limit(needed: int, slot_h: float, tolerance_mm: float = DEFAULT_SLOT_TOLERANCE_MM,
+                 plate_above: bool = False,
+                 stacked_pct: float = DEFAULT_STACKED_PCT) -> float:
+    """Höchstes Objekt, das in `needed` Fächer passt — je nachdem, was oben liegt."""
+    sh = float(slot_h or 50)
+    if plate_above:
+        return (needed - 1) * sh + sh * max(0.0, min(100.0, stacked_pct)) / 100.0
+    return needed * sh + tolerance_mm
+
+
+def slot_has_plate(rack: int, slot: int, slots: dict, magazine_slot: int = 0,
+                   taken=None) -> bool:
+    """Liegt in diesem Fach physisch eine Platte?
+
+    Das Magazin zählt IMMER als belegt — auch wenn der Zähler gerade 0 ist. Es wird
+    von Hand nachgefüllt, und zwar jederzeit; eine Höhe, die nur bei leerem Magazin
+    passt, wäre beim nächsten Auffüllen falsch, ohne dass es jemand merkt.
+    """
+    if magazine_slot and int(slot) == int(magazine_slot):
+        return True
+    key = f"{rack}-{slot}"
+    if taken and key in taken:
+        return True              # ein anderer Job legt dort gleich ab
+    s = (slots or {}).get(key)
+    if not isinstance(s, dict):
+        return False             # kein solches Fach → offene Luft über dem Regal
+    if s.get("empty_plate"):
+        return True              # markierte Leerplatte (Aufbau ohne Magazin)
+    return s.get("status", "free") not in ("free", "ready")
+
+
+def fits_below(height_mm: float, needed: int, plate_above: bool, slot_h: float,
+               tolerance_mm: float = DEFAULT_SLOT_TOLERANCE_MM,
+               stacked_pct: float = DEFAULT_STACKED_PCT) -> bool:
+    return (height_mm or 0) <= height_limit(needed, slot_h, tolerance_mm,
+                                            plate_above, stacked_pct)
+
+
 def is_blocked_from_below(rack: int, slot_num: int, slots: dict, slot_h: float,
-                          tolerance_mm: float = DEFAULT_SLOT_TOLERANCE_MM) -> bool:
-    """True, wenn ein eingelagertes Objekt aus einem tieferen Fach in dieses ragt."""
+                          tolerance_mm: float = DEFAULT_SLOT_TOLERANCE_MM,
+                          stacked_pct: float = DEFAULT_STACKED_PCT) -> bool:
+    """True, wenn ein eingelagertes Objekt aus einem tieferen Fach in dieses ragt.
+
+    Zwei Fälle: es reicht direkt herein (mehr Fächer als Abstand) — oder es endet
+    genau darunter und ist zu hoch dafür, dass hier noch eine Platte einfahren
+    kann (siehe Modulkopf: die Platte kommt erhöht herein)."""
     for s in range(slot_num - 1, 0, -1):
         obj_h = (slots.get(f"{rack}-{s}") or {}).get("object_height_mm") or 0
         if obj_h <= 0:
             continue
-        if slots_needed(obj_h, slot_h, tolerance_mm) > (slot_num - s):
+        gap = slot_num - s
+        needed = slots_needed(obj_h, slot_h, tolerance_mm)
+        if needed > gap:
+            return True
+        if needed == gap and not fits_below(obj_h, needed, True, slot_h,
+                                            tolerance_mm, stacked_pct):
             return True
     return False
 

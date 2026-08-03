@@ -2248,6 +2248,20 @@ const EN_STRINGS = {
     'Name and model are maintained under Configuration → Devices.',
   'Noch kein Drucker unter Konfiguration → Geräte angelegt. Einmessen und Testen geht trotzdem; Druckstatus, Bett und Drucker-Einstellungen brauchen das Gerät. Sobald es angelegt ist, gehören diese Werte dazu.':
     'No printer has been created under Configuration → Devices yet. Teaching and testing still work; print status, bed and printer settings need the device. Once it exists, these values belong to it.',
+
+  // ── 1.1.11: Platte darüber = weniger Nutzhöhe · Vorlage mit Platzhaltern ──
+  'Nutzhöhe unter belegtem Fach (%)': 'Usable height below an occupied slot (%)',
+  '— z. B. unter dem Magazin': '— e.g. below the magazine',
+  '→ max. {0} mm unter einer Platte': '→ max. {0} mm below a plate',
+  'Die Platte fährt nicht waagerecht auf ihre Endhöhe ein, sondern kommt etwa 25 mm höher herein und wird abgesenkt — beim Holen wird sie genauso angehoben. Solange von unten nach oben gefüllt wird, ist das Fach darüber in dem Moment noch leer. Über dem Magazin (immer belegt) und unter einem schon belegten Fach fehlt diese Luft, deshalb zählt dort nur ein Teil der Fachhöhe.':
+    'The plate does not slide in level at its final height — it enters about 25 mm higher and is then lowered, and it is lifted the same way when fetched. As long as filling goes bottom-up, the slot above is still empty at that moment. Below the magazine (always occupied) and below an already occupied slot that clearance is missing, so only part of the slot height counts there.',
+  'EIN G-code fährt so jedes Regal (R1 am Drucker) und Fach korrekt an. Versätze gehen mit: {slot_z+25} ist die Fachhöhe plus 25 mm.':
+    'ONE G-code then drives every rack (R1 at the printer) and slot correctly. Offsets work too: {slot_z+25} is the slot height plus 25 mm.',
+  'Lädt die eingebaute Bewegung als Vorlage — mit Platzhaltern, damit sie für jedes Regal und Fach gilt':
+    'Loads the built-in movement as a template — with placeholders, so it applies to every rack and slot',
+  'Magazin darüber — hier passen nur {0} mm': 'Magazine above — only {0} mm fit here',
+  'Platte in Fach {0}-{1} darüber — hier passen nur {2} mm':
+    'Plate in slot {0}-{1} above — only {2} mm fit here',
   'X': 'X',
   'X/Y/Z = ERSTER Fahrpunkt der Bewegung. Der Rest der Türbewegung folgt daraus (Pin = Bogenradius).':
     'X/Y/Z = FIRST travel point of the move. The rest of the door motion follows from it (pin = arc radius).',

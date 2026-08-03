@@ -647,6 +647,14 @@ async def preview_ottoeject_op(request: dict):
     rack = int(request.get("rack", 1) or 1)
     slot = int(request.get("slot", 1) or 1)
     printer = request.get("printer")
+    # `template` = die eingebaute Bewegung MIT Platzhaltern statt fertiger
+    # Koordinaten — Startpunkt zum Bearbeiten, der über alle Regale/Fächer gilt.
+    if request.get("template"):
+        try:
+            return {"success": True, "op": op, "template": True,
+                    "script": _motion.op_template(geom, op, rack=rack, slot=slot)}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
     try:
         # Vorschau prüft NICHT (check=False): sie soll auch unplausiblen G-code zeigen
         # können — die Probleme kommen daneben als `problems` mit.

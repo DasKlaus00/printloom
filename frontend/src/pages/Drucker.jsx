@@ -131,7 +131,7 @@ function OpCard({ op, icon, title, fields = [], extra, note, busy, gcodeOn, onTe
           <p className="text-[9px] text-blue-400/80 leading-relaxed">
             {tr('Platzhalter für Regale/Fächer:')}{' '}
             <span className="font-mono text-blue-300">{'{rack_x} {slot_z} {mag_z} {y_engage} {y_pullback} {rack} {slot}'}</span>
-            {' — '}{tr('EIN G-code fährt so jedes Regal (R1 am Drucker) und Fach korrekt an.')}
+            {' — '}{tr('EIN G-code fährt so jedes Regal (R1 am Drucker) und Fach korrekt an. Versätze gehen mit: {slot_z+25} ist die Fachhöhe plus 25 mm.')}
           </p>
         </div>
       ) : (
@@ -1042,9 +1042,13 @@ export default function Drucker() {
     const n = { ...(p.gcode_override || {}) }; delete n[op]
     return { ...p, gcode_override: n }
   }))
+  // Regal-Operationen als VORLAGE MIT PLATZHALTERN laden ({rack_x}, {slot_z+25} …).
+  // Die konkrete Vorschau eines Fachs wäre als Startpunkt unbrauchbar: ein daraus
+  // bearbeiteter G-code führe jedes Regal und jedes Fach an dieselbe Stelle. So
+  // bleibt „Regal 1 Fach 3" Sache von Printloom, und nur die Bewegung danach
+  // gehört dir.
   const loadRackGcode = (op) => {
-    const { [op]: _drop, ...rest } = gcodeOverride
-    controlService.previewOp({ op, geometry: { ...geometry, gcode_override: rest }, rack: 1, slot: 1 })
+    controlService.previewOp({ op, geometry, rack: 1, slot: 1, template: true })
       .then(r => setGcodeOverride(m => ({ ...m, [op]: r?.data?.script || '' })))
       .catch(() => setGcodeOverride(m => ({ ...m, [op]: '' })))
   }
@@ -1234,6 +1238,7 @@ export default function Drucker() {
                     className="text-[10px] text-surface-500 hover:text-surface-300">{tr('✕ zurück zu Werten')}</button>
                 ) : (
                   <button onClick={() => loadRackGcode(op)}
+                    title={tr('Lädt die eingebaute Bewegung als Vorlage — mit Platzhaltern, damit sie für jedes Regal und Fach gilt')}
                     className="text-[10px] text-blue-400 hover:text-blue-300">{tr('⚙ Eigenen G-code bearbeiten (Feinjustage)')}</button>
                 )}
               </div>
@@ -1247,7 +1252,7 @@ export default function Drucker() {
           <p className="text-[9px] text-blue-400/80 leading-relaxed">
             {tr('Platzhalter für Regale/Fächer:')}{' '}
             <span className="font-mono text-blue-300">{'{rack_x} {slot_z} {mag_z} {y_engage} {y_pullback} {rack} {slot}'}</span>
-            {' — '}{tr('EIN G-code fährt so jedes Regal (R1 am Drucker) und Fach korrekt an.')}
+            {' — '}{tr('EIN G-code fährt so jedes Regal (R1 am Drucker) und Fach korrekt an. Versätze gehen mit: {slot_z+25} ist die Fachhöhe plus 25 mm.')}
           </p>
         </div>
       </Section>

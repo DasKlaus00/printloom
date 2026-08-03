@@ -66,15 +66,41 @@ describe('autoSlot', () => {
 
   it('respects clearance from a tall object stored below', () => {
     const rd = rack()
-    // 100mm object in 1-1 → 2 Fächer (20mm Toleranz) → blockiert 1-1,1-2
+    // 100mm in 1-1 → 2 Fächer (20mm Toleranz) → 1-1,1-2 belegt. 1-3 bleibt auch
+    // frei: das Objekt nutzt die Toleranz aus und ragt in den Raum, den die
+    // einfahrende Platte bräuchte (sie kommt ~25 mm erhöht herein).
     rd.slots['1-1'] = { status: 'done', object_height_mm: 100 }
+    expect(autoSlot([], rd, 30, 50)).toBe('1-4')
+  })
+
+  it('an object at most half a slot high still allows a plate above', () => {
+    const rd = rack()
+    rd.slots['1-1'] = { status: 'done', object_height_mm: 25 }   // = 50 % von 50mm
+    expect(autoSlot([], rd, 30, 50)).toBe('1-2')
+    rd.slots['1-1'] = { status: 'done', object_height_mm: 26 }
     expect(autoSlot([], rd, 30, 50)).toBe('1-3')
+  })
+
+  it('the stacked fraction is configurable', () => {
+    const rd = rack()
+    rd.slot_stacked_pct = 100                                     // volle Fachhöhe
+    rd.slots['1-1'] = { status: 'done', object_height_mm: 45 }
+    expect(autoSlot([], rd, 30, 50)).toBe('1-2')
   })
 
   it('a 170mm object below blocks three slots', () => {
     const rd = rack()
     rd.slots['1-1'] = { status: 'done', object_height_mm: 170 }
-    expect(autoSlot([], rd, 30, 50)).toBe('1-4')   // 170mm belegt 1-1..1-3
+    expect(autoSlot([], rd, 30, 50)).toBe('1-5')   // 1-1..1-3 belegt, 1-4 als Luft
+  })
+
+  it('nothing tall goes under the magazine', () => {
+    // Über dem obersten Fach liegt das Magazin — dort passt nur der Stapel-Anteil.
+    const rd = rack(1, 6)
+    rd.magazine_slot = 7
+    for (let s = 1; s <= 5; s++) rd.slots[`1-${s}`] = { status: 'done', object_height_mm: 20 }
+    expect(autoSlot([], rd, 60, 50)).toBe('1-0')   // 60mm passt nicht unter das Magazin
+    expect(autoSlot([], rd, 20, 50)).toBe('1-6')   // 20mm schon
   })
 
   it('returns sentinel 1-0 when the rack is full', () => {

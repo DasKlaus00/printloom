@@ -568,6 +568,17 @@ def _slot_tolerance(data: dict = None) -> float:
         return DEFAULT_SLOT_TOLERANCE_MM
 
 
+def _stacked_pct(data: dict = None) -> float:
+    """Nutzbarer Anteil der Fachhöhe, wenn im Fach darüber schon eine Platte liegt."""
+    if data is None:
+        try:
+            with open(SLOTS_PATH) as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    return _rack_logic.stacked_pct_of(data)
+
+
 # Dünne Wrapper um die reine Logik (app/services/rack_logic.py): ziehen die
 # konfigurierte Toleranz, sofern keine explizit übergeben wird.
 def _slots_needed(height_mm: float, slot_h: float, tol: float = None) -> int:
@@ -576,10 +587,13 @@ def _slots_needed(height_mm: float, slot_h: float, tol: float = None) -> int:
     return _slots_needed_base(height_mm, slot_h, tol)
 
 
-def _is_blocked_from_below(rack: int, slot_num: int, slots: dict, slot_h: float, tol: float = None) -> bool:
+def _is_blocked_from_below(rack: int, slot_num: int, slots: dict, slot_h: float,
+                           tol: float = None, pct: float = None) -> bool:
     if tol is None:
         tol = _slot_tolerance()
-    return _is_blocked_base(rack, slot_num, slots, slot_h, tol)
+    if pct is None:
+        pct = _stacked_pct()
+    return _is_blocked_base(rack, slot_num, slots, slot_h, tol, pct)
 
 
 def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optional[str]:
@@ -593,6 +607,8 @@ def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optio
         spr    = int(data.get("slots_per_rack", 6))
         slot_h = float(data.get("slot_height_mm", 50))
         tol    = _slot_tolerance(data)
+        pct    = _stacked_pct(data)
+        mag    = _rack_logic.magazine_slot_of(data)
         needed = _slots_needed(height_mm, slot_h, tol)
 
         # Exclude the current job so its placeholder slot isn't locked against itself
@@ -609,10 +625,18 @@ def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optio
             for s in range(1, spr - needed + 2):
                 if s + needed - 1 > spr:
                     break
+                # Liegt über dem obersten belegten Fach schon eine Platte (Magazin,
+                # Leerplatte, eingelagerter Druck), passt nur noch ein Bruchteil der
+                # Fachhöhe: die Platte fährt erhöht ein und braucht die Luft.
+                if not _rack_logic.fits_below(
+                        height_mm, needed,
+                        _rack_logic.slot_has_plate(r, s + needed, slots, mag, taken),
+                        slot_h, tol, pct):
+                    continue
                 if all(
                     slots.get(f"{r}-{s+i}", {}).get("status", "free") in ("free", "ready")
                     and f"{r}-{s+i}" not in taken
-                    and not _is_blocked_from_below(r, s + i, slots, slot_h, tol)
+                    and not _is_blocked_from_below(r, s + i, slots, slot_h, tol, pct)
                     for i in range(needed)
                 ):
                     return f"{r}-{s}"
@@ -634,8 +658,16 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
         nr      = int(data.get("num_racks", 3))
         max_h   = spr * slot_h * nr  # absolute max across all racks
 
-        if _slots_needed(height_mm, slot_h) > spr:
-            _log(f"⚠ Objekt {height_mm:.0f}mm zu hoch (max {spr * slot_h:.0f}mm/Rack) — Farm pausiert")
+        # Was maximal in EIN Regal passt: alle Fächer voll ausgenutzt — über dem
+        # obersten liegt aber das Magazin, dort gilt nur der Stapel-Anteil. Ohne
+        # diese Grenze würde ein zu hohes Objekt endlos auf ein Fach warten, das es
+        # nie geben kann („Regal voll", obwohl das Regal leer ist).
+        rack_max = _rack_logic.height_limit(
+            spr, slot_h, _slot_tolerance(data),
+            plate_above=_rack_logic.magazine_slot_of(data) > 0,
+            stacked_pct=_stacked_pct(data))
+        if _slots_needed(height_mm, slot_h) > spr or height_mm > rack_max:
+            _log(f"⚠ Objekt {height_mm:.0f}mm zu hoch (max {rack_max:.0f}mm/Rack) — Farm pausiert")
             _farm["paused"] = True
             _farm["error"]  = (f"Objekt {height_mm:.0f}mm zu hoch — im Drucker lassen, "
                                 "manuell entnehmen, dann fortsetzen")
