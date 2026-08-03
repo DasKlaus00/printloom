@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.13',
+    de: [
+      'Der Datei-Browser zeigt jetzt bei jeder Datei, wann sie hochgeladen wurde — Datum und Uhrzeit. Die Liste war schon immer nach Upload-Zeit sortiert (neueste oben); jetzt sieht man auch, warum sie so sortiert ist.',
+      'Dabei ist ein Fehler aufgefallen und mit behoben: Der Server schickte den Zeitpunkt ohne Zeitzone, obwohl es UTC war. Der Browser hätte ihn als Ortszeit gelesen und die Uhrzeit im Sommer um zwei Stunden zu früh angezeigt. Der Zeitpunkt trägt seine Zeitzone jetzt mit — das gilt rückwirkend auch für alle bereits hochgeladenen Dateien.',
+    ],
+    en: [
+      'The file browser now shows when each file was uploaded — date and time. The list has always been sorted by upload time (newest first); now you can see why it is in that order.',
+      'A bug turned up while doing this and was fixed along the way: the server sent the timestamp without a timezone even though it was UTC. The browser would have read it as local time and shown the clock two hours early in summer. The timestamp now carries its timezone — retroactively, for every file already uploaded.',
+    ],
+  },
+  {
     version: '1.1.12',
     de: [
       'DIE SEITE LÄDT WIEDER SOFORT. Wer die Datei-Bibliothek öffnete, brachte damit die ganze App ins Stocken: Printloom startete pro Datei gleichzeitig Vorschaubild, Zeitangabe UND den vollständigen Crash-Check — und der liest bei einer 40-MB-Datei den kompletten G-code. Diese Arbeit lief direkt im Herzstück des Servers, das nebenbei auch die Seite selbst ausliefert. Solange sie lief, kam nichts anderes durch: weiße Seite, Warten, Neuladen.',

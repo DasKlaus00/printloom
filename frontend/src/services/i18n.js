@@ -1543,6 +1543,7 @@ const EN_STRINGS = {
 
   /* ── File Library ── */
   'Vorschau anzeigen': 'Show preview',
+  'Hochgeladen am {0} um {1} Uhr': 'Uploaded on {0} at {1}',
   'AMS-Analyse': 'AMS analysis',
   'Keine Filament-Info gefunden': 'No filament info found',
   'Filament-Preset für AutoFarm': 'Filament preset for AutoFarm',

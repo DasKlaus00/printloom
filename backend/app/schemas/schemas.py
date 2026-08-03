@@ -1,7 +1,20 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
+
+
+def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Zeitstempel als UTC KENNZEICHNEN, bevor er den Server verlässt.
+
+    In der Datenbank stehen sie ohne Zeitzone (Column-Default `datetime.utcnow`),
+    sind aber UTC. Ohne Kennzeichnung liest JavaScript `new Date("…T18:14:55")` als
+    ORTSZEIT — die Anzeige lag damit um den UTC-Abstand daneben (im Sommer 2 Std.).
+    Mit dem angehängten Offset stimmt sie, auch für alle bereits gespeicherten
+    Einträge — die stehen ja schon in UTC da."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
 class PrinterType(str, Enum):
     BAMBU_LAB = "bambu_lab"
@@ -100,6 +113,8 @@ class FileUploadResponse(BaseModel):
     tags: Optional[str] = None
     material: Optional[str] = None
     color: Optional[str] = None
+
+    _utc = field_serializer("uploaded_at")(_as_utc)
 
     class Config:
         from_attributes = True

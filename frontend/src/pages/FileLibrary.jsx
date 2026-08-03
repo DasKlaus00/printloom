@@ -1,10 +1,29 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { fileService, folderService, printerService, deviceService, filamentService, autofarmService } from '../services/api'
 import { useAutoRefresh, usePageActive } from '../services/useAutoRefresh'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, locale } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 import { colorLabel } from '../services/colorNames'
 import { amsAutoMap } from '../services/amsUtils'
+
+/* Hochgeladen-am: Datum + Uhrzeit in der Zeitzone des Betrachters.
+   Der Server schickt UTC mit Kennzeichnung (…Z) — new Date() rechnet damit
+   selbst um; ohne die Kennzeichnung läse der Browser es als Ortszeit und läge
+   um den UTC-Abstand daneben (siehe schemas._as_utc). */
+function UploadedAt({ iso }) {
+  const { tr } = useLanguage()
+  if (!iso) return null
+  const d = new Date(iso)
+  if (isNaN(d)) return null
+  const datum = d.toLocaleDateString(locale(), { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const zeit  = d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })
+  return (
+    <span className="text-[10px] text-surface-600 font-mono whitespace-nowrap"
+          title={tr('Hochgeladen am {0} um {1} Uhr', datum, zeit)}>
+      🕒 {datum} {zeit}
+    </span>
+  )
+}
 
 function ColorDot({ hex }) {
   if (!hex) return <span className="w-3 h-3 rounded-full bg-surface-700 inline-block" />
@@ -464,6 +483,7 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
 
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] text-surface-600 font-mono">{(file.file_size / 1024).toFixed(1)} KB · ID {file.id}</span>
+            <UploadedAt iso={file.uploaded_at} />
             {isPrintable && <MetaChips meta={meta} />}
             {isPrintable && <CrashWarning fileId={file.id} />}
             {/* Multi-Plate-Badge: aufklappen → Platten einzeln (Zeit/Höhe/Druck/Queue) */}
