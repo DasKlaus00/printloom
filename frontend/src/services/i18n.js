@@ -414,6 +414,34 @@ const EN_STRINGS = {
     '{0} is open (no door) — door actions omitted. Remove the door steps from the farm sequence (Sequence Editor).',
   '📦 Regal & Greifen': '📦 Rack & grab',
   '▾ ausblenden': '▾ hide', '▸ anzeigen': '▸ show',
+
+  // ── Stresstest (Drucker-Tab) ──
+  '{0} s': '{0} s',
+  '{0} min {1} s': '{0} min {1} s',
+  '{0} h {1} min': '{0} h {1} min',
+  '{0} mm': '{0} mm',
+  '🏋 Stresstest (Dauerlauf)': '🏋 Stress test (endurance run)',
+  'Alle liegenden Platten ins entfernteste Regal umlagern.':
+    'Move every plate lying in a rack to the farthest rack.',
+  '{0} Platte(n) → Regal {1} · geschätzt {2}': '{0} plate(s) → rack {1} · estimated {2}',
+  'Nichts umzulagern — es liegt keine Platte außerhalb von Regal {0}.':
+    'Nothing to move — no plate lies outside rack {0}.',
+  'Holt jede Platte, die in einem Regal liegt, und legt sie ins am weitesten vom Drucker entfernte Regal. Das sind die längsten Wege der Anlage, viele Male hintereinander — der Test für Riemen, Endschalter, Wiederholgenauigkeit und die eingemessene Geometrie, ganz ohne Druck.':
+    'Fetches every plate lying in a rack and puts it into the rack farthest from the printer. Those are the longest travels the machine has, many times over — the test for belts, endstops, repeatability and the geometry you measured in, without printing anything.',
+  'Nicht angefasst werden: das Magazin (dort liegt ein Stapel in EINEM Fach — der lässt sich nicht auf einzelne Fächer verteilen und ist der Nachschub der Farm), gesperrte Fächer und Platten, die schon im Zielregal liegen.':
+    'Left alone: the magazine (a whole stack sits in ONE slot — it cannot be spread across individual slots and it is the farm\'s supply), locked slots, and plates already in the target rack.',
+  'Stresstest starten?': 'Start the stress test?',
+  '{0} Platte(n) werden nacheinander in Regal {1} umgelagert — geschätzt {2}. Der Arm fährt dabei durchgehend. Steht jemand in der Anlage oder liegt etwas im Weg, jetzt nicht starten.':
+    '{0} plate(s) will be moved into rack {1} one after another — estimated {2}. The arm keeps moving throughout. If anyone is inside the machine or something is in the way, do not start now.',
+  'Stoppt nach der laufenden Bewegung…': 'Stopping after the current movement…',
+  'leere Platte': 'empty plate',
+  'Fach {0} bleibt liegen: {1}': 'Slot {0} stays put: {1}',
+  'Abgebrochen: {0}': 'Aborted: {0}',
+  '■ Stoppen': '■ Stop',
+  '▶ Stresstest starten': '▶ Start stress test',
+  '↻ Plan neu berechnen': '↻ Recalculate plan',
+  'Die Dauer ist hochgerechnet: Printloom erzeugt den G-code, den der Test wirklich fährt, und rechnet Strecke ÷ Vorschub plus Zuschlag fürs Beschleunigen. Die echte Zeit hängt an deiner Klipper-Beschleunigung und liegt eher darüber.':
+    'The duration is extrapolated: Printloom generates the G-code the test would actually drive and computes distance ÷ feedrate plus an allowance for acceleration. The real time depends on your Klipper acceleration and will tend to be longer.',
   'Start-X (Regal 1)': 'Start X (rack 1)', 'x_unclamp': 'x_unclamp', 'first_z_flat': 'first_z_flat',
   'Z-Schritt = +30': 'Z step = +30', 'Regal-Versatz X (mm)': 'Rack offset X (mm)', 'rack_x_gap': 'rack_x_gap',
   'Regale': 'Racks', 'Lager-Fächer/Regal': 'Storage slots/rack',

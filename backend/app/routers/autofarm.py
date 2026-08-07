@@ -30,6 +30,7 @@ from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _
 from app.services import hms
 from app.services import rack_logic as _rack_logic
 from app.services import geometry_check as _geometry_check
+from app.services import stress_test as _stress_service
 from app.services.rack_logic import (
     slots_needed as _slots_needed_base,
     is_blocked_from_below as _is_blocked_base,
@@ -480,7 +481,11 @@ def _set_job(job_id: int, updates: dict):
             return
 
 
-def _rack_update(slot: str, status: str, file_name: str = None, object_height_mm: float = None):
+def _rack_update(slot: str, status: str, file_name: str = None, object_height_mm: float = None,
+                 empty_plate: bool = None):
+    """Fach-Zustand schreiben. `empty_plate` nur mitgeben, wenn sich die Markierung
+    „hier liegt eine leere Platte" wirklich ändert (Aufbau ohne Magazin) — sonst
+    bleibt sie, wie sie ist."""
     try:
         if not os.path.exists(SLOTS_PATH):
             return
@@ -496,6 +501,8 @@ def _rack_update(slot: str, status: str, file_name: str = None, object_height_mm
             s["object_height_mm"] = object_height_mm
         if status == "free":
             s["object_height_mm"] = None
+        if empty_plate is not None:
+            s["empty_plate"] = bool(empty_plate)
         storage.write_json(SLOTS_PATH, data)
     except Exception as e:
         logger.warning(f"rack slot update failed: {e}")
@@ -3437,6 +3444,111 @@ async def stop_test_cycle():
 @router.get("/test-cycle/status")
 async def get_test_cycle_status():
     return {**_test_state, "running": _test_running}
+
+
+# ── Stresstest: alles ins entfernteste Regal umlagern ────────────────────────
+# Fährt die längsten Wege der Anlage viele Male am Stück — Riemen, Endschalter,
+# Wiederholgenauigkeit und die eingestellte Geometrie unter Dauerlast, ohne einen
+# einzigen Druck. Der PLAN steht in app/services/stress_test.py (reine Rechnung,
+# ohne Bewegung); hier wird er nur abgefahren.
+
+_stress_task: Optional[asyncio.Task] = None
+_stress = {"running": False, "done": 0, "total": 0, "step": "",
+           "target_rack": 0, "error": None, "moved": [], "started_at": None}
+
+
+def _stress_geometry() -> dict:
+    return _farm.get("geometry") or _load_farm_geometry()
+
+
+async def _run_stress_test(moves: list, ziel: int):
+    """Jede Platte einzeln: greifen, hinfahren, ablegen, Buchhaltung nachziehen.
+
+    Nach JEDEM Schritt wird das Fach umgebucht statt erst am Ende — bricht der
+    Test ab (Stopp, Fehler, Stromausfall), stimmt der Regal-Stand trotzdem mit
+    der Wirklichkeit überein. Sonst wüsste danach niemand, wo die Platten liegen."""
+    geom = _stress_geometry()
+    printer = _farm_printer(geom)
+    _stress.update({"running": True, "done": 0, "total": len(moves), "error": None,
+                    "target_rack": ziel, "moved": [], "started_at": datetime.now().isoformat()})
+    _log(f"🏋 Stresstest: {len(moves)} Platte(n) → Regal {ziel}")
+    try:
+        for i, m in enumerate(moves):
+            if not _stress["running"]:
+                _log("🏋 Stresstest abgebrochen")
+                break
+            _stress["step"] = f"{m['from']} → {m['to']}"
+            _stress["done"] = i
+            _log(f"🏋 {i + 1}/{len(moves)}: {m['from']} → {m['to']}")
+
+            await _do_macro(_motion.build_op(geom, "grab", rack=m["from_rack"],
+                                             slot=m["from_slot"], printer=printer))
+            # Platte ist im Greifer → Herkunftsfach ist ab jetzt leer, und eine
+            # etwaige Leerplatten-Markierung gehört dort weg.
+            _rack_update(m["from"], "free", empty_plate=False)
+            _set_arm("full", m["from"])
+
+            await _do_macro(_motion.build_op(geom, "store", rack=m["to_rack"],
+                                             slot=m["to_slot"], printer=printer))
+            leer = m["kind"] == "leerplatte"
+            _rack_update(m["to"], "free" if leer else "done",
+                         object_height_mm=None if leer else (m.get("height_mm") or None),
+                         empty_plate=leer)
+            _set_arm("none")
+            _stress["moved"].append(m)
+            _stress["done"] = i + 1
+        else:
+            _log("🏋 Stresstest abgeschlossen")
+    except Exception as e:
+        _stress["error"] = str(e)
+        _log(f"🏋 ⚠ Stresstest abgebrochen: {e}")
+    finally:
+        _stress["running"] = False
+        _stress["step"] = ""
+
+
+def _stress_plan() -> dict:
+    return _stress_service.plan(_rack_data(), _stress_geometry(),
+                                printer=_farm_printer(_stress_geometry()))
+
+
+@router.get("/stress-test/plan")
+async def stress_test_plan():
+    """Vorschau: was würde wohin, und wie lange dauert es? Bewegt nichts."""
+    try:
+        return {**_stress_plan(), "running": _stress["running"]}
+    except Exception as e:
+        raise HTTPException(400, f"Stresstest-Plan nicht möglich: {e}")
+
+
+@router.post("/stress-test")
+async def start_stress_test():
+    global _stress_task
+    if _farm["running"]:
+        raise HTTPException(400, "Auto Farm läuft — Stresstest nicht möglich")
+    if _test_running:
+        raise HTTPException(409, "Test-Phase läuft bereits")
+    if _stress["running"]:
+        raise HTTPException(409, "Stresstest läuft bereits")
+    plan = _stress_plan()
+    if not plan["moves"]:
+        raise HTTPException(400, "Nichts umzulagern — es liegt keine Platte außerhalb "
+                                 f"von Regal {plan['target_rack']}.")
+    _stress_task = asyncio.create_task(_run_stress_test(plan["moves"], plan["target_rack"]))
+    return {"success": True, **plan}
+
+
+@router.post("/stress-test/stop")
+async def stop_stress_test():
+    """Anhalten. Die laufende Bewegung wird NICHT unterbrochen — sie zu Ende fahren
+    zu lassen ist sicherer, als den Arm mit einer Platte im Griff stehen zu lassen."""
+    _stress["running"] = False
+    return {"success": True}
+
+
+@router.get("/stress-test/status")
+async def stress_test_status():
+    return dict(_stress)
 
 
 @router.post("/pause")

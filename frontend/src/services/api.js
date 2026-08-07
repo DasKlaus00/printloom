@@ -277,6 +277,12 @@ export const autofarmService = {
   getTimeline:       (hours = 24) => api.get('/autofarm/timeline', { params: { hours } }),
   getFileFilaments:  (id, plate) => api.get(`/autofarm/file_filaments/${id}`, plate != null ? { params: { plate } } : undefined),
   setFileAms:        (id, ams_map) => api.put(`/autofarm/file_ams/${id}`, { ams_map }),
+  // Stresstest: alle liegenden Platten ins entfernteste Regal umlagern.
+  // `plan` bewegt nichts — nur Vorschau samt hochgerechneter Dauer.
+  stressPlan:        ()      => api.get('/autofarm/stress-test/plan'),
+  stressStart:       ()      => api.post('/autofarm/stress-test'),
+  stressStop:        ()      => api.post('/autofarm/stress-test/stop'),
+  stressStatus:      ()      => api.get('/autofarm/stress-test/status'),
   testCycle:         ()      => api.post('/autofarm/test-cycle'),
   testCycleStop:     ()      => api.post('/autofarm/test-cycle/stop'),
   testCycleStatus:   ()      => api.get('/autofarm/test-cycle/status'),

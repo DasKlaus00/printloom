@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.17',
+    de: [
+      'NEU: STRESSTEST im Drucker-Tab. Er holt jede Platte, die in einem Regal liegt, und legt sie ins am weitesten vom Drucker entfernte Regal. Das sind die längsten Wege, die die Anlage kennt, viele Male hintereinander — der Dauerlauf für Riemen, Endschalter, Wiederholgenauigkeit und die eingemessene Geometrie, ganz ohne einen einzigen Druck.',
+      'Vor dem Start steht da, was passieren wird: welche Platte in welches Fach wandert, wie viele es sind und wie lange es ungefähr dauert. Die Zeit ist nicht geraten — Printloom erzeugt den G-code, den der Test wirklich fahren würde, und rechnet Strecke ÷ Vorschub, plus einen Zuschlag fürs Beschleunigen und Bremsen. Die echte Zeit hängt an deiner Klipper-Beschleunigung und liegt eher etwas darüber.',
+      'Der Plan hält sich an dieselben Kollisionsregeln wie die Farm, und er prüft sich dabei gegen sich selbst: eine Platte, die der Test gerade erst abgelegt hat, zählt für die nächste Entscheidung schon als liegend. Sonst könnte er die zweite Platte in das Teil stellen, das er eben selbst dorthin gelegt hat.',
+      'Bewusst nicht angefasst: das Magazin (dort liegt ein Stapel in EINEM Fach — der lässt sich nicht auf einzelne Fächer verteilen, und er ist der Nachschub der Farm), gesperrte Fächer, und Platten, die schon im Zielregal liegen (ein Umzug im selben Regal wäre der kürzeste denkbare Weg und damit für einen Stresstest wertlos).',
+      'Nach JEDER Platte wird der Regal-Stand nachgezogen, nicht erst am Ende. Bricht der Test ab — Stopp, Fehler, Stromausfall — stimmt die Anzeige trotzdem mit der Wirklichkeit überein. Was nicht mehr passt, bleibt liegen und wird benannt, statt still zu verschwinden.',
+    ],
+    en: [
+      'NEW: STRESS TEST in the printer tab. It fetches every plate lying in a rack and puts it into the rack farthest from the printer. Those are the longest travels the machine has, many times over — an endurance run for belts, endstops, repeatability and the geometry you measured in, without printing anything at all.',
+      'Before you start, it shows what will happen: which plate goes into which slot, how many there are and roughly how long it takes. The time is not guessed — Printloom generates the G-code the test would actually drive and computes distance ÷ feedrate, plus an allowance for accelerating and braking. The real time depends on your Klipper acceleration and will tend to be a little longer.',
+      'The plan follows the same collision rules as the farm, and it checks itself against itself: a plate the test has only just put down already counts as lying there for the next decision. Otherwise it could place the second plate into the part it had just put there.',
+      'Deliberately left alone: the magazine (a whole stack sits in ONE slot — it cannot be spread across individual slots, and it is the farm\'s supply), locked slots, and plates already in the target rack (moving within the same rack would be the shortest possible travel and therefore worthless for a stress test).',
+      'The rack state is updated after EVERY plate, not at the end. If the test stops — button, error, power cut — the display still matches reality. Anything that no longer fits stays put and is named, instead of quietly disappearing.',
+    ],
+  },
+  {
     version: '1.1.16',
     de: [
       'UPDATE-SCHLEIFE BEHOBEN. Nach einem Update konnte sich die App in einer Endlosschleife aus Neuladen festfahren und war nicht mehr bedienbar.',

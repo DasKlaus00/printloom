@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useLanguage, trProblem } from '../services/i18n'
-import { controlService, rackManagerService, deviceService, printerService } from '../services/api'
+import { controlService, rackManagerService, deviceService, printerService,
+         autofarmService } from '../services/api'
+import { confirmDialog } from '../services/confirm'
 import { findPrinter } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
 import TeachIn from '../components/TeachIn'
@@ -75,6 +77,158 @@ function Section({ id, title, subtitle, badge, open, onToggle, children, tone = 
       </button>
       {open && <div className="space-y-3 pt-1">{children}</div>}
     </div>
+  )
+}
+
+/* ── Stresstest ──────────────────────────────────────────────────────────────
+   Holt jede Platte, die in einem Regal liegt, und legt sie ins am weitesten
+   entfernte Regal. Das sind die längsten Wege, die die Anlage kennt, viele Male
+   hintereinander — genau das, was Riemen, Endschalter und die eingemessene
+   Geometrie auf die Probe stellt, ohne einen einzigen Druck zu starten.
+
+   Die Dauer ist HOCHGERECHNET: das Backend erzeugt den G-code, den der Test
+   wirklich fahren würde, und summiert Strecke ÷ Vorschub (plus Zuschlag fürs
+   Beschleunigen). Keine Messung, aber auch keine geratene Zahl. */
+function dauerText(sekunden, tr) {
+  const s = Math.max(0, Math.round(sekunden || 0))
+  if (s < 60) return tr('{0} s', s)
+  const min = Math.floor(s / 60)
+  if (min < 60) return tr('{0} min {1} s', min, s % 60)
+  return tr('{0} h {1} min', Math.floor(min / 60), min % 60)
+}
+
+function StressTest({ open, onToggle, busy }) {
+  const { tr } = useLanguage()
+  const [plan, setPlan]   = useState(null)
+  const [state, setState] = useState(null)
+  const [msg, setMsg]     = useState('')
+  const laeuft = !!state?.running
+
+  const ladePlan = () => autofarmService.stressPlan()
+    .then(r => { setPlan(r.data); setMsg('') })
+    .catch(e => setMsg(e.response?.data?.detail || e.message))
+
+  useEffect(() => { if (open) ladePlan() }, [open])
+
+  // Während der Test läuft, den Fortschritt verfolgen — sonst nur einmal beim
+  // Öffnen nachsehen (ein Poll für einen ruhenden Knopf wäre reine Dauerlast).
+  useEffect(() => {
+    if (!open) return
+    let timer
+    const tick = () => autofarmService.stressStatus()
+      .then(r => {
+        setState(r.data)
+        timer = setTimeout(tick, r.data?.running ? 2000 : 15000)
+      })
+      .catch(() => { timer = setTimeout(tick, 15000) })
+    tick()
+    return () => clearTimeout(timer)
+  }, [open])
+
+  const start = async () => {
+    const anzahl = plan?.moves?.length ?? 0
+    const ok = await confirmDialog({
+      title: tr('Stresstest starten?'),
+      message: tr('{0} Platte(n) werden nacheinander in Regal {1} umgelagert — geschätzt {2}. Der Arm fährt dabei durchgehend. Steht jemand in der Anlage oder liegt etwas im Weg, jetzt nicht starten.',
+                  anzahl, plan?.target_rack, dauerText(plan?.seconds, tr)),
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      const r = await autofarmService.stressStart()
+      setState({ running: true, done: 0, total: r.data?.moves?.length ?? anzahl,
+                 target_rack: r.data?.target_rack })
+      setMsg('')
+    } catch (e) { setMsg(e.response?.data?.detail || e.message) }
+  }
+
+  const stopp = async () => {
+    try { await autofarmService.stressStop(); setMsg(tr('Stoppt nach der laufenden Bewegung…')) }
+    catch (e) { setMsg(e.response?.data?.detail || e.message) }
+  }
+
+  const anzahl = plan?.moves?.length ?? 0
+  return (
+    <Section id="sec-stress" title={tr('🏋 Stresstest (Dauerlauf)')}
+      badge={laeuft
+        ? <span className="badge badge-blue">{tr('{0}/{1}', state.done ?? 0, state.total ?? 0)}</span>
+        : anzahl > 0
+          ? <span className="badge badge-amber">{tr('{0} Platten', anzahl)}</span>
+          : null}
+      subtitle={plan
+        ? (anzahl > 0
+            ? tr('{0} Platte(n) → Regal {1} · geschätzt {2}', anzahl, plan.target_rack, dauerText(plan.seconds, tr))
+            : tr('Nichts umzulagern — es liegt keine Platte außerhalb von Regal {0}.', plan.target_rack))
+        : tr('Alle liegenden Platten ins entfernteste Regal umlagern.')}
+      open={open} onToggle={onToggle}>
+
+      <p className="text-[10px] text-surface-500 leading-relaxed">
+        {tr('Holt jede Platte, die in einem Regal liegt, und legt sie ins am weitesten vom Drucker entfernte Regal. Das sind die längsten Wege der Anlage, viele Male hintereinander — der Test für Riemen, Endschalter, Wiederholgenauigkeit und die eingemessene Geometrie, ganz ohne Druck.')}
+      </p>
+      <p className="text-[10px] text-surface-600 leading-relaxed">
+        {tr('Nicht angefasst werden: das Magazin (dort liegt ein Stapel in EINEM Fach — der lässt sich nicht auf einzelne Fächer verteilen und ist der Nachschub der Farm), gesperrte Fächer und Platten, die schon im Zielregal liegen.')}
+      </p>
+
+      {plan?.moves?.length > 0 && (
+        <div className="rounded-lg border border-surface-700/60 bg-surface-900/50 divide-y divide-surface-800/60 max-h-52 overflow-y-auto">
+          {plan.moves.map((m, i) => (
+            <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] font-mono">
+              <span className="text-surface-600 w-6 shrink-0">{i + 1}</span>
+              <span className="text-surface-300">{m.from}</span>
+              <span className="text-surface-600">→</span>
+              <span className="text-blue-300">{m.to}</span>
+              <span className="text-surface-600 ml-auto">
+                {m.kind === 'leerplatte' ? tr('leere Platte') : tr('{0} mm', Math.round(m.height_mm || 0))}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {plan?.skipped?.length > 0 && (
+        <div className="space-y-0.5">
+          {plan.skipped.map((s, i) => (
+            <p key={i} className="text-[10px] text-amber-400/80">
+              {tr('Fach {0} bleibt liegen: {1}', s.from, s.reason)}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {laeuft && (
+        <div className="px-3 py-2 rounded-lg bg-blue-950/40 border border-blue-800/60 space-y-1">
+          <p className="text-[11px] text-blue-300 font-mono">
+            {tr('{0}/{1} — {2}', state.done ?? 0, state.total ?? 0, state.step || '…')}
+          </p>
+          <div className="h-1 rounded bg-surface-800 overflow-hidden">
+            <div className="h-full bg-blue-500 transition-all"
+              style={{ width: `${Math.round(100 * (state.done || 0) / Math.max(1, state.total || 1))}%` }} />
+          </div>
+        </div>
+      )}
+      {state?.error && !laeuft && (
+        <p className="text-[11px] text-red-400">{tr('Abgebrochen: {0}', state.error)}</p>
+      )}
+      {msg && <p className="text-[11px] text-amber-400">{msg}</p>}
+
+      <div className="flex items-center gap-2 flex-wrap">
+        {laeuft ? (
+          <button onClick={stopp} className="btn btn-danger btn-sm text-[11px]">
+            {tr('■ Stoppen')}
+          </button>
+        ) : (
+          <button onClick={start} disabled={busy || anzahl === 0}
+            className="btn btn-primary btn-sm text-[11px] disabled:opacity-50">
+            {tr('▶ Stresstest starten')}
+          </button>
+        )}
+        <button onClick={ladePlan} disabled={laeuft}
+          className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('↻ Plan neu berechnen')}</button>
+      </div>
+      <p className="text-[9px] text-surface-600">
+        {tr('Die Dauer ist hochgerechnet: Printloom erzeugt den G-code, den der Test wirklich fährt, und rechnet Strecke ÷ Vorschub plus Zuschlag fürs Beschleunigen. Die echte Zeit hängt an deiner Klipper-Beschleunigung und liegt eher darüber.')}
+      </p>
+    </Section>
   )
 }
 
@@ -1316,6 +1470,9 @@ export default function Drucker() {
           {tr('Geprüft werden alle Operationen über alle Drucker, Regale und das erste/letzte Fach — dort liegen die Extremwerte. Ob eine Position mechanisch passt (z. B. genau vor dem Fach), kann nur das Einmessen zeigen.')}
         </p>
       </Section>
+
+      {/* ── Dauerlauf: die eingestellte Geometrie unter Last ── */}
+      <StressTest open={openSec === 'stress'} onToggle={() => toggleSec('stress')} busy={jog.busy} />
 
       <p className="text-[10px] text-surface-600 px-1">
         {tr('Printloom speichert diese Werte und sendet den G-code direkt (nur OTTOEJECT_HOME bleibt Geräte-Macro). Für die Auto-Farm wirken sie erst, wenn „Farm nutzt diese Position" für die jeweilige Operation aktiv ist — sonst fährt die Farm weiter die Geräte-Macros.')}
