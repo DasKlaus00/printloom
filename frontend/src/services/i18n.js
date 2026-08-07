@@ -1132,6 +1132,7 @@ const EN_STRINGS = {
   'Beta installieren / wechseln': 'Install / switch beta',
   'Update installieren': 'Install update',
   'Neu installieren': 'Reinstall',
+  'Trotzdem neu installieren / Kanal wechseln': 'Reinstall anyway / switch channel',
   '⚠ Vor dem Update ein Backup machen': '⚠ Make a backup before updating',
   'Ein Update kann Einstellungen verändern. Exportiere zur Sicherheit zuerst ein Backup deiner Konfiguration (Geräte, Rack, Sequenzen, Zeitpläne) — dann erst aktualisieren.':
     'An update can change settings. To be safe, first export a backup of your configuration (devices, rack, sequences, schedules) — only then update.',

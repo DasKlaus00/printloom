@@ -442,7 +442,7 @@ docker compose up -d`}
         )}
 
         {/* Action buttons (both channels) */}
-        <div className="flex gap-3 flex-wrap">
+        <div className="flex gap-3 flex-wrap items-center">
           <button
             onClick={() => checkVersion(false, true)}
             disabled={!canUpdate}
@@ -450,18 +450,39 @@ docker compose up -d`}
           >
             {checking ? tr('Prüfe…') : (info?.online_disabled ? tr('Jetzt prüfen (einmalig)') : tr('Auf Updates prüfen'))}
           </button>
+
+          {/* Der auffordernde Knopf erscheint NUR, wenn es wirklich etwas zu
+              installieren gibt. Vorher stand hier dauerhaft ein blauer Knopf mit
+              „Neu installieren", obwohl die App aktuell war — das sieht aus wie
+              eine offene Aufgabe, ist aber keine.
+
+              Ohne Update bleibt der Weg als unauffälliger Link offen. Er wird
+              gebraucht: der KANAL-Wechsel zurück von Beta auf Stabil meldet nie
+              ein „Update" (die Stabil-Version ist ja älter), und eine
+              Neuinstallation ist manchmal die Reparatur. Auch wenn die Prüfung
+              selbst scheitert (GitHub nicht erreichbar), soll man noch handeln
+              können. */}
           {!confirmUpdate && !isNativeLinux && !['done', 'running'].includes(phase) && (
-            <button
-              onClick={() => setConfirmUpdate(true)}
-              disabled={!canUpdate}
-              className="btn-primary text-sm"
-            >
-              {updating
-                ? tr('Aktualisiert…')
-                : isBeta
-                  ? tr('Beta installieren / wechseln')
-                  : (info?.update_available ? tr('Update installieren') : tr('Neu installieren'))}
-            </button>
+            info?.update_available ? (
+              <button
+                onClick={() => setConfirmUpdate(true)}
+                disabled={!canUpdate}
+                className="btn-primary text-sm"
+              >
+                {updating
+                  ? tr('Aktualisiert…')
+                  : isBeta ? tr('Beta installieren / wechseln') : tr('Update installieren')}
+              </button>
+            ) : (
+              <button
+                onClick={() => setConfirmUpdate(true)}
+                disabled={!canUpdate}
+                className="text-xs text-surface-500 hover:text-surface-300 underline
+                           underline-offset-2 disabled:opacity-50"
+              >
+                {updating ? tr('Aktualisiert…') : tr('Trotzdem neu installieren / Kanal wechseln')}
+              </button>
+            )
           )}
         </div>
 

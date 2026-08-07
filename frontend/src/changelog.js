@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.15',
+    de: [
+      'Der blaue „Update installieren"-Knopf unter System erscheint jetzt nur noch, wenn es wirklich ein Update gibt. Vorher stand er dauerhaft da und bot „Neu installieren" an — das sah aus wie eine offene Aufgabe, war aber keine.',
+      'Ist alles aktuell, steht an der Stelle nur noch ein unauffälliger Link „Trotzdem neu installieren / Kanal wechseln". Der wird gebraucht: Der Weg von Beta zurück auf Stabil meldet nie ein „Update" (die stabile Version ist ja älter) — ohne diesen Link käme man aus dem Beta-Kanal nicht mehr heraus. Auch wenn die Prüfung selbst scheitert, weil GitHub nicht erreichbar ist, bleibt man damit handlungsfähig.',
+    ],
+    en: [
+      'The blue "Install update" button under System now only appears when there actually is an update. Before it sat there permanently offering "Reinstall" — which looked like an open task but was not one.',
+      'When everything is current, all that remains in its place is a quiet "Reinstall anyway / switch channel" link. It is needed: going from beta back to stable never reports an "update" (the stable version is older, after all) — without that link there would be no way out of the beta channel. It also keeps you able to act when the check itself fails because GitHub is unreachable.',
+    ],
+  },
+  {
     version: '1.1.14',
     de: [
       'Die Smart-Steckdose lässt sich jetzt direkt oben in der Kopfleiste schalten — neben den Status-Anzeigen für Drucker und Klipper. Kein Umweg mehr über Konfiguration → Geräte.',
