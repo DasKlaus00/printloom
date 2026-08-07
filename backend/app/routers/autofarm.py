@@ -3446,32 +3446,53 @@ async def get_test_cycle_status():
     return {**_test_state, "running": _test_running}
 
 
-# ── Stresstest: alles ins entfernteste Regal umlagern ────────────────────────
-# Fährt die längsten Wege der Anlage viele Male am Stück — Riemen, Endschalter,
-# Wiederholgenauigkeit und die eingestellte Geometrie unter Dauerlast, ohne einen
-# einzigen Druck. Der PLAN steht in app/services/stress_test.py (reine Rechnung,
-# ohne Bewegung); hier wird er nur abgefahren.
+# ── Stresstest: die Magazine leerräumen ──────────────────────────────────────
+# Platte aus Magazin 1 holen, in ein GEWÜRFELTES freies Fach legen, wiederholen,
+# bis alle Magazine leer sind. Die zufälligen Ziele ergeben lauter unterschiedlich
+# lange Wege statt derselben Strecke im Kreis — das ist der Punkt. Der PLAN steht
+# in app/services/stress_test.py (reine Rechnung, ohne Bewegung); hier wird er
+# nur abgefahren.
 
 _stress_task: Optional[asyncio.Task] = None
 _stress = {"running": False, "done": 0, "total": 0, "step": "",
-           "target_rack": 0, "error": None, "moved": [], "started_at": None}
+           "error": None, "started_at": None}
 
 
 def _stress_geometry() -> dict:
     return _farm.get("geometry") or _load_farm_geometry()
 
 
-async def _run_stress_test(moves: list, ziel: int):
-    """Jede Platte einzeln: greifen, hinfahren, ablegen, Buchhaltung nachziehen.
+def _magazine_take(rack: int) -> None:
+    """Zähler GENAU dieses Magazins um eins senken. Bewusst nicht
+    _decrement_magazine(): das nimmt „das erste Regal mit Bestand" und würde beim
+    Stresstest von der geplanten Reihenfolge abweichen können."""
+    try:
+        if not os.path.exists(SLOTS_PATH):
+            return
+        with open(SLOTS_PATH) as f:
+            d = json.load(f)
+        counts = d.get("magazine_counts") or []
+        i = int(rack) - 1
+        if 0 <= i < len(counts):
+            d["magazine_counts"][i] = max(0, int(counts[i]) - 1)
+            storage.write_json(SLOTS_PATH, d)
+            _log(f"📦 Magazin R{rack}: {d['magazine_counts'][i]} Platten verbleibend")
+    except Exception as e:
+        logger.warning(f"stress magazine take failed: {e}")
 
-    Nach JEDEM Schritt wird das Fach umgebucht statt erst am Ende — bricht der
-    Test ab (Stopp, Fehler, Stromausfall), stimmt der Regal-Stand trotzdem mit
-    der Wirklichkeit überein. Sonst wüsste danach niemand, wo die Platten liegen."""
+
+async def _run_stress_test(moves: list):
+    """Jede Platte einzeln: aus dem Magazin greifen, hinfahren, ablegen, buchen.
+
+    Nach JEDEM Schritt wird gebucht statt erst am Ende — bricht der Test ab
+    (Stopp, Fehler, Stromausfall), stimmen Magazin-Bestand und Fach-Belegung
+    trotzdem mit der Wirklichkeit überein. Sonst wüsste danach niemand, wo die
+    Platten liegen."""
     geom = _stress_geometry()
     printer = _farm_printer(geom)
     _stress.update({"running": True, "done": 0, "total": len(moves), "error": None,
-                    "target_rack": ziel, "moved": [], "started_at": datetime.now().isoformat()})
-    _log(f"🏋 Stresstest: {len(moves)} Platte(n) → Regal {ziel}")
+                    "step": "", "started_at": datetime.now().isoformat()})
+    _log(f"🏋 Stresstest: {len(moves)} Platte(n) aus den Magazinen verteilen")
     try:
         for i, m in enumerate(moves):
             if not _stress["running"]:
@@ -3481,24 +3502,27 @@ async def _run_stress_test(moves: list, ziel: int):
             _stress["done"] = i
             _log(f"🏋 {i + 1}/{len(moves)}: {m['from']} → {m['to']}")
 
-            await _do_macro(_motion.build_op(geom, "grab", rack=m["from_rack"],
+            # Aus dem Stapel wird FLACH gegriffen (grab_magazine, ohne Anheben);
+            # eine einzeln liegende Leerplatte dagegen normal.
+            griff = "grab_magazine" if m.get("from_magazine") else "grab"
+            await _do_macro(_motion.build_op(geom, griff, rack=m["from_rack"],
                                              slot=m["from_slot"], printer=printer))
-            # Platte ist im Greifer → Herkunftsfach ist ab jetzt leer, und eine
-            # etwaige Leerplatten-Markierung gehört dort weg.
-            _rack_update(m["from"], "free", empty_plate=False)
+            if m.get("from_magazine"):
+                _magazine_take(m["from_rack"])
+            else:
+                _rack_update(m["from"], "free", empty_plate=False)
             _set_arm("full", m["from"])
 
             await _do_macro(_motion.build_op(geom, "store", rack=m["to_rack"],
                                              slot=m["to_slot"], printer=printer))
-            leer = m["kind"] == "leerplatte"
-            _rack_update(m["to"], "free" if leer else "done",
-                         object_height_mm=None if leer else (m.get("height_mm") or None),
-                         empty_plate=leer)
+            # Im Fach liegt jetzt eine Platte — als belegt buchen, sonst plant die
+            # Farm dort einen Druck hinein. „Stresstest" in der Notiz sagt, warum.
+            _rack_update(m["to"], "done", file_name="Stresstest",
+                         empty_plate=not _magazine_slot_cfg())
             _set_arm("none")
-            _stress["moved"].append(m)
             _stress["done"] = i + 1
         else:
-            _log("🏋 Stresstest abgeschlossen")
+            _log("🏋 Stresstest abgeschlossen — Magazine leer, Platten verteilt")
     except Exception as e:
         _stress["error"] = str(e)
         _log(f"🏋 ⚠ Stresstest abgebrochen: {e}")
@@ -3507,14 +3531,18 @@ async def _run_stress_test(moves: list, ziel: int):
         _stress["step"] = ""
 
 
-def _stress_plan() -> dict:
-    return _stress_service.plan(_rack_data(), _stress_geometry(),
-                                printer=_farm_printer(_stress_geometry()))
+def _stress_plan(seed=None) -> dict:
+    geom = _stress_geometry()
+    return _stress_service.plan(_rack_data(), geom, seed=seed,
+                                printer=_farm_printer(geom))
 
 
 @router.get("/stress-test/plan")
 async def stress_test_plan():
-    """Vorschau: was würde wohin, und wie lange dauert es? Bewegt nichts."""
+    """Vorschau: wie viele Platten, wohin, wie lange? Bewegt nichts.
+
+    Die Ziele sind gewürfelt, die Vorschau zeigt also EINE mögliche Verteilung —
+    gefahren wird die, die beim Start ausgewürfelt und zurückgegeben wird."""
     try:
         return {**_stress_plan(), "running": _stress["running"]}
     except Exception as e:
@@ -3531,10 +3559,11 @@ async def start_stress_test():
     if _stress["running"]:
         raise HTTPException(409, "Stresstest läuft bereits")
     plan = _stress_plan()
+    if not plan["plate_count"]:
+        raise HTTPException(400, "Die Magazine sind leer — nichts zu verteilen.")
     if not plan["moves"]:
-        raise HTTPException(400, "Nichts umzulagern — es liegt keine Platte außerhalb "
-                                 f"von Regal {plan['target_rack']}.")
-    _stress_task = asyncio.create_task(_run_stress_test(plan["moves"], plan["target_rack"]))
+        raise HTTPException(400, "Kein freies Fach für die Platten — erst Fächer räumen.")
+    _stress_task = asyncio.create_task(_run_stress_test(plan["moves"]))
     return {"success": True, **plan}
 
 

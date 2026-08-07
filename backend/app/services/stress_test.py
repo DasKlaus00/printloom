@@ -1,21 +1,22 @@
-"""Stresstest: alle liegenden Platten ins am weitesten entfernte Regal umlagern.
+"""Stresstest: die Magazine leerräumen, Platte für Platte in ein zufälliges Fach.
 
-Sinn der Übung: die längsten Wege, die die Anlage fahren kann, viele Male am
-Stück — Riemen, Endschalter, Wiederholgenauigkeit und die eingestellte Geometrie
-unter Dauerlast prüfen, ohne einen einzigen Druck zu starten.
+Sinn der Übung: Der Arm holt eine leere Platte aus Magazin 1, fährt damit
+irgendwohin und legt sie ab — und das wieder und wieder, bis alle Magazine leer
+sind. Die Ziele werden gewürfelt, also entstehen lauter unterschiedlich lange
+Wege quer über die Schiene statt derselben Strecke im Kreis. Genau das prüft
+Riemen, Endschalter, Wiederholgenauigkeit und die eingemessene Geometrie unter
+Dauerlast — ohne einen einzigen Druck.
 
-Bewusst NICHT angefasst:
+Der Magazin-Griff ist ein eigener: `grab_magazine` greift FLACH vom Stapel
+(ohne Anheben), `grab` würde eine einzeln liegende Platte holen. Ohne Magazin
+(Aufbau „alle Fächer sind Lagerfächer") gibt es keinen Stapel — dann sind die
+markierten Leerplatten die Quelle, und die werden normal gegriffen.
 
-  DAS MAGAZIN. Dort liegt ein STAPEL Platten in EINEM Fach, und er wird flach
-  gegriffen (grab_magazine, ohne Anheben). Ein Stapel lässt sich nicht 1:1 auf
-  einzelne Fächer verteilen, und das Magazin ist der Nachschub der Farm — ein
-  Test darf ihn nicht auflösen.
+WAS DANACH IST: Die Magazine sind leer und die Platten liegen verteilt in den
+Fächern. Das ist kein Versehen, sondern das Ergebnis — zurückräumen ist Handarbeit.
 
-  GESPERRTE FÄCHER. Wer ein Fach sperrt, hat einen Grund.
-
-  PLATTEN, DIE SCHON IM ZIELREGAL LIEGEN. Sie innerhalb desselben Regals
-  umzusetzen wäre der kürzeste denkbare Weg — für einen Stresstest wertlos, und
-  es verbraucht nur die freien Fächer, die die anderen Platten brauchen.
+Bewusst nicht angefasst: gesperrte Fächer (wer sperrt, hat einen Grund) und
+Fächer, in denen ein Druck liegt.
 
 Reine Rechen-Logik, keine FastAPI-Importe: der Plan lässt sich damit vollständig
 prüfen, ohne dass sich etwas bewegt.
@@ -23,6 +24,7 @@ prüfen, ohne dass sich etwas bewegt.
 from __future__ import annotations
 
 import math
+import random
 import re
 from typing import Optional
 
@@ -85,8 +87,8 @@ def printer_x(g: dict, printer=None) -> Optional[float]:
     """X-Position des Druckers auf der Schiene.
 
     Der Drucker hat kein einzelnes X-Feld — jede Operation bringt ihr eigenes mit
-    (Auswerfen, Einlegen, Anfahren). Für „wie weit ist ein Regal weg" reicht die
-    erste vorhandene; die drei liegen dicht beieinander."""
+    (Auswerfen, Einlegen, Anfahren). Für Entfernungen reicht die erste vorhandene;
+    die drei liegen dicht beieinander."""
     try:
         block = _motion.printer_block(g, printer)
     except Exception:
@@ -102,14 +104,10 @@ def printer_x(g: dict, printer=None) -> Optional[float]:
 
 
 def farthest_rack(g: dict, printer=None) -> int:
-    """Regal mit dem größten X-Abstand zum Drucker — dorthin geht der längste Weg.
-
-    Bei nur einem Regal ist es dieses; der Test fährt dann kurze Wege, läuft aber."""
+    """Regal mit dem größten X-Abstand zum Drucker (nur für die Anzeige)."""
     racks = _motion.rack_numbers(g)
     px = printer_x(g, printer)
     if px is None:
-        # Ohne bekannte Drucker-Position bleibt die Nummerierung: Regal 1 steht am
-        # Drucker, das höchste am anderen Ende der Schiene.
         return max(racks)
 
     def abstand(r: int) -> float:
@@ -118,125 +116,120 @@ def farthest_rack(g: dict, printer=None) -> int:
         except Exception:
             return 0.0
 
-    # Bei Gleichstand das höher nummerierte Regal — R1 steht per Definition am Drucker.
     return max(racks, key=lambda r: (abstand(r), r))
 
 
-def plates_in_racks(data: dict, magazine_slot: int) -> list:
-    """Platten, die physisch in NORMALEN Fächern liegen → [(rack, slot, höhe, art)].
+# ── Quelle: die Magazine ─────────────────────────────────────────────────────
 
-    Zwei Arten: ein eingelagerter Druck (Status belegt, ggf. mit Objekthöhe) und
-    eine markierte Leerplatte (Status „free", liegt aber trotzdem da)."""
+def magazine_sources(data: dict) -> list:
+    """Woher die leeren Platten kommen → [(rack, slot, aus_magazin)], je Platte ein
+    Eintrag, Regal für Regal von unten: erst Magazin 1 leeren, dann 2, dann 3.
+
+    MIT Magazin: der Zähler des Regals sagt, wie viele Platten im Stapel liegen —
+    alle im selben Fach, alle mit dem flachen Magazin-Griff.
+    OHNE Magazin: jede markierte Leerplatte einzeln, normal gegriffen. Sie liegen
+    von oben nach unten gestapelt gedacht — genau in der Reihenfolge greift die
+    Farm auch, sonst führe der Arm über eine noch liegende Platte."""
+    mag = rack_logic.magazine_slot_of(data)
     out = []
-    for key, slot in ((data or {}).get("slots") or {}).items():
+    if mag > 0:
+        for i, anzahl in enumerate(_counts(data)):
+            for _ in range(anzahl):
+                out.append((i + 1, mag, True))
+        return out
+    for r, s in rack_logic.marked_empty_plates(data):
+        out.append((r, s, False))
+    return out
+
+
+def _counts(data: dict) -> list:
+    out = []
+    for c in (data or {}).get("magazine_counts") or []:
+        try:
+            out.append(max(0, int(c)))
+        except (TypeError, ValueError):
+            out.append(0)
+    return out
+
+
+# ── Ziel: irgendein freies Fach ──────────────────────────────────────────────
+
+def free_slots(data: dict, g: dict) -> list:
+    """Alle Fächer, in die eine leere Platte gelegt werden darf → [(rack, slot)].
+
+    Nicht dabei: Magazin-Fächer (dort steht der Stapel), gesperrte Fächer, Fächer
+    mit Inhalt und Fächer, in denen schon eine Leerplatte markiert ist."""
+    mag = rack_logic.magazine_slot_of(data)
+    slots = (data or {}).get("slots") or {}
+    racks = set(_motion.rack_numbers(g))
+    out = []
+    for key, slot in slots.items():
         if not isinstance(slot, dict):
             continue
         try:
             r, s = (int(x) for x in str(key).split("-"))
         except (ValueError, TypeError):
             continue
-        if magazine_slot and s == magazine_slot:
-            continue                                  # Stapel — siehe Modulkopf
-        status = slot.get("status", "free")
-        if status == "locked":
-            continue
-        if status not in ("free", "ready"):
-            hoehe = slot.get("object_height_mm") or 0
-            out.append((r, s, float(hoehe), "druck"))
-        elif slot.get("empty_plate"):
-            out.append((r, s, 0.0, "leerplatte"))
-    # Von oben nach unten greifen: über einer liegenden Platte fährt der Arm nicht weg.
-    out.sort(key=lambda t: (t[0], -t[1]))
-    return out
-
-
-def _free_targets(data: dict, rack: int, magazine_slot: int) -> list:
-    """Freie Fächer des Zielregals, unterstes zuerst (dort stapelt sich nichts)."""
-    slots = (data or {}).get("slots") or {}
-    reserviert = rack_logic.reserved_source_slots(data)
-    out = []
-    for key, slot in slots.items():
-        if not isinstance(slot, dict) or key in reserviert:
-            continue
-        try:
-            r, s = (int(x) for x in str(key).split("-"))
-        except (ValueError, TypeError):
-            continue
-        if r != rack or (magazine_slot and s == magazine_slot):
+        if r not in racks or (mag and s == mag):
             continue
         if slot.get("status", "free") not in ("free", "ready") or slot.get("empty_plate"):
             continue
-        out.append(s)
+        out.append((r, s))
     out.sort()
     return out
 
 
-def plan(data: dict, g: dict, target: Optional[int] = None, printer=None) -> dict:
+def plan(data: dict, g: dict, seed: Optional[int] = None, printer=None) -> dict:
     """Umzugsplan aufstellen, ohne etwas zu bewegen.
 
-    → {target_rack, moves, skipped, seconds, plate_count}
-    `moves` = [{from, to, height_mm, kind}] in Ausführungsreihenfolge.
-    `skipped` = was warum liegen bleibt (im Klartext für die Oberfläche)."""
+    → {moves, skipped, seconds, plate_count, free_count, farthest_rack}
+    `moves` = [{from, to, from_magazine}] in Ausführungsreihenfolge.
+
+    Die Ziele werden GEWÜRFELT — darum geht es ja: unterschiedlich lange Wege
+    statt derselben Strecke im Kreis. Gewürfelt wird EINMAL beim Aufstellen des
+    Plans, damit gefahren wird, was vorher angezeigt wurde."""
     data = data or {}
-    mag = rack_logic.magazine_slot_of(data)
     slot_h = float(data.get("slot_height_mm") or 50)
     tol = float(data.get("slot_tolerance_mm") or rack_logic.DEFAULT_SLOT_TOLERANCE_MM)
     pct = rack_logic.stacked_pct_of(data)
-    ziel = int(target) if target else farthest_rack(g, printer)
+    mag = rack_logic.magazine_slot_of(data)
+    rnd = random.Random(seed)
 
-    kandidaten = plates_in_racks(data, mag)
-    moves, skipped = [], []
-    frei = set(_free_targets(data, ziel, mag))
+    quellen = magazine_sources(data)
+    frei = free_slots(data, g)
+    rnd.shuffle(frei)
 
-    # Der Plan wird gegen einen MITGEFÜHRTEN Regal-Stand geprüft, nicht gegen den
-    # Anfangszustand: jede vergebene Platte liegt für die nächste Entscheidung
-    # schon da. Sonst sähe die Höhenprüfung nur den leeren Ausgangszustand und
-    # könnte eine Platte über ein Teil setzen, das der Plan selbst dorthin legt.
+    # Mitgeführter Regal-Stand: eine gerade abgelegte Platte zählt für die nächste
+    # Entscheidung schon als liegend. Sonst prüfte die Höhenlogik nur den
+    # Ausgangszustand und könnte zwei Platten übereinander planen.
     sim = {k: dict(v) for k, v in (data.get("slots") or {}).items() if isinstance(v, dict)}
+    moves, skipped = [], []
 
-    for r, s, hoehe, art in kandidaten:
-        if r == ziel:
-            skipped.append({"from": f"{r}-{s}", "reason": "liegt schon im Zielregal"})
-            continue
-        noetig = rack_logic.slots_needed(hoehe, slot_h, tol)
-        platz = None
-        for kandidat in sorted(frei):
-            spanne = [kandidat + i for i in range(noetig)]
-            if any(x not in frei for x in spanne):
+    for r, s, aus_magazin in quellen:
+        ziel = None
+        for i, (zr, zs) in enumerate(frei):
+            # Ragt ein Druck aus einem tieferen Fach herein? Eine leere Platte ist
+            # flach, aber sie muss trotzdem einfahren können.
+            if rack_logic.is_blocked_from_below(zr, zs, sim, slot_h, tol, pct):
                 continue
-            # Ragt ein Objekt aus einem tieferen Fach herein? Der Status allein sagt
-            # das nicht — ein hohes Teil belegt mehrere Fachhöhen.
-            if any(rack_logic.is_blocked_from_below(ziel, x, sim, slot_h, tol, pct)
-                   for x in spanne):
-                continue
-            # Liegt über der Spanne schon eine Platte, gilt nur die verringerte
-            # Nutzhöhe — die Platte fährt erhöht ein (siehe rack_logic).
-            if not rack_logic.fits_below(
-                    hoehe, noetig,
-                    rack_logic.slot_has_plate(ziel, spanne[-1] + 1, sim, mag),
-                    slot_h, tol, pct):
-                continue
-            platz = kandidat
+            ziel = frei.pop(i)
             break
-        if platz is None:
-            skipped.append({"from": f"{r}-{s}",
-                            "reason": f"kein passendes Fach mehr in Regal {ziel}"})
+        if ziel is None:
+            skipped.append({"from": f"{r}-{s}", "reason": "kein freies Fach mehr"})
             continue
+        zr, zs = ziel
+        # Quelle nur ohne Magazin umbuchen — beim Stapel bleibt das Fach das Fach,
+        # dort sinkt nur der Zähler.
+        if not aus_magazin:
+            sim[f"{r}-{s}"] = {"status": "free", "empty_plate": False, "object_height_mm": None}
+        sim[f"{zr}-{zs}"] = {"status": "done", "empty_plate": not mag, "object_height_mm": None}
+        moves.append({"from": f"{r}-{s}", "to": f"{zr}-{zs}",
+                      "from_rack": r, "from_slot": s, "to_rack": zr, "to_slot": zs,
+                      "from_magazine": aus_magazin})
 
-        # Buchung nachziehen: Quelle wird frei, Ziel ist belegt.
-        sim[f"{r}-{s}"] = {"status": "free", "empty_plate": False, "object_height_mm": None}
-        sim[f"{ziel}-{platz}"] = {
-            "status": "free" if art == "leerplatte" else "done",
-            "empty_plate": art == "leerplatte",
-            "object_height_mm": hoehe or None,
-        }
-        frei -= {platz + i for i in range(noetig)}
-        moves.append({"from": f"{r}-{s}", "to": f"{ziel}-{platz}",
-                      "from_rack": r, "from_slot": s, "to_rack": ziel, "to_slot": platz,
-                      "height_mm": hoehe, "kind": art})
-
-    return {"target_rack": ziel, "moves": moves, "skipped": skipped,
-            "plate_count": len(kandidaten),
+    return {"moves": moves, "skipped": skipped,
+            "plate_count": len(quellen), "free_count": len(free_slots(data, g)),
+            "farthest_rack": farthest_rack(g, printer),
             "seconds": estimate_seconds(g, moves, printer)}
 
 
@@ -245,12 +238,14 @@ def estimate_seconds(g: dict, moves: list, printer=None) -> int:
 
     Für jeden Umzug werden Griff und Ablage erzeugt und Strecke ÷ Vorschub
     aufsummiert; die Endposition wandert als Startposition in den nächsten Zug,
-    damit der Weg ZWISCHEN den Regalen mitzählt (genau der ist beim Stresstest
-    der lange). Plus Zuschlag für Beschleunigen/Bremsen und Rüstzeit."""
+    damit der Weg ZWISCHEN Magazin und Ziel mitzählt — genau der ist hier der
+    lange. Plus Zuschlag für Beschleunigen/Bremsen und Rüstzeit."""
     pos, total = {}, 0.0
     for m in moves or []:
-        for op, rack, slot in (("grab", m["from_rack"], m["from_slot"]),
-                               ("store", m["to_rack"], m["to_slot"])):
+        schritte = (("grab_magazine" if m.get("from_magazine") else "grab",
+                     m["from_rack"], m["from_slot"]),
+                    ("store", m["to_rack"], m["to_slot"]))
+        for op, rack, slot in schritte:
             try:
                 script = _motion.build_op(g, op, rack=rack, slot=slot,
                                           check=False, printer=printer)

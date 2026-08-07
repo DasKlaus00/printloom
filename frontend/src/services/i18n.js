@@ -421,27 +421,33 @@ const EN_STRINGS = {
   '{0} h {1} min': '{0} h {1} min',
   '{0} mm': '{0} mm',
   '🏋 Stresstest (Dauerlauf)': '🏋 Stress test (endurance run)',
-  'Alle liegenden Platten ins entfernteste Regal umlagern.':
-    'Move every plate lying in a rack to the farthest rack.',
-  '{0} Platte(n) → Regal {1} · geschätzt {2}': '{0} plate(s) → rack {1} · estimated {2}',
-  'Nichts umzulagern — es liegt keine Platte außerhalb von Regal {0}.':
-    'Nothing to move — no plate lies outside rack {0}.',
-  'Holt jede Platte, die in einem Regal liegt, und legt sie ins am weitesten vom Drucker entfernte Regal. Das sind die längsten Wege der Anlage, viele Male hintereinander — der Test für Riemen, Endschalter, Wiederholgenauigkeit und die eingemessene Geometrie, ganz ohne Druck.':
-    'Fetches every plate lying in a rack and puts it into the rack farthest from the printer. Those are the longest travels the machine has, many times over — the test for belts, endstops, repeatability and the geometry you measured in, without printing anything.',
-  'Nicht angefasst werden: das Magazin (dort liegt ein Stapel in EINEM Fach — der lässt sich nicht auf einzelne Fächer verteilen und ist der Nachschub der Farm), gesperrte Fächer und Platten, die schon im Zielregal liegen.':
-    'Left alone: the magazine (a whole stack sits in ONE slot — it cannot be spread across individual slots and it is the farm\'s supply), locked slots, and plates already in the target rack.',
+  'Magazine leerräumen und die Platten zufällig verteilen.':
+    'Empty the magazines and scatter the plates at random.',
+  '{0} Platte(n) aus den Magazinen verteilen · geschätzt {1}':
+    'Distribute {0} plate(s) from the magazines · estimated {1}',
+  'Kein freies Fach für die Platten — erst Fächer räumen.':
+    'No free slot for the plates — clear some slots first.',
+  'Die Magazine sind leer — nichts zu verteilen.': 'The magazines are empty — nothing to distribute.',
+  'Holt eine leere Platte aus Magazin 1, legt sie in ein zufälliges freies Fach und wiederholt das, bis alle Magazine leer sind. Weil die Ziele gewürfelt werden, entstehen lauter unterschiedlich lange Wege quer über die Schiene statt derselben Strecke im Kreis — der Test für Riemen, Endschalter, Wiederholgenauigkeit und die eingemessene Geometrie, ganz ohne Druck.':
+    'Takes an empty plate from magazine 1, puts it into a random free slot and repeats until every magazine is empty. Because the destinations are rolled at random, you get travels of many different lengths across the rail instead of the same loop over and over — the test for belts, endstops, repeatability and the geometry you measured in, without printing anything.',
+  '⚠ Danach sind die Magazine LEER und die Platten liegen verteilt in den Fächern. Das ist das Ergebnis, kein Versehen — zurückräumen ist Handarbeit.':
+    '⚠ Afterwards the magazines are EMPTY and the plates are spread across the slots. That is the result, not a mishap — putting them back is manual work.',
+  'Nicht als Ziel vergeben werden: Magazin-Fächer (dort steht der Stapel), gesperrte Fächer, belegte Fächer und Fächer unter einem hohen Druck — dort käme die Platte nicht herein.':
+    'Never used as a destination: magazine slots (that is where the stack sits), locked slots, occupied slots, and slots above a tall print — a plate could not enter there.',
   'Stresstest starten?': 'Start the stress test?',
-  '{0} Platte(n) werden nacheinander in Regal {1} umgelagert — geschätzt {2}. Der Arm fährt dabei durchgehend. Steht jemand in der Anlage oder liegt etwas im Weg, jetzt nicht starten.':
-    '{0} plate(s) will be moved into rack {1} one after another — estimated {2}. The arm keeps moving throughout. If anyone is inside the machine or something is in the way, do not start now.',
+  '{0} Platte(n) werden aus den Magazinen geholt und über die freien Fächer verteilt — geschätzt {1}. Danach sind die Magazine LEER und die Platten liegen verstreut; zurückräumen ist Handarbeit. Der Arm fährt durchgehend: steht jemand in der Anlage oder liegt etwas im Weg, jetzt nicht starten.':
+    '{0} plate(s) will be taken from the magazines and spread across the free slots — estimated {1}. Afterwards the magazines are EMPTY and the plates lie scattered; putting them back is manual work. The arm keeps moving throughout: if anyone is inside the machine or something is in the way, do not start now.',
   'Stoppt nach der laufenden Bewegung…': 'Stopping after the current movement…',
-  'leere Platte': 'empty plate',
-  'Fach {0} bleibt liegen: {1}': 'Slot {0} stays put: {1}',
+  'Magazin R{0}': 'Magazine R{0}',
+  '{0} Platte(n) bleiben im Magazin liegen: {1}': '{0} plate(s) stay in the magazine: {1}',
   'Abgebrochen: {0}': 'Aborted: {0}',
   '■ Stoppen': '■ Stop',
   '▶ Stresstest starten': '▶ Start stress test',
-  '↻ Plan neu berechnen': '↻ Recalculate plan',
-  'Die Dauer ist hochgerechnet: Printloom erzeugt den G-code, den der Test wirklich fährt, und rechnet Strecke ÷ Vorschub plus Zuschlag fürs Beschleunigen. Die echte Zeit hängt an deiner Klipper-Beschleunigung und liegt eher darüber.':
-    'The duration is extrapolated: Printloom generates the G-code the test would actually drive and computes distance ÷ feedrate plus an allowance for acceleration. The real time depends on your Klipper acceleration and will tend to be longer.',
+  '↻ Neu würfeln': '↻ Roll again',
+  '{0} freie Fächer · weiteste Wege bis Regal {1}':
+    '{0} free slots · longest travels out to rack {1}',
+  'Die Ziele werden beim Start ausgewürfelt — die Liste oben zeigt eine mögliche Verteilung; gefahren wird der Wurf vom Startzeitpunkt. Die Dauer ist hochgerechnet: Printloom erzeugt den G-code, den der Test wirklich fährt, und rechnet Strecke ÷ Vorschub plus Zuschlag fürs Beschleunigen. Die echte Zeit hängt an deiner Klipper-Beschleunigung und liegt eher darüber.':
+    'Destinations are rolled when you start — the list above shows one possible spread; what runs is the roll made at start time. The duration is extrapolated: Printloom generates the G-code the test would actually drive and computes distance ÷ feedrate plus an allowance for acceleration. The real time depends on your Klipper acceleration and will tend to be longer.',
   'Start-X (Regal 1)': 'Start X (rack 1)', 'x_unclamp': 'x_unclamp', 'first_z_flat': 'first_z_flat',
   'Z-Schritt = +30': 'Z step = +30', 'Regal-Versatz X (mm)': 'Rack offset X (mm)', 'rack_x_gap': 'rack_x_gap',
   'Regale': 'Racks', 'Lager-Fächer/Regal': 'Storage slots/rack',

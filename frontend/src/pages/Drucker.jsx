@@ -81,10 +81,11 @@ function Section({ id, title, subtitle, badge, open, onToggle, children, tone = 
 }
 
 /* ── Stresstest ──────────────────────────────────────────────────────────────
-   Holt jede Platte, die in einem Regal liegt, und legt sie ins am weitesten
-   entfernte Regal. Das sind die längsten Wege, die die Anlage kennt, viele Male
-   hintereinander — genau das, was Riemen, Endschalter und die eingemessene
-   Geometrie auf die Probe stellt, ohne einen einzigen Druck zu starten.
+   Räumt die Magazine leer: eine Platte aus Magazin 1 holen, in ein gewürfeltes
+   freies Fach legen, wiederholen, bis alle Magazine leer sind. Die zufälligen
+   Ziele ergeben lauter unterschiedlich lange Wege statt derselben Strecke im
+   Kreis — genau das stellt Riemen, Endschalter und die eingemessene Geometrie
+   auf die Probe, ohne einen einzigen Druck zu starten.
 
    Die Dauer ist HOCHGERECHNET: das Backend erzeugt den G-code, den der Test
    wirklich fahren würde, und summiert Strecke ÷ Vorschub (plus Zuschlag fürs
@@ -129,15 +130,17 @@ function StressTest({ open, onToggle, busy }) {
     const anzahl = plan?.moves?.length ?? 0
     const ok = await confirmDialog({
       title: tr('Stresstest starten?'),
-      message: tr('{0} Platte(n) werden nacheinander in Regal {1} umgelagert — geschätzt {2}. Der Arm fährt dabei durchgehend. Steht jemand in der Anlage oder liegt etwas im Weg, jetzt nicht starten.',
-                  anzahl, plan?.target_rack, dauerText(plan?.seconds, tr)),
+      message: tr('{0} Platte(n) werden aus den Magazinen geholt und über die freien Fächer verteilt — geschätzt {1}. Danach sind die Magazine LEER und die Platten liegen verstreut; zurückräumen ist Handarbeit. Der Arm fährt durchgehend: steht jemand in der Anlage oder liegt etwas im Weg, jetzt nicht starten.',
+                  anzahl, dauerText(plan?.seconds, tr)),
       danger: true,
     })
     if (!ok) return
     try {
       const r = await autofarmService.stressStart()
-      setState({ running: true, done: 0, total: r.data?.moves?.length ?? anzahl,
-                 target_rack: r.data?.target_rack })
+      // Gefahren wird der Wurf, den der Start zurückgibt — nicht der aus der
+      // Vorschau. Also gleich den anzeigen.
+      if (r.data?.moves) setPlan(r.data)
+      setState({ running: true, done: 0, total: r.data?.moves?.length ?? anzahl })
       setMsg('')
     } catch (e) { setMsg(e.response?.data?.detail || e.message) }
   }
@@ -157,16 +160,21 @@ function StressTest({ open, onToggle, busy }) {
           : null}
       subtitle={plan
         ? (anzahl > 0
-            ? tr('{0} Platte(n) → Regal {1} · geschätzt {2}', anzahl, plan.target_rack, dauerText(plan.seconds, tr))
-            : tr('Nichts umzulagern — es liegt keine Platte außerhalb von Regal {0}.', plan.target_rack))
-        : tr('Alle liegenden Platten ins entfernteste Regal umlagern.')}
+            ? tr('{0} Platte(n) aus den Magazinen verteilen · geschätzt {1}', anzahl, dauerText(plan.seconds, tr))
+            : plan.plate_count > 0
+              ? tr('Kein freies Fach für die Platten — erst Fächer räumen.')
+              : tr('Die Magazine sind leer — nichts zu verteilen.'))
+        : tr('Magazine leerräumen und die Platten zufällig verteilen.')}
       open={open} onToggle={onToggle}>
 
       <p className="text-[10px] text-surface-500 leading-relaxed">
-        {tr('Holt jede Platte, die in einem Regal liegt, und legt sie ins am weitesten vom Drucker entfernte Regal. Das sind die längsten Wege der Anlage, viele Male hintereinander — der Test für Riemen, Endschalter, Wiederholgenauigkeit und die eingemessene Geometrie, ganz ohne Druck.')}
+        {tr('Holt eine leere Platte aus Magazin 1, legt sie in ein zufälliges freies Fach und wiederholt das, bis alle Magazine leer sind. Weil die Ziele gewürfelt werden, entstehen lauter unterschiedlich lange Wege quer über die Schiene statt derselben Strecke im Kreis — der Test für Riemen, Endschalter, Wiederholgenauigkeit und die eingemessene Geometrie, ganz ohne Druck.')}
+      </p>
+      <p className="text-[10px] text-amber-400/80 leading-relaxed">
+        {tr('⚠ Danach sind die Magazine LEER und die Platten liegen verteilt in den Fächern. Das ist das Ergebnis, kein Versehen — zurückräumen ist Handarbeit.')}
       </p>
       <p className="text-[10px] text-surface-600 leading-relaxed">
-        {tr('Nicht angefasst werden: das Magazin (dort liegt ein Stapel in EINEM Fach — der lässt sich nicht auf einzelne Fächer verteilen und ist der Nachschub der Farm), gesperrte Fächer und Platten, die schon im Zielregal liegen.')}
+        {tr('Nicht als Ziel vergeben werden: Magazin-Fächer (dort steht der Stapel), gesperrte Fächer, belegte Fächer und Fächer unter einem hohen Druck — dort käme die Platte nicht herein.')}
       </p>
 
       {plan?.moves?.length > 0 && (
@@ -174,25 +182,21 @@ function StressTest({ open, onToggle, busy }) {
           {plan.moves.map((m, i) => (
             <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] font-mono">
               <span className="text-surface-600 w-6 shrink-0">{i + 1}</span>
-              <span className="text-surface-300">{m.from}</span>
+              <span className="text-surface-300">
+                {m.from_magazine ? tr('Magazin R{0}', m.from_rack) : tr('Fach {0}', m.from)}
+              </span>
               <span className="text-surface-600">→</span>
               <span className="text-blue-300">{m.to}</span>
-              <span className="text-surface-600 ml-auto">
-                {m.kind === 'leerplatte' ? tr('leere Platte') : tr('{0} mm', Math.round(m.height_mm || 0))}
-              </span>
             </div>
           ))}
         </div>
       )}
 
       {plan?.skipped?.length > 0 && (
-        <div className="space-y-0.5">
-          {plan.skipped.map((s, i) => (
-            <p key={i} className="text-[10px] text-amber-400/80">
-              {tr('Fach {0} bleibt liegen: {1}', s.from, s.reason)}
-            </p>
-          ))}
-        </div>
+        <p className="text-[10px] text-amber-400/80">
+          {tr('{0} Platte(n) bleiben im Magazin liegen: {1}', plan.skipped.length,
+              plan.skipped[0]?.reason || '')}
+        </p>
       )}
 
       {laeuft && (
@@ -223,10 +227,15 @@ function StressTest({ open, onToggle, busy }) {
           </button>
         )}
         <button onClick={ladePlan} disabled={laeuft}
-          className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('↻ Plan neu berechnen')}</button>
+          className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('↻ Neu würfeln')}</button>
+        {plan && (
+          <span className="text-[10px] text-surface-600">
+            {tr('{0} freie Fächer · weiteste Wege bis Regal {1}', plan.free_count, plan.farthest_rack)}
+          </span>
+        )}
       </div>
       <p className="text-[9px] text-surface-600">
-        {tr('Die Dauer ist hochgerechnet: Printloom erzeugt den G-code, den der Test wirklich fährt, und rechnet Strecke ÷ Vorschub plus Zuschlag fürs Beschleunigen. Die echte Zeit hängt an deiner Klipper-Beschleunigung und liegt eher darüber.')}
+        {tr('Die Ziele werden beim Start ausgewürfelt — die Liste oben zeigt eine mögliche Verteilung; gefahren wird der Wurf vom Startzeitpunkt. Die Dauer ist hochgerechnet: Printloom erzeugt den G-code, den der Test wirklich fährt, und rechnet Strecke ÷ Vorschub plus Zuschlag fürs Beschleunigen. Die echte Zeit hängt an deiner Klipper-Beschleunigung und liegt eher darüber.')}
       </p>
     </Section>
   )
