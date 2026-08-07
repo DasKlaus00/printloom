@@ -82,13 +82,34 @@ async def health_check():
 frontend_path = paths.frontend_dir()
 
 if frontend_path.exists():
-    # Mount static assets (JS, CSS, images)
-    app.mount("/assets", StaticFiles(directory=frontend_path / "assets"), name="assets")
+    # Vite hängt an jeden Asset-Namen einen Hash über den INHALT (index-a1b2c3.js).
+    # Ändert sich der Inhalt, ändert sich der Name — dieselbe Datei kann sich also
+    # nie ändern und darf beliebig lange im Browser liegen bleiben. Spart bei jedem
+    # Seitenaufruf einen Schwung Anfragen.
+    class _ImmutableAssets(StaticFiles):
+        async def get_response(self, path, scope):
+            resp = await super().get_response(path, scope)
+            if resp.status_code == 200:
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return resp
+
+    app.mount("/assets", _ImmutableAssets(directory=frontend_path / "assets"), name="assets")
+
+    # Die index.html dagegen NIE zwischenspeichern: In ihr stehen die gehashten
+    # Asset-Namen. Liefert der Browser nach einem Update eine alte index.html aus
+    # dem Cache, lädt er weiter das ALTE Frontend, während der Server schon die
+    # neue Version meldet — die App lädt dann in einer Schleife immer wieder neu
+    # („Update-Loop"). Der Verzicht auf den Cache kostet einen kleinen Request,
+    # verhindert aber genau das.
+    _NO_STORE = {"Cache-Control": "no-store, must-revalidate"}
+
+    def _index() -> FileResponse:
+        return FileResponse(frontend_path / "index.html", headers=_NO_STORE)
 
     # Serve index.html for root
     @app.get("/", response_class=HTMLResponse)
     async def serve_root():
-        return FileResponse(frontend_path / "index.html")
+        return _index()
 
     # Root-level static files (sw.js, manifest.webmanifest, icons, favicons) that
     # Vite emits into dist/ but outside /assets. These MUST be served with their
@@ -121,8 +142,9 @@ if frontend_path.exists():
         served = _serve_root_file(request.url.path)
         if served is not None:
             return served
-        # …otherwise serve the SPA for client-side routing.
-        return FileResponse(frontend_path / "index.html")
+        # …otherwise serve the SPA for client-side routing (ebenfalls ohne Cache,
+        # es ist dieselbe index.html wie oben).
+        return _index()
 else:
     @app.get("/")
     async def root():

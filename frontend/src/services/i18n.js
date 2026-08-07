@@ -2002,6 +2002,11 @@ const EN_STRINGS = {
   // ── Nachgetragen 1.1.5: Texte, die bisher ohne Uebersetzung auf Deutsch
   // zurueckfielen, plus die Vorlagen der Backend-Meldungen (siehe trProblem). ──
   'Neue Version verfügbar': 'New version available',
+  // Hinweis, wenn Neuladen die Versionen nicht zusammenbringt (App.jsx)
+  'Der Server läuft auf v{0}, dieser Tab zeigt noch v{1}. Neu laden hat nicht geholfen — der Browser hält die alte Fassung fest.':
+    'The server is running v{0} while this tab still shows v{1}. Reloading did not help — the browser is holding on to the old version.',
+  'lädt unter Umgehung des Caches.': 'loads it bypassing the cache.',
+  'Nochmal versuchen': 'Try again',
   'Fehler auf dieser Seite': 'Error on this page',
   'Die App wurde aktualisiert — bitte neu laden.':
     'The app has been updated — please reload.',

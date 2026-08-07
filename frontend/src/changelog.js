@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.16',
+    de: [
+      'UPDATE-SCHLEIFE BEHOBEN. Nach einem Update konnte sich die App in einer Endlosschleife aus Neuladen festfahren und war nicht mehr bedienbar.',
+      'Die Ursache: Die index.html — die Datei, in der die Namen aller anderen Dateien stehen — durfte vom Browser zwischengespeichert werden. Nach einem Update holte der Browser sie aus seinem Cache und lud damit weiter das ALTE Frontend, während der Server längst die neue Version meldete. Die App bemerkte den Unterschied, lud neu, bekam wieder dieselbe alte Datei aus dem Cache — und wieder von vorn. Die index.html wird jetzt nie mehr zwischengespeichert.',
+      'Zusätzlich eine Bremse: Hat Neuladen nach zwei Versuchen nichts geändert, lädt die App nicht mehr weiter, sondern sagt oben, was los ist — inklusive dem Tastenkürzel, das den Cache umgeht (Strg+Umschalt+R). Vorher gab es gegen die Schleife überhaupt keine Sicherung: der Merker dagegen lag im Speicher der Seite, und den löscht das Neuladen ja gerade.',
+      'Als Nebeneffekt lädt die Seite schneller: Die JS- und CSS-Dateien tragen einen Namen, der sich bei jeder Änderung mitändert. Sie dürfen deshalb jetzt dauerhaft im Browser liegen bleiben, statt bei jedem Aufruf neu geholt zu werden.',
+    ],
+    en: [
+      'UPDATE LOOP FIXED. After an update the app could get stuck in an endless reload loop and became unusable.',
+      'The cause: index.html — the file that holds the names of all the other files — was allowed to be cached by the browser. After an update the browser took it from its cache and kept loading the OLD frontend, while the server had long since been reporting the new version. The app noticed the difference, reloaded, got the same cached file again — and round it went. index.html is now never cached.',
+      'Plus a brake: if reloading has not changed anything after two attempts, the app stops reloading and says what is going on at the top of the page — including the shortcut that bypasses the cache (Ctrl+Shift+R). Previously there was no safeguard at all: the flag meant to prevent it lived in the page\'s memory, and reloading is precisely what wipes that.',
+      'A welcome side effect: the page loads faster. The JS and CSS files carry a name that changes whenever their content changes, so they may now stay in the browser permanently instead of being fetched on every visit.',
+    ],
+  },
+  {
     version: '1.1.15',
     de: [
       'Der blaue „Update installieren"-Knopf unter System erscheint jetzt nur noch, wenn es wirklich ein Update gibt. Vorher stand er dauerhaft da und bot „Neu installieren" an — das sah aus wie eine offene Aufgabe, war aber keine.',

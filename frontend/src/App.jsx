@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, Component, Suspense } from 'react'
-import { isChunkLoadError, reloadOnceForStaleChunk } from './services/reloadGuard'
+import { isChunkLoadError, reloadOnceForStaleChunk,
+         reloadForVersionChange, clearVersionReloads } from './services/reloadGuard'
 import { tr as translate } from './services/i18n'
 
 class ErrorBoundary extends Component {
@@ -164,6 +165,8 @@ function App() {
   const [updateOverlay,   setUpdateOverlay]   = useState(null)  // null | 'running' | 'done'
   const [farmStatus,      setFarmStatus]      = useState(null)  // für den Start-Countdown im Header
   const [clock,           setClock]           = useState(() => new Date())
+  // Server meldet eine andere Version, Neuladen half aber nicht → Cache klemmt.
+  const [stuckVersion,    setStuckVersion]    = useState(null)
 
   /* ── Geteilter Farm-Status (Singleton-WS) — nur für den Header-Countdown ── */
   useFarmStatusStream(setFarmStatus)
@@ -263,9 +266,16 @@ function App() {
       systemService.getRunningVersion()
         .then(r => {
           const v = r.data?.version
-          if (!reloaded && v && v !== 'unknown' && v !== VERSION) {
-            reloaded = true
-            window.location.reload()
+          if (!v || v === 'unknown') return
+          if (v === VERSION) { clearVersionReloads(); setStuckVersion(null); return }
+          // Nicht blind neu laden: bringt das Neuladen wieder dasselbe alte Bundle,
+          // liefe das endlos (siehe reloadGuard). Nach zwei Versuchen wird es
+          // gemeldet statt wiederholt.
+          if (reloaded) return
+          reloaded = true
+          if (!reloadForVersionChange()) {
+            reloaded = false
+            setStuckVersion(v)
           }
         })
         .catch(() => {})
@@ -415,6 +425,25 @@ function App() {
           </span>
         </div>
       </header>
+
+      {/* Der Server läuft auf einer anderen Version als dieser Tab, und Neuladen
+          hat daran nichts geändert — dann liegt das alte Frontend im Browser-Cache.
+          Lieber einmal klar sagen, was zu tun ist, als endlos weiter neu zu laden. */}
+      {stuckVersion && (
+        <div className="bg-amber-950/60 border-b border-amber-800/50 px-5 py-2 flex items-center gap-3 flex-shrink-0">
+          <span className="text-amber-400 text-sm">⚠</span>
+          <p className="text-amber-200 text-xs flex-1">
+            {tr('Der Server läuft auf v{0}, dieser Tab zeigt noch v{1}. Neu laden hat nicht geholfen — der Browser hält die alte Fassung fest.', stuckVersion, VERSION)}
+            {' '}
+            <span className="font-mono bg-amber-900/40 px-1 rounded">Strg</span>+
+            <span className="font-mono bg-amber-900/40 px-1 rounded">Umschalt</span>+
+            <span className="font-mono bg-amber-900/40 px-1 rounded">R</span>
+            {' '}{tr('lädt unter Umgehung des Caches.')}
+          </p>
+          <button onClick={() => { clearVersionReloads(); window.location.reload(true) }}
+            className="btn-secondary text-xs flex-shrink-0">{tr('Nochmal versuchen')}</button>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <Navigation
