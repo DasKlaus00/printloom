@@ -71,6 +71,32 @@ async def list_printer_models():
     return {"models": printer_models.public_list()}
 
 
+# WICHTIG: vor „/{device_id}" stehen, sonst versucht FastAPI „power" als ID zu lesen.
+@router.get("/power")
+async def list_power(db: Session = Depends(get_db)):
+    """Alle Geräte mit eingerichteter Steckdose — Zustand, Leistung, Zähler.
+
+    Warum gesammelt statt je Gerät: Die Kopfleiste zeigt den Schalter dauerhaft an
+    und fragt ihn regelmäßig ab. Ein Aufruf je Gerät wären N Requests im Takt; so
+    ist es einer, und die Steckdosen werden nebenläufig gelesen."""
+    from app.services import power
+    geraete = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB).all()
+    mit_dose = [(d, _get_device_settings(db, d.id)) for d in geraete]
+    mit_dose = [(d, s) for d, s in mit_dose if power.plug_configured(s)]
+    if not mit_dose:
+        return {"plugs": []}
+
+    werte = await asyncio.gather(*(power.read_power(s) for _, s in mit_dose),
+                                 return_exceptions=True)
+    plugs = []
+    for (d, _), w in zip(mit_dose, werte):
+        # Steckdose nicht erreichbar → `on: null`. Die UI zeigt dann „?" statt zu
+        # behaupten, sie sei aus — sonst schaltet jemand blind auf gut Glück.
+        w = w if isinstance(w, dict) else {"watts": None, "energy_kwh": None, "on": None}
+        plugs.append({"device_id": d.id, "name": d.name, **w})
+    return {"plugs": plugs}
+
+
 @router.get("/", response_model=List[DeviceResponse])
 async def list_devices(db: Session = Depends(get_db)):
     return db.query(Device).all()

@@ -1916,6 +1916,16 @@ const EN_STRINGS = {
 
   // ── Energie & Kosten / Smart-Plug (3.1/3.2/3.4) ──
   'Energie & Kosten': 'Energy & costs',
+  // Steckdosen-Schalter in der Kopfleiste (components/PowerToggle.jsx)
+  'Steckdose ausschalten?': 'Switch the plug off?',
+  'Die Auto-Farm läuft gerade. „{0}" jetzt stromlos zu schalten bricht den laufenden Druck ab.':
+    'The auto farm is running. Cutting power to "{0}" now will abort the print in progress.',
+  '„{0}" wird stromlos. Ein laufender Druck bricht dabei ab.':
+    '"{0}" will lose power. Any print in progress will be aborted.',
+  'Steckdose nicht erreichbar': 'Plug not reachable',
+  'An — klicken zum Ausschalten': 'On — click to switch off',
+  'Aus — klicken zum Einschalten': 'Off — click to switch on',
+  'An': 'On',
   'Smart-Steckdose für Stromverbrauch, Auto-Abschaltung und Kostenrechnung':
     'Smart plug for power consumption, auto-shutdown and cost calculation',
   'Steckdosen-Typ': 'Plug type',

@@ -174,6 +174,9 @@ export const deviceSettingsService = {
   updateSettings: (deviceId, data)  => api.put(`/devices/${deviceId}/settings`, data),
   getPower:       (deviceId)        => api.get(`/devices/${deviceId}/power`),
   switchPower:    (deviceId, on)    => api.post(`/devices/${deviceId}/power/switch`, { on }),
+  // Alle eingerichteten Steckdosen auf einmal — die Kopfleiste fragt im Takt ab
+  // und soll dafür EINEN Request machen, nicht einen je Drucker.
+  listPower:      ()                => api.get('/devices/power'),
 }
 
 export const rackManagerService = {

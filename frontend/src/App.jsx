@@ -62,6 +62,7 @@ import { healthService, systemService, deviceService, printerService } from './s
 import { PageActiveContext } from './services/useAutoRefresh'
 import Toaster from './components/Toaster'
 import WhatsNew from './components/WhatsNew'
+import PowerToggle from './components/PowerToggle'
 import { learnFromAms } from './services/amsLearn'
 import { loadLangPacks, useLanguage } from './services/i18n'
 import { useFarmStatusStream } from './services/useFarmStatusStream'
@@ -404,6 +405,9 @@ function App() {
             </div>
           )}
           <span className="hidden md:inline text-xs font-mono text-surface-700 select-none">v{VERSION}</span>
+          {/* Smart-Steckdose (Konfiguration → Geräte → Energie & Kosten). Ohne
+              eingerichtete Steckdose rendert die Komponente nichts. */}
+          <PowerToggle farmRunning={!!farmStatus?.running} />
           <StatusPill label={tr('Drucker')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.printer} />
           <StatusPill label={tr('Klipper')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.klipper} />
           <span className="text-xs font-mono text-surface-300 tabular-nums select-none pl-0.5" title={tr('Uhrzeit')}>

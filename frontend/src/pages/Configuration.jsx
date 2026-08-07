@@ -595,6 +595,9 @@ function PowerSettings() {
         idle_off_min:          Math.max(0, Math.round(Number(cost.idle_off_min) || 0)),
       })
       setStatus({ ok: true, msg: tr('Gespeichert.') })
+      // Der Schalter in der Kopfleiste holt daraufhin sofort seinen Zustand —
+      // sonst erschiene eine frisch eingerichtete Steckdose erst Minuten später.
+      window.dispatchEvent(new CustomEvent('printloom:powerChanged'))
     } catch (e) {
       setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
     } finally { setSaving(false) }

@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.14',
+    de: [
+      'Die Smart-Steckdose lässt sich jetzt direkt oben in der Kopfleiste schalten — neben den Status-Anzeigen für Drucker und Klipper. Kein Umweg mehr über Konfiguration → Geräte.',
+      'Der Knopf zeigt gleich mit, was gerade fließt: bei eingeschalteter Dose die aktuelle Leistung in Watt, sonst „Aus". Ist die Steckdose selbst nicht erreichbar, steht dort „?" — und ausdrücklich NICHT „Aus", denn niemand weiß dann, wie sie wirklich steht.',
+      'Ausschalten fragt vorher nach. Der Knopf sitzt dauerhaft oben rechts, und ein Fehlklick kappt dem Drucker mitten im Druck den Strom. Läuft die Auto-Farm, sagt die Rückfrage das ausdrücklich. Einschalten geht ohne Nachfrage.',
+      'Der Knopf erscheint nur, wenn unter Konfiguration → Geräte → „Energie & Kosten" wirklich eine Steckdose eingerichtet ist (Home Assistant, Tasmota oder Shelly). Bei mehreren Druckern bekommt jeder mit eigener Dose seinen eigenen Knopf.',
+      'Abgefragt wird gesammelt über einen einzigen Aufruf statt einen je Drucker, und nur solange der Tab sichtbar ist — im Hintergrund geht keine einzige Anfrage an Home Assistant.',
+    ],
+    en: [
+      'The smart plug can now be switched straight from the top bar — next to the printer and Klipper status pills. No more detour via Configuration → Devices.',
+      'The button also shows what is flowing: current draw in watts while the plug is on, otherwise "Off". If the plug itself cannot be reached it shows "?" — deliberately NOT "Off", because at that point nobody knows how it actually stands.',
+      'Switching off asks first. The button sits permanently in the top right, and a misclick cuts power to the printer mid-print. If the auto farm is running, the prompt says so explicitly. Switching on needs no confirmation.',
+      'The button only appears if a plug is actually set up under Configuration → Devices → "Energy & costs" (Home Assistant, Tasmota or Shelly). With several printers, each one with its own plug gets its own button.',
+      'State is fetched in one combined call instead of one per printer, and only while the tab is visible — in the background not a single request goes to Home Assistant.',
+    ],
+  },
+  {
     version: '1.1.13',
     de: [
       'Der Datei-Browser zeigt jetzt bei jeder Datei, wann sie hochgeladen wurde — Datum und Uhrzeit. Die Liste war schon immer nach Upload-Zeit sortiert (neueste oben); jetzt sieht man auch, warum sie so sortiert ist.',
