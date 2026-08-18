@@ -511,7 +511,8 @@ def _backup_files() -> list:
         (str(db_dir / "camera_settings.json"), "camera_settings"),
         (str(db_dir / "schedules.json"), "schedules"),
         (_langpacks_file(),          "langpacks"),
-        (_dashboard_file(),          "dashboard_layout"),
+        (_dashboard_file("farm"),    "dashboard_layout"),
+        (_dashboard_file("home"),    "dashboard_layout_home"),
     ]
 
 
@@ -902,38 +903,56 @@ async def lang_delete(code: str):
     return {"success": True, "installed": list(packs.keys())}
 
 
-# ─── Auto-Farm dashboard layout (frei konfigurierbar, global) ────────────────
-# Stored as db/dashboard_layout.json: { "layout": [ {i,x,y,w,h,...} ], "hidden": [ids] }.
-# Global (gilt für alle Geräte) und Teil des Backups. Position + Größe stecken im
-# react-grid-layout-Array, "hidden" merkt sich ausgeblendete Panels.
+# ─── Dashboard-Layouts (frei konfigurierbar, global) ─────────────────────────
+# Zwei getrennte Ansichten, jede in ihrer eigenen Datei:
+#   view=farm (Standard) → db/dashboard_layout.json       Auto-Farm-Dashboard
+#   view=home            → db/dashboard_layout_home.json  Startseite
+# Getrennt, weil die Ansichten verschiedene Panels haben — ein gemeinsames Layout
+# würde jede Seite mit den Positionen der anderen überschreiben.
+#
+# Inhalt: { "layout": [ {i,x,y,w,h,…} ], "layouts": {bp: [...]}, "hidden": [ids] }.
+# "layout" ist das feste Raster der Farm-Ansicht, "layouts" die Fassungen JE
+# Bildschirmbreite der Startseite. Global (gilt für alle Geräte), Teil des Backups.
 
-def _dashboard_file() -> str:
-    return str(_db_dir() / "dashboard_layout.json")
+_DASHBOARD_VIEWS = {
+    "farm": "dashboard_layout.json",
+    "home": "dashboard_layout_home.json",
+}
+
+
+def _dashboard_file(view: str = "farm") -> str:
+    name = _DASHBOARD_VIEWS.get(str(view or "farm").strip().lower())
+    if not name:
+        raise HTTPException(400, "Unbekannte Dashboard-Ansicht")
+    return str(_db_dir() / name)
 
 
 @router.get("/dashboard-layout")
-async def get_dashboard_layout():
-    """Gespeichertes Auto-Farm-Dashboard-Layout (leeres Objekt = Standard verwenden)."""
-    data = storage.read_json(_dashboard_file(), {})
+async def get_dashboard_layout(view: str = "farm"):
+    """Gespeichertes Dashboard-Layout (leeres Objekt = Standard verwenden)."""
+    data = storage.read_json(_dashboard_file(view), {})
     return data if isinstance(data, dict) else {}
 
 
 @router.put("/dashboard-layout")
-async def save_dashboard_layout(body: dict):
+async def save_dashboard_layout(body: dict, view: str = "farm"):
     """Layout (Positionen/Größen) + ausgeblendete Panels speichern."""
     if not isinstance(body, dict):
         raise HTTPException(400, "Ungültiges Layout")
     payload = {
         "layout": body.get("layout") or [],
+        # Fassungen je Bildschirmbreite (Startseite). Nur ein dict ist verwertbar —
+        # sonst leer, damit die Oberfläche auf ihre Standard-Layouts zurückfällt.
+        "layouts": body.get("layouts") if isinstance(body.get("layouts"), dict) else {},
         "hidden": body.get("hidden") or [],
         "grid_v": body.get("grid_v") or 1,   # Raster-Version (für Migration des feineren Grids)
     }
-    storage.write_json(_dashboard_file(), payload)
+    storage.write_json(_dashboard_file(view), payload)
     return {"success": True}
 
 
 @router.delete("/dashboard-layout")
-async def reset_dashboard_layout():
+async def reset_dashboard_layout(view: str = "farm"):
     """Layout auf Standard zurücksetzen (Datei leeren)."""
-    storage.write_json(_dashboard_file(), {})
+    storage.write_json(_dashboard_file(view), {})
     return {"success": True}

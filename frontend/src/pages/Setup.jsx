@@ -5,12 +5,13 @@ import { TIMEZONES } from './Configuration'
 import { PRINTERS } from '../services/printers'
 import SetupHealth from '../components/SetupHealth'
 import RackPreview from '../components/RackPreview'
+import FirstCalibration from '../components/FirstCalibration'
 import { COMPONENT_GROUPS, derivedConfig, loadComponents, saveComponents,
-         pitchToGap, gapToPitch } from '../services/hardware'
+         pitchToGap, gapToPitch, VENDOR_LABEL } from '../services/hardware'
 
 export const SETUP_DONE_KEY = 'ottomat3d_setup_done'
 
-const STEPS = ['Willkommen', 'Komponenten', 'Drucker', 'OTTOeject', 'Regal', 'Kalibrierung']
+const STEPS = ['Willkommen', 'Komponenten', 'Drucker', 'OTTOeject', 'Regal', 'Kalibrierung', 'Einmessen']
 
 function StepDots({ step }) {
   const { tr } = useLanguage()
@@ -184,6 +185,24 @@ export default function Setup({ setCurrentPage }) {
   const bambu = devices.find(d => d.device_type === 'bambu_lab')
   const klipperDev = devices.find(d => d.device_type === 'klipper')
 
+  /* Verbaute Komponenten aus der GEOMETRIE übernehmen (serverseitig, gilt für alle
+     Geräte). localStorage ist nur noch Vorbelegung für den Erstlauf: sonst zeigte ein
+     zweites Gerät „Standard-Halterung / Standard-Greifer", während die Anlage längst
+     anders gebaut ist — und der Assistent würde beim Übernehmen die echte Auswahl
+     überschreiben. */
+  useEffect(() => {
+    controlService.getGeometry().then(r => {
+      const g = r?.data?.geometry || {}
+      setComponents(c => ({
+        ...c,
+        ...(g.holder ? { holder: g.holder } : {}),
+        ...(g.gripper ? { gripper: g.gripper } : {}),
+        // Magazin-Fach 0 = kein Magazin → „alle Fächer sind Lagerfächer"
+        ...(g.magazine_slot != null ? { topSlot: +g.magazine_slot ? 'magazine' : 'storage' } : {}),
+      }))
+    }).catch(() => {})
+  }, [])
+
   useEffect(() => {
     deviceService.listDevices().then(r => setDevices(r.data ?? [])).catch(() => {})
     deviceService.listModels().then(r => setModels(r.data?.models || [])).catch(() => {})
@@ -251,9 +270,11 @@ export default function Setup({ setCurrentPage }) {
         magazine_slot: cfg.magazine_slot,
         magazine_defaults: Array(racks).fill(cfg.plates_per_rack),
       })
-      // slot_gap sitzt in der Geometrie → lesen, patchen, zurückschreiben
+      // slot_gap + Halterung sitzen in der Geometrie → lesen, patchen, zurückschreiben
       // (putGeometry ersetzt die Datei, deshalb nie blind ein Teilobjekt senden).
-      await writeSlotGap(cfg.slot_gap)
+      await writeSlotGap(cfg.slot_gap, { holder: cfg.holder_id,
+                                   gripper: cfg.gripper_id,
+                                   gripper_motion: cfg.gripper_motion })
       setSpr(cfg.slots_per_rack); setH(cfg.slot_height_mm)
       setPitch(cfg.pitch); setMagSlot(cfg.magazine_slot)
       window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
@@ -271,13 +292,13 @@ export default function Setup({ setCurrentPage }) {
      (geometry.rack_geo) — im Einrichten wird bewusst der gemeinsame Wert für alle
      Regale gesetzt: hier baut man eine Anlage aus gleichen Regalen auf. Wer später
      ein anders gebautes Regal dazustellt, ändert dessen Wert im Drucker-Tab. */
-  const writeSlotGap = async (gap) => {
+  const writeSlotGap = async (gap, extra) => {
     const g = (await controlService.getGeometry())?.data?.geometry
     if (!g) return
     const rg = { ...(g.rack_geo || {}) }
     for (const k of Object.keys(rg)) rg[k] = { ...rg[k], slot_gap: gap }
     await controlService.putGeometry({
-      ...g, rack_geo: rg, storage: { ...(g.storage || {}), slot_gap: gap },
+      ...g, ...(extra || {}), rack_geo: rg, storage: { ...(g.storage || {}), slot_gap: gap },
     })
   }
 
@@ -419,7 +440,7 @@ export default function Setup({ setCurrentPage }) {
           <h1 className="text-lg font-semibold text-surface-100">{tr('Setup-Assistent')}</h1>
           <button onClick={skip} className="text-[11px] text-surface-600 hover:text-surface-300">{tr('Überspringen →')}</button>
         </div>
-        <p className="text-xs text-surface-500 mb-5">{tr('Komponenten · Drucker · OTTOeject · Regal · Kalibrierung in einem Durchlauf.')}</p>
+        <p className="text-xs text-surface-500 mb-5">{tr('Komponenten · Drucker · OTTOeject · Regal · Kalibrierung · Einmessen in einem Durchlauf.')}</p>
 
         <StepDots step={step} />
 
@@ -427,7 +448,7 @@ export default function Setup({ setCurrentPage }) {
         {step === 0 && (
           <div className="space-y-4">
             <p className="text-sm text-surface-300">
-              {tr('Willkommen bei')} <span className="font-semibold text-surface-100">Printloom</span>{tr('! Dieser Assistent richtet die Farm in vier Schritten ein. Du kannst jeden Schritt überspringen und später in der Konfiguration ändern.')}
+              {tr('Willkommen bei')} <span className="font-semibold text-surface-100">Printloom</span>{tr('! Dieser Assistent richtet die Farm in einem Durchlauf ein. Du kannst jeden Schritt überspringen und später in der Konfiguration ändern.')}
             </p>
             <ul className="text-xs text-surface-500 space-y-1.5 list-disc pl-5">
               <li>{tr('Verbaute Komponenten wählen (daraus kommt die Grundkonfiguration)')}</li>
@@ -435,6 +456,7 @@ export default function Setup({ setCurrentPage }) {
               <li>{tr('OTTOeject/Klipper-Erreichbarkeit prüfen')}</li>
               <li>{tr('Regal konfigurieren (Anzahl, Fächer, Fachhöhe)')}</li>
               <li>{tr('Homing-Datei für den Auswurf erstellen')}</li>
+              <li>{tr('Positionen einmessen — geführt, Station für Station')}</li>
             </ul>
 
             {/* Sprache ganz zuerst: alles Folgende soll schon in der eigenen Sprache
@@ -491,16 +513,35 @@ export default function Setup({ setCurrentPage }) {
                 <div className="grid gap-2 sm:grid-cols-2">
                   {group.options.map(opt => {
                     const active = (components[group.id] ?? group.options[0].id) === opt.id
+                    // „soon" = gebaut, aber noch nicht vermessen. Bewusst SICHTBAR und
+                    // gesperrt statt versteckt: der Aufbau existiert, nur die Maße fehlen.
+                    const soon = !!opt.soon && !active
                     return (
-                      <button key={opt.id} type="button"
-                        onClick={() => setComponents(c => ({ ...c, [group.id]: opt.id }))}
+                      <button key={opt.id} type="button" disabled={soon}
+                        aria-disabled={soon}
+                        title={soon ? tr('Noch in Arbeit — diese Bauform lässt sich noch nicht auswählen.') : undefined}
+                        onClick={() => { if (!soon) setComponents(c => ({ ...c, [group.id]: opt.id })) }}
                         className={`text-left rounded-lg border p-3 transition-colors ${
-                          active ? 'border-blue-600 bg-blue-950/40' : 'border-surface-700 bg-surface-900/40 hover:border-surface-600'}`}>
-                        <div className="flex items-center gap-2 mb-1">
+                          soon   ? 'border-surface-800 bg-surface-900/20 opacity-50 cursor-not-allowed'
+                          : active ? 'border-blue-600 bg-blue-950/40'
+                          : 'border-surface-700 bg-surface-900/40 hover:border-surface-600'}`}>
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className={`w-3.5 h-3.5 rounded-full border shrink-0 ${
                             active ? 'border-blue-400 bg-blue-500' : 'border-surface-600'}`} />
                           <span className={`text-sm font-medium ${active ? 'text-blue-200' : 'text-surface-300'}`}>{tr(opt.name)}</span>
-                          {opt.badge && (
+                          {opt.vendor && (
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 border ${
+                              opt.vendor === 'ottomat3d'
+                                ? 'border-emerald-800/60 bg-emerald-950/40 text-emerald-400'
+                                : 'border-violet-800/60 bg-violet-950/40 text-violet-300'}`}>
+                              {VENDOR_LABEL[opt.vendor]}
+                            </span>
+                          )}
+                          {soon ? (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/40 border border-amber-800/60 text-amber-400 shrink-0">
+                              {tr('In Arbeit')}
+                            </span>
+                          ) : opt.badge && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded bg-surface-800 text-surface-400 shrink-0">{tr(opt.badge)}</span>
                           )}
                         </div>
@@ -780,6 +821,25 @@ export default function Setup({ setCurrentPage }) {
               </div>
             </div>
 
+            <div className="flex justify-between pt-2">
+              <button onClick={prev} className="btn-secondary text-sm">{tr('← Zurück')}</button>
+              <button onClick={next} className="btn-primary text-sm">{tr('Weiter zum Einmessen →')}</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 6: Geführtes Einmessen ──
+            Eigener Schritt und nicht unten an die Kalibrierung gehängt: Homing-Datei
+            und Achsgrenzen sind die VORAUSSETZUNG (ohne sie kein geprüftes Jog), das
+            Einmessen die Arbeit danach. In einem Schritt wäre es eine lange Wand. */}
+        {step === 6 && (
+          <div className="space-y-3">
+            <p className="text-xs text-surface-500">
+              {tr('Jetzt die echten Positionen: Regal 1 als Anker, dann Magazin, äußerstes Regal und Drucker. Printloom fährt hin, du justierst nach.')}
+            </p>
+
+            <FirstCalibration numRacks={+nr || 1} magazineSlot={+magSlot || 0} />
+
             {/* Trockenlauf: die Sequenz durchspielen, ohne etwas zu senden. */}
             <div className="border-t border-surface-800 pt-3 space-y-2">
               <p className="text-xs font-medium text-surface-300">{tr('Trockenlauf')}</p>
@@ -799,7 +859,7 @@ export default function Setup({ setCurrentPage }) {
             </div>
 
             <p className="text-[10px] text-surface-600">
-              {tr('Als NÄCHSTES die Positionen am Drucker einstellen (Tür, Auswurf, Einlegen, Greifen) — dorthin führt der Knopf unten. Sequenzen danach im')} <span className="text-surface-400">{tr('Sequenz-Editor')}</span>.
+              {tr('Feinjustage, Tür und Greif-Test danach im Drucker-Tab — dorthin führt der Knopf unten. Sequenzen im')} <span className="text-surface-400">{tr('Sequenz-Editor')}</span>.
             </p>
             <div className="flex justify-between pt-2">
               <button onClick={prev} className="btn-secondary text-sm">{tr('← Zurück')}</button>

@@ -272,8 +272,6 @@ const EN_STRINGS = {
     'Measured distance from slot to slot (standard 55, compact 25)',
   'Magazin-Fach (0 = keins)': 'Magazine slot (0 = none)',
   'Fach mit dem Stapel leerer Platten': 'Slot holding the stack of empty plates',
-  'Komponenten · Drucker · OTTOeject · Regal · Kalibrierung in einem Durchlauf.':
-    'Components · printer · OTTOeject · rack · calibration in one pass.',
   '🖨 Drucker einrichten →': '🖨 Set up printer →',
   'Einrichtung': 'Setup',
   '🧭 Setup-Assistent öffnen': '🧭 Open setup wizard',
@@ -1065,8 +1063,6 @@ const EN_STRINGS = {
   'Überspringen →': 'Skip →',
   'Drucker · OTTOeject · Regal · Kalibrierung in einem Durchlauf.': 'Printer · OTTOeject · Rack · Calibration in one pass.',
   'Willkommen bei': 'Welcome to',
-  '! Dieser Assistent richtet die Farm in vier Schritten ein. Du kannst jeden Schritt überspringen und später in der Konfiguration ändern.':
-    '! This wizard sets up the farm in four steps. You can skip any step and change it later in the configuration.',
   'Bambu-Drucker verbinden (IP, Seriennummer, Access-Code)': 'Connect Bambu printer (IP, serial number, access code)',
   'OTTOeject/Klipper-Erreichbarkeit prüfen': 'Check OTTOeject/Klipper reachability',
   'Regal konfigurieren (Anzahl, Fächer, Fachhöhe)': 'Configure rack (count, slots, slot height)',
@@ -1997,7 +1993,6 @@ const EN_STRINGS = {
   'Gespeichert.': 'Saved.',
   'kWh gesamt': 'kWh total',
   'Stromkosten': 'Power cost',
-  'Strom + Maschine': 'Power + machine',
   'Gesamtkosten': 'Total cost',
   'Kosten: Strom + Maschine + Filament': 'Cost: power + machine + filament',
   'Noch kein Stromverbrauch erfasst — Smart-Steckdose unter Konfiguration → Energie & Kosten einrichten.':
@@ -2140,8 +2135,6 @@ const EN_STRINGS = {
   '⚠ Der Z-Schritt (Fach zu Fach) bestimmt, wo der Arm zugreift. Miss ihn am eigenen Regal nach und korrigiere ihn im Schritt „Regal" — ein falscher Wert lässt den Arm ins Blech fahren.':
     '⚠ The Z step (slot to slot) determines where the arm reaches in. Measure it on your own rack and correct it in the “Rack” step — a wrong value drives the arm into the sheet metal.',
   'Übernehmen →': 'Apply →',
-  'Als NÄCHSTES die Positionen am Drucker einstellen (Tür, Auswurf, Einlegen, Greifen) — dorthin führt der Knopf unten. Sequenzen danach im':
-    'NEXT set the positions at the printer (door, eject, place, grab) — the button below takes you there. Sequences afterwards in the',
   'Bambu X1C': 'Bambu X1C',
   'OTTOeject': 'OTTOeject',
   'Bambu Lab X1C': 'Bambu Lab X1C',
@@ -2164,8 +2157,8 @@ const EN_STRINGS = {
   'kein passendes Material': 'no matching material',
   '25 mm Spalt zwischen den Haltern → 55 mm von Fach zu Fach. 7 Positionen je Regal. Passt zur Original-Kalibrierdatei des OTTOeject.':
     '25 mm gap between the holders → 55 mm from slot to slot. 7 positions per rack. Matches the original OTTOeject calibration file.',
-  'Flache Halter: alle 25 mm ein Fach, ~260 mm von Aluprofil zu Aluprofil → 10 Positionen je Regal. Viel mehr Platten, aber nur ~20 mm Bauhöhe je Druck.':
-    'Flat holders: a slot every 25 mm, ~260 mm from extrusion to extrusion → 10 positions per rack. Many more plates, but only ~20 mm build height per print.',
+  'Flache Halter: alle 25 mm ein Fach, ~260 mm von Aluprofil zu Aluprofil → 10 Positionen je Regal. Viel mehr Platten, aber nur ~20 mm Bauhöhe je Druck. Noch in Arbeit: die Y-Tiefe des Greifpunkts ist am realen Aufbau noch nicht nachgemessen.':
+    'Flat holders: one slot every 25 mm, ~260 mm from extrusion to extrusion → 10 positions per rack. Many more plates, but only ~20 mm build height per print. Still in progress: the Y depth of the grip point has not been measured on the real build yet.',
   'Custom Printer': 'Custom printer',
   'Kein sicherer Kontext: Du öffnest die Farm über HTTP (lokale IP). iOS erlaubt Web-Push nur über HTTPS. Lösung: die Farm über HTTPS erreichbar machen (z. B. Reverse-Proxy mit Zertifikat) — danach zum Home-Bildschirm hinzufügen.':
     'No secure context: you are opening the farm over HTTP (local IP). iOS only allows web push over HTTPS. Fix: make the farm reachable over HTTPS (e.g. a reverse proxy with a certificate) — then add it to the home screen.',
@@ -2389,6 +2382,64 @@ const EN_STRINGS = {
     'Rack {2}: the slot spacing produces no upward step ({0} mm) — all slots would sit at the same height. The measured slot-to-slot distance must be more than {1} mm.',
   'Regal {2}: Greif-Y ({0} mm) liegt nicht vor der Rückzugsposition ({1} mm) — der Arm würde beim Greifen nach hinten statt nach vorn fahren.':
     'Rack {2}: the engage Y ({0} mm) is not in front of the pullback position ({1} mm) — the arm would move backwards instead of forwards when grabbing.',
+  'In Arbeit': 'In progress',
+  'Noch in Arbeit — diese Bauform lässt sich noch nicht auswählen.':
+    'Still in progress — this variant cannot be selected yet.',
+  'Aktueller Druck': 'Current print',
+  'Kennzahlen': 'Key figures',
+  '{0} Fach/Fächer druckt gerade': '{0} slot(s) currently printing',
+  'Panel am Rahmen ziehen zum Verschieben, an der rechten unteren Ecke zum Größe-Ändern. Jede Bildschirmbreite hat ihre eigene Anordnung — am Handy liegt alles untereinander.':
+    'Drag a panel by its frame to move it, by its bottom-right corner to resize it. Every screen width has its own arrangement — on a phone everything is stacked.',
+  'Nichts in der Warteschlange.': 'Nothing in the queue.',
+  'Kein Regal konfiguriert.': 'No rack configured.',
+  'Noch keine abgeschlossenen Jobs.': 'No completed jobs yet.',
+  'Noch keine Ereignisse in den letzten 24 Stunden.': 'No events in the last 24 hours.',
+  'Greifer': 'Gripper',
+  'Welcher Greifarm ist am OTTOeject?': 'Which gripper arm is fitted to the OTTOeject?',
+  'Standard-Greifer': 'Standard gripper',
+  'Der ausgelieferte Greifarm. Er fährt seitlich über den Greifpunkt hinaus und klemmt die Platte in ihrer Halterung fest bzw. schiebt sie beim Ablegen wieder heraus.':
+    'The gripper arm as shipped. It moves sideways past the grip point and clamps the plate into its holder, or pushes it back out when storing.',
+  'Magnet-Greifer': 'Magnetic gripper',
+  'Umgebauter Greifarm mit magnetischem Greifmechanismus. Er zieht nicht mehr nach links/rechts, sondern senkt sich nur ab, nimmt die Platte auf und hebt wieder — kürzerer Weg je Fach, und Magazin und Lagerfach werden zur selben Bewegung. Noch in Arbeit: die Z-Wege und das Ablösen sind am realen Aufbau noch nicht geprüft.':
+    'A converted gripper arm with a magnetic grip mechanism. It no longer pulls left or right; it only lowers, picks the plate up and lifts again — a shorter path per slot, and magazine and storage slot become the same motion. Still in progress: the Z travels and the release have not been verified on the real build.',
+  'Material ({0} g)': 'Material ({0} g)',
+  'Filamentpreis steht auf 0 — unter Konfiguration → Energie & Kosten eintragen.':
+    'The filament price is set to 0 — enter it under Configuration → Energy & costs.',
+  'Material aus {0} von {1} Drucken — die übrigen Dateien nennen keinen Verbrauch.':
+    'Material from {0} of {1} prints — the remaining files do not state their usage.',
+  'Einmessen': 'Measuring in',
+  'Komponenten · Drucker · OTTOeject · Regal · Kalibrierung · Einmessen in einem Durchlauf.':
+    'Components · printer · OTTOeject · rack · calibration · measuring in, in one pass.',
+  '! Dieser Assistent richtet die Farm in einem Durchlauf ein. Du kannst jeden Schritt überspringen und später in der Konfiguration ändern.':
+    '! This wizard sets the farm up in one pass. You can skip any step and change it later in the configuration.',
+  'Positionen einmessen — geführt, Station für Station': 'Measure the positions in — guided, station by station',
+  'Weiter zum Einmessen →': 'On to measuring in →',
+  'Jetzt die echten Positionen: Regal 1 als Anker, dann Magazin, äußerstes Regal und Drucker. Printloom fährt hin, du justierst nach.':
+    'Now the real positions: rack 1 as the anchor, then the magazine, the outermost rack and the printer. Printloom drives there, you adjust.',
+  'Feinjustage, Tür und Greif-Test danach im Drucker-Tab — dorthin führt der Knopf unten. Sequenzen im':
+    'Fine-tuning, door and grip test afterwards in the printer tab — the button below takes you there. Sequences in the',
+  'Geometrie nicht lesbar': 'Geometry could not be read',
+  'Anker': 'Anchor',
+  'Fach-Abstand': 'Slot spacing',
+  'Regal-Abstand': 'Rack spacing',
+  'Der Greifer soll genau vor Fach 1 des Regals direkt am Drucker stehen. Daraus folgen X, Greif-Y und die Höhe von Fachboden 1.':
+    'The gripper should sit exactly in front of slot 1 of the rack next to the printer. X, the engage Y and the height of shelf 1 follow from that.',
+  'Magazin in Regal 1': 'Magazine in rack 1',
+  'Printloom fährt die gerechnete Höhe des Magazins an. Steht der Greifer daneben, hier nachjustieren — aus den beiden gemessenen Höhen folgt der Fach-Abstand, ohne dass du ihn abmessen musst.':
+    'Printloom drives to the calculated height of the magazine. If the gripper is off, adjust here — the slot spacing follows from the two measured heights, so you never have to measure it yourself.',
+  'Das äußerste Regal. Daraus folgt der Abstand der Regale; die Regale dazwischen werden gleichmäßig verteilt und bleiben einzeln korrigierbar.':
+    'The outermost rack. The rack spacing follows from it; the racks in between are spaced evenly and stay individually adjustable.',
+  'Drucker: Auswurf': 'Printer: eject',
+  'Drucker: Einlegen': 'Printer: place',
+  'Der Greifer muss genau an der Platte im Drucker ansetzen.':
+    'The gripper has to engage the plate in the printer exactly.',
+  'Anfahren, mit den Pfeilen justieren, übernehmen — der Wert kommt aus der echten Ist-Position, nicht aus einem Eingabefeld.':
+    'Drive there, adjust with the arrows, apply — the value comes from the real current position, not from an input field.',
+  'Diese Station überspringen →': 'Skip this station →',
+  'Übersprungene Stationen behalten die Werte der Drucker-Vorlage. Nachholen kannst du sie jederzeit im Drucker-Tab über 📐.':
+    'Skipped stations keep the values from the printer template. You can catch up any time in the printer tab via 📐.',
+  '✓ Einmessen abgeschlossen': '✓ Measuring in complete',
+  'Einmessen später fortsetzen': 'Continue measuring in later',
 }
 
 function deepMerge(base, over) {

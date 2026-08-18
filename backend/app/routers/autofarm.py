@@ -184,7 +184,8 @@ _task: Optional[asyncio.Task] = None
 def _read_stats() -> dict:
     return storage.read_json(STATS_PATH, {
         "total_jobs": 0, "successful_jobs": 0, "failed_jobs": 0,
-        "total_print_min": 0, "total_kwh": 0.0, "errors": {}, "since": None})
+        "total_print_min": 0, "total_kwh": 0.0, "total_filament_g": 0.0,
+        "errors": {}, "since": None})
 
 
 def _write_stats(data: dict):
@@ -194,15 +195,86 @@ def _write_stats(data: dict):
         logger.warning(f"stats write failed: {e}")
 
 
-def _record_success(print_min: int = 0, kwh: float = 0.0):
+def _record_success(print_min: int = 0, kwh: float = 0.0, filament_g=None):
     s = _read_stats()
     s["total_jobs"]      = s.get("total_jobs", 0) + 1
     s["successful_jobs"] = s.get("successful_jobs", 0) + 1
     s["total_print_min"] = s.get("total_print_min", 0) + max(0, print_min)
     s["total_kwh"]       = round(s.get("total_kwh", 0.0) + max(0.0, kwh), 4)
+    # Filament nur addieren, wenn die Datei es hergibt. None (Fremdformat/alter
+    # Slicer) NICHT als 0 verbuchen — sonst sähe die Materialkostenzeile wie eine
+    # vollständige Rechnung aus, obwohl Jobs darin fehlen. Deshalb zählt
+    # `filament_jobs` mit, wie viele Jobs überhaupt beitragen konnten.
+    if filament_g:
+        s["total_filament_g"] = round(s.get("total_filament_g", 0.0) + max(0.0, float(filament_g)), 2)
+        s["filament_jobs"]    = s.get("filament_jobs", 0) + 1
     if not s.get("since"):
         s["since"] = datetime.now().isoformat()
     _write_stats(s)
+
+
+# Einstellungen, die eine LAUFENDE Farm nachzieht. Bewusst nur
+# ENTSCHEIDUNGSGRUNDLAGEN (was tun wir bei Fehler X, wann darf gedruckt werden) —
+# Laufzeit-Zustand wie Jobs, Greifer-Inhalt oder Fach-Belegung bleibt unberührt.
+# Den mitten im Lauf zu ersetzen wäre kein Nachziehen, sondern ein Neustart.
+def _live_settings(s: dict) -> dict:
+    return {
+        "hms_ignore":              {hms.normalize_code(c) for c in (s.get("hms_ignore") or [])},
+        "conn_alarm":              bool(s.get("conn_alarm", True)),
+        "progress_stall_min":      int(s.get("progress_stall_min", 0) or 0),
+        "error_strategy":          dict(s.get("error_strategy") or {}),
+        "failed_retries":          max(0, int(s.get("failed_retries", 1) or 0)),
+        "operating_hours_enabled": bool(s.get("operating_hours_enabled", False)),
+        "move_timeout_s":          int(s.get("move_timeout_s", 180) or 180),
+        "operating_schedule":      _operating_schedule(s),
+        "operating_tz":            str(s.get("timezone", "") or ""),
+        "exact_color_only":        bool(s.get("exact_color_only", False)),
+    }
+
+
+def _refresh_live_settings() -> None:
+    """Geänderte Einstellungen in den laufenden Lauf übernehmen.
+
+    Bis v1.1.18 war alles davon beim Start eingefroren: wer im Dauerbetrieb die
+    Fehlerstrategie, die Betriebszeiten oder die HMS-Liste änderte, bekam
+    „Gespeichert." zu sehen — wirksam wurde es erst beim nächsten Start der Farm,
+    und das stand nirgends. Genau ein Wert (idle_off_min) wurde live gelesen.
+
+    Neu geparst wird nur, wenn sich die Datei geändert hat — sonst läge hier ein
+    JSON-Lesevorgang je Schleifendurchlauf.
+    """
+    try:
+        mtime = os.path.getmtime(SETTINGS_PATH)
+    except OSError:
+        return
+    if _farm.get("_settings_mtime") == mtime:
+        return
+    _farm["_settings_mtime"] = mtime
+    _farm.update(_live_settings(_read_config(SETTINGS_PATH, _DEFAULT_SETTINGS)))
+
+
+async def _job_filament_g(job: dict):
+    """Filamentverbrauch (g) des gedruckten Jobs — plattengenau aus der Datei.
+
+    Erst am Druckende gelesen und nicht beim Einreihen: das kostet EINEN Header-Lesevorgang
+    nach einem Druck, der Stunden gelaufen ist, und gilt dafür für JEDEN Weg in die
+    Warteschlange (Bibliothek, Projekt, Planer) statt nur für einen.
+    """
+    try:
+        from app.routers.files import filament_grams
+        db = SessionLocal()
+        try:
+            f = db.query(UploadedFile).filter(UploadedFile.id == job.get("fileId")).first()
+            path, ftype = (f.file_path, f.file_type) if f else (None, None)
+        finally:
+            db.close()
+        if not path or not os.path.exists(path):
+            return None
+        return await asyncio.get_event_loop().run_in_executor(
+            None, filament_grams, path, ftype, job.get("plate"))
+    except Exception as e:
+        logger.warning(f"filament grams for job failed: {e}")
+        return None
 
 
 def _record_failure(error_msg: str = ""):
@@ -2688,6 +2760,9 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
         _log("═══ Auto Farm aktiv — wartet auf Jobs ═══")
 
         while not _farm["stopping"]:
+            # Geänderte Einstellungen übernehmen (nur bei geänderter Datei).
+            _refresh_live_settings()
+
             # Respect pause
             while _farm["paused"] and not _farm["stopping"]:
                 await asyncio.sleep(0.5)
@@ -2808,7 +2883,9 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                         mark_item_printed(tag[5:])
                     except Exception as e:
                         logger.warning(f"project mark done failed: {e}")
-                _record_success(round(actual_min) or job.get("estimatedMinutes") or 0, used_kwh)
+                used_g = await _job_filament_g(job)
+                _record_success(round(actual_min) or job.get("estimatedMinutes") or 0,
+                                used_kwh, used_g)
                 _record_duration(job.get("fileId"), actual_min, used_kwh)
                 _record_event("print_done", job.get("fileName", ""), f"Fach {job['slot']}")
                 _record_completed(job, "done", job_started_at, datetime.now(), actual_min)
@@ -3063,7 +3140,6 @@ async def start_farm(req: StartRequest):
         )
 
     _settings = _read_config(SETTINGS_PATH, _DEFAULT_SETTINGS)
-    _hms_ignore = {hms.normalize_code(c) for c in (_settings.get("hms_ignore") or [])}
 
     # Fährt die Farm App-G-code, muss sie den Block DIESES Druckers haben. Seit
     # v1.1.9 gibt es mehrere; ein Gerät ohne eigenen Block würde sonst still die
@@ -3087,24 +3163,18 @@ async def start_farm(req: StartRequest):
         "started_at":      datetime.now().isoformat(),
         "jobs":            [j.model_dump() for j in req.jobs],
         "log":             [],
-        "hms_ignore":      _hms_ignore,
-        "conn_alarm":         bool(_settings.get("conn_alarm", True)),
-        "progress_stall_min": int(_settings.get("progress_stall_min", 0) or 0),
-        "error_strategy":     dict(_settings.get("error_strategy") or {}),
-        "failed_retries":     max(0, int(_settings.get("failed_retries", 1) or 0)),
-        "operating_hours_enabled": bool(_settings.get("operating_hours_enabled", False)),
-        "move_timeout_s":     int(_settings.get("move_timeout_s", 180) or 180),
+        # Startwerte über dieselbe Funktion, die sie später nachzieht — sonst laufen
+        # Schnappschuss und Nachziehen mit der Zeit auseinander (siehe _live_settings).
+        **_live_settings(_settings),
         # Ein neuer Lauf beginnt mit leerem Greifer; ein unterbrochener Lauf ist
         # damit erledigt (der Nutzer startet ja bewusst neu). Position gilt aber
         # weiter als unbekannt → die erste Bewegung referenziert (needs_home).
         "arm":                dict(_ARM_EMPTY),
         "recovery":           None,
-        "operating_schedule":      _operating_schedule(_settings),
-        "operating_tz":            str(_settings.get("timezone", "") or ""),
-        "exact_color_only":        bool(_settings.get("exact_color_only", False)),
     })
 
     _farm.pop("_no_slot_logged", None)   # „Regal voll"-Log-Dedup nicht über Läufe schleppen
+    _farm.pop("_settings_mtime", None)   # nächster Durchlauf liest die Einstellungen frisch
     _record_event("farm_start", "", f"{len([j for j in req.jobs if j.status == 'pending'])} Jobs")
 
     _task = asyncio.create_task(_run_farm(

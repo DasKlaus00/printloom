@@ -42,6 +42,18 @@ DEFAULT_GEOMETRY = {
     "printer_id": "x1c",
     "printer_name": "Bambu Lab X1C",
     "enclosed": True,
+    # Verbaute Komponenten (Setup-Assistent -> services/hardware.js).
+    # "holder"  = Regal-Halterung. Bestimmt nur die REGALSTRUKTUR (Fachzahl, Z-Schritt)
+    #             und ist hier rein informativ.
+    # "gripper" = Greifarm samt Greifmechanismus. Bestimmt die BEWEGUNG:
+    #               "standard" -> geklemmt (seitlich, clamp_push_mm)
+    #               "magnet"   -> nur Z: absenken/anheben, kein Weg nach links/rechts
+    #             Der Greifer ist die EINE Quelle dafuer; "gripper_motion" gibt es nur
+    #             als ausdrueckliche Uebersteuerung und steht deshalb bewusst NICHT in
+    #             den Defaults -- sonst haette merge_defaults schon "clamp" eingesetzt
+    #             und eine Geometrie mit nur "gripper" koennte nie anders fahren.
+    "holder": "standard",
+    "gripper": "standard",
     "racks": 1,
     "storage_slots": 6,      # Lager-Fächer (ohne Magazin)
     "magazine": True,        # oberstes Fach = Magazin (NOLIFT)
@@ -542,6 +554,34 @@ def _clamp_push(g: dict) -> float:
     return _num(g.get("clamp_push_mm", 30), 30)
 
 
+# Magnet-Greifer: Z-Wege statt X-Klemmweg.
+#   HOVER = Höhe über der Platte, in der der Arm ins Fach einfährt bzw. sich nach dem
+#           Ablegen wieder löst. Muss über der Platte liegen, sonst schiebt der Arm sie.
+#   LIFT  = Anhebeweg mit Platte (wie beim Original-Griff).
+# Bewusst Konstanten und nicht einstellbar: der Magnet-Greifer ist noch nicht
+# freigegeben (hardware.js → soon), die Werte gehören am realen Aufbau nachgemessen.
+MAGNET_HOVER_MM = 12.0
+MAGNET_LIFT_MM = 25.0
+
+
+# Greifer, die magnetisch aufnehmen (Kennung aus hardware.js).
+MAGNET_GRIPPERS = {"magnet"}
+
+
+def gripper_motion(g: dict) -> str:
+    """Greif-Art des verbauten Greifers: "clamp" (Original) oder "magnet".
+
+    Maßgeblich ist der Greifer (gripper); gripper_motion übersteuert ihn nur,
+    wenn es ausdrücklich gesetzt ist. Alles, was nicht als magnetisch bekannt ist,
+    gilt als Original-Klemmung — eine unbekannte Kennung darf nie stillschweigend
+    eine andere Bewegung fahren, als der Nutzer gebaut hat.
+    """
+    override = str(g.get("gripper_motion") or "").strip().lower()
+    if override:
+        return "magnet" if override == "magnet" else "clamp"
+    return "magnet" if str(g.get("gripper") or "").strip().lower() in MAGNET_GRIPPERS else "clamp"
+
+
 # ── Bewegungen (1:1 aus ottoeject_macros.cfg) ───────────────────────────────
 def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
     x_unclamp, y_engage, z_flat, y_pb = slot_position(g, rack, slot)
@@ -552,6 +592,8 @@ def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
     # (6 Platten → −6 mm). Gilt NUR für das Magazin-Fach, nie für normale Fächer.
     if mag > 0 and int(slot) == mag:
         z_flat += magazine_z_offset(g, rack)
+    if gripper_motion(g) == "magnet":
+        return _grab_magnet(rack, slot, x_unclamp, y_engage, z_flat, y_pb)
     x_mid = x_unclamp - _clamp_push(g)
     L = [f"M117 Grab rack {rack} slot {slot}..."]
     if nolift:
@@ -581,8 +623,56 @@ def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
     return L
 
 
+def _grab_magnet(rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
+    """Platte mit dem Magnet-Greifer holen — nur Z, kein Weg nach links/rechts.
+
+    Der Arm fährt ÜBER der Platte ins Fach ein, senkt sich auf sie ab (der Magnet
+    greift), hebt sie an und zieht heraus. Damit fällt die Unterscheidung
+    Magazin/Lagerfach weg: flach gestapelt oder einzeln liegend ist dieselbe
+    Bewegung — beim Original brauchte nur das Magazin den NOLIFT-Sonderweg.
+    """
+    z_hover = z_flat + MAGNET_HOVER_MM
+    z_lift = z_flat + MAGNET_LIFT_MM
+    return [
+        f"M117 Grab rack {rack} slot {slot} (magnet)...",
+        f"G1 X{_n(x_slot)} Y280 Z{_n(z_hover)} F4000", "M400",
+        f"G1 Y{_n(y_engage-35)} F4000", "M400",
+        f"G1 Y{_n(y_engage-25)} F600", "M400",
+        f"G1 Y{_n(y_engage)} F300", "M400",
+        f"G1 Z{_n(z_flat)} F300", "M400",          # absenken → Magnet greift
+        "M117 Picking up new bed (magnet)...",
+        f"G1 Z{_n(z_lift)} F600", "M400",          # mit Platte anheben
+        f"G1 Y250 Z{_n(z_lift-5)} F1000", "M400",
+        f"G1 Y{_n(y_pb)} F2000", "M400",
+    ]
+
+
+def _store_magnet(rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
+    """Platte mit dem Magnet-Greifer ablegen — nur Z, kein Weg nach links/rechts.
+
+    Offen und deshalb noch nicht freigegeben: das ABLÖSEN. Hier hebt der Arm nach
+    dem Absetzen einfach ab; ob die Fachhalterung die Platte dabei sicher hält oder es
+    einen Abstreifer braucht, ist am realen Aufbau noch nicht geprüft.
+    """
+    z_hover = z_flat + MAGNET_HOVER_MM
+    z_lift = z_flat + MAGNET_LIFT_MM
+    return [
+        f"M117 Store rack {rack} slot {slot} (magnet)...",
+        f"G1 X{_n(x_slot)} Y{_n(y_pb)} Z{_n(z_lift)} F4000", "M400",
+        "G1 Y60 F2000", "M400",
+        f"G1 Y{_n(y_engage-15)} F1000", "M400",
+        f"G1 Y{_n(y_engage)} F500", "M400",
+        f"G1 Z{_n(z_flat)} F300", "M400",          # absetzen
+        f"G1 Z{_n(z_hover)} F600", "M400",         # Greifer löst nach oben
+        "G1 Y300 F800",
+        "G1 Y280 F3000", "M400",
+    ]
+
+
 def store_to_rack(g: dict, rack: int, slot: int) -> list[str]:
     x_unclamp, y_engage, z_flat, y_pb = slot_position(g, rack, slot)
+    if gripper_motion(g) == "magnet":
+        return _store_magnet(rack, slot, x_unclamp, y_engage, z_flat, y_pb)
     x_mid = x_unclamp - _clamp_push(g)
     return [
         f"M117 Store rack {rack} slot {slot}...",

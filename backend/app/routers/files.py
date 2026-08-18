@@ -396,6 +396,47 @@ def _plate_predictions(zf) -> dict:
         return {}
 
 
+def filament_grams(path: str, file_type: str, plate=None) -> Optional[float]:
+    """Filamentverbrauch (g) einer Datei — plattengenau, nur aus dem G-code-HEADER.
+
+    Für die Materialkosten je Job (Auto-Farm). Bewusst der Header und nicht die
+    Tiefenanalyse: der Slicer schreibt die Summe dort hinein, mehr als 64 KB muss
+    dafür niemand lesen. Bei Multi-Plate zählt der Header DER GEDRUCKTEN Platte —
+    sonst bekäme jede Platte den Verbrauch der ersten zugerechnet.
+
+    None = nicht ermittelbar (Fremdformat, kaputte Datei, alter Slicer). Das ist
+    ausdrücklich nicht 0: „unbekannt" darf sich nicht wie „kostet nichts" rechnen.
+    """
+    try:
+        if file_type == '.3mf':
+            with zipfile.ZipFile(path, 'r') as zf:
+                names = zf.namelist()
+                want = None
+                if plate:
+                    want = next((n for n in names
+                                 if re.match(rf'Metadata/plate_{int(plate)}\.gcode$', n, re.IGNORECASE)), None)
+                if not want:
+                    plates = sorted(
+                        [n for n in names if re.match(r'Metadata/plate_\d+\.gcode$', n, re.IGNORECASE)],
+                        key=lambda n: int(re.search(r'plate_(\d+)', n).group(1)))
+                    want = plates[0] if plates else next(
+                        (n for n in names if n.lower().endswith('.gcode')), None)
+                if not want:
+                    return None
+                with zf.open(want) as gf:
+                    raw = gf.read(65536).decode('utf-8', errors='ignore')
+        elif file_type == '.gcode':
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                raw = f.read(65536)
+        else:
+            return None
+        g = _parse_header(raw).get("total_filament_g")
+        return round(float(g), 2) if g else None
+    except Exception as e:
+        logger.warning(f"filament grams failed for {path}: {e}")
+        return None
+
+
 @router.get("/{file_id}/quick-meta")
 def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
     """Druckzeit und Filamentverbrauch schnell aus Datei-Header lesen.

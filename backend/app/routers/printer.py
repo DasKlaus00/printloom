@@ -7,7 +7,7 @@ import threading
 import time
 import zipfile
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
@@ -744,14 +744,41 @@ def _append_history(entry: dict):
     except Exception as e:
         logger.warning(f"print history write failed: {e}")
 
+
+def _utc_marked(ts):
+    """Zeitstempel mit Zeitzonen-Marker zurückgeben.
+
+    Bis v1.1.18 wurde hier `datetime.utcnow().isoformat()` geschrieben: UTC, aber
+    OHNE Marker. `new Date("2026-08-18T16:30:00")` liest so etwas im Browser als
+    LOKALE Zeit — im Sommer zeigte die Anzeige zwei Stunden zu früh. Alles andere in
+    Printloom (Farm-Log, HMS-Historie, Timeline, farm_completed) schreibt lokale Zeit
+    und stimmte; in einer App lagen damit zwei Konventionen.
+
+    Geschrieben wird jetzt UTC MIT Marker. Damit Bestandseinträge nicht plötzlich in
+    die andere Richtung verrutschen, bekommt ein Eintrag ohne Marker hier beim Lesen
+    denselben nachgetragen — er war ja bereits UTC.
+    """
+    if not isinstance(ts, str) or not ts:
+        return ts
+    tail = ts[10:]                       # hinter dem Datum: T…, evtl. Offset/Z
+    if ts.endswith("Z") or "+" in tail or "-" in tail:
+        return ts
+    return ts + "+00:00"
+
+
 @router.get("/history")
 def get_history():
     if not os.path.exists(HISTORY_PATH):
         return {"items": []}
     try:
         with open(HISTORY_PATH) as f:
-            return {"items": json.load(f)}
-    except:
+            items = json.load(f)
+        if isinstance(items, list):
+            for it in items:
+                if isinstance(it, dict) and "ts" in it:
+                    it["ts"] = _utc_marked(it["ts"])
+        return {"items": items}
+    except Exception:
         return {"items": []}
 
 
@@ -824,7 +851,7 @@ async def capture_snapshot(device_id: int) -> Optional[str]:
             return None
         if not img_bytes:
             return None
-        fname = f"snap_{device_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.jpg"
+        fname = f"snap_{device_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
         (SNAP_DIR / fname).write_bytes(img_bytes)
         return fname
     except Exception as e:
@@ -1073,7 +1100,7 @@ async def take_snapshot(device_id: int, db: Session = Depends(get_db)):
             img_bytes = r.content
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Webcam nicht erreichbar: {e}")
-    ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     fname = f"snap_{device_id}_{ts}.jpg"
     (SNAP_DIR / fname).write_bytes(img_bytes)
     return {"filename": fname, "url": f"/api/printer/snapshots/{fname}", "timestamp": ts}
@@ -1466,7 +1493,7 @@ async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
     # Cache dauerhaft frisch ist).
     if gcode_state in ("FINISH", "FAILED") and _last_hist_state.get(device_id) != gcode_state:
         _append_history({
-            "ts":         datetime.utcnow().isoformat(),
+            "ts":         datetime.now(timezone.utc).isoformat(),
             "device":     device.name,
             "device_id":  device_id,
             "state":      gcode_state,

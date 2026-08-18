@@ -217,9 +217,10 @@ export const systemService = {
   getLangInstalled: () => api.get('/system/lang/installed'),
   importLang:       (pack) => api.post('/system/lang/import', pack),
   deleteLang:       (code) => api.delete(`/system/lang/${code}`),
-  getDashboardLayout:  () => api.get('/system/dashboard-layout'),
-  saveDashboardLayout: (data) => api.put('/system/dashboard-layout', data),
-  resetDashboardLayout:() => api.delete('/system/dashboard-layout'),
+  // view: 'farm' (Auto-Farm) | 'home' (Startseite) — getrennte Layouts
+  getDashboardLayout:  (view = 'farm') => api.get('/system/dashboard-layout', { params: { view } }),
+  saveDashboardLayout: (data, view = 'farm') => api.put('/system/dashboard-layout', data, { params: { view } }),
+  resetDashboardLayout:(view = 'farm') => api.delete('/system/dashboard-layout', { params: { view } }),
   getCameraSettings:   () => api.get('/system/camera'),
   saveCameraSettings:  (data) => api.post('/system/camera', data),
   // Diagnose-Paket (ZIP, ohne Zugangsdaten) — direkter Download-Link

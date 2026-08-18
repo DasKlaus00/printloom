@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { deviceService, printerService, rackManagerService, autofarmService } from '../services/api'
+import { deviceService, printerService, rackManagerService, autofarmService,
+         systemService } from '../services/api'
 import { useQueueEta, fmtDur } from '../services/useQueueEta'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage, locale } from '../services/i18n'
 import HmsErrorText from '../components/HmsErrorText'
+import { ResponsiveDashboardGrid, HOME_PANELS, HOME_LAYOUTS,
+         mergeHomeLayouts } from '../components/DashboardGrid'
 
 function fmtMin(min) {
   if (!min || min <= 0) return '—'
@@ -14,17 +17,27 @@ function fmtMin(min) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
-function parseKey(k) {
-  const p = String(k).split('-')
-  return p.length === 2 ? [+p[0], +p[1]] : [1, +p[0]]
-}
-
 /* Printer utilization over the last 24h. Reconstructs active spans by pairing
    print_start with the next print_done/error/farm_stop; renders them on a time bar
    with error markers. Gaps inside farm-running windows read as idle. */
+/* Leerer Zustand eines Panels. Nimmt bewusst FERTIG übersetzte Texte: ein deutscher
+   String im JSX-Attribut läuft nicht durch den i18n-Wächter (i18n.test.js sammelt
+   nur tr('…')-Aufrufe) und wäre in der englischen Oberfläche still deutsch. */
+function Empty({ label, hint }) {
+  return (
+    <div className="card h-full flex flex-col">
+      <p className="section-label">{label}</p>
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-[11px] text-surface-700 text-center px-2">{hint}</p>
+      </div>
+    </div>
+  )
+}
+
 function UsageTimeline({ data }) {
   const { tr } = useLanguage()
-  if (!data) return null
+  if (!data?.events?.length)
+    return <Empty label={tr('Auslastung (24h)')} hint={tr('Noch keine Ereignisse in den letzten 24 Stunden.')} />
   const nowMs    = new Date(data.now).getTime()
   const windowMs = (data.hours || 24) * 3600 * 1000
   const startMs  = nowMs - windowMs
@@ -115,6 +128,70 @@ export default function Dashboard() {
   farmStatusRef.current = farmStatus
   const eta = useQueueEta()   // echte Rest-Druckzeit der Warteschlange
 
+  /* ── Frei konfigurierbares Raster (Position/Größe/Ein-Aus je Panel) ───────
+     Serverseitig gespeichert (view=home, getrennt vom Auto-Farm-Dashboard) und
+     JE Bildschirmbreite: was am Rechner nebeneinander liegt, muss am Handy
+     untereinander passen. */
+  const [editing,   setEditing]   = useState(false)
+  const [layouts,   setLayouts]   = useState(HOME_LAYOUTS)
+  const [hidden,    setHidden]    = useState([])
+  const layoutsLoaded = useRef(false)
+  const saveTimer     = useRef(null)
+
+  useEffect(() => {
+    systemService.getDashboardLayout('home')
+      .then(r => {
+        const d = r.data || {}
+        if (d.layouts && Object.keys(d.layouts).length) setLayouts(mergeHomeLayouts(d.layouts))
+        if (Array.isArray(d.hidden)) setHidden(d.hidden)
+      })
+      .catch(() => {})
+      .finally(() => { layoutsLoaded.current = true })
+    return () => clearTimeout(saveTimer.current)
+  }, [])
+
+  const persist = useCallback((lays, hid) => {
+    if (!layoutsLoaded.current) return       // nicht während des Erst-Ladens speichern
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      systemService.saveDashboardLayout({ layouts: lays, hidden: hid }, 'home').catch(() => {})
+    }, 600)
+  }, [])
+
+  // react-grid-layout meldet nur die SICHTBAREN Panels. Ohne Einmischen in den
+  // Gesamtstand verlöre ein ausgeblendetes Panel beim ersten Verschieben seine
+  // Position — es käme beim Wiedereinblenden irgendwo unten heraus.
+  const onLayoutChange = useCallback((_cur, all) => {
+    if (!layoutsLoaded.current || !all) return
+    setLayouts(prev => {
+      const next = {}
+      for (const bp of Object.keys(prev)) {
+        const map = new Map(prev[bp].map(l => [l.i, l]))
+        for (const l of (all[bp] || [])) map.set(l.i, { ...map.get(l.i), ...l })
+        next[bp] = Array.from(map.values())
+      }
+      persist(next, hidden)
+      return next
+    })
+  }, [hidden, persist])
+
+  const togglePanel = useCallback((id) => {
+    setHidden(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+      persist(layouts, next)
+      return next
+    })
+  }, [layouts, persist])
+
+  const resetLayout = useCallback(() => {
+    setLayouts(HOME_LAYOUTS)
+    setHidden([])
+    layoutsLoaded.current = true
+    systemService.saveDashboardLayout({ layouts: HOME_LAYOUTS, hidden: [] }, 'home').catch(() => {})
+  }, [])
+
+  const shown = (id) => !hidden.includes(id)
+
   // P6: Farm-Status live per WebSocket (mit HTTP-Poll-Fallback) — der erste
   // Snapshot setzt zugleich lastRefresh, damit das Skeleton verschwindet.
   useFarmStatusStream((data) => { setFarmStatus(data); setLastRefresh(new Date()) })
@@ -186,15 +263,18 @@ export default function Dashboard() {
     .filter(j => j.status === 'pending')
     .reduce((s, j) => s + (j.estimatedMinutes ?? 0), 0)
   const totalWithOverhead = totalPendingMin + pendingJobs.length * 3
-  const etaDate = totalWithOverhead > 0
-    ? new Date(Date.now() + (remaining + totalWithOverhead) * 60_000)
-    : null
 
   /* ── Rack ─────────────────────────────────────────────── */
   const nr  = rackData?.num_racks      ?? 1
   const spr = rackData?.slots_per_rack ?? 6
   const slotH    = rackData?.slot_height_mm ?? 50
   const magCount = rackData?.magazine_count ?? 0
+  // Nenner der Magazin-Anzeige: die konfigurierte SOLL-Zahl an leeren Platten
+  // (magazine_total), nicht die Zahl der Lagerfächer. Bis v1.1.18 stand hier
+  // Regale × Fächer — bei 3 Regalen mit je 4 Platten und 6 Lagerfächern also
+  // „12 von 18", obwohl 12 die volle Bestückung ist. Ohne Magazin sind beide
+  // Werte gleich, deshalb fiel es nur im Magazin-Aufbau auf.
+  const magTotal = rackData?.magazine_total ?? (nr * spr)
   const allSlots = rackData?.slots ?? {}
   const doneSlots    = Object.values(allSlots).filter(s => s.status === 'done').length
   const printingSlots = Object.values(allSlots).filter(s => s.status === 'printing').length
@@ -229,320 +309,429 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-3 w-full max-w-md mx-auto pb-6">
+    <div className="w-full pb-6">
 
-      {/* ══ Current Print Status ══════════════════════════════ */}
-      <div className={`card transition-colors ${
-        farmRunning && !farmPaused ? 'border-emerald-800/40 bg-emerald-950/5' :
-        farmPaused                 ? 'border-amber-800/40 bg-amber-950/5' : ''
-      }`}>
-        {/* Header row */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
-            <span className={`text-sm font-semibold ${farmColor}`}>{farmLabel}</span>
-          </div>
-          {showProgress && progress > 0 && (
-            <span className="text-2xl font-mono font-bold text-surface-100">{progress}%</span>
-          )}
+      {/* ── Kopfzeile: Raster anpassen ── */}
+      <div className="flex items-center justify-end gap-2 mb-3">
+        <button
+          onClick={() => setEditing(e => !e)}
+          className={`btn btn-sm ${editing ? 'btn-primary' : 'btn-ghost'}`}
+          title={tr('Dashboard anpassen: Panels verschieben, Größe ändern, ein-/ausblenden')}
+        >
+          {editing ? tr('✓ Fertig') : tr('✎ Layout')}
+        </button>
+      </div>
+
+      {/* ── Bearbeiten-Leiste: Panels ein-/ausblenden ── */}
+      {editing && (
+        <div className="card p-2.5 mb-3 flex items-center gap-2 flex-wrap">
+          <span className="section-label mb-0 mr-1">{tr('Panels')}</span>
+          {HOME_PANELS.map(pn => {
+            const on = shown(pn.id)
+            return (
+              <button key={pn.id} onClick={() => togglePanel(pn.id)}
+                className={`text-[11px] font-medium px-2 h-7 rounded-lg border transition-colors ${
+                  on ? 'border-blue-700 bg-blue-950/40 text-blue-300'
+                     : 'border-surface-700 text-surface-600 hover:text-surface-400'}`}
+                title={on ? tr('Ausblenden') : tr('Einblenden')}>
+                {on ? '☑' : '☐'} {tr(pn.label)}
+              </button>
+            )
+          })}
+          <button onClick={resetLayout}
+            className="ml-auto text-[11px] text-surface-500 hover:text-surface-300 transition-colors"
+            title={tr('Positionen, Größen und Sichtbarkeit auf Standard zurücksetzen')}>
+            {tr('↺ Standard')}
+          </button>
         </div>
+      )}
+      {editing && (
+        <p className="text-[10px] text-surface-600 mb-3">
+          {tr('Panel am Rahmen ziehen zum Verschieben, an der rechten unteren Ecke zum Größe-Ändern. Jede Bildschirmbreite hat ihre eigene Anordnung — am Handy liegt alles untereinander.')}
+        </p>
+      )}
 
-        {/* File name */}
-        {fileName && (
-          <p className="text-xs text-surface-500 truncate mt-1.5 ml-4">{fileName}</p>
-        )}
+      <ResponsiveDashboardGrid layouts={layouts} editing={editing} onLayoutChange={onLayoutChange}>
+        {[
 
-        {/* Progress bar */}
-        {showProgress && progress > 0 && (
-          <div className="mt-3 space-y-1.5">
-            <div className="w-full bg-surface-800/80 rounded-full h-3 overflow-hidden">
-              <div
-                className={`h-3 rounded-full transition-all duration-1000 ${
-                  farmPaused ? 'bg-amber-500' : 'bg-gradient-to-r from-emerald-600 to-emerald-400'
-                }`}
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-[11px] font-mono text-surface-500">
-              <span className="text-surface-300">
-                {remaining > 0 ? tr('~{0} verbleibend', fmtMin(remaining)) : tr('Fast fertig…')}
-              </span>
-              {totalWithOverhead > 0 && (
-                <span className="text-surface-600">
-                  {tr('{0} wartend · ~{1} gesamt', pendingJobs.length, fmtMin(remaining + totalWithOverhead))}
-                </span>
+        /* ══ Aktueller Druck ══════════════════════════════════ */
+        shown('status') && (
+        <div key="status" className="panel-fill">
+          <div className={`card h-full transition-colors ${
+            farmRunning && !farmPaused ? 'border-emerald-800/40 bg-emerald-950/5' :
+            farmPaused                 ? 'border-amber-800/40 bg-amber-950/5' : ''
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+                <span className={`text-sm font-semibold ${farmColor}`}>{farmLabel}</span>
+              </div>
+              {showProgress && progress > 0 && (
+                <span className="text-2xl font-mono font-bold text-surface-100">{progress}%</span>
               )}
             </div>
-          </div>
-        )}
 
-        {/* Error / pause message */}
-        {farmError && (
-          <div className="mt-3 flex items-start gap-2 text-xs text-amber-300 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2">
-            <span className="shrink-0">⚠</span>
-            <span className="flex-1"><HmsErrorText text={farmError} /></span>
-            {farmPaused && (
-              <button onClick={resumeFarm} disabled={resuming}
-                className="shrink-0 btn btn-primary btn-sm whitespace-nowrap disabled:opacity-50">
-                {resuming ? tr('…') : tr('▶ Fortsetzen')}
-              </button>
+            {fileName && (
+              <p className="text-xs text-surface-500 truncate mt-1.5 ml-4">{fileName}</p>
             )}
-          </div>
-        )}
 
-        {/* Idle state */}
-        {!showProgress && !farmRunning && !farmError && (
-          <p className="text-xs text-surface-600 mt-2 ml-4">{tr('Kein aktiver Druck')}</p>
-        )}
-      </div>
-
-      {/* ══ Quick Stats ═══════════════════════════════════════ */}
-      <div className="grid grid-cols-3 gap-2">
-
-        {/* Printer */}
-        <div className={`card py-3 text-center ${printerActive ? 'border-blue-800/40 bg-blue-950/5' : ''}`}>
-          <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Drucker')}</p>
-          <span className={`w-2 h-2 rounded-full mx-auto block mb-1 ${
-            gcodeState === 'RUNNING' ? 'bg-blue-400 animate-pulse' :
-            gcodeState === 'PAUSE'   ? 'bg-amber-400' :
-            bambuId                  ? 'bg-surface-600' : 'bg-red-600'
-          }`} />
-          <p className={`text-[11px] font-semibold ${
-            gcodeState === 'RUNNING' ? 'text-blue-400' :
-            gcodeState === 'PAUSE'   ? 'text-amber-400' :
-            'text-surface-500'
-          }`}>
-            {gcodeState === 'RUNNING' ? tr('Druckt') :
-             gcodeState === 'PAUSE'   ? tr('Pause') :
-             gcodeState === 'IDLE'    ? tr('Bereit') :
-             bambuId                  ? gcodeState :
-             tr('Nicht konfiguriert')}
-          </p>
-        </div>
-
-        {/* Magazine */}
-        <div className={`card py-3 text-center ${
-          magCount === 0 ? 'border-red-800/50 bg-red-950/10' :
-          magCount <= 1  ? 'border-amber-800/40 bg-amber-950/5' : ''
-        }`}>
-          <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Magazin')}</p>
-          <p className={`text-2xl font-mono font-bold leading-none ${
-            magCount === 0 ? 'text-red-400' :
-            magCount <= 1  ? 'text-amber-400' :
-            'text-surface-100'
-          }`}>{magCount}</p>
-          <p className="text-[9px] text-surface-600 mt-1">{tr('von {0} Platten', nr * spr)}</p>
-        </div>
-
-        {/* Rack done */}
-        <div className={`card py-3 text-center ${doneSlots > 0 ? 'border-amber-800/40 bg-amber-950/5' : ''}`}>
-          <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Regal')}</p>
-          <p className={`text-2xl font-mono font-bold leading-none ${doneSlots > 0 ? 'text-amber-400' : 'text-surface-600'}`}>
-            {doneSlots}
-          </p>
-          <p className="text-[9px] text-surface-600 mt-1">{tr('fertig / {0} Fächer', nr * spr)}</p>
-        </div>
-      </div>
-
-      {/* ══ Rack Visualization ════════════════════════════════ */}
-      {nr > 0 && spr > 0 && rackData && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <p className="section-label">{tr('Regal')}</p>
-            <span className="text-[9px] font-mono text-surface-700">{tr('{0} mm/Fach', slotH)}</span>
-          </div>
-          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${nr}, 1fr)` }}>
-            {Array.from({ length: nr }, (_, ri) => (
-              <div key={ri} className="space-y-1">
-                {nr > 1 && (
-                  <p className="text-[9px] text-center font-mono text-surface-700 mb-0.5">R{ri+1}</p>
-                )}
-                {Array.from({ length: spr }, (_, si) => {
-                  const si2  = spr - 1 - si
-                  const key  = `${ri+1}-${si2+1}`
-                  const slot = allSlots[key] ?? { status: 'free' }
-                  const done    = slot.status === 'done'
-                  const print   = slot.status === 'printing'
-                  const locked  = slot.status === 'locked'
-                  const objH    = slot.object_height_mm
-                  return (
-                    <div key={key} className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-xs transition-colors ${
-                      done   ? 'border-amber-800/40 bg-amber-950/10' :
-                      print  ? 'border-blue-800/40  bg-blue-950/10' :
-                      locked ? 'border-red-900/40   bg-red-950/10' :
-                      'border-surface-800/20 bg-transparent'
-                    }`}>
-                      <span className="font-mono text-surface-700 text-[9px] w-3 text-right shrink-0">{si2+1}</span>
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                        done   ? 'bg-amber-400' :
-                        print  ? 'bg-blue-400 animate-pulse' :
-                        locked ? 'bg-red-400' :
-                        'bg-surface-800'
-                      }`} />
-                      <p className={`text-[9px] flex-1 truncate leading-tight ${
-                        done ? 'text-amber-400' : print ? 'text-blue-400' : 'text-surface-700'
-                      }`}>
-                        {slot.file_name
-                          ? slot.file_name.replace(/\.[^.]+$/, '').slice(0, 14)
-                          : done ? tr('Fertig') : print ? tr('Druckt') : ''}
-                      </p>
-                      {objH > 0 && (
-                        <span className="text-[8px] font-mono text-surface-700 shrink-0">{Math.round(objH)}mm</span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            ))}
-          </div>
-
-          {/* Legend */}
-          <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-surface-800/40">
-            <span className="text-[9px] text-surface-700 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" /> {tr('Fertig')}
-            </span>
-            <span className="text-[9px] text-surface-700 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" /> {tr('Druckt')}
-            </span>
-            <span className="text-[9px] text-surface-700 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-surface-800 inline-block" /> {tr('Leer')}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ══ Pending Queue ═════════════════════════════════════ */}
-      {pendingJobs.length > 0 && (
-        <div className="card">
-          <div className="flex items-baseline justify-between mb-2.5 gap-2">
-            <p className="section-label">{tr('Warteschlange')}</p>
-            {eta.ready && eta.totalSec > 0 && (
-              <div className="text-right shrink-0">
-                <span className="text-[11px] font-mono text-blue-300">~{fmtDur(eta.totalSec)}</span>
-                {eta.finishAt && (
-                  <span className="block text-[10px] text-surface-500 font-mono">
-                    {tr('fertig ~{0} Uhr', eta.finishAt.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }))}
+            {showProgress && progress > 0 && (
+              <div className="mt-3 space-y-1.5">
+                <div className="w-full bg-surface-800/80 rounded-full h-3 overflow-hidden">
+                  <div
+                    className={`h-3 rounded-full transition-all duration-1000 ${
+                      farmPaused ? 'bg-amber-500' : 'bg-gradient-to-r from-emerald-600 to-emerald-400'
+                    }`}
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] font-mono text-surface-500 gap-2">
+                  <span className="text-surface-300">
+                    {remaining > 0 ? tr('~{0} verbleibend', fmtMin(remaining)) : tr('Fast fertig…')}
                   </span>
-                )}
-                {eta.known < eta.jobs && (
-                  <span className="block text-[9px] text-surface-600 font-mono">{tr('{0}/{1} mit Zeit', eta.known, eta.jobs)}</span>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="space-y-2">
-            {pendingJobs.map((j, i) => (
-              <div key={j.id ?? i} className="flex items-center gap-2">
-                <span className="text-[10px] text-surface-700 font-mono w-4 shrink-0">{i+1}.</span>
-                <span className="text-xs text-surface-400 truncate flex-1">
-                  {(j.fileName ?? j.file_name ?? '—').replace(/\.[^.]+$/, '')}
-                </span>
-                {(j.estimatedMinutes ?? 0) > 0 && (
-                  <span className="text-[10px] text-surface-600 font-mono shrink-0">
-                    ~{fmtMin(j.estimatedMinutes)}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ══ Druckstatistiken ══════════════════════════════════ */}
-      {stats && stats.total_jobs > 0 && (() => {
-        const rate = Math.round((stats.successful_jobs / stats.total_jobs) * 100)
-        const topErrors = Object.entries(stats.errors ?? {}).sort(([,a],[,b]) => b - a).slice(0, 3)
-        const since = stats.since ? new Date(stats.since).toLocaleDateString(locale()) : null
-        return (
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <p className="section-label">{tr('Druckstatistiken')}</p>
-              <div className="flex items-center gap-2">
-                {since && <span className="text-[9px] text-surface-700 font-mono">{tr('seit {0}', since)}</span>}
-                <button
-                  onClick={() => autofarmService.resetStats().then(() => setStats(null)).catch(() => {})}
-                  className="text-[9px] text-surface-700 hover:text-red-400 transition-colors"
-                  title={tr('Statistiken zurücksetzen')}
-                >↺ Reset</button>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div className="text-center">
-                <p className="text-3xl font-bold font-mono text-surface-100">{stats.total_jobs}</p>
-                <p className="text-[9px] text-surface-600 mt-0.5">{tr('Jobs gesamt')}</p>
-              </div>
-              <div className="text-center">
-                <p className={`text-3xl font-bold font-mono ${rate >= 90 ? 'text-emerald-400' : rate >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
-                  {rate}%
-                </p>
-                <p className="text-[9px] text-surface-600 mt-0.5">{tr('Erfolgsrate')}</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xl font-bold font-mono text-blue-400">{fmtMin(stats.total_print_min)}</p>
-                <p className="text-[9px] text-surface-600 mt-0.5">{tr('Druckzeit gesamt')}</p>
-              </div>
-              <div className="text-center">
-                <p className={`text-xl font-bold font-mono ${stats.failed_jobs > 0 ? 'text-red-400' : 'text-surface-600'}`}>
-                  {stats.failed_jobs}
-                </p>
-                <p className="text-[9px] text-surface-600 mt-0.5">{tr('Fehlschläge')}</p>
-              </div>
-            </div>
-            {(() => {
-              const kwh   = stats.total_kwh || 0
-              const price = costCfg?.power_price_eur_kwh ?? 0.30
-              const rate  = costCfg?.machine_rate_eur_h ?? 0
-              const eCost = kwh * price
-              const mCost = (stats.total_print_min / 60) * rate
-              const total = eCost + mCost
-              return (
-                <div className="border-t border-surface-800/40 pt-2.5 mb-2.5">
-                  <p className="text-[9px] text-surface-600 mb-1.5">{tr('Energie & Kosten')}</p>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <p className="text-base font-bold font-mono text-amber-400">{kwh.toFixed(1)}</p>
-                      <p className="text-[9px] text-surface-600">{tr('kWh gesamt')}</p>
-                    </div>
-                    <div>
-                      <p className="text-base font-bold font-mono text-amber-400">{eCost.toFixed(2)} €</p>
-                      <p className="text-[9px] text-surface-600">{tr('Stromkosten')}</p>
-                    </div>
-                    <div>
-                      <p className="text-base font-bold font-mono text-surface-200">{total.toFixed(2)} €</p>
-                      <p className="text-[9px] text-surface-600">{rate > 0 ? tr('Strom + Maschine') : tr('Gesamtkosten')}</p>
-                    </div>
-                  </div>
-                  {kwh === 0 && (
-                    <p className="text-[9px] text-surface-700 mt-1.5 text-center">
-                      {tr('Noch kein Stromverbrauch erfasst — Smart-Steckdose unter Konfiguration → Energie & Kosten einrichten.')}
-                    </p>
+                  {totalWithOverhead > 0 && (
+                    <span className="text-surface-600 text-right">
+                      {tr('{0} wartend · ~{1} gesamt', pendingJobs.length, fmtMin(remaining + totalWithOverhead))}
+                    </span>
                   )}
                 </div>
-              )
-            })()}
-            {topErrors.length > 0 && (
-              <div className="border-t border-surface-800/40 pt-2.5">
-                <p className="text-[9px] text-surface-600 mb-1.5">{tr('Häufigste Fehler')}</p>
-                <div className="space-y-1">
-                  {topErrors.map(([msg, count]) => (
-                    <div key={msg} className="flex items-start gap-2">
-                      <span className="text-[9px] font-mono text-red-400 shrink-0">{count}×</span>
-                      <span className="text-[9px] text-surface-500 truncate">{msg}</span>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
+
+            {farmError && (
+              <div className="mt-3 flex items-start gap-2 text-xs text-amber-300 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2">
+                <span className="shrink-0">⚠</span>
+                <span className="flex-1"><HmsErrorText text={farmError} /></span>
+                {farmPaused && (
+                  <button onClick={resumeFarm} disabled={resuming}
+                    className="no-drag shrink-0 btn btn-primary btn-sm whitespace-nowrap disabled:opacity-50">
+                    {resuming ? tr('…') : tr('▶ Fortsetzen')}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!showProgress && !farmRunning && !farmError && (
+              <p className="text-xs text-surface-600 mt-2 ml-4">{tr('Kein aktiver Druck')}</p>
+            )}
           </div>
-        )
-      })()}
+        </div>
+        ),
 
-      {/* ══ Usage timeline (24h) ══════════════════════════════ */}
-      {timeline && timeline.events?.length > 0 && <UsageTimeline data={timeline} />}
+        /* ══ Kennzahlen ════════════════════════════════════════ */
+        shown('stats') && (
+        <div key="stats" className="panel-fill">
+          <div className="card h-full">
+            <p className="section-label">{tr('Kennzahlen')}</p>
+            <div className="grid grid-cols-3 gap-2 mt-2">
 
-      {/* ══ Last refresh ══════════════════════════════════════ */}
+              <div className={`rounded-xl border py-3 text-center ${
+                printerActive ? 'border-blue-800/40 bg-blue-950/10' : 'border-surface-800/40'}`}>
+                <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Drucker')}</p>
+                <span className={`w-2 h-2 rounded-full mx-auto block mb-1 ${
+                  gcodeState === 'RUNNING' ? 'bg-blue-400 animate-pulse' :
+                  gcodeState === 'PAUSE'   ? 'bg-amber-400' :
+                  bambuId                  ? 'bg-surface-600' : 'bg-red-600'
+                }`} />
+                <p className={`text-[11px] font-semibold ${
+                  gcodeState === 'RUNNING' ? 'text-blue-400' :
+                  gcodeState === 'PAUSE'   ? 'text-amber-400' :
+                  'text-surface-500'
+                }`}>
+                  {gcodeState === 'RUNNING' ? tr('Druckt') :
+                   gcodeState === 'PAUSE'   ? tr('Pause') :
+                   gcodeState === 'IDLE'    ? tr('Bereit') :
+                   bambuId                  ? gcodeState :
+                   tr('Nicht konfiguriert')}
+                </p>
+              </div>
+
+              <div className={`rounded-xl border py-3 text-center ${
+                magCount === 0 ? 'border-red-800/50 bg-red-950/10' :
+                magCount <= 1  ? 'border-amber-800/40 bg-amber-950/10' : 'border-surface-800/40'
+              }`}>
+                <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Magazin')}</p>
+                <p className={`text-2xl font-mono font-bold leading-none ${
+                  magCount === 0 ? 'text-red-400' :
+                  magCount <= 1  ? 'text-amber-400' :
+                  'text-surface-100'
+                }`}>{magCount}</p>
+                <p className="text-[9px] text-surface-600 mt-1">{tr('von {0} Platten', magTotal)}</p>
+              </div>
+
+              <div className={`rounded-xl border py-3 text-center ${
+                doneSlots > 0 ? 'border-amber-800/40 bg-amber-950/10' : 'border-surface-800/40'}`}>
+                <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Regal')}</p>
+                <p className={`text-2xl font-mono font-bold leading-none ${doneSlots > 0 ? 'text-amber-400' : 'text-surface-600'}`}>
+                  {doneSlots}
+                </p>
+                <p className="text-[9px] text-surface-600 mt-1">{tr('fertig / {0} Fächer', nr * spr)}</p>
+              </div>
+            </div>
+            {printingSlots > 0 && (
+              <p className="text-[10px] text-blue-400/80 mt-2">
+                {tr('{0} Fach/Fächer druckt gerade', printingSlots)}
+              </p>
+            )}
+          </div>
+        </div>
+        ),
+
+        /* ══ Warteschlange ═════════════════════════════════════ */
+        shown('queue') && (
+        <div key="queue" className="panel-fill">
+          {pendingJobs.length === 0
+            ? <Empty label={tr('Warteschlange')} hint={tr('Nichts in der Warteschlange.')} />
+            : (
+          <div className="card h-full">
+            <div className="flex items-baseline justify-between mb-2.5 gap-2">
+              <p className="section-label">{tr('Warteschlange')}</p>
+              {eta.ready && eta.totalSec > 0 && (
+                <div className="text-right shrink-0">
+                  <span className="text-[11px] font-mono text-blue-300">~{fmtDur(eta.totalSec)}</span>
+                  {eta.finishAt && (
+                    <span className="block text-[10px] text-surface-500 font-mono">
+                      {tr('fertig ~{0} Uhr', eta.finishAt.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }))}
+                    </span>
+                  )}
+                  {eta.known < eta.jobs && (
+                    <span className="block text-[9px] text-surface-600 font-mono">{tr('{0}/{1} mit Zeit', eta.known, eta.jobs)}</span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              {pendingJobs.map((j, i) => (
+                <div key={j.id ?? i} className="flex items-center gap-2">
+                  <span className="text-[10px] text-surface-700 font-mono w-4 shrink-0">{i+1}.</span>
+                  <span className="text-xs text-surface-400 truncate flex-1">
+                    {(j.fileName ?? j.file_name ?? '—').replace(/\.[^.]+$/, '')}
+                  </span>
+                  {(j.estimatedMinutes ?? 0) > 0 && (
+                    <span className="text-[10px] text-surface-600 font-mono shrink-0">
+                      ~{fmtMin(j.estimatedMinutes)}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          )}
+        </div>
+        ),
+
+        /* ══ Regal ═════════════════════════════════════════════ */
+        shown('rack') && (
+        <div key="rack" className="panel-fill">
+          {!(nr > 0 && spr > 0 && rackData)
+            ? <Empty label={tr('Regal')} hint={tr('Kein Regal konfiguriert.')} />
+            : (
+          <div className="card h-full">
+            <div className="flex items-center justify-between mb-3">
+              <p className="section-label">{tr('Regal')}</p>
+              <span className="text-[9px] font-mono text-surface-700">{tr('{0} mm/Fach', slotH)}</span>
+            </div>
+            <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${nr}, minmax(0, 1fr))` }}>
+              {Array.from({ length: nr }, (_, ri) => (
+                <div key={ri} className="space-y-1">
+                  {nr > 1 && (
+                    <p className="text-[9px] text-center font-mono text-surface-700 mb-0.5">R{ri+1}</p>
+                  )}
+                  {Array.from({ length: spr }, (_, si) => {
+                    const si2  = spr - 1 - si
+                    const key  = `${ri+1}-${si2+1}`
+                    const slot = allSlots[key] ?? { status: 'free' }
+                    const done    = slot.status === 'done'
+                    const print   = slot.status === 'printing'
+                    const locked  = slot.status === 'locked'
+                    const objH    = slot.object_height_mm
+                    return (
+                      <div key={key} className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-xs transition-colors ${
+                        done   ? 'border-amber-800/40 bg-amber-950/10' :
+                        print  ? 'border-blue-800/40  bg-blue-950/10' :
+                        locked ? 'border-red-900/40   bg-red-950/10' :
+                        'border-surface-800/20 bg-transparent'
+                      }`}>
+                        <span className="font-mono text-surface-700 text-[9px] w-3 text-right shrink-0">{si2+1}</span>
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          done   ? 'bg-amber-400' :
+                          print  ? 'bg-blue-400 animate-pulse' :
+                          locked ? 'bg-red-400' :
+                          'bg-surface-800'
+                        }`} />
+                        <p className={`text-[9px] flex-1 truncate leading-tight ${
+                          done ? 'text-amber-400' : print ? 'text-blue-400' : 'text-surface-700'
+                        }`}>
+                          {slot.file_name
+                            ? slot.file_name.replace(/\.[^.]+$/, '').slice(0, 14)
+                            : done ? tr('Fertig') : print ? tr('Druckt') : ''}
+                        </p>
+                        {objH > 0 && (
+                          <span className="text-[8px] font-mono text-surface-700 shrink-0">{Math.round(objH)}mm</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-surface-800/40 flex-wrap">
+              <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" /> {tr('Fertig')}
+              </span>
+              <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" /> {tr('Druckt')}
+              </span>
+              <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-surface-800 inline-block" /> {tr('Leer')}
+              </span>
+            </div>
+          </div>
+          )}
+        </div>
+        ),
+
+        /* ══ Druckstatistiken ══════════════════════════════════ */
+        shown('figures') && (
+        <div key="figures" className="panel-fill">
+          {!(stats && stats.total_jobs > 0)
+            ? <Empty label={tr('Druckstatistiken')} hint={tr('Noch keine abgeschlossenen Jobs.')} />
+            : (() => {
+          const rate = Math.round((stats.successful_jobs / stats.total_jobs) * 100)
+          const topErrors = Object.entries(stats.errors ?? {}).sort(([,a],[,b]) => b - a).slice(0, 3)
+          const since = stats.since ? new Date(stats.since).toLocaleDateString(locale()) : null
+          return (
+            <div className="card h-full">
+              <div className="flex items-center justify-between mb-3 gap-2">
+                <p className="section-label">{tr('Druckstatistiken')}</p>
+                <div className="flex items-center gap-2 shrink-0">
+                  {since && <span className="text-[9px] text-surface-700 font-mono">{tr('seit {0}', since)}</span>}
+                  <button
+                    onClick={() => autofarmService.resetStats().then(() => setStats(null)).catch(() => {})}
+                    className="no-drag text-[9px] text-surface-700 hover:text-red-400 transition-colors"
+                    title={tr('Statistiken zurücksetzen')}
+                  >↺ Reset</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="text-center">
+                  <p className="text-3xl font-bold font-mono text-surface-100">{stats.total_jobs}</p>
+                  <p className="text-[9px] text-surface-600 mt-0.5">{tr('Jobs gesamt')}</p>
+                </div>
+                <div className="text-center">
+                  <p className={`text-3xl font-bold font-mono ${rate >= 90 ? 'text-emerald-400' : rate >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
+                    {rate}%
+                  </p>
+                  <p className="text-[9px] text-surface-600 mt-0.5">{tr('Erfolgsrate')}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xl font-bold font-mono text-blue-400">{fmtMin(stats.total_print_min)}</p>
+                  <p className="text-[9px] text-surface-600 mt-0.5">{tr('Druckzeit gesamt')}</p>
+                </div>
+                <div className="text-center">
+                  <p className={`text-xl font-bold font-mono ${stats.failed_jobs > 0 ? 'text-red-400' : 'text-surface-600'}`}>
+                    {stats.failed_jobs}
+                  </p>
+                  <p className="text-[9px] text-surface-600 mt-0.5">{tr('Fehlschläge')}</p>
+                </div>
+              </div>
+              {topErrors.length > 0 && (
+                <div className="border-t border-surface-800/40 pt-2.5 mt-3">
+                  <p className="text-[9px] text-surface-600 mb-1.5">{tr('Häufigste Fehler')}</p>
+                  <div className="space-y-1">
+                    {topErrors.map(([msg, count]) => (
+                      <div key={msg} className="flex items-start gap-2">
+                        <span className="text-[9px] font-mono text-red-400 shrink-0">{count}×</span>
+                        <span className="text-[9px] text-surface-500 truncate">{msg}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+        </div>
+        ),
+
+        /* ══ Energie & Kosten ══════════════════════════════════ */
+        shown('costs') && (
+        <div key="costs" className="panel-fill">
+          {!(stats && stats.total_jobs > 0)
+            ? <Empty label={tr('Energie & Kosten')} hint={tr('Noch keine abgeschlossenen Jobs.')} />
+            : (() => {
+          const kwh   = stats.total_kwh || 0
+          const grams = stats.total_filament_g || 0
+          const price = costCfg?.power_price_eur_kwh ?? 0.30
+          const mRate = costCfg?.machine_rate_eur_h ?? 0
+          const fPrice = costCfg?.filament_price_eur_kg ?? 0
+          const eCost = kwh * price
+          const mCost = (stats.total_print_min / 60) * mRate
+          const fCost = (grams / 1000) * fPrice
+          const total = eCost + mCost + fCost
+          // Wie viele erfolgreiche Jobs ihren Verbrauch überhaupt beigetragen haben.
+          // Fremdformate und alte Slicer liefern keinen — das wird benannt statt als
+          // 0 g verbucht, sonst sähe eine unvollständige Rechnung vollständig aus.
+          const fJobs = stats.filament_jobs ?? 0
+          const fGap  = stats.successful_jobs > 0 && fJobs < stats.successful_jobs
+          return (
+            <div className="card h-full">
+              <p className="section-label mb-2">{tr('Energie & Kosten')}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                <div>
+                  <p className="text-base font-bold font-mono text-amber-400">{kwh.toFixed(1)}</p>
+                  <p className="text-[9px] text-surface-600">{tr('kWh gesamt')}</p>
+                </div>
+                <div>
+                  <p className="text-base font-bold font-mono text-amber-400">{eCost.toFixed(2)} €</p>
+                  <p className="text-[9px] text-surface-600">{tr('Stromkosten')}</p>
+                </div>
+                <div>
+                  <p className="text-base font-bold font-mono text-blue-400">{fCost.toFixed(2)} €</p>
+                  <p className="text-[9px] text-surface-600">
+                    {grams > 0 ? tr('Material ({0} g)', Math.round(grams)) : tr('Material')}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-base font-bold font-mono text-surface-200">{total.toFixed(2)} €</p>
+                  <p className="text-[9px] text-surface-600">{tr('Gesamtkosten')}</p>
+                </div>
+              </div>
+              {kwh === 0 && (
+                <p className="text-[9px] text-surface-700 mt-2 text-center">
+                  {tr('Noch kein Stromverbrauch erfasst — Smart-Steckdose unter Konfiguration → Energie & Kosten einrichten.')}
+                </p>
+              )}
+              {fPrice === 0 && grams > 0 && (
+                <p className="text-[9px] text-surface-700 mt-1.5 text-center">
+                  {tr('Filamentpreis steht auf 0 — unter Konfiguration → Energie & Kosten eintragen.')}
+                </p>
+              )}
+              {fGap && (
+                <p className="text-[9px] text-surface-700 mt-1.5 text-center">
+                  {tr('Material aus {0} von {1} Drucken — die übrigen Dateien nennen keinen Verbrauch.', fJobs, stats.successful_jobs)}
+                </p>
+              )}
+            </div>
+          )
+        })()}
+        </div>
+        ),
+
+        /* ══ Auslastung (24h) ══════════════════════════════════ */
+        shown('timeline') && (
+        <div key="timeline" className="panel-fill">
+          <UsageTimeline data={timeline} />
+        </div>
+        ),
+
+        ].filter(Boolean)}
+      </ResponsiveDashboardGrid>
+
+      {/* ══ Zuletzt aktualisiert ══════════════════════════════ */}
       {lastRefresh && (
-        <p className="text-center text-[9px] text-surface-800 font-mono">
+        <p className="text-center text-[9px] text-surface-800 font-mono mt-3">
           {tr('Aktualisiert {0} · alle 15s', lastRefresh.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}
         </p>
       )}

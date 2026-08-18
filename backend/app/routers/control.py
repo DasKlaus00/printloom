@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import Device, PrinterType
 from app.schemas.schemas import MacroExecutionRequest, MacroExecutionResponse
-from datetime import datetime
+from datetime import datetime, timezone
 import httpx
 
 router = APIRouter()
@@ -62,14 +62,14 @@ async def execute_macro(request: MacroExecutionRequest, db: Session = Depends(ge
                 success=True,
                 macro_name=request.macro_name,
                 message="Macro executed successfully",
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
         else:
             return MacroExecutionResponse(
                 success=False,
                 macro_name=request.macro_name,
                 message=f"Macro execution failed: {response.text}",
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
     
     except Exception as e:
@@ -77,7 +77,7 @@ async def execute_macro(request: MacroExecutionRequest, db: Session = Depends(ge
             success=False,
             macro_name=request.macro_name,
             message=f"Error executing macro: {str(e)}",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
 
 @router.get("/macros")
