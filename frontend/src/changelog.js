@@ -4,6 +4,32 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.21',
+    de: [
+      'MAGNET-GREIFER ZUM AUSTESTEN FREIGEGEBEN. Er lässt sich jetzt im Setup-Assistenten auswählen und trägt dort das Kennzeichen „Test". Greifen und Ablegen fahren damit nur noch in Z: der Arm fährt über der Platte ins Fach, senkt sich auf sie ab, hebt sie an und zieht heraus — kein Weg mehr nach links/rechts. Magazin und Lagerfach werden dadurch zur selben Bewegung.',
+      'Schwebe-Höhe und Anhebeweg sind einstellbar (Drucker-Tab → „Greifer & Platte"), weil sie am realen Aufbau noch nicht vermessen sind. Fest eingebaut hätte jeder danebenliegende Testlauf eine neue Programmversion gebraucht. Beim Magnet-Greifer erscheinen dort diese beiden Felder ANSTELLE des Andruck-Wegs — eine Anlage hat immer nur einen Greifarm, beide Sätze gleichzeitig wären zur Hälfte Lärm.',
+      'Unsinnige Werte werden abgefangen, nicht übernommen: eine Schwebe-Höhe von 0 oder darunter würde den Arm auf Plattenhöhe einfahren lassen, wo er die Platte vor sich her schöbe; ein Anhebeweg unterhalb der Schwebe-Höhe würde die Platte gar nicht erst aus dem Fach ziehen. Beides wird auf einen sicheren Wert angehoben.',
+      'Das Ablösen beim Ablegen bleibt der offene Punkt: der Arm hebt nach dem Absetzen einfach ab. Ob die Fachhalterung die Platte dabei hält oder es einen Abstreifer braucht, zeigt erst der Testlauf — deshalb steht im Drucker-Tab der Hinweis, Greifen und Ablegen zuerst einzeln über die Test-Knöpfe zu fahren statt gleich mit einer Farm-Sequenz.',
+      'Der Klemm-Greifer bleibt unangetastet: die neuen Werte wirken ausschließlich auf die Magnet-Bewegung, und ohne Angabe fährt jede Bestandsanlage weiter wie bisher.',
+    ],
+    en: [
+      'MAGNETIC GRIPPER RELEASED FOR TESTING. It can now be selected in the setup wizard, where it is marked "Testing". Grabbing and storing move in Z only: the arm enters the slot above the plate, lowers onto it, lifts it and pulls out — no more left/right travel. Magazine and storage slot become the same motion as a result.',
+      'Hover height and lift travel are adjustable (printer tab → "Gripper & plate"), because they have not been measured on the real build yet. Hard-coded, every test run that came out wrong would have needed a new program version. For the magnetic gripper these two fields appear INSTEAD of the push distance — a machine only ever has one gripper arm, so showing both sets would be half noise.',
+      'Nonsensical values are caught rather than applied: a hover height of 0 or below would send the arm in at plate height, where it would shove the plate ahead of it; a lift travel below the hover height would never pull the plate out of the slot. Both are raised to a safe value.',
+      'The release when storing remains the open question: the arm simply lifts off after setting the plate down. Whether the slot holder keeps the plate there or a stripper is needed can only be shown by a test run — which is why the printer tab advises running grabbing and storing individually via the test buttons first, rather than straight away with a farm sequence.',
+      'The clamping gripper is untouched: the new values affect the magnetic motion only, and without any setting every existing machine keeps moving exactly as before.',
+    ],
+  },
+  {
+    version: '1.1.20',
+    de: [
+      'Setup-Assistent: Beim obersten Fach war die Herkunft vertauscht. „Alle Fächer = Lagerfächer" ist der Original-Aufbau und steht jetzt links mit dem Tag „OTTOmat3D"; das Magazin ist die Printloom-Erweiterung und steht rechts mit „Printloom". Vorausgewählt bleibt bewusst das Magazin — nur damit holt sich die Farm selbst Nachschub.',
+    ],
+    en: [
+      'Setup wizard: the origin of the top-slot options was swapped. "All slots = storage" is the original build and now sits on the left tagged "OTTOmat3D"; the magazine is the Printloom extension and sits on the right tagged "Printloom". The magazine stays preselected on purpose — it is the only option where the farm fetches its own supply.',
+    ],
+  },
+  {
     version: '1.1.19',
     de: [
       'GEFÜHRTE ERSTKALIBRIERUNG als letzter Schritt des Setup-Assistenten. Printloom fährt jede Position selbst an, du justierst mit den Pfeilen nach und übernimmst — der Wert kommt aus der echten Ist-Position, nicht aus einem Eingabefeld. Die Reihenfolge folgt der Abhängigkeit: Regal 1 (Anker) → Magazin → äußerstes Regal → Drucker. Jede Station ist einzeln überspringbar, der ganze Schritt auch.',

@@ -89,6 +89,9 @@ DEFAULT_GEOMETRY = {
     # abzuschieben. Drucker-Seite (eject/load) = +push, Regal-Seite (grab/store) = −push.
     # Im Original fix 30 mm; jetzt einstellbar (0 = ohne Andruck, Greifpunkt = Start-X).
     "clamp_push_mm": 30.0,
+    # Magnet-Greifer: Z-Wege statt X-Klemmweg (siehe MAGNET_HOVER_MM / MAGNET_LIFT_MM).
+    "magnet_hover_mm": 12.0,
+    "magnet_lift_mm": 25.0,
     # Achsgrenzen des Geräts in mm ({} = unbekannt) — für die Plausibilitätsprüfung
     # (geometry_check). Am besten per „Grenzen vom Gerät holen" aus Klipper geholt,
     # dann wird eine Bewegung außerhalb der Achse gar nicht erst gesendet. Leer
@@ -135,7 +138,8 @@ def _sanitize_geometry(g: dict) -> dict:
     """Alle Zahlenfelder robust machen (None/NaN/leer → Default), damit ein
     halbfertiges Eingabefeld keine 500 auslöst."""
     d = DEFAULT_GEOMETRY
-    for k in ("racks", "storage_slots", "magazine_slot", "speed_factor", "clamp_push_mm"):
+    for k in ("racks", "storage_slots", "magazine_slot", "speed_factor", "clamp_push_mm",
+              "magnet_hover_mm", "magnet_lift_mm"):
         if g.get(k) is not None:
             g[k] = _num(g.get(k), d.get(k, 0))
     sf = g.get("speed_factors")
@@ -549,6 +553,20 @@ def slot_position(g: dict, rack: int, slot: int) -> tuple[float, float, float, f
     return r["x"], r["y_engage"], z, float((g.get("storage") or {}).get("y_pullback_limit", 5))
 
 
+def _magnet_z(g: dict) -> tuple[float, float]:
+    """(Schwebe-Höhe, Anhebeweg) des Magnet-Greifers in mm.
+
+    HOVER muss ÜBER der Platte liegen — bei 0 oder darunter schöbe der Arm sie beim
+    Einfahren vor sich her, statt sich auf sie abzusenken. LIFT muss über HOVER
+    liegen, sonst zöge der Arm die Platte gar nicht erst aus dem Fach. Beides wird
+    hier erzwungen und nicht der Eingabe überlassen: ein Tippfehler im Feld darf
+    keine Bewegung erzeugen, die die Platte durchs Regal schiebt.
+    """
+    hover = max(1.0, _num(g.get("magnet_hover_mm"), MAGNET_HOVER_MM))
+    lift = max(hover + 1.0, _num(g.get("magnet_lift_mm"), MAGNET_LIFT_MM))
+    return hover, lift
+
+
 def _clamp_push(g: dict) -> float:
     """Klemm-Andruck-Weg (mm) — konfigurierbar, Default 30 (Original). 0 = ohne Andruck."""
     return _num(g.get("clamp_push_mm", 30), 30)
@@ -558,8 +576,10 @@ def _clamp_push(g: dict) -> float:
 #   HOVER = Höhe über der Platte, in der der Arm ins Fach einfährt bzw. sich nach dem
 #           Ablegen wieder löst. Muss über der Platte liegen, sonst schiebt der Arm sie.
 #   LIFT  = Anhebeweg mit Platte (wie beim Original-Griff).
-# Bewusst Konstanten und nicht einstellbar: der Magnet-Greifer ist noch nicht
-# freigegeben (hardware.js → soon), die Werte gehören am realen Aufbau nachgemessen.
+# Beides ist über die Geometrie einstellbar (magnet_hover_mm / magnet_lift_mm) —
+# die Konstanten sind nur die Startwerte. Beim Freischalten des Greifers (v1.1.21)
+# waren sie am realen Aufbau noch nicht gemessen; fest eingebaut würde jeder
+# danebenliegende Testlauf eine Code-Änderung erzwingen.
 MAGNET_HOVER_MM = 12.0
 MAGNET_LIFT_MM = 25.0
 
@@ -593,7 +613,7 @@ def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
     if mag > 0 and int(slot) == mag:
         z_flat += magazine_z_offset(g, rack)
     if gripper_motion(g) == "magnet":
-        return _grab_magnet(rack, slot, x_unclamp, y_engage, z_flat, y_pb)
+        return _grab_magnet(g, rack, slot, x_unclamp, y_engage, z_flat, y_pb)
     x_mid = x_unclamp - _clamp_push(g)
     L = [f"M117 Grab rack {rack} slot {slot}..."]
     if nolift:
@@ -623,7 +643,7 @@ def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
     return L
 
 
-def _grab_magnet(rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
+def _grab_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
     """Platte mit dem Magnet-Greifer holen — nur Z, kein Weg nach links/rechts.
 
     Der Arm fährt ÜBER der Platte ins Fach ein, senkt sich auf sie ab (der Magnet
@@ -631,8 +651,8 @@ def _grab_magnet(rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
     Magazin/Lagerfach weg: flach gestapelt oder einzeln liegend ist dieselbe
     Bewegung — beim Original brauchte nur das Magazin den NOLIFT-Sonderweg.
     """
-    z_hover = z_flat + MAGNET_HOVER_MM
-    z_lift = z_flat + MAGNET_LIFT_MM
+    hover, lift = _magnet_z(g)
+    z_hover, z_lift = z_flat + hover, z_flat + lift
     return [
         f"M117 Grab rack {rack} slot {slot} (magnet)...",
         f"G1 X{_n(x_slot)} Y280 Z{_n(z_hover)} F4000", "M400",
@@ -647,15 +667,16 @@ def _grab_magnet(rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
     ]
 
 
-def _store_magnet(rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
+def _store_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
     """Platte mit dem Magnet-Greifer ablegen — nur Z, kein Weg nach links/rechts.
 
-    Offen und deshalb noch nicht freigegeben: das ABLÖSEN. Hier hebt der Arm nach
-    dem Absetzen einfach ab; ob die Fachhalterung die Platte dabei sicher hält oder es
-    einen Abstreifer braucht, ist am realen Aufbau noch nicht geprüft.
+    Weiterhin offen: das ABLÖSEN. Hier hebt der Arm nach dem Absetzen einfach ab; ob
+    die Fachhalterung die Platte dabei sicher hält oder es einen Abstreifer braucht,
+    muss der Testlauf zeigen. Deshalb erst mit Einzelschritt-Test fahren, nicht mit
+    einer Farm-Sequenz.
     """
-    z_hover = z_flat + MAGNET_HOVER_MM
-    z_lift = z_flat + MAGNET_LIFT_MM
+    hover, lift = _magnet_z(g)
+    z_hover, z_lift = z_flat + hover, z_flat + lift
     return [
         f"M117 Store rack {rack} slot {slot} (magnet)...",
         f"G1 X{_n(x_slot)} Y{_n(y_pb)} Z{_n(z_lift)} F4000", "M400",
@@ -672,7 +693,7 @@ def _store_magnet(rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
 def store_to_rack(g: dict, rack: int, slot: int) -> list[str]:
     x_unclamp, y_engage, z_flat, y_pb = slot_position(g, rack, slot)
     if gripper_motion(g) == "magnet":
-        return _store_magnet(rack, slot, x_unclamp, y_engage, z_flat, y_pb)
+        return _store_magnet(g, rack, slot, x_unclamp, y_engage, z_flat, y_pb)
     x_mid = x_unclamp - _clamp_push(g)
     return [
         f"M117 Store rack {rack} slot {slot}...",

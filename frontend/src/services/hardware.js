@@ -71,8 +71,8 @@ export const GRIPPERS = [
     name: 'Magnet-Greifer',
     vendor: 'printloom',
     motion: 'magnet',
-    soon: true,
-    desc: 'Umgebauter Greifarm mit magnetischem Greifmechanismus. Er zieht nicht mehr nach links/rechts, sondern senkt sich nur ab, nimmt die Platte auf und hebt wieder — kürzerer Weg je Fach, und Magazin und Lagerfach werden zur selben Bewegung. Noch in Arbeit: die Z-Wege und das Ablösen sind am realen Aufbau noch nicht geprüft.',
+    badge: 'Test',
+    desc: 'Umgebauter Greifarm mit magnetischem Greifmechanismus. Er zieht nicht mehr nach links/rechts, sondern senkt sich nur ab, nimmt die Platte auf und hebt wieder — kürzerer Weg je Fach, und Magazin und Lagerfach werden zur selben Bewegung. Zum Austesten freigegeben: Schwebe-Höhe und Anhebeweg stellst du im Drucker-Tab ein. Erst mit Einzelschritt-Test fahren, nicht gleich mit einer Farm-Sequenz — ob die Platte beim Abheben sicher im Fach bleibt, muss der Testlauf zeigen.',
   },
 ]
 
@@ -81,20 +81,24 @@ export function gripperMotion(gripperId) {
   return GRIPPERS.find(x => x.id === gripperId)?.motion || 'clamp'
 }
 
-/* Oberstes Fach: Magazin (Nachschub-Stapel) oder normales Lagerfach. */
+/* Oberstes Fach: Lagerfach (Original-Aufbau) oder Magazin (Printloom-Erweiterung).
+   Reihenfolge = Anzeige-Reihenfolge im Assistenten, links das Original. Die
+   VORAUSWAHL steckt in DEFAULT_COMPONENTS und bleibt bewusst das Magazin: nur damit
+   holt sich die Farm selbst Nachschub. Reihenfolge und Vorauswahl sind hier also
+   absichtlich zwei verschiedene Dinge. */
 export const TOP_SLOT_OPTIONS = [
-  {
-    id: 'magazine',
-    name: 'Oberstes Fach = Magazin',
-    vendor: 'ottomat3d',
-    badge: 'Standard',
-    desc: 'Das oberste Fach hält einen Stapel LEERER Druckplatten. Die Farm holt sich daraus selbst Nachschub — echter unbeaufsichtigter Dauerbetrieb. Die Fächer darunter lagern die fertigen Drucke.',
-  },
   {
     id: 'storage',
     name: 'Alle Fächer = Lagerfächer',
-    vendor: 'printloom',
+    vendor: 'ottomat3d',
     desc: 'Kein Magazin: die leeren Platten liegen BEREITS in den Fächern. In der Farm-Ansicht markierst du je Fach mit ▭, wo eine leere Platte liegt — die Farm greift von oben nach unten daraus und legt den fertigen Druck in ein Fach OHNE Platte. Ein Lagerfach mehr, aber Nachschub legst du selbst ein.',
+  },
+  {
+    id: 'magazine',
+    name: 'Oberstes Fach = Magazin',
+    vendor: 'printloom',
+    badge: 'Standard',
+    desc: 'Das oberste Fach hält einen Stapel LEERER Druckplatten. Die Farm holt sich daraus selbst Nachschub — echter unbeaufsichtigter Dauerbetrieb. Die Fächer darunter lagern die fertigen Drucke.',
   },
 ]
 

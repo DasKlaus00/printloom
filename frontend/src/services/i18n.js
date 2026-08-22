@@ -2400,8 +2400,6 @@ const EN_STRINGS = {
   'Der ausgelieferte Greifarm. Er fährt seitlich über den Greifpunkt hinaus und klemmt die Platte in ihrer Halterung fest bzw. schiebt sie beim Ablegen wieder heraus.':
     'The gripper arm as shipped. It moves sideways past the grip point and clamps the plate into its holder, or pushes it back out when storing.',
   'Magnet-Greifer': 'Magnetic gripper',
-  'Umgebauter Greifarm mit magnetischem Greifmechanismus. Er zieht nicht mehr nach links/rechts, sondern senkt sich nur ab, nimmt die Platte auf und hebt wieder — kürzerer Weg je Fach, und Magazin und Lagerfach werden zur selben Bewegung. Noch in Arbeit: die Z-Wege und das Ablösen sind am realen Aufbau noch nicht geprüft.':
-    'A converted gripper arm with a magnetic grip mechanism. It no longer pulls left or right; it only lowers, picks the plate up and lifts again — a shorter path per slot, and magazine and storage slot become the same motion. Still in progress: the Z travels and the release have not been verified on the real build.',
   'Material ({0} g)': 'Material ({0} g)',
   'Filamentpreis steht auf 0 — unter Konfiguration → Energie & Kosten eintragen.':
     'The filament price is set to 0 — enter it under Configuration → Energy & costs.',
@@ -2440,6 +2438,18 @@ const EN_STRINGS = {
     'Skipped stations keep the values from the printer template. You can catch up any time in the printer tab via 📐.',
   '✓ Einmessen abgeschlossen': '✓ Measuring in complete',
   'Einmessen später fortsetzen': 'Continue measuring in later',
+  'Test': 'Testing',
+  'Umgebauter Greifarm mit magnetischem Greifmechanismus. Er zieht nicht mehr nach links/rechts, sondern senkt sich nur ab, nimmt die Platte auf und hebt wieder — kürzerer Weg je Fach, und Magazin und Lagerfach werden zur selben Bewegung. Zum Austesten freigegeben: Schwebe-Höhe und Anhebeweg stellst du im Drucker-Tab ein. Erst mit Einzelschritt-Test fahren, nicht gleich mit einer Farm-Sequenz — ob die Platte beim Abheben sicher im Fach bleibt, muss der Testlauf zeigen.':
+    'A converted gripper arm with a magnetic grip mechanism. It no longer pulls left or right; it only lowers, picks the plate up and lifts again — a shorter path per slot, and magazine and storage slot become the same motion. Released for testing: set the hover height and the lift travel in the printer tab. Run it with the single-step test first, not straight away with a farm sequence — whether the plate stays in the slot as the arm lifts off can only be shown by a test run.',
+  'Magnet · Schweben {0} mm · Anheben {1} mm · Platte {2} mm': 'Magnet · hover {0} mm · lift {1} mm · plate {2} mm',
+  'Schwebe-Höhe (mm)': 'Hover height (mm)',
+  'über der Platte einfahren': 'enter above the plate',
+  'Anhebeweg (mm)': 'Lift travel (mm)',
+  'mit Platte anheben': 'lift with the plate',
+  'Magnet-Greifer: der Arm fährt um die Schwebe-Höhe ÜBER der Platte ins Fach, senkt sich auf sie ab (der Magnet greift), hebt um den Anhebeweg an und zieht heraus. Kein Weg nach links/rechts — der Andruck-Weg gilt hier nur noch für Auswurf und Einlegen am Drucker. ACHTUNG: Ist die Schwebe-Höhe zu klein, schiebt der Arm die Platte beim Einfahren vor sich her.':
+    'Magnetic gripper: the arm enters the slot at the hover height ABOVE the plate, lowers onto it (the magnet grips), lifts by the lift travel and pulls out. No left/right travel — the push distance now only applies to ejecting and placing at the printer. CAUTION: if the hover height is too small, the arm shoves the plate ahead of it on the way in.',
+  '⚠ Der Magnet-Greifer ist zum Austesten freigegeben, aber nicht am realen Aufbau vermessen. Fahre Greifen und Ablegen erst einzeln über die Test-Knöpfe unten — ob die Platte beim Abheben im Fach bleibt, zeigt sich erst dabei.':
+    '⚠ The magnetic gripper is released for testing but has not been measured on the real build. Run grabbing and storing individually via the test buttons below first — whether the plate stays in the slot as the arm lifts off only shows up there.',
 }
 
 function deepMerge(base, over) {

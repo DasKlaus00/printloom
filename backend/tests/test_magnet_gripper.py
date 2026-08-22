@@ -148,3 +148,59 @@ def test_eine_magnet_halterung_bleibt_ohne_wirkung():
     """Nur der Greifer entscheidet ueber die Bewegung — eine Halterung namens
     "magnet" darf sie nicht umstellen."""
     assert m.gripper_motion(geo(holder="magnet")) == "clamp"
+
+
+# -- Einstellbare Z-Wege (seit der Freigabe zum Austesten) --------------------
+
+def test_schwebehoehe_ist_einstellbar():
+    """Der Greifer ist freigegeben, aber nicht vermessen — wer die Werte nicht
+    verstellen kann, braucht fuer jeden Testlauf eine Code-Aenderung."""
+    g = magnet(magnet_hover_mm=20, magnet_lift_mm=40)
+    z = coords(m.build_op(g, "grab", rack=1, slot=1, check=False), "Z")
+    flat = m.slot_position(g, 1, 1)[2]
+    assert flat + 20 in z
+    assert flat + 40 in z
+
+
+def test_anhebeweg_ist_einstellbar_beim_ablegen():
+    g = magnet(magnet_hover_mm=15, magnet_lift_mm=35)
+    z = coords(m.build_op(g, "store", rack=1, slot=1, check=False), "Z")
+    flat = m.slot_position(g, 1, 1)[2]
+    assert flat + 15 in z and flat + 35 in z
+
+
+def test_schwebehoehe_null_wird_verweigert():
+    """Bei 0 fuehre der Arm auf Plattenhoehe ein und schoebe sie vor sich her.
+    Ein Tippfehler im Eingabefeld darf keine solche Bewegung erzeugen."""
+    g = magnet(magnet_hover_mm=0)
+    flat = m.slot_position(g, 1, 1)[2]
+    z = coords(m.build_op(g, "grab", rack=1, slot=1, check=False), "Z")
+    assert all(v >= flat for v in z)
+    assert max(z) > flat
+
+
+def test_negative_schwebehoehe_wird_verweigert():
+    g = magnet(magnet_hover_mm=-30)
+    flat = m.slot_position(g, 1, 1)[2]
+    assert all(v >= flat for v in coords(m.build_op(g, "grab", rack=1, slot=1, check=False), "Z"))
+
+
+def test_anhebeweg_unter_der_schwebehoehe_wird_angehoben():
+    """Sonst zoege der Arm die Platte gar nicht erst aus dem Fach."""
+    hover, lift = m._magnet_z({"magnet_hover_mm": 20, "magnet_lift_mm": 5})
+    assert lift > hover
+
+
+def test_muell_faellt_auf_die_startwerte_zurueck():
+    for bad in (None, "", "viel", float("nan")):
+        hover, lift = m._magnet_z({"magnet_hover_mm": bad, "magnet_lift_mm": bad})
+        assert hover == m.MAGNET_HOVER_MM and lift == m.MAGNET_LIFT_MM
+
+
+def test_die_z_wege_beruehren_den_klemm_greifer_nicht():
+    g = m.merge_defaults({"racks": 3, "gripper": "standard",
+                          "magnet_hover_mm": 99, "magnet_lift_mm": 99})
+    a = m.build_op(g, "grab", rack=1, slot=1, check=False)
+    b = m.build_op(m.merge_defaults({"racks": 3, "gripper": "standard"}),
+                   "grab", rack=1, slot=1, check=False)
+    assert a == b
