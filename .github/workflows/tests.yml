@@ -27,5 +27,10 @@ jobs:
           node-version: '20'
       - name: Install deps
         run: cd frontend && npm install --no-audit --no-fund
+      # Faengt Abstuerze ab, die kein Test sieht: eine vergessene Variable
+      # (no-undef) reisst beim Rendern die ganze Seite runter. Bewusst nur die
+      # Absturz-Regeln - Stil-Meckern wuerde den Waechter unbrauchbar machen.
+      - name: Run lint (Absturz-Regeln)
+        run: cd frontend && npm run lint:ci
       - name: Run vitest
         run: cd frontend && npm test

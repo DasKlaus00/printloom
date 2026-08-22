@@ -36,6 +36,7 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
   const [done, setDone] = useState({})        // id → 'ok' | 'skip'
   const [busy, setBusy] = useState(false)
   const [err, setErr]   = useState('')
+  const [homing, setHoming] = useState('')   // '' | 'run' | 'ok' | 'err'
 
   const nr = Math.max(1, num(numRacks, 1))
   const mag = num(magazineSlot, 0)

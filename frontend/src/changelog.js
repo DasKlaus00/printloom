@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.28',
+    de: [
+      'BEHOBEN: Die geführte Erstkalibrierung stürzte beim Öffnen ab („homing is not defined"). Der Home-Knopf, den ich in 1.1.21 eingebaut habe, benutzte einen Zustand, den ich nie angelegt hatte — die ganze Seite blieb dadurch weiß.',
+      'BEHOBEN: Der Test-Knopf für Push-Benachrichtigungen meldete immer „Test fehlgeschlagen". Der eigentliche Aufruf an den Server fehlte in der Funktion; der Fehler fiel in einen leeren Auffang-Block und war deshalb nicht zu sehen.',
+      'NEU IM WÄCHTER: Die Testläufe prüfen jetzt zusätzlich auf vergessene Variablen. Genau diese beiden Fehler hätte kein Test gefunden — sie brechen erst beim Anzeigen, und die Prüfung lief bisher nirgends. Bewusst nur die Absturz-Regeln, damit der Wächter nicht im Stil-Meckern untergeht.',
+    ],
+    en: [
+      'FIXED: the guided first calibration crashed on open ("homing is not defined"). The home button I added in 1.1.21 used a state value I never created — the whole page stayed blank.',
+      'FIXED: the test button for push notifications always reported "test failed". The actual call to the server was missing from the function; the error fell into an empty catch block and was therefore invisible.',
+      'NEW GUARD: the test runs now also check for forgotten variables. Neither of these two bugs would have been caught by a test — they only break at render time, and the check was not running anywhere. Deliberately limited to the crash rules so the guard is not drowned out by style complaints.',
+    ],
+  },
+  {
     version: '1.1.27',
     de: [
       'BEHOBEN: In 1.1.26 fehlte die englische Fassung eines Hinweistextes im Drucker-Tab — die englische Oberfläche zeigte dort Deutsch. Der Übersetzungs-Wächter hatte es gemeldet, ich hatte seine Ausgabe abgeschnitten und den Fehlschlag übersehen.',

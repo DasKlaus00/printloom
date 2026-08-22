@@ -75,6 +75,7 @@ function PushNotifications() {
       // Ensure THIS device's subscription is registered server-side before testing,
       // so a desync doesn't make the test silently hit 0 devices.
       await syncSubscription().catch(() => {})
+      const r = await pushService.test()
       const d = r.data
       if (d.disabled) {
         flash(tr('Server-Push nicht verfügbar (Abhängigkeiten fehlen)'), false)

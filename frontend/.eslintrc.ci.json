@@ -1,0 +1,10 @@
+{
+  "extends": "./.eslintrc.json",
+  "rules": {
+    "react/prop-types": "off",
+    "no-unused-vars": "off",
+    "no-empty": "off",
+    "no-extra-semi": "off",
+    "no-undef": "error"
+  }
+}
