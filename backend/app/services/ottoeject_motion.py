@@ -100,6 +100,8 @@ DEFAULT_GEOMETRY = {
     "magnet_store_z_mm": 35.0,   # Einfahrhöhe über der Fachhöhe beim Ablegen
     "magnet_release_mm": 5.0,    # Absenken UNTER die Fachhöhe zum Ablösen
     "magnet_y_clear_mm": 42.0,   # Abstand vor dem Fach (Y-Vorposition)
+    "magnet_y_travel_mm": 280.0, # Y, auf der die X-Ausrichtung passiert
+    "magnet_y_retract_mm": 25.0, # Y, auf die nach dem Greifen zurückgezogen wird
     "magnet_store_x_mm": 0.0,    # X-Versatz beim Ablegen (0 = wie beim Greifen)
     # Achsgrenzen des Geräts in mm ({} = unbekannt) — für die Plausibilitätsprüfung
     # (geometry_check). Am besten per „Grenzen vom Gerät holen" aus Klipper geholt,
@@ -149,7 +151,8 @@ def _sanitize_geometry(g: dict) -> dict:
     d = DEFAULT_GEOMETRY
     for k in ("racks", "storage_slots", "magazine_slot", "speed_factor", "clamp_push_mm",
               "magnet_lift_mm", "magnet_store_z_mm", "magnet_release_mm",
-              "magnet_y_clear_mm", "magnet_store_x_mm"):
+              "magnet_y_clear_mm", "magnet_store_x_mm",
+              "magnet_y_travel_mm", "magnet_y_retract_mm"):
         if g.get(k) is not None:
             g[k] = _num(g.get(k), d.get(k, 0))
     sf = g.get("speed_factors")
@@ -563,20 +566,35 @@ def slot_position(g: dict, rack: int, slot: int) -> tuple[float, float, float, f
     return r["x"], r["y_engage"], z, float((g.get("storage") or {}).get("y_pullback_limit", 5))
 
 
-def _magnet_z(g: dict) -> tuple[float, float, float, float]:
-    """(lift, store_z, release, y_clear) des Magnet-Greifers in mm.
+def _magnet_z(g: dict) -> tuple[float, float, float]:
+    """(lift, store_z, release) des Magnet-Greifers in mm.
 
     Grenzen, die eine Kollision verhindern und deshalb nicht der Eingabe überlassen
     bleiben: der Anhebeweg muss über 0 liegen (sonst hebt der Arm die Platte gar
-    nicht an), die Einfahrhöhe beim Ablegen muss über dem Anhebeweg liegen (sonst
-    streift die getragene Platte das Fach darüber), und beide Y-/Release-Wege
-    dürfen nicht negativ werden.
+    nicht an), und die Einfahrhöhe beim Ablegen muss über dem Anhebeweg liegen
+    (sonst streift die getragene Platte das Fach darüber).
     """
     lift = max(1.0, _num(g.get("magnet_lift_mm"), MAGNET_LIFT_MM))
     store_z = max(lift + 1.0, _num(g.get("magnet_store_z_mm"), MAGNET_STORE_Z_MM))
     release = max(0.0, _num(g.get("magnet_release_mm"), MAGNET_RELEASE_MM))
-    y_clear = max(1.0, _num(g.get("magnet_y_clear_mm"), MAGNET_Y_CLEAR_MM))
-    return lift, store_z, release, y_clear
+    return lift, store_z, release
+
+
+def _magnet_y(g: dict) -> tuple[float, float, float]:
+    """(travel, clear, retract) des Magnet-Greifers in mm.
+
+    travel  = Y, auf der die X-Fahrt zwischen den Regalen stattfindet. NICHT der
+              Rückzugsanschlag: dort steht der Arm ganz hinten, und von da aus auf
+              Fachhöhe zu gehen kostet nur Weg. 280 ist dieselbe Reise-Y, die auch
+              der Original-Greifer benutzt.
+    clear   = Abstand vor dem Fach, aus dem heraus langsam eingefahren wird.
+    retract = Y nach dem Anheben. Der Arm trägt hier eine Platte und muss nur weit
+              genug heraus, um frei zu sein — nicht bis an den Anschlag.
+    """
+    travel = max(0.0, _num(g.get("magnet_y_travel_mm"), MAGNET_Y_TRAVEL_MM))
+    clear = max(1.0, _num(g.get("magnet_y_clear_mm"), MAGNET_Y_CLEAR_MM))
+    retract = max(0.0, _num(g.get("magnet_y_retract_mm"), MAGNET_Y_RETRACT_MM))
+    return travel, clear, retract
 
 
 def _clamp_push(g: dict) -> float:
@@ -596,6 +614,8 @@ MAGNET_LIFT_MM = 15.0
 MAGNET_STORE_Z_MM = 35.0
 MAGNET_RELEASE_MM = 5.0
 MAGNET_Y_CLEAR_MM = 42.0
+MAGNET_Y_TRAVEL_MM = 280.0
+MAGNET_Y_RETRACT_MM = 25.0
 
 
 # Greifer, die magnetisch aufnehmen (Kennung aus hardware.js).
@@ -660,29 +680,29 @@ def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
 def _grab_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
     """Platte mit dem Magnet-Greifer holen — nur Z, kein Weg nach links/rechts.
 
-    Gemessen an Regal 3 Fach 1 (z_flat 15, y_engage 342, Rückzug 20):
+    Gemessen an Regal 3 Fach 1 (z_flat 15, y_engage 342):
 
-        G1 Z15 · G1 Y300 · G1 Y342 · G1 Z30 · G1 Y20
+        G1 Y280 · G1 Z15 · G1 Y300 · G1 Y342 · G1 Z30 · G1 Y25
 
     Der Arm fährt UNTER die Platte, schiebt sich unter sie und HEBT sie an — der
     Magnet zieht sie beim Anheben an den Greifer. Damit fällt die Unterscheidung
     Magazin/Lagerfach weg: flach gestapelt oder einzeln liegend ist dieselbe
     Bewegung — beim Original-Greifer brauchte nur das Magazin den NOLIFT-Sonderweg.
 
-    Die X-Ausrichtung passiert ZURÜCKGEZOGEN (Y = Rückzug), bevor der Arm auf
-    Fachhöhe geht: eine X-Fahrt zwischen den Fächern würde sonst an den Platten
-    entlangschrammen.
+    Die X-Ausrichtung passiert auf der REISE-Y (280), nicht am Rückzugsanschlag:
+    dort steht der Arm ganz hinten, und der Weg von da auf Fachhöhe ist verschenkt.
     """
-    lift, _store_z, _release, y_clear = _magnet_z(g)
+    lift, _store_z, _release = _magnet_z(g)
+    y_travel, y_clear, y_retract = _magnet_y(g)
     return [
         f"M117 Grab rack {rack} slot {slot} (magnet)...",
-        f"G1 X{_n(x_slot)} Y{_n(y_pb)} F4000", "M400",       # X ausrichten, zurückgezogen
+        f"G1 X{_n(x_slot)} Y{_n(y_travel)} F4000", "M400",   # X ausrichten, auf Reise-Y
         f"G1 Z{_n(z_flat)} F1000", "M400",                   # unter die Platte
         f"G1 Y{_n(y_engage - y_clear)} F4000", "M400",       # vor das Fach
         f"G1 Y{_n(y_engage)} F600", "M400",                  # unter die Platte einfahren
         "M117 Picking up new bed (magnet)...",
         f"G1 Z{_n(z_flat + lift)} F600", "M400",             # anheben → Platte haftet
-        f"G1 Y{_n(y_pb)} F2000", "M400",                     # herausziehen
+        f"G1 Y{_n(y_retract)} F2000", "M400",                # mit Platte herausziehen
     ]
 
 
@@ -701,8 +721,14 @@ def _store_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
     `magnet_store_x_mm` verschiebt die Ablege-X gegenüber der Greif-X (Standard 0 =
     dieselbe). Der Wert steht getrennt, weil die gemessene Bewegung keine X-Fahrt
     enthält, das Ablegen aber je nach Aufbau versetzt sein kann.
+
+    Die X-Ausrichtung passiert hier BEWUSST am Rückzugsanschlag und nicht auf der
+    Reise-Y wie beim Greifen: der Arm trägt an dieser Stelle einen fertigen Druck.
+    Ihn 275 mm weiter vorn quer durch die Anlage zu fahren, ist eine andere Zusage
+    als mit leerem Greifer — die gehört gemessen, nicht abgeleitet.
     """
-    _lift, store_z, release, y_clear = _magnet_z(g)
+    _lift, store_z, release = _magnet_z(g)
+    _y_travel, y_clear, _y_retract = _magnet_y(g)
     x_store = x_slot + _num(g.get("magnet_store_x_mm"), 0.0)
     return [
         f"M117 Store rack {rack} slot {slot} (magnet)...",

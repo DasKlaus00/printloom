@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.24',
+    de: [
+      'MAGNET-GREIFER: Beim Greifen richtet der Arm die X jetzt auf einer REISE-Y aus (280) statt am Rückzugsanschlag (5). Von ganz hinten auf Fachhöhe zu fahren war nur verschenkter Weg; 280 ist dieselbe Reise-Y, die auch der Original-Greifer benutzt.',
+      'Der Rückzug nach dem Anheben geht auf Y25 statt bis an den Anschlag. Der Arm trägt an dieser Stelle eine Platte und muss nur weit genug heraus, um frei zu sein. Beide Werte sind im Drucker-Tab einstellbar („Reise-Y" und „Y-Rückzug").',
+      'Greifen fährt damit: Y280 → Z15 → Y300 → Y342 → Z30 → Y25.',
+      'Das ABLEGEN richtet die X bewusst weiterhin am Rückzugsanschlag aus. Dort trägt der Arm einen fertigen Druck — ihn 275 mm weiter vorn quer durch die Anlage zu fahren ist eine andere Zusage als mit leerem Greifer, und die gehört gemessen statt abgeleitet.',
+    ],
+    en: [
+      'MAGNETIC GRIPPER: when grabbing, the arm now aligns X at a TRAVEL Y (280) instead of at the retract stop (5). Moving from the far back onto slot height was wasted travel; 280 is the same travel Y the original gripper uses.',
+      'The retract after lifting goes to Y25 rather than all the way to the stop. The arm is carrying a plate at that point and only needs to come out far enough to be clear. Both values are adjustable in the printer tab ("Travel Y" and "Y retract").',
+      'Grabbing therefore runs: Y280 → Z15 → Y300 → Y342 → Z30 → Y25.',
+      'STORING deliberately still aligns X at the retract stop. There the arm carries a finished print — moving it 275 mm further forward across the machine is a different promise than doing so with an empty gripper, and that belongs measured rather than inferred.',
+    ],
+  },
+  {
     version: '1.1.23',
     de: [
       'BEHOBEN: „Zu dicht am Endschalter" kam beim Magnet-Greifer weiterhin. Die Prüfung lag an ZWEI Stellen — im Backend (v1.1.22 korrigiert) und noch einmal im Drucker-Tab, wo Regal-Karte und Schienen-Übersicht sie selbst rechnen. Diese zweite Stelle kannte den Greifer nicht. Beide fragen jetzt denselben Wert ab: an den Regalen ist der Andruck-Weg beim Magnet 0, am Drucker gelten die 30 mm weiter.',

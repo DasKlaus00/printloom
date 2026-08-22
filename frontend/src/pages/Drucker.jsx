@@ -857,6 +857,8 @@ export default function Drucker() {
   const [magRelease, setMagRelease] = useState(5)    // Absenken UNTER Fachhöhe (Ablösen)
   const [magYClear,  setMagYClear]  = useState(42)   // Y-Vorposition vor dem Fach
   const [magStoreX,  setMagStoreX]  = useState(0)    // X-Versatz beim Ablegen
+  const [magYTravel, setMagYTravel] = useState(280)  // Y, auf der X ausgerichtet wird
+  const [magYRetr,   setMagYRetr]   = useState(25)   // Y-Rückzug nach dem Greifen
   const [speedFactor, setSpeedFactor] = useState(100)   // globaler M220-Vorschub in %
   const [useGcode, setUseGcode] = useState({})          // NUR Regal-Ops (grab/store)
   const [gcodeOverride, setGcodeOverride] = useState({})// NUR Regal-Ops
@@ -1041,11 +1043,13 @@ export default function Drucker() {
     magnet_release_mm:  num(magRelease, 5),
     magnet_y_clear_mm:  num(magYClear, 42),
     magnet_store_x_mm:  num(magStoreX, 0),
+    magnet_y_travel_mm:  num(magYTravel, 280),
+    magnet_y_retract_mm: num(magYRetr, 25),
     machine_limits: { ...limits },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [shownPrinters, rackGeo, rackList, storage, yPullback, useGcode, gcodeOverride,
        speedFactor, speedFactors, clampPush, gripper, magLift, magStoreZ, magRelease, magYClear,
-       magStoreX, limits, rackXTrim])
+       magStoreX, magYTravel, magYRetr, limits, rackXTrim])
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
   const isMagnet = gripper === 'magnet'
@@ -1078,6 +1082,8 @@ export default function Drucker() {
       if (g.magnet_release_mm != null) setMagRelease(g.magnet_release_mm)
       if (g.magnet_y_clear_mm != null) setMagYClear(g.magnet_y_clear_mm)
       if (g.magnet_store_x_mm != null) setMagStoreX(g.magnet_store_x_mm)
+      if (g.magnet_y_travel_mm != null) setMagYTravel(g.magnet_y_travel_mm)
+      if (g.magnet_y_retract_mm != null) setMagYRetr(g.magnet_y_retract_mm)
       if (g.machine_limits && typeof g.machine_limits === 'object') setLimits(g.machine_limits)
       if (g.use_gcode) {
         // Migration: die Einlege-Op hieß früher „load", jetzt „place" (Alias).
@@ -1409,6 +1415,10 @@ export default function Drucker() {
                 value={magYClear} onChange={setMagYClear} />
               <NumField label={tr('X-Versatz Ablegen (mm)')} hint={tr('0 = wie beim Greifen')}
                 value={magStoreX} onChange={setMagStoreX} />
+              <NumField label={tr('Reise-Y (mm)')} hint={tr('Greifen: hier wird X ausgerichtet')}
+                value={magYTravel} onChange={setMagYTravel} />
+              <NumField label={tr('Y-Rückzug (mm)')} hint={tr('Greifen: mit Platte heraus')}
+                value={magYRetr} onChange={setMagYRetr} />
             </div>
           ) : (
             <NumField label={tr('Andruck-Weg (mm)')} hint={tr('Greifer-Andruck · 0 = kein Griff!')}
@@ -1432,7 +1442,7 @@ export default function Drucker() {
         </p>
         {isMagnet && (
           <p className="text-[9px] text-surface-600">
-            {tr('Die Startwerte stammen aus einer Messung an Regal 3 Fach 1 (Fachhöhe 15 mm): Greifen Z15 → Y300 → Y342 → Z30 → Y20, Ablegen Z50 → Y342 → Z10 → Y300. Weicht dein Aufbau ab, sind das die Stellschrauben.')}
+            {tr('Die Startwerte stammen aus einer Messung an Regal 3 Fach 1 (Fachhöhe 15 mm): Greifen Y280 → Z15 → Y300 → Y342 → Z30 → Y25, Ablegen Z50 → Y342 → Z10 → Y300. Weicht dein Aufbau ab, sind das die Stellschrauben.')}
           </p>
         )}
 

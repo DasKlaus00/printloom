@@ -120,8 +120,8 @@ def test_ablegen_kommt_hoeher_herein_und_senkt_unter_die_fachhoehe():
 
 
 def test_die_gemessene_bewegung_kommt_exakt_heraus():
-    """Regal 3 Fach 1 am Referenz-Aufbau: z_flat 15, y_engage 342, Rueckzug 20.
-        Greifen  Z15 -> Y300 -> Y342 -> Z30 -> Y20
+    """Regal 3 Fach 1 am Referenz-Aufbau: z_flat 15, y_engage 342.
+        Greifen  Y280 -> Z15 -> Y300 -> Y342 -> Z30 -> Y25
         Ablegen  Z50 -> Y342 -> Z10 -> Y300
     Wenn diese Zahlen wandern, ist die Bewegung eine andere als die gefahrene."""
     g = m.merge_defaults({
@@ -129,23 +129,57 @@ def test_die_gemessene_bewegung_kommt_exakt_heraus():
         "rack_geo": {"3": {"x": 100, "y_engage": 342, "first_z": 15, "slot_gap": 25}}})
     grab = m.build_op(g, "grab", rack=3, slot=1, check=False)
     assert coords(grab, "Z") == [15.0, 30.0]
-    assert coords(grab, "Y") == [20.0, 300.0, 342.0, 20.0]
+    assert coords(grab, "Y") == [280.0, 300.0, 342.0, 25.0]
     store = m.build_op(g, "store", rack=3, slot=1, check=False)
     assert coords(store, "Z") == [50.0, 10.0]
     assert coords(store, "Y") == [20.0, 300.0, 342.0, 300.0]
 
 
-def test_die_x_ausrichtung_passiert_zurueckgezogen():
-    """Eine X-Fahrt auf Fachhoehe wuerde an den Platten entlangschrammen."""
+def test_die_x_ausrichtung_passiert_genau_einmal_als_erste_fahrt():
+    """Eine X-Fahrt auf Fachhoehe wuerde an den Platten entlangschrammen — X muss
+    fertig sein, bevor der Arm in Z geht."""
     g = magnet()
-    y_pb = m.slot_position(g, 2, 3)[3]
     for op in ("grab", "store"):
         lines = [l for l in m.build_op(g, op, rack=2, slot=3, check=False).splitlines()
                  if l.startswith("G1 ")]
         x_moves = [l for l in lines if " X" in l]
-        assert len(x_moves) == 1                       # X genau einmal
-        assert f"Y{y_pb:g}" in x_moves[0]              # und dabei zurueckgezogen
-        assert lines.index(x_moves[0]) == 0            # als allererste Fahrt
+        assert len(x_moves) == 1
+        assert lines.index(x_moves[0]) == 0
+
+
+def test_greifen_richtet_x_auf_der_reise_y_aus():
+    """Der Rueckzugsanschlag ist die falsche Stelle dafuer: von dort auf Fachhoehe
+    zu gehen kostet nur Weg. 280 ist dieselbe Reise-Y wie beim Original-Greifer."""
+    g = magnet(magnet_y_travel_mm=280)
+    first = [l for l in m.build_op(g, "grab", rack=2, slot=3, check=False).splitlines()
+             if l.startswith("G1 ")][0]
+    assert "Y280" in first
+
+
+def test_ablegen_richtet_x_am_anschlag_aus():
+    """Hier traegt der Arm einen fertigen Druck. Ihn 275 mm weiter vorn quer durch
+    die Anlage zu fahren waere eine andere Zusage als mit leerem Greifer."""
+    g = magnet()
+    y_pb = m.slot_position(g, 2, 3)[3]
+    first = [l for l in m.build_op(g, "store", rack=2, slot=3, check=False).splitlines()
+             if l.startswith("G1 ")][0]
+    assert f"Y{y_pb:g}" in first
+
+
+def test_der_rueckzug_nach_dem_greifen_ist_einstellbar():
+    """Der Arm traegt hier eine Platte und muss nur weit genug heraus, um frei zu
+    sein — nicht bis an den Anschlag."""
+    g = magnet(magnet_y_retract_mm=25)
+    assert coords(m.build_op(g, "grab", rack=2, slot=3, check=False), "Y")[-1] == 25.0
+    g2 = magnet(magnet_y_retract_mm=60)
+    assert coords(m.build_op(g2, "grab", rack=2, slot=3, check=False), "Y")[-1] == 60.0
+
+
+def test_negative_y_werte_werden_verweigert():
+    """Hinter dem Endschalter gibt es nichts — Klipper braeche die Fahrt ab."""
+    travel, _clear, retract = m._magnet_y({"magnet_y_travel_mm": -50,
+                                           "magnet_y_retract_mm": -10})
+    assert travel >= 0 and retract >= 0
 
 
 # ── Magazin ──────────────────────────────────────────────────────────────────
@@ -215,23 +249,24 @@ def test_anhebeweg_null_wird_verweigert():
 
 def test_einfahrhoehe_unter_dem_anhebeweg_wird_angehoben():
     """Sonst streift die getragene Platte beim Einfahren das Fach darueber."""
-    lift, store_z, _rel, _yc = m._magnet_z({"magnet_lift_mm": 40, "magnet_store_z_mm": 5})
+    lift, store_z, _rel = m._magnet_z({"magnet_lift_mm": 40, "magnet_store_z_mm": 5})
     assert store_z > lift
 
 
 def test_negative_abloesetiefe_wird_verweigert():
     """Negativ hiesse: der Arm hebt beim Ablegen an, statt die Platte abzusetzen."""
-    _l, _s, release, _yc = m._magnet_z({"magnet_release_mm": -20})
+    _l, _s, release = m._magnet_z({"magnet_release_mm": -20})
     assert release >= 0
 
 
 def test_muell_faellt_auf_die_startwerte_zurueck():
     for bad in (None, "", "viel", float("nan")):
-        lift, store_z, release, y_clear = m._magnet_z(
-            {"magnet_lift_mm": bad, "magnet_store_z_mm": bad,
-             "magnet_release_mm": bad, "magnet_y_clear_mm": bad})
-        assert (lift, store_z, release, y_clear) == (
-            m.MAGNET_LIFT_MM, m.MAGNET_STORE_Z_MM, m.MAGNET_RELEASE_MM, m.MAGNET_Y_CLEAR_MM)
+        assert m._magnet_z({"magnet_lift_mm": bad, "magnet_store_z_mm": bad,
+                            "magnet_release_mm": bad}) == (
+            m.MAGNET_LIFT_MM, m.MAGNET_STORE_Z_MM, m.MAGNET_RELEASE_MM)
+        assert m._magnet_y({"magnet_y_travel_mm": bad, "magnet_y_clear_mm": bad,
+                            "magnet_y_retract_mm": bad}) == (
+            m.MAGNET_Y_TRAVEL_MM, m.MAGNET_Y_CLEAR_MM, m.MAGNET_Y_RETRACT_MM)
 
 
 def test_die_z_wege_beruehren_den_klemm_greifer_nicht():

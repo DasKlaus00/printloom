@@ -2453,8 +2453,6 @@ const EN_STRINGS = {
   '0 = wie beim Greifen': '0 = same as when grabbing',
   'Magnet-Greifer: beim GREIFEN fährt der Arm auf Fachhöhe unter die Platte und hebt sie an. Beim ABLEGEN kommt er höher herein und senkt sich UNTER die Fachhöhe — dabei bleibt die Platte liegen und löst sich vom Magneten. Kein Weg nach links/rechts; der Andruck-Weg gilt nur noch für Auswurf und Einlegen am Drucker.':
     'Magnetic gripper: when GRABBING the arm moves in at slot height underneath the plate and lifts it. When STORING it enters higher and lowers BELOW the slot height — the plate stays behind and releases from the magnet. No left/right travel; the push distance now only applies to ejecting and placing at the printer.',
-  'Die Startwerte stammen aus einer Messung an Regal 3 Fach 1 (Fachhöhe 15 mm): Greifen Z15 → Y300 → Y342 → Z30 → Y20, Ablegen Z50 → Y342 → Z10 → Y300. Weicht dein Aufbau ab, sind das die Stellschrauben.':
-    'The starting values come from a measurement on rack 3 slot 1 (slot height 15 mm): grabbing Z15 → Y300 → Y342 → Z30 → Y20, storing Z50 → Y342 → Z10 → Y300. If your build differs, these are the adjustments.',
   'Umgebauter Greifarm mit magnetischem Greifmechanismus. Beim Greifen fährt der Arm auf Fachhöhe unter die Platte und hebt sie an; beim Ablegen kommt er höher herein und senkt sich unter die Fachhöhe, sodass die Platte liegen bleibt. Kein Weg mehr nach links/rechts, und Magazin und Lagerfach werden zur selben Bewegung. Die Z-Wege stellst du im Drucker-Tab ein.':
     'A converted gripper arm with a magnetic grip mechanism. When grabbing, the arm moves in at slot height underneath the plate and lifts it; when storing it enters higher and lowers below the slot height so the plate stays behind. No more left/right travel, and magazine and storage slot become the same motion. You set the Z travels in the printer tab.',
   'Fährt…': 'Moving…',
@@ -2465,6 +2463,12 @@ const EN_STRINGS = {
     'Homing failed — without it the OTTOeject refuses every move.',
   'Zuerst einmal homen. Ohne Referenzfahrt lehnt der OTTOeject jede Bewegung ab, und die Meldung sagt nicht, dass sie fehlt.':
     'Home it once first. Without a homing run the OTTOeject rejects every move, and the message does not say that homing is what is missing.',
+  'Reise-Y (mm)': 'Travel Y (mm)',
+  'Greifen: hier wird X ausgerichtet': 'Grabbing: X is aligned here',
+  'Y-Rückzug (mm)': 'Y retract (mm)',
+  'Greifen: mit Platte heraus': 'Grabbing: out with the plate',
+  'Die Startwerte stammen aus einer Messung an Regal 3 Fach 1 (Fachhöhe 15 mm): Greifen Y280 → Z15 → Y300 → Y342 → Z30 → Y25, Ablegen Z50 → Y342 → Z10 → Y300. Weicht dein Aufbau ab, sind das die Stellschrauben.':
+    'The starting values come from a measurement on rack 3 slot 1 (slot height 15 mm): grabbing Y280 → Z15 → Y300 → Y342 → Z30 → Y25, storing Z50 → Y342 → Z10 → Y300. If your build differs, these are the adjustments.',
 }
 
 function deepMerge(base, over) {
