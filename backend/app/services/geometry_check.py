@@ -283,6 +283,11 @@ def _structure_problems(g: dict) -> list:
                            "prüfe die Regal-Konfiguration.",
                            [mag, slots]))
     push = _f(g.get("clamp_push_mm"), 30)
+    # Der Magnet-Greifer fährt beim Greifen und Ablegen NICHT mehr in X — der
+    # Andruck-Weg gilt dort nur noch für Auswurf/Einlegen am Drucker. Ohne diese
+    # Unterscheidung meldete die Prüfung „Regal steht zu dicht am Endschalter" für
+    # eine Bewegung, die es gar nicht mehr gibt.
+    magnet = motion.gripper_motion(g) == "magnet"
     if push < 0:
         out.append(problem("negative_clamp_push", "warning",
                            "Klemm-Andruck ist negativ — der Arm drückt dann in die falsche "
@@ -295,7 +300,8 @@ def _structure_problems(g: dict) -> list:
         # fährt dann vor, hebt an und kommt LEER zurück, ohne Fehlermeldung.
         # Nur melden, wenn die gebaute Bewegung überhaupt benutzt wird (mit eigenem
         # G-code für alle vier Griff-Operationen ist der Wert bedeutungslos).
-        built_in = [o for o in ("grab", "store", "eject", "place")
+        rack_ops = () if magnet else ("grab", "store")
+        built_in = [o for o in rack_ops + ("eject", "place")
                     if not str(motion.op_override(g, o) or "").strip()]
         if built_in:
             out.append(problem(
@@ -312,7 +318,8 @@ def _structure_problems(g: dict) -> list:
     # „Anfahren" ging (keine Andruck-Bewegung) und „Greifen" nicht.
     if push > 0:
         limits = limits_from(g)
-        for r in range(1, max(1, racks) + 1):
+        # Regale nur beim KLEMM-Greifer prüfen: nur er fährt dort in X.
+        for r in (() if magnet else range(1, max(1, racks) + 1)):
             try:
                 rx = motion.rack_x(g, r)
             except (KeyError, TypeError, ValueError):

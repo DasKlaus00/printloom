@@ -86,32 +86,66 @@ def test_der_original_greifer_klemmt_weiter():
 
 # ── Nur nach unten: die Z-Reihenfolge ────────────────────────────────────────
 
-def test_greifen_senkt_ab_und_hebt_dann_an():
-    """Über der Platte einfahren → auf sie absenken → mit ihr anheben."""
+def test_greifen_faehrt_unter_die_platte_und_hebt_an():
+    """Gemessen am realen Aufbau: Z auf Fachhoehe -> einfahren -> ANHEBEN.
+
+    Meine erste Fassung fuhr ueber der Platte ein und senkte sich auf sie ab. Der
+    Magnet nimmt die Platte aber von UNTEN auf: der Arm schiebt sich unter sie und
+    hebt sie an. Beides sieht im G-code aehnlich aus und ist mechanisch das
+    Gegenteil — deshalb steht die Richtung hier als Zusage."""
     g = magnet()
     z_flat = m.slot_position(g, 2, 3)[2]
     z = coords(m.build_op(g, "grab", rack=2, slot=3, check=False), "Z")
-    assert z[0] > z_flat          # einfahren ÜBER der Platte
-    assert z[1] == z_flat         # absenken auf die Platte
-    assert z[2] > z_flat          # mit Platte anheben
+    assert z[0] == z_flat          # auf Fachhoehe unter die Platte
+    assert z[-1] > z_flat          # anheben -> Platte haftet
+    assert len(z) == 2             # dazwischen keine weitere Z-Fahrt
 
 
-def test_ablegen_setzt_ab_und_loest_nach_oben():
+def test_greifen_faehrt_nie_unter_die_fachhoehe():
+    """Beim Greifen liegt die Platte noch im Fach — tiefer waere die Halterung."""
+    g = magnet()
+    z_flat = m.slot_position(g, 1, 1)[2]
+    assert min(coords(m.build_op(g, "grab", rack=1, slot=1, check=False), "Z")) >= z_flat
+
+
+def test_ablegen_kommt_hoeher_herein_und_senkt_unter_die_fachhoehe():
+    """Das ist die Antwort auf die offene Abloese-Frage: der Arm faehrt UEBER der
+    Fachhoehe herein, setzt die Platte ab und geht DARUNTER weg. Der Magnet loest
+    sich, weil die Platte auf dem Fach aufliegt — kein Abstreifer noetig."""
     g = magnet()
     z_flat = m.slot_position(g, 2, 3)[2]
     z = coords(m.build_op(g, "store", rack=2, slot=3, check=False), "Z")
-    assert z[0] > z_flat          # über dem Fach anfahren
-    assert min(z) == z_flat       # absetzen
-    assert z[-1] > z_flat         # Greifer löst nach oben, nicht seitlich
+    assert z[0] > z_flat           # hoeher hereinfahren als das Fach
+    assert z[-1] < z_flat          # unter die Fachhoehe absenken -> Platte bleibt
 
 
-def test_kein_zug_unter_die_fachhoehe():
-    """Der Arm darf nie tiefer als die Platte — sonst rammt er die Halterung."""
+def test_die_gemessene_bewegung_kommt_exakt_heraus():
+    """Regal 3 Fach 1 am Referenz-Aufbau: z_flat 15, y_engage 342, Rueckzug 20.
+        Greifen  Z15 -> Y300 -> Y342 -> Z30 -> Y20
+        Ablegen  Z50 -> Y342 -> Z10 -> Y300
+    Wenn diese Zahlen wandern, ist die Bewegung eine andere als die gefahrene."""
+    g = m.merge_defaults({
+        "racks": 3, "gripper": "magnet", "storage": {"y_pullback_limit": 20},
+        "rack_geo": {"3": {"x": 100, "y_engage": 342, "first_z": 15, "slot_gap": 25}}})
+    grab = m.build_op(g, "grab", rack=3, slot=1, check=False)
+    assert coords(grab, "Z") == [15.0, 30.0]
+    assert coords(grab, "Y") == [20.0, 300.0, 342.0, 20.0]
+    store = m.build_op(g, "store", rack=3, slot=1, check=False)
+    assert coords(store, "Z") == [50.0, 10.0]
+    assert coords(store, "Y") == [20.0, 300.0, 342.0, 300.0]
+
+
+def test_die_x_ausrichtung_passiert_zurueckgezogen():
+    """Eine X-Fahrt auf Fachhoehe wuerde an den Platten entlangschrammen."""
     g = magnet()
-    z_flat = m.slot_position(g, 1, 1)[2]
+    y_pb = m.slot_position(g, 2, 3)[3]
     for op in ("grab", "store"):
-        z = coords(m.build_op(g, op, rack=1, slot=1, check=False), "Z")
-        assert min(z) >= z_flat
+        lines = [l for l in m.build_op(g, op, rack=2, slot=3, check=False).splitlines()
+                 if l.startswith("G1 ")]
+        x_moves = [l for l in lines if " X" in l]
+        assert len(x_moves) == 1                       # X genau einmal
+        assert f"Y{y_pb:g}" in x_moves[0]              # und dabei zurueckgezogen
+        assert lines.index(x_moves[0]) == 0            # als allererste Fahrt
 
 
 # ── Magazin ──────────────────────────────────────────────────────────────────
@@ -152,55 +186,67 @@ def test_eine_magnet_halterung_bleibt_ohne_wirkung():
 
 # -- Einstellbare Z-Wege (seit der Freigabe zum Austesten) --------------------
 
-def test_schwebehoehe_ist_einstellbar():
-    """Der Greifer ist freigegeben, aber nicht vermessen — wer die Werte nicht
-    verstellen kann, braucht fuer jeden Testlauf eine Code-Aenderung."""
-    g = magnet(magnet_hover_mm=20, magnet_lift_mm=40)
-    z = coords(m.build_op(g, "grab", rack=1, slot=1, check=False), "Z")
+def test_anhebeweg_ist_einstellbar():
+    """Der Greifer ist freigegeben, aber nicht ueberall vermessen — wer die Werte
+    nicht verstellen kann, braucht fuer jeden Testlauf eine Code-Aenderung."""
+    g = magnet(magnet_lift_mm=40)
     flat = m.slot_position(g, 1, 1)[2]
-    assert flat + 20 in z
-    assert flat + 40 in z
+    assert coords(m.build_op(g, "grab", rack=1, slot=1, check=False), "Z") == [flat, flat + 40]
 
 
-def test_anhebeweg_ist_einstellbar_beim_ablegen():
-    g = magnet(magnet_hover_mm=15, magnet_lift_mm=35)
-    z = coords(m.build_op(g, "store", rack=1, slot=1, check=False), "Z")
+def test_einfahrhoehe_und_abloesetiefe_sind_einstellbar():
+    g = magnet(magnet_store_z_mm=60, magnet_release_mm=8)
     flat = m.slot_position(g, 1, 1)[2]
-    assert flat + 15 in z and flat + 35 in z
+    assert coords(m.build_op(g, "store", rack=1, slot=1, check=False), "Z") == [flat + 60, flat - 8]
 
 
-def test_schwebehoehe_null_wird_verweigert():
-    """Bei 0 fuehre der Arm auf Plattenhoehe ein und schoebe sie vor sich her.
-    Ein Tippfehler im Eingabefeld darf keine solche Bewegung erzeugen."""
-    g = magnet(magnet_hover_mm=0)
+def test_y_vorposition_ist_einstellbar():
+    g = magnet(magnet_y_clear_mm=70)
+    y_eng = m.slot_position(g, 1, 1)[1]
+    assert (y_eng - 70) in coords(m.build_op(g, "grab", rack=1, slot=1, check=False), "Y")
+
+
+def test_anhebeweg_null_wird_verweigert():
+    """Bei 0 hebt der Arm die Platte gar nicht an und faehrt leer heraus."""
+    g = magnet(magnet_lift_mm=0)
     flat = m.slot_position(g, 1, 1)[2]
-    z = coords(m.build_op(g, "grab", rack=1, slot=1, check=False), "Z")
-    assert all(v >= flat for v in z)
-    assert max(z) > flat
+    assert max(coords(m.build_op(g, "grab", rack=1, slot=1, check=False), "Z")) > flat
 
 
-def test_negative_schwebehoehe_wird_verweigert():
-    g = magnet(magnet_hover_mm=-30)
-    flat = m.slot_position(g, 1, 1)[2]
-    assert all(v >= flat for v in coords(m.build_op(g, "grab", rack=1, slot=1, check=False), "Z"))
+def test_einfahrhoehe_unter_dem_anhebeweg_wird_angehoben():
+    """Sonst streift die getragene Platte beim Einfahren das Fach darueber."""
+    lift, store_z, _rel, _yc = m._magnet_z({"magnet_lift_mm": 40, "magnet_store_z_mm": 5})
+    assert store_z > lift
 
 
-def test_anhebeweg_unter_der_schwebehoehe_wird_angehoben():
-    """Sonst zoege der Arm die Platte gar nicht erst aus dem Fach."""
-    hover, lift = m._magnet_z({"magnet_hover_mm": 20, "magnet_lift_mm": 5})
-    assert lift > hover
+def test_negative_abloesetiefe_wird_verweigert():
+    """Negativ hiesse: der Arm hebt beim Ablegen an, statt die Platte abzusetzen."""
+    _l, _s, release, _yc = m._magnet_z({"magnet_release_mm": -20})
+    assert release >= 0
 
 
 def test_muell_faellt_auf_die_startwerte_zurueck():
     for bad in (None, "", "viel", float("nan")):
-        hover, lift = m._magnet_z({"magnet_hover_mm": bad, "magnet_lift_mm": bad})
-        assert hover == m.MAGNET_HOVER_MM and lift == m.MAGNET_LIFT_MM
+        lift, store_z, release, y_clear = m._magnet_z(
+            {"magnet_lift_mm": bad, "magnet_store_z_mm": bad,
+             "magnet_release_mm": bad, "magnet_y_clear_mm": bad})
+        assert (lift, store_z, release, y_clear) == (
+            m.MAGNET_LIFT_MM, m.MAGNET_STORE_Z_MM, m.MAGNET_RELEASE_MM, m.MAGNET_Y_CLEAR_MM)
 
 
 def test_die_z_wege_beruehren_den_klemm_greifer_nicht():
-    g = m.merge_defaults({"racks": 3, "gripper": "standard",
-                          "magnet_hover_mm": 99, "magnet_lift_mm": 99})
-    a = m.build_op(g, "grab", rack=1, slot=1, check=False)
+    g = m.merge_defaults({"racks": 3, "gripper": "standard", "magnet_lift_mm": 99,
+                          "magnet_store_z_mm": 99, "magnet_release_mm": 99})
     b = m.build_op(m.merge_defaults({"racks": 3, "gripper": "standard"}),
                    "grab", rack=1, slot=1, check=False)
-    assert a == b
+    assert m.build_op(g, "grab", rack=1, slot=1, check=False) == b
+
+
+def test_ablegen_kann_in_x_versetzt_werden():
+    """Die gemessene Bewegung enthaelt keine X-Fahrt; ob das Ablegen versetzt
+    stattfindet, haengt am Aufbau. Standard 0 = dieselbe X wie beim Greifen."""
+    g = magnet(magnet_store_x_mm=-30)
+    x_grab = coords(m.build_op(g, "grab", rack=2, slot=3, check=False), "X")[0]
+    x_store = coords(m.build_op(g, "store", rack=2, slot=3, check=False), "X")[0]
+    assert x_store == x_grab - 30
+    assert coords(m.build_op(magnet(), "store", rack=2, slot=3, check=False), "X")[0] == x_grab

@@ -852,8 +852,11 @@ export default function Drucker() {
   // verbauten Greifer — beide gleichzeitig zu zeigen wäre für jeden Aufbau die
   // Hälfte Lärm, denn eine Anlage hat immer nur einen Greifarm.
   const [gripper,   setGripper]     = useState('standard')
-  const [magHover,  setMagHover]    = useState(12)
-  const [magLift,   setMagLift]     = useState(25)
+  const [magLift,    setMagLift]    = useState(15)   // Anheben über Fachhöhe (Greifen)
+  const [magStoreZ,  setMagStoreZ]  = useState(35)   // Einfahrhöhe über Fachhöhe (Ablegen)
+  const [magRelease, setMagRelease] = useState(5)    // Absenken UNTER Fachhöhe (Ablösen)
+  const [magYClear,  setMagYClear]  = useState(42)   // Y-Vorposition vor dem Fach
+  const [magStoreX,  setMagStoreX]  = useState(0)    // X-Versatz beim Ablegen
   const [speedFactor, setSpeedFactor] = useState(100)   // globaler M220-Vorschub in %
   const [useGcode, setUseGcode] = useState({})          // NUR Regal-Ops (grab/store)
   const [gcodeOverride, setGcodeOverride] = useState({})// NUR Regal-Ops
@@ -1033,12 +1036,16 @@ export default function Drucker() {
     speed_factors: { ...speedFactors },
     clamp_push_mm: num(clampPush, 30),
     gripper,
-    magnet_hover_mm: num(magHover, 12),
-    magnet_lift_mm:  num(magLift, 25),
+    magnet_lift_mm:     num(magLift, 15),
+    magnet_store_z_mm:  num(magStoreZ, 35),
+    magnet_release_mm:  num(magRelease, 5),
+    magnet_y_clear_mm:  num(magYClear, 42),
+    magnet_store_x_mm:  num(magStoreX, 0),
     machine_limits: { ...limits },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [shownPrinters, rackGeo, rackList, storage, yPullback, useGcode, gcodeOverride,
-       speedFactor, speedFactors, clampPush, gripper, magHover, magLift, limits, rackXTrim])
+       speedFactor, speedFactors, clampPush, gripper, magLift, magStoreZ, magRelease, magYClear,
+       magStoreX, limits, rackXTrim])
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
   const isMagnet = gripper === 'magnet'
@@ -1059,8 +1066,11 @@ export default function Drucker() {
       if (g.speed_factors) setSpeedFactors(g.speed_factors)
       if (g.clamp_push_mm != null) setClampPush(g.clamp_push_mm)
       if (g.gripper) setGripper(g.gripper)
-      if (g.magnet_hover_mm != null) setMagHover(g.magnet_hover_mm)
       if (g.magnet_lift_mm != null) setMagLift(g.magnet_lift_mm)
+      if (g.magnet_store_z_mm != null) setMagStoreZ(g.magnet_store_z_mm)
+      if (g.magnet_release_mm != null) setMagRelease(g.magnet_release_mm)
+      if (g.magnet_y_clear_mm != null) setMagYClear(g.magnet_y_clear_mm)
+      if (g.magnet_store_x_mm != null) setMagStoreX(g.magnet_store_x_mm)
       if (g.machine_limits && typeof g.machine_limits === 'object') setLimits(g.machine_limits)
       if (g.use_gcode) {
         // Migration: die Einlege-Op hieß früher „load", jetzt „place" (Alias).
@@ -1376,16 +1386,22 @@ export default function Drucker() {
       {/* ── Gemeinsame Werte: gelten für den GREIFER, nicht für ein einzelnes Modul ── */}
       <Section id="sec-common" title={tr('🔧 Greifer & Platte (für alle Module)')}
         subtitle={isMagnet
-          ? tr('Magnet · Schweben {0} mm · Anheben {1} mm · Platte {2} mm', num(magHover, 12), num(magLift, 25), plate)
+          ? tr('Magnet · Anheben {0} mm · Ablegen +{1}/−{2} mm · Platte {3} mm', num(magLift, 15), num(magStoreZ, 35), num(magRelease, 5), plate)
           : tr('Andruck-Weg {0} mm · Platte {1} mm', num(clampPush, 30), plate)}
         open={openSec === 'common'} onToggle={() => toggleSec('common')}>
         <div className="grid gap-2 sm:grid-cols-2">
           {isMagnet ? (
-            <div className="grid grid-cols-2 gap-2">
-              <NumField label={tr('Schwebe-Höhe (mm)')} hint={tr('über der Platte einfahren')}
-                value={magHover} onChange={setMagHover} />
-              <NumField label={tr('Anhebeweg (mm)')} hint={tr('mit Platte anheben')}
+            <div className="grid grid-cols-2 gap-2 sm:col-span-2">
+              <NumField label={tr('Anheben (mm)')} hint={tr('Greifen: über Fachhöhe')}
                 value={magLift} onChange={setMagLift} />
+              <NumField label={tr('Einfahrhöhe (mm)')} hint={tr('Ablegen: über Fachhöhe')}
+                value={magStoreZ} onChange={setMagStoreZ} />
+              <NumField label={tr('Ablöse-Tiefe (mm)')} hint={tr('Ablegen: UNTER Fachhöhe')}
+                value={magRelease} onChange={setMagRelease} />
+              <NumField label={tr('Y-Vorposition (mm)')} hint={tr('Abstand vor dem Fach')}
+                value={magYClear} onChange={setMagYClear} />
+              <NumField label={tr('X-Versatz Ablegen (mm)')} hint={tr('0 = wie beim Greifen')}
+                value={magStoreX} onChange={setMagStoreX} />
             </div>
           ) : (
             <NumField label={tr('Andruck-Weg (mm)')} hint={tr('Greifer-Andruck · 0 = kein Griff!')}
@@ -1404,12 +1420,12 @@ export default function Drucker() {
         </div>
         <p className="text-[9px] text-surface-600">
           {isMagnet
-            ? tr('Magnet-Greifer: der Arm fährt um die Schwebe-Höhe ÜBER der Platte ins Fach, senkt sich auf sie ab (der Magnet greift), hebt um den Anhebeweg an und zieht heraus. Kein Weg nach links/rechts — der Andruck-Weg gilt hier nur noch für Auswurf und Einlegen am Drucker. ACHTUNG: Ist die Schwebe-Höhe zu klein, schiebt der Arm die Platte beim Einfahren vor sich her.')
+            ? tr('Magnet-Greifer: beim GREIFEN fährt der Arm auf Fachhöhe unter die Platte und hebt sie an. Beim ABLEGEN kommt er höher herein und senkt sich UNTER die Fachhöhe — dabei bleibt die Platte liegen und löst sich vom Magneten. Kein Weg nach links/rechts; der Andruck-Weg gilt nur noch für Auswurf und Einlegen am Drucker.')
             : tr('Andruck-Weg: der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original 30. ACHTUNG: Genau diese Bewegung IST der Griff — bei 0 hakt der Greifer nicht ein, der Arm fährt vor und kommt leer zurück.')}
         </p>
         {isMagnet && (
-          <p className="text-[9px] text-amber-400/80">
-            {tr('⚠ Der Magnet-Greifer ist zum Austesten freigegeben, aber nicht am realen Aufbau vermessen. Fahre Greifen und Ablegen erst einzeln über die Test-Knöpfe unten — ob die Platte beim Abheben im Fach bleibt, zeigt sich erst dabei.')}
+          <p className="text-[9px] text-surface-600">
+            {tr('Die Startwerte stammen aus einer Messung an Regal 3 Fach 1 (Fachhöhe 15 mm): Greifen Z15 → Y300 → Y342 → Z30 → Y20, Ablegen Z50 → Y342 → Z10 → Y300. Weicht dein Aufbau ab, sind das die Stellschrauben.')}
           </p>
         )}
 

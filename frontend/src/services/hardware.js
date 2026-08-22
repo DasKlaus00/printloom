@@ -72,7 +72,7 @@ export const GRIPPERS = [
     vendor: 'printloom',
     motion: 'magnet',
     badge: 'Test',
-    desc: 'Umgebauter Greifarm mit magnetischem Greifmechanismus. Er zieht nicht mehr nach links/rechts, sondern senkt sich nur ab, nimmt die Platte auf und hebt wieder — kürzerer Weg je Fach, und Magazin und Lagerfach werden zur selben Bewegung. Zum Austesten freigegeben: Schwebe-Höhe und Anhebeweg stellst du im Drucker-Tab ein. Erst mit Einzelschritt-Test fahren, nicht gleich mit einer Farm-Sequenz — ob die Platte beim Abheben sicher im Fach bleibt, muss der Testlauf zeigen.',
+    desc: 'Umgebauter Greifarm mit magnetischem Greifmechanismus. Beim Greifen fährt der Arm auf Fachhöhe unter die Platte und hebt sie an; beim Ablegen kommt er höher herein und senkt sich unter die Fachhöhe, sodass die Platte liegen bleibt. Kein Weg mehr nach links/rechts, und Magazin und Lagerfach werden zur selben Bewegung. Die Z-Wege stellst du im Drucker-Tab ein.',
   },
 ]
 

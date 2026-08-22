@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.22',
+    de: [
+      'MAGNET-GREIFER AUF DIE GEMESSENE BEWEGUNG UMGEBAUT. Meine erste Fassung fuhr über der Platte ein und senkte sich auf sie ab — das war falsch herum. Der Magnet nimmt die Platte von UNTEN auf: der Arm fährt auf Fachhöhe unter sie und hebt sie an. Gemessen an Regal 3 Fach 1: Greifen Z15 → Y300 → Y342 → Z30 → Y20.',
+      'Damit ist auch das Ablösen geklärt, das bisher der offene Punkt war. Beim Ablegen kommt der Arm HÖHER herein als die Fachhöhe und senkt sich DARUNTER: die Platte setzt auf, der Arm fährt unter ihr weg, der Magnet lässt los. Es braucht keinen Abstreifer. Gemessen: Ablegen Z50 → Y342 → Z10 → Y300.',
+      'Fünf einstellbare Werte statt zwei (Drucker-Tab → „Greifer & Platte"): Anheben, Einfahrhöhe, Ablöse-Tiefe, Y-Vorposition und ein X-Versatz fürs Ablegen. Unsinnige Eingaben werden abgefangen — eine Einfahrhöhe unter dem Anhebeweg ließe die getragene Platte am Fach darüber streifen, eine negative Ablöse-Tiefe würde beim Ablegen anheben statt absetzen.',
+      'BEHOBEN: „Regal steht zu dicht am Endschalter" erschien auch beim Magnet-Greifer. Die Meldung gehört zum Andruck-Weg des Klemm-Greifers — der Magnet fährt beim Greifen und Ablegen gar nicht mehr in X. Am Drucker (Auswurf, Einlegen) gilt der Andruck-Weg weiterhin, dort wird auch weiter geprüft.',
+      'TÜRBEWEGUNG auf die gemessene Form umgestellt. Die eingegebenen X/Y/Z bleiben der erste Fahrpunkt, alle Zwischenpunkte sind jetzt Versätze davon — die ganze Schwenkform wandert mit, wenn der Drucker woanders steht. Der Öffnungsbogen schwingt bis Y0, der Schließbogen wird geometrisch aus Radius und Sehne bestimmt; beide behalten dabei einen gültigen Radius, was Klipper sonst mitten in der Bewegung abbrechen lässt.',
+      'Die Zu-Position des Schließens kommt jetzt aus dem Öffnen-Punkt statt aus einer zweiten, getrennt gepflegten Zahl für dieselbe Stelle. Ein zu kleiner Bogenradius (Zahlendreher) erzeugt keinen ungültigen G-code mehr, sondern fällt auf einen fahrbaren Bogen zurück.',
+    ],
+    en: [
+      'MAGNETIC GRIPPER REBUILT AROUND THE MEASURED MOTION. My first version entered above the plate and lowered onto it — that was the wrong way round. The magnet picks the plate up from BELOW: the arm moves in at slot height underneath it and lifts. Measured on rack 3 slot 1: grabbing Z15 → Y300 → Y342 → Z30 → Y20.',
+      'That also settles the release, which had been the open question. When storing, the arm enters HIGHER than the slot and lowers BELOW it: the plate sets down, the arm moves away underneath it, the magnet lets go. No stripper needed. Measured: storing Z50 → Y342 → Z10 → Y300.',
+      'Five adjustable values instead of two (printer tab → "Gripper & plate"): lift, entry height, release depth, Y approach and an X offset for storing. Nonsensical entries are caught — an entry height below the lift would drag the carried plate along the slot above, and a negative release depth would lift when storing instead of setting down.',
+      'FIXED: "rack is too close to the endstop" also appeared for the magnetic gripper. That message belongs to the push distance of the clamping gripper — the magnet no longer moves in X when grabbing or storing at all. At the printer (eject, place) the push distance still applies and is still checked.',
+      'DOOR MOTION switched to the measured shape. The X/Y/Z you enter remain the first travel point, and every intermediate point is now an offset from it — the whole swing shape moves along when the printer sits elsewhere. The opening arc swings out to Y0, the closing arc is derived geometrically from radius and chord; both keep a valid radius, which Klipper would otherwise abort on mid-motion.',
+      'The closed position for closing now comes from the opening point instead of a second, separately maintained number for the same spot. A radius that is too small (a typo) no longer produces invalid G-code but falls back to an arc that can actually be driven.',
+    ],
+  },
+  {
     version: '1.1.21',
     de: [
       'MAGNET-GREIFER ZUM AUSTESTEN FREIGEGEBEN. Er lässt sich jetzt im Setup-Assistenten auswählen und trägt dort das Kennzeichen „Test". Greifen und Ablegen fahren damit nur noch in Z: der Arm fährt über der Platte ins Fach, senkt sich auf sie ab, hebt sie an und zieht heraus — kein Weg mehr nach links/rechts. Magazin und Lagerfach werden dadurch zur selben Bewegung.',

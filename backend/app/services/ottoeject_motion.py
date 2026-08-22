@@ -90,8 +90,17 @@ DEFAULT_GEOMETRY = {
     # Im Original fix 30 mm; jetzt einstellbar (0 = ohne Andruck, Greifpunkt = Start-X).
     "clamp_push_mm": 30.0,
     # Magnet-Greifer: Z-Wege statt X-Klemmweg (siehe MAGNET_HOVER_MM / MAGNET_LIFT_MM).
-    "magnet_hover_mm": 12.0,
-    "magnet_lift_mm": 25.0,
+    # Magnet-Greifer, gemessen an Regal 3 Fach 1 (z_flat = 15):
+    #   Greifen  Z15 -> Y300 -> Y342 -> Z30 -> Y20
+    #   Ablegen  Z50 -> Y342 -> Z10  -> Y300
+    # Daraus: der Arm fährt UNTER die Platte und hebt sie an (lift). Beim Ablegen
+    # kommt er HÖHER herein (store_z) und senkt UNTER die Fachhöhe (release) —
+    # dabei bleibt die Platte auf dem Fach liegen und löst sich vom Magneten.
+    "magnet_lift_mm": 15.0,      # Anheben über die Fachhöhe beim Greifen
+    "magnet_store_z_mm": 35.0,   # Einfahrhöhe über der Fachhöhe beim Ablegen
+    "magnet_release_mm": 5.0,    # Absenken UNTER die Fachhöhe zum Ablösen
+    "magnet_y_clear_mm": 42.0,   # Abstand vor dem Fach (Y-Vorposition)
+    "magnet_store_x_mm": 0.0,    # X-Versatz beim Ablegen (0 = wie beim Greifen)
     # Achsgrenzen des Geräts in mm ({} = unbekannt) — für die Plausibilitätsprüfung
     # (geometry_check). Am besten per „Grenzen vom Gerät holen" aus Klipper geholt,
     # dann wird eine Bewegung außerhalb der Achse gar nicht erst gesendet. Leer
@@ -139,7 +148,8 @@ def _sanitize_geometry(g: dict) -> dict:
     halbfertiges Eingabefeld keine 500 auslöst."""
     d = DEFAULT_GEOMETRY
     for k in ("racks", "storage_slots", "magazine_slot", "speed_factor", "clamp_push_mm",
-              "magnet_hover_mm", "magnet_lift_mm"):
+              "magnet_lift_mm", "magnet_store_z_mm", "magnet_release_mm",
+              "magnet_y_clear_mm", "magnet_store_x_mm"):
         if g.get(k) is not None:
             g[k] = _num(g.get(k), d.get(k, 0))
     sf = g.get("speed_factors")
@@ -553,18 +563,20 @@ def slot_position(g: dict, rack: int, slot: int) -> tuple[float, float, float, f
     return r["x"], r["y_engage"], z, float((g.get("storage") or {}).get("y_pullback_limit", 5))
 
 
-def _magnet_z(g: dict) -> tuple[float, float]:
-    """(Schwebe-Höhe, Anhebeweg) des Magnet-Greifers in mm.
+def _magnet_z(g: dict) -> tuple[float, float, float, float]:
+    """(lift, store_z, release, y_clear) des Magnet-Greifers in mm.
 
-    HOVER muss ÜBER der Platte liegen — bei 0 oder darunter schöbe der Arm sie beim
-    Einfahren vor sich her, statt sich auf sie abzusenken. LIFT muss über HOVER
-    liegen, sonst zöge der Arm die Platte gar nicht erst aus dem Fach. Beides wird
-    hier erzwungen und nicht der Eingabe überlassen: ein Tippfehler im Feld darf
-    keine Bewegung erzeugen, die die Platte durchs Regal schiebt.
+    Grenzen, die eine Kollision verhindern und deshalb nicht der Eingabe überlassen
+    bleiben: der Anhebeweg muss über 0 liegen (sonst hebt der Arm die Platte gar
+    nicht an), die Einfahrhöhe beim Ablegen muss über dem Anhebeweg liegen (sonst
+    streift die getragene Platte das Fach darüber), und beide Y-/Release-Wege
+    dürfen nicht negativ werden.
     """
-    hover = max(1.0, _num(g.get("magnet_hover_mm"), MAGNET_HOVER_MM))
-    lift = max(hover + 1.0, _num(g.get("magnet_lift_mm"), MAGNET_LIFT_MM))
-    return hover, lift
+    lift = max(1.0, _num(g.get("magnet_lift_mm"), MAGNET_LIFT_MM))
+    store_z = max(lift + 1.0, _num(g.get("magnet_store_z_mm"), MAGNET_STORE_Z_MM))
+    release = max(0.0, _num(g.get("magnet_release_mm"), MAGNET_RELEASE_MM))
+    y_clear = max(1.0, _num(g.get("magnet_y_clear_mm"), MAGNET_Y_CLEAR_MM))
+    return lift, store_z, release, y_clear
 
 
 def _clamp_push(g: dict) -> float:
@@ -580,8 +592,10 @@ def _clamp_push(g: dict) -> float:
 # die Konstanten sind nur die Startwerte. Beim Freischalten des Greifers (v1.1.21)
 # waren sie am realen Aufbau noch nicht gemessen; fest eingebaut würde jeder
 # danebenliegende Testlauf eine Code-Änderung erzwingen.
-MAGNET_HOVER_MM = 12.0
-MAGNET_LIFT_MM = 25.0
+MAGNET_LIFT_MM = 15.0
+MAGNET_STORE_Z_MM = 35.0
+MAGNET_RELEASE_MM = 5.0
+MAGNET_Y_CLEAR_MM = 42.0
 
 
 # Greifer, die magnetisch aufnehmen (Kennung aus hardware.js).
@@ -646,47 +660,58 @@ def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
 def _grab_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
     """Platte mit dem Magnet-Greifer holen — nur Z, kein Weg nach links/rechts.
 
-    Der Arm fährt ÜBER der Platte ins Fach ein, senkt sich auf sie ab (der Magnet
-    greift), hebt sie an und zieht heraus. Damit fällt die Unterscheidung
+    Gemessen an Regal 3 Fach 1 (z_flat 15, y_engage 342, Rückzug 20):
+
+        G1 Z15 · G1 Y300 · G1 Y342 · G1 Z30 · G1 Y20
+
+    Der Arm fährt UNTER die Platte, schiebt sich unter sie und HEBT sie an — der
+    Magnet zieht sie beim Anheben an den Greifer. Damit fällt die Unterscheidung
     Magazin/Lagerfach weg: flach gestapelt oder einzeln liegend ist dieselbe
-    Bewegung — beim Original brauchte nur das Magazin den NOLIFT-Sonderweg.
+    Bewegung — beim Original-Greifer brauchte nur das Magazin den NOLIFT-Sonderweg.
+
+    Die X-Ausrichtung passiert ZURÜCKGEZOGEN (Y = Rückzug), bevor der Arm auf
+    Fachhöhe geht: eine X-Fahrt zwischen den Fächern würde sonst an den Platten
+    entlangschrammen.
     """
-    hover, lift = _magnet_z(g)
-    z_hover, z_lift = z_flat + hover, z_flat + lift
+    lift, _store_z, _release, y_clear = _magnet_z(g)
     return [
         f"M117 Grab rack {rack} slot {slot} (magnet)...",
-        f"G1 X{_n(x_slot)} Y280 Z{_n(z_hover)} F4000", "M400",
-        f"G1 Y{_n(y_engage-35)} F4000", "M400",
-        f"G1 Y{_n(y_engage-25)} F600", "M400",
-        f"G1 Y{_n(y_engage)} F300", "M400",
-        f"G1 Z{_n(z_flat)} F300", "M400",          # absenken → Magnet greift
+        f"G1 X{_n(x_slot)} Y{_n(y_pb)} F4000", "M400",       # X ausrichten, zurückgezogen
+        f"G1 Z{_n(z_flat)} F1000", "M400",                   # unter die Platte
+        f"G1 Y{_n(y_engage - y_clear)} F4000", "M400",       # vor das Fach
+        f"G1 Y{_n(y_engage)} F600", "M400",                  # unter die Platte einfahren
         "M117 Picking up new bed (magnet)...",
-        f"G1 Z{_n(z_lift)} F600", "M400",          # mit Platte anheben
-        f"G1 Y250 Z{_n(z_lift-5)} F1000", "M400",
-        f"G1 Y{_n(y_pb)} F2000", "M400",
+        f"G1 Z{_n(z_flat + lift)} F600", "M400",             # anheben → Platte haftet
+        f"G1 Y{_n(y_pb)} F2000", "M400",                     # herausziehen
     ]
 
 
 def _store_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
     """Platte mit dem Magnet-Greifer ablegen — nur Z, kein Weg nach links/rechts.
 
-    Weiterhin offen: das ABLÖSEN. Hier hebt der Arm nach dem Absetzen einfach ab; ob
-    die Fachhalterung die Platte dabei sicher hält oder es einen Abstreifer braucht,
-    muss der Testlauf zeigen. Deshalb erst mit Einzelschritt-Test fahren, nicht mit
-    einer Farm-Sequenz.
+    Gemessen an Regal 3 Fach 1 (z_flat 15, y_engage 342):
+
+        G1 Z50 · G1 Y342 · G1 Z10 · G1 Y300
+
+    Der Arm kommt HÖHER herein als die Fachhöhe (store_z) und senkt sich dann UNTER
+    sie (release). Damit ist auch das Ablösen geklärt, das vorher offen war: die
+    Platte setzt auf dem Fach auf, der Arm fährt darunter weg und der Magnet lässt
+    sie los — es braucht keinen Abstreifer.
+
+    `magnet_store_x_mm` verschiebt die Ablege-X gegenüber der Greif-X (Standard 0 =
+    dieselbe). Der Wert steht getrennt, weil die gemessene Bewegung keine X-Fahrt
+    enthält, das Ablegen aber je nach Aufbau versetzt sein kann.
     """
-    hover, lift = _magnet_z(g)
-    z_hover, z_lift = z_flat + hover, z_flat + lift
+    _lift, store_z, release, y_clear = _magnet_z(g)
+    x_store = x_slot + _num(g.get("magnet_store_x_mm"), 0.0)
     return [
         f"M117 Store rack {rack} slot {slot} (magnet)...",
-        f"G1 X{_n(x_slot)} Y{_n(y_pb)} Z{_n(z_lift)} F4000", "M400",
-        "G1 Y60 F2000", "M400",
-        f"G1 Y{_n(y_engage-15)} F1000", "M400",
-        f"G1 Y{_n(y_engage)} F500", "M400",
-        f"G1 Z{_n(z_flat)} F300", "M400",          # absetzen
-        f"G1 Z{_n(z_hover)} F600", "M400",         # Greifer löst nach oben
-        "G1 Y300 F800",
-        "G1 Y280 F3000", "M400",
+        f"G1 X{_n(x_store)} Y{_n(y_pb)} F4000", "M400",      # X ausrichten, zurückgezogen
+        f"G1 Z{_n(z_flat + store_z)} F1000", "M400",         # über Fachhöhe anheben
+        f"G1 Y{_n(y_engage - y_clear)} F2000", "M400",       # vor das Fach
+        f"G1 Y{_n(y_engage)} F600", "M400",                  # über das Fach einfahren
+        f"G1 Z{_n(z_flat - release)} F300", "M400",          # absenken → Platte bleibt liegen
+        f"G1 Y{_n(y_engage - y_clear)} F2000", "M400",       # unter der Platte herausziehen
     ]
 
 
@@ -778,91 +803,124 @@ def load_onto_printer(g: dict, printer=None) -> list[str]:
     ]
 
 
-def _door_arc_x(x_start, d, y_arc, y_start):
-    inside = d * d - (y_arc - y_start) ** 2
-    return (x_start + d) - int(math.sqrt(inside)) if inside > 0 else (x_start + d)
+# ── Tür (Form gemessen am Referenz-Aufbau) ──────────────────────────────────
+# Die Bewegung ist 1:1 die gemessene; die EINGEGEBENEN X/Y/Z sind der erste
+# Fahrpunkt, alles andere sind Versätze davon. Damit wandert die ganze Form mit,
+# wenn der Drucker woanders steht — ohne dass jemand die Zwischenpunkte kennt.
+#
+# Referenz „Tür öffnen" (erster Fahrpunkt X720 Y280, Z85, Bogenradius 356.6):
+#   Z85 · X720 Y280 · Y343 · Z115 · Y323 · X720 Y323 · G3 X1075 Y0 I355 J33.6
+#   · Z85 · X970 · Z120 · X1020
+DOOR_REACH_MM = 63.0      # Y-Zustellung zum Türblatt (Y343 = 280+63)
+DOOR_ENGAGE_MM = 30.0     # Z-Hub, mit dem der Stift hinter die Tür greift (115 = 85+30)
+DOOR_HOOK_MM = 43.0       # Y, auf dem der Bogen beginnt (Y323 = 280+43)
+DOOR_CLEAR_MM = 35.0      # Z-Hub beim Freifahren nach dem Öffnen (120 = 85+35)
+DOOR_BACKOFF_MM = 105.0   # X-Rückzug vom Bogenende (970 = 1075−105)
+DOOR_PARK_MM = 55.0       # X-Endposition vom Bogenende (1020 = 1075−55)
+#
+# Referenz „Tür schließen" (erster Fahrpunkt X1065 Y0, Z85):
+#   Z85 · X1065 Y0 · Z115 · X965 · G2 X723 Y280 I109.1 J338.9 · Z85 · X815 Y119
+#   · Z135 · X735 Y330 · Y250
+DOOR_CLOSE_RUNUP_MM = 100.0   # X-Anlauf vor dem Bogen (965 = 1065−100)
+DOOR_CLOSE_PUSH_MM = 3.0      # Bogenende drückt über die Zu-Position hinaus (723 = 720+3)
+DOOR_CLOSE_LIFT_MM = 50.0     # Z-Hub beim Freifahren (135 = 85+50)
+DOOR_CLOSE_OFF = ((92.0, -161.0), (12.0, 50.0))   # Rückzugspunkte relativ zur Zu-Position
+DOOR_CLOSE_END_Y_MM = -30.0                        # letzte Y-Fahrt (250 = 280−30)
+
+
+def _door_open_arc(x_start: float, y_start: float, d: float) -> tuple[float, float, float]:
+    """(I, J, Ziel-X) des Öffnungs-Bogens.
+
+    Die Tür schwingt um ihr Scharnier (Abstand `d`) bis auf Y 0 — dort steht sie
+    offen. Der Mittelpunkt liegt also senkrecht über dem Bogenende, und aus
+    |Mitte−Ende| = d folgt J = d − y_start und daraus I. Bei einem `d`, das kleiner
+    als y_start ist, gäbe es keinen solchen Bogen; dann bleibt der Arm auf y_start
+    (I = d), statt eine Wurzel aus einer negativen Zahl zu ziehen.
+    """
+    j = d - y_start
+    inner = d * d - j * j
+    i = math.sqrt(inner) if inner > 0 else d
+    return i, j, x_start + i
+
+
+def _door_close_arc(sx, sy, ex, ey, d):
+    """(I, J) des Schließ-Bogens von (sx,sy) nach (ex,ey) mit Radius d.
+
+    Der Mittelpunkt liegt auf der Mittelsenkrechten der Sehne; von den zwei
+    möglichen Seiten ist die mit dem GRÖSSEREN Y die richtige — die Tür schwingt
+    um ein Scharnier hinter der Maschine. Ist der Radius für die Sehne zu klein
+    (unmögliche Geometrie durch einen Zahlendreher), wird auf den Halbkreis
+    zurückgefallen, statt eine negative Wurzel zu ziehen.
+    """
+    mx, my = (sx + ex) / 2.0, (sy + ey) / 2.0
+    dx, dy = ex - sx, ey - sy
+    chord = math.hypot(dx, dy)
+    if chord == 0:
+        return d, 0.0
+    h2 = d * d - (chord / 2.0) ** 2
+    h = math.sqrt(h2) if h2 > 0 else 0.0
+    px, py = -dy / chord, dx / chord          # Einheits-Normale der Sehne
+    if py < 0:
+        px, py = -px, -py                      # immer die Seite mit größerem Y
+    cx, cy = mx + h * px, my + h * py
+    return cx - sx, cy - sy
 
 
 def open_door(g: dict, printer=None) -> list[str]:
-    # 1:1 nachgebaut aus dem Original-Macro `_OPEN_DOOR` (ottoeject_macros.cfg).
-    # FELDER = ERSTER FAHRPUNKT (Nutzerwahl): die eingegebenen X/Y/Z sind der erste Move
-    # (Anfahrt), NICHT der interne Greif-Bezug. Bewegung identisch — nur intern zurück-
-    # gerechnet: erster Move = (x_start+5, y_start−30, z_engage−40) → also x_start = X−5,
-    # y_start = Y+30, z_engage = Z+40.
     door = (printer_block(g, printer).get("door") or {}).get("open")
     if not door:
         return ["M117 (no door macro)"]
-    x_start = float(door["x"]) - 5
-    y_start = float(door["y"]) + 30
-    z_engage = float(door["z"]) + 40
+    fx, fy, fz = float(door["x"]), float(door["y"]), float(door["z"])
     d = float(door["d"])
-    gantry_gap, y_limit, y_max = 35, 10, 372 + 35
-    y_arc_temp = y_max - (d + gantry_gap)
-    y_arc = (y_arc_temp + y_limit) if y_arc_temp > 10 else y_limit
-    x_arc = _door_arc_x(x_start, d, y_arc, y_start)
-    i_value, j_value = d, 0
+    z_engage = fz + DOOR_ENGAGE_MM
+    y_hook = fy + DOOR_HOOK_MM
+    i_val, j_val, arc_x = _door_open_arc(fx, y_hook, d)
     return [
         "M117 Opening door...",
-        f"G1 Z{_n(z_engage-40)} F1000", "M400",
-        f"G1 X{_n(x_start+5)} Y{_n(y_start-30)} F3000",
-        f"G1 Y{_n(y_start+5)} F3000", "M400",
+        f"G1 Z{_n(fz)} F1000", "M400",
+        f"G1 X{_n(fx)} Y{_n(fy)} F3000", "M400",
+        f"G1 Y{_n(fy + DOOR_REACH_MM)} F3000", "M400",
         f"G1 Z{_n(z_engage)} F1000", "M400",
-        f"G1 X{_n(x_start)} Y{_n(y_start)} F500", "M400",
-        f"G3 X{_n(x_arc)} Y{_n(y_arc)} I{_n(i_value)} J{_n(j_value)} F3000", "M400",
-        f"G1 X{_n(x_arc-8)} Y{_n(y_arc+15)} F500", "M400",
-        f"G1 Z{_n(z_engage-40)} F500", "M400",
-        f"G1 X{_n(x_arc-120)} Y{_n(y_arc+110)} F3000", "M400",
-        f"G1 Z{_n(z_engage)} F1000", "M400",
-        f"G1 X{_n(x_arc-63)} Y{_n(y_arc+110)} F1000",
-        f"G1 X{_n(x_arc+55)} Y{_n(y_arc+5)} F2000", "M400",
-        f"G1 X{_n(x_arc+140)} Y{_n(y_arc)} F2000", "M400",
-        f"G1 X{_n(x_arc+110)} F300", "M400",
-        f"G1 X{_n(x_arc-20)} F3000", "M400",
+        f"G1 Y{_n(y_hook)} F1000", "M400",
+        f"G1 X{_n(fx)} Y{_n(y_hook)} F500", "M400",
+        f"G3 X{_n(arc_x)} Y0 I{_n(i_val)} J{_n(j_val)} F3000", "M400",
+        f"G1 Z{_n(fz)} F3000", "M400",
+        f"G1 X{_n(arc_x - DOOR_BACKOFF_MM)} F5000", "M400",
+        f"G1 Z{_n(fz + DOOR_CLEAR_MM)} F10000", "M400",
+        f"G1 X{_n(arc_x - DOOR_PARK_MM)} F3000", "M400",
         "M117 Door opened",
     ]
 
 
 def close_door(g: dict, printer=None) -> list[str]:
-    # FELDER = ERSTER FAHRPUNKT (Nutzerwahl): X/Y/Z sind der erste Move — dort, wo der Arm
-    # die OFFENE Tür greift (Bogen-Seite). Da dieser Punkt am ANDEREN Ende des Bogens liegt,
-    # nutze ich die Original-Schwenkform als BEZUG (Standard-Schließposition ref_ys) und
-    # VERSCHIEBE die ganze Bewegung (dx/dy) so, dass der erste Move exakt (X,Y) trifft.
-    # Arc-sicher: Start, Ende & Mittelpunkt (I/J relativ) wandern gleich mit → G2 gültig.
-    # Bewegung/Schwenkform bleiben identisch; Pin (d) = Bogenradius. Fallback open (Altbestand).
     doors = printer_block(g, printer).get("door") or {}
     door = doors.get("close") or doors.get("open")
     if not door:
         return ["M117 (no door macro)"]
-    Fx = float(door["x"])            # erster Move X (absolut)
-    Fy = float(door["y"])            # erster Move Y
-    Fz = float(door["z"])            # erster Move Z
+    kx, ky, kz = float(door["x"]), float(door["y"]), float(door["z"])
     d = float(door["d"])
-    z_engage = Fz + 40
-    ref_ys = 322.0                   # Standard-Schließ-Y (Original-Proportion der Schwenkform)
-    gantry_gap, y_limit, y_max = 35, 10, 372 + 35
-    y_arc_temp = y_max - (d + gantry_gap)
-    y_arc = (y_arc_temp + y_limit) if y_arc_temp > 10 else y_limit
-    x_arc = _door_arc_x(0.0, d, y_arc, ref_ys)   # Bezug x_start=0
-    y_arc = (y_max - (d + gantry_gap)) + y_limit
-    dx = Fx - (x_arc + 120)          # Verschiebung: erster Move X → Fx
-    dy = Fy - (y_arc + 6)            # Verschiebung: erster Move Y → Fy
-    i_value, j_value = 85, d
+    # Die ZU-Position ist der erste Fahrpunkt von „Tür öffnen": dort steht der Arm
+    # an der geschlossenen Tür. Ohne diesen Bezug bräuchte das Schließen einen
+    # zweiten, getrennt gepflegten Punkt für dieselbe Stelle — zwei Speicher für
+    # eine Zahl, die auseinanderlaufen. Fehlt „öffnen", gilt der eigene Punkt.
+    op = doors.get("open") or door
+    ex = float(op["x"]) + DOOR_CLOSE_PUSH_MM
+    ey = float(op["y"])
+    sx = kx - DOOR_CLOSE_RUNUP_MM
+    i_val, j_val = _door_close_arc(sx, ky, ex, ey, d)
+    (ax, ay), (bx, by) = DOOR_CLOSE_OFF
     return [
         "M117 Closing door...",
-        f"G1 Z{_n(z_engage-40)} F1000", "M400",
-        f"G1 X{_n(x_arc+120+dx)} Y{_n(y_arc+6+dy)} F3000", "M400",
-        f"G1 X{_n(x_arc+155+dx)} F1000", "M400",
-        f"G1 Z{_n(z_engage)} F1000", "M400",
-        f"G1 X{_n(x_arc+125+dx)} Y{_n(y_arc+1+dy)} F1000", "M400",
-        f"G2 X{_n(8+dx)} Y{_n(ref_ys-30+dy)} I{_n(i_value)} J{_n(j_value)} F3000", "M400",
-        f"G1 X{_n(9+dx)} Y{_n(ref_ys-27+dy)} F800", "M400",
-        f"G1 Z{_n(z_engage-40)} F1000", "M400",
-        f"G1 X{_n(35+dx)} Y{_n(ref_ys-180+dy)} F3000", "M400",
-        f"G1 Z{_n(z_engage)} F1000", "M400",
-        f"G1 Y{_n(ref_ys-130+dy)} F2000", "M400",
-        f"G1 Y{_n(ref_ys-50+dy)} X{_n(15+dx)} F2000", "M400",
-        f"G1 Y{_n(ref_ys-19+dy)} F800", "M400",
-        f"G1 Y{_n(ref_ys-60+dy)} F3000", "M400",
+        f"G1 Z{_n(kz)} F1000", "M400",
+        f"G1 X{_n(kx)} Y{_n(ky)} F3000", "M400",
+        f"G1 Z{_n(kz + DOOR_ENGAGE_MM)} F3000", "M400",
+        f"G1 X{_n(sx)} F3000", "M400",
+        f"G2 X{_n(ex)} Y{_n(ey)} I{_n(i_val)} J{_n(j_val)}", "M400",
+        f"G1 Z{_n(kz)} F3000", "M400",
+        f"G1 X{_n(ex + ax)} Y{_n(ey + ay)}", "M400",
+        f"G1 Z{_n(kz + DOOR_CLOSE_LIFT_MM)} F3000", "M400",
+        f"G1 X{_n(ex + bx)} Y{_n(ey + by)} F3000", "M400",
+        f"G1 Y{_n(ey + DOOR_CLOSE_END_Y_MM)} F5000",
         "M117 Door closed",
     ]
 
