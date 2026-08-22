@@ -12,6 +12,13 @@ Der Magazin-Griff ist ein eigener: `grab_magazine` greift FLACH vom Stapel
 (Aufbau „alle Fächer sind Lagerfächer") gibt es keinen Stapel — dann sind die
 markierten Leerplatten die Quelle, und die werden normal gegriffen.
 
+MIT DRUCKER (Option): Jede Platte macht unterwegs den Umweg über den Drucker —
+auflegen, wieder herunternehmen, dann erst ins Fach. Das prüft genau den Teil der
+Anlage, den der reine Regal-Lauf auslässt: Anfahrt, Tür, Bett-Höhe, Auswerfen und
+Einlegen. Das Bett fährt einmal zu Beginn auf Z200 (Homing-Datei) und bleibt dort;
+eine Tür wird einmal geöffnet und am Ende wieder geschlossen — pro Platte auf und
+zu wäre nur Verschleiß ohne Erkenntnis.
+
 WAS DANACH IST: Die Magazine sind leer und die Platten liegen verteilt in den
 Fächern. Das ist kein Versehen, sondern das Ergebnis — zurückräumen ist Handarbeit.
 
@@ -179,7 +186,25 @@ def free_slots(data: dict, g: dict) -> list:
     return out
 
 
-def plan(data: dict, g: dict, seed: Optional[int] = None, printer=None) -> dict:
+def printer_ops(g: dict, printer=None) -> tuple:
+    """Welche Drucker-Operationen macht eine Platte im Umweg über den Drucker?
+
+    Immer Auflegen und wieder Herunternehmen. Die Tür ist NICHT dabei: sie geht
+    einmal vor dem Lauf auf und danach zu, nicht pro Platte."""
+    return ("place", "eject")
+
+
+def has_door(g: dict, printer=None) -> bool:
+    """Hat dieser Drucker eine Tür, die der Arm bedienen muss?"""
+    try:
+        pb = _motion.printer_block(g, printer)
+    except Exception:
+        return False
+    return bool(pb.get("enclosed")) and bool(pb.get("door"))
+
+
+def plan(data: dict, g: dict, seed: Optional[int] = None, printer=None,
+         include_printer: bool = False) -> dict:
     """Umzugsplan aufstellen, ohne etwas zu bewegen.
 
     → {moves, skipped, seconds, plate_count, free_count, farthest_rack}
@@ -230,21 +255,39 @@ def plan(data: dict, g: dict, seed: Optional[int] = None, printer=None) -> dict:
     return {"moves": moves, "skipped": skipped,
             "plate_count": len(quellen), "free_count": len(free_slots(data, g)),
             "farthest_rack": farthest_rack(g, printer),
-            "seconds": estimate_seconds(g, moves, printer)}
+            "include_printer": bool(include_printer),
+            "has_door": has_door(g, printer) if include_printer else False,
+            "seconds": estimate_seconds(g, moves, printer,
+                                        include_printer=include_printer)}
 
 
-def estimate_seconds(g: dict, moves: list, printer=None) -> int:
+def estimate_seconds(g: dict, moves: list, printer=None,
+                     include_printer: bool = False) -> int:
     """Dauer hochrechnen — aus dem G-code, den der Test WIRKLICH fahren würde.
 
     Für jeden Umzug werden Griff und Ablage erzeugt und Strecke ÷ Vorschub
     aufsummiert; die Endposition wandert als Startposition in den nächsten Zug,
     damit der Weg ZWISCHEN Magazin und Ziel mitzählt — genau der ist hier der
-    lange. Plus Zuschlag für Beschleunigen/Bremsen und Rüstzeit."""
+    lange. Plus Zuschlag für Beschleunigen/Bremsen und Rüstzeit.
+
+    Mit Drucker kommen pro Platte Auflegen und Herunternehmen dazu, einmalig die
+    Tür. Das Bett-Homing (Z200) steckt NICHT drin: das ist Druckerzeit, keine
+    Armbewegung, und wie lange ein X1C dafür braucht, wissen wir hier nicht."""
     pos, total = {}, 0.0
+    umweg = printer_ops(g, printer) if include_printer else ()
+    if include_printer and has_door(g, printer):
+        for tuer in ("open_door", "close_door"):
+            try:
+                script = _motion.build_op(g, tuer, check=False, printer=printer)
+            except Exception:
+                continue
+            secs, pos = script_seconds(script, pos)
+            total += secs + OP_OVERHEAD_S
     for m in moves or []:
-        schritte = (("grab_magazine" if m.get("from_magazine") else "grab",
-                     m["from_rack"], m["from_slot"]),
-                    ("store", m["to_rack"], m["to_slot"]))
+        schritte = [("grab_magazine" if m.get("from_magazine") else "grab",
+                     m["from_rack"], m["from_slot"])]
+        schritte += [(op, m["from_rack"], m["from_slot"]) for op in umweg]
+        schritte.append(("store", m["to_rack"], m["to_slot"]))
         for op, rack, slot in schritte:
             try:
                 script = _motion.build_op(g, op, rack=rack, slot=slot,

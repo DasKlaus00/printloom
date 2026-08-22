@@ -654,6 +654,7 @@ MAGNET_EJECT_END_Z_MM = 20.0          # Z am Ende der Rampe (20 → 40)
 MAGNET_PLACE_APPROACH_Z_MM = 53.0     # Anfahr-Z mit Platte (20 → 73)
 MAGNET_PLACE_IN_Y_MM = 123.0          # Zwischen-Y (343 − 220)
 MAGNET_PLACE_OVER_Z_MM = 55.0
+MAGNET_PLACE_OUT_Y_MM = 43.0        # Rueckzug nach dem Absetzen (343 -> 300)
 MAGNET_STORE_Y_BACK_MM = 2.0
 
 
@@ -834,8 +835,8 @@ def _eject_magnet(g, name, x, y_engage, z_flat, y_pb) -> list[str]:
     L = [
         f"M117 Removing build plate from {name} (magnet)...",
         f"G1 X{_n(x)} Y{_n(y_engage - MAGNET_EJECT_APPROACH_Y_MM)} Z{_n(z_flat)} F3000", "M400",
-        f"G1 Y{_n(y_engage)} F600", "M400",          # unter die Platte einfahren
-        f"G1 Z{_n(z_flat + lift)} F600", "M400",     # anheben → Platte haftet
+        f"G1 Y{_n(y_engage)} F1000", "M400",         # unter die Platte einfahren
+        f"G1 Z{_n(z_flat + lift)} F1000",            # anheben → Platte haftet
     ]
     # Rampe bewusst OHNE M400 dazwischen: die Teilstücke sollen ineinander laufen,
     # sonst ruckelt der Arm mit der Platte über die Druckerkante.
@@ -848,7 +849,7 @@ def _eject_magnet(g, name, x, y_engage, z_flat, y_pb) -> list[str]:
 def _place_magnet(g, name, x, y_engage, z_flat, y_pb) -> list[str]:
     """Platte mit dem Magnet-Greifer in den Drucker legen — gemessen:
 
-        G1 X1067 Y25 Z73 · G1 Y220 · G1 Z75 · G1 Y343 · G1 Z20
+        G1 X1067 Y25 Z73 · G1 Y220 · G1 Z75 · G1 Y343 · G1 Z20 · G1 Y300
 
     Der Arm kommt HOCH herein, fährt über das Bett und senkt die Platte darauf ab.
     Beim Absenken löst der Magnet, weil die Platte aufliegt — dieselbe Mechanik wie
@@ -859,8 +860,11 @@ def _place_magnet(g, name, x, y_engage, z_flat, y_pb) -> list[str]:
         f"G1 X{_n(x)} Y{_n(_y_loaded(g, y_pb))} Z{_n(z_flat + MAGNET_PLACE_APPROACH_Z_MM)} F3000", "M400",
         f"G1 Y{_n(y_engage - MAGNET_PLACE_IN_Y_MM)} F3000", "M400",
         f"G1 Z{_n(z_flat + MAGNET_PLACE_OVER_Z_MM)} F1000", "M400",   # über das Bett
-        f"G1 Y{_n(y_engage)} F600", "M400",                            # ganz herein
-        f"G1 Z{_n(z_flat)} F300", "M400",                              # absetzen → Magnet löst
+        f"G1 Y{_n(y_engage)} F1000", "M400",                           # ganz herein
+        f"G1 Z{_n(z_flat)} F1500", "M400",                             # absetzen → Magnet löst
+        # Ohne diesen Rückzug bliebe der Arm über dem Bett stehen — der Drucker
+        # könnte nicht anfahren und die nächste Bewegung startete aus dem Gehäuse.
+        f"G1 Y{_n(y_engage - MAGNET_PLACE_OUT_Y_MM)} F3000", "M400",
     ]
 
 

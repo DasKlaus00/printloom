@@ -142,6 +142,12 @@ let dynamicPacks = (() => {
 // English overrides keyed by the exact German source string (see tr() below).
 // Filled in incrementally per page; missing entries fall back to German.
 const EN_STRINGS = {
+  "{0} Platte(n) werden aus den Magazinen geholt, jede einzeln auf den Drucker gelegt, wieder heruntergenommen und dann in ein freies Fach gelegt — geschätzt {1}. Das Bett fährt vorher auf Z200; im Drucker darf nichts liegen. Danach sind die Magazine LEER und die Platten liegen verstreut; zurückräumen ist Handarbeit. Der Arm fährt durchgehend: steht jemand in der Anlage oder liegt etwas im Weg, jetzt nicht starten.": "{0} plate(s) are taken from the magazines, each one placed on the printer, taken off again and then put into a free slot — estimated {1}. The bed moves to Z200 first; nothing may be left in the printer. Afterwards the magazines are EMPTY and the plates are scattered; putting them back is manual work. The arm keeps moving: if someone is inside the setup or something is in the way, do not start now.",
+  "{0} Platte(n) über den Drucker verteilen · geschätzt {1}": "distribute {0} plate(s) via the printer · estimated {1}",
+  "Drucker einbeziehen": "Include the printer",
+  "Jede Platte macht unterwegs den Umweg über den Drucker: auflegen, wieder herunternehmen, dann erst ins Fach. Damit hängen auch Anfahrt, Bett-Höhe, Auswerfen und Einlegen mit im Dauerlauf — der reine Regal-Lauf lässt genau das aus.": "On the way, every plate takes the detour via the printer: put it on, take it off again, and only then into the slot. That puts the approach, bed height, ejecting and loading into the endurance run as well — the plain rack run leaves exactly that out.",
+  "⚠ Das Bett fährt einmal zu Beginn auf Z200 und bleibt dort. Im Drucker darf nichts liegen, und er darf nicht drucken.": "⚠ The bed moves to Z200 once at the start and stays there. Nothing may be left in the printer, and it must not be printing.",
+  "Die Tür geht einmal auf und am Ende wieder zu — nicht bei jeder Platte.": "The door opens once and closes again at the end — not for every plate.",
   // ── Bibliothek (eigener Tab) ──
   'Sprachpakete, Drucker-Profile und Sequenzen': 'Language packs, printer profiles and sequences',
   'Alle': 'All',

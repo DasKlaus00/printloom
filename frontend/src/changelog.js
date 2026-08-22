@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.29',
+    de: [
+      'STRESSTEST MIT DRUCKER (Option): Ein Haken im Stresstest schickt jede Platte unterwegs über den Drucker — auflegen, wieder herunternehmen, dann erst ins Fach. Damit hängen Anfahrt, Bett-Höhe, Auswerfen und Einlegen mit im Dauerlauf; der reine Regal-Lauf lässt genau das aus.',
+      'Der Haken ist bewusst AUS als Vorgabe: der Umweg fährt das Bett auf Z200 und öffnet die Tür — nichts davon soll passieren, weil jemand nur den Regal-Lauf starten wollte. Die Zeitschätzung rechnet den Umweg mit, sobald der Haken sitzt.',
+      'Reihenfolge im Lauf: erst das Bett auf Z200 (Homing-Datei), dann die Tür, dann erst der Arm ins Gehäuse. Homing und Tür laufen genau EINMAL, nicht pro Platte — auf und zu bei jeder Platte wäre nur Verschleiß. Die Tür geht am Ende wieder zu, auch nach einem Abbruch; eine nie geöffnete Tür wird nicht zugefahren.',
+      'MAGNET-GREIFER: Nach dem Einlegen zieht der Arm jetzt aus dem Drucker heraus (Y343 → Y300) statt über dem Bett stehen zu bleiben. So kann der Drucker anfahren, und die nächste Bewegung startet nicht aus dem Gehäuse. Die Vorschübe für Einfahren und Absetzen entsprechen jetzt der Messung.',
+      'Der Drucker für den Umweg kommt aus demselben Geometrie-Block, dessen Koordinaten gefahren werden. Ein zweiter Weg („das erste Gerät in der Liste") könnte auf eine andere Maschine zeigen als die Positionen — das wäre ein Crash, kein Schönheitsfehler.',
+    ],
+    en: [
+      'STRESS TEST WITH PRINTER (option): a checkbox in the stress test sends every plate via the printer on its way — put it on, take it off again, and only then into the slot. That puts the approach, bed height, ejecting and loading into the endurance run; the plain rack run leaves exactly that out.',
+      'The checkbox is deliberately OFF by default: the detour moves the bed to Z200 and opens the door — none of that should happen because someone only wanted the rack run. The time estimate includes the detour as soon as the box is ticked.',
+      'Order during the run: first the bed to Z200 (homing file), then the door, and only then the arm into the enclosure. Homing and door happen exactly ONCE, not per plate — opening and closing for every plate would be pure wear. The door closes again at the end, even after an abort; a door that was never opened is not driven shut.',
+      'MAGNET GRIPPER: after loading, the arm now pulls out of the printer (Y343 → Y300) instead of staying above the bed. That lets the printer move, and the next motion does not start from inside the enclosure. The feed rates for entering and setting down now match the measurement.',
+      'The printer for the detour comes from the same geometry block whose coordinates are driven. A second path ("the first device in the list") could point at a different machine than the positions — that would be a crash, not a cosmetic issue.',
+    ],
+  },
+  {
     version: '1.1.28',
     de: [
       'BEHOBEN: Die geführte Erstkalibrierung stürzte beim Öffnen ab („homing is not defined"). Der Home-Knopf, den ich in 1.1.21 eingebaut habe, benutzte einen Zustand, den ich nie angelegt hatte — die ganze Seite blieb dadurch weiß.',

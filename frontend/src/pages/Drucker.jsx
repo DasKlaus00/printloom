@@ -103,13 +103,18 @@ function StressTest({ open, onToggle, busy }) {
   const [plan, setPlan]   = useState(null)
   const [state, setState] = useState(null)
   const [msg, setMsg]     = useState('')
+  // Umweg über den Drucker: bewusst AUS als Vorgabe. Er braucht einen erreichbaren
+  // Drucker, fährt das Bett auf Z200 und öffnet die Tür — nichts davon soll
+  // passieren, weil jemand nur den Regal-Lauf starten wollte.
+  const [mitDrucker, setMitDrucker] = useState(false)
   const laeuft = !!state?.running
 
-  const ladePlan = () => autofarmService.stressPlan()
+  const ladePlan = (mit = mitDrucker) => autofarmService.stressPlan(mit)
     .then(r => { setPlan(r.data); setMsg('') })
     .catch(e => setMsg(e.response?.data?.detail || e.message))
 
-  useEffect(() => { if (open) ladePlan() }, [open])
+  // Die Schätzung hängt am Haken — beim Umschalten neu rechnen lassen.
+  useEffect(() => { if (open) ladePlan(mitDrucker) }, [open, mitDrucker])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Während der Test läuft, den Fortschritt verfolgen — sonst nur einmal beim
   // Öffnen nachsehen (ein Poll für einen ruhenden Knopf wäre reine Dauerlast).
@@ -130,13 +135,16 @@ function StressTest({ open, onToggle, busy }) {
     const anzahl = plan?.moves?.length ?? 0
     const ok = await confirmDialog({
       title: tr('Stresstest starten?'),
-      message: tr('{0} Platte(n) werden aus den Magazinen geholt und über die freien Fächer verteilt — geschätzt {1}. Danach sind die Magazine LEER und die Platten liegen verstreut; zurückräumen ist Handarbeit. Der Arm fährt durchgehend: steht jemand in der Anlage oder liegt etwas im Weg, jetzt nicht starten.',
+      message: mitDrucker
+        ? tr('{0} Platte(n) werden aus den Magazinen geholt, jede einzeln auf den Drucker gelegt, wieder heruntergenommen und dann in ein freies Fach gelegt — geschätzt {1}. Das Bett fährt vorher auf Z200; im Drucker darf nichts liegen. Danach sind die Magazine LEER und die Platten liegen verstreut; zurückräumen ist Handarbeit. Der Arm fährt durchgehend: steht jemand in der Anlage oder liegt etwas im Weg, jetzt nicht starten.',
+                  anzahl, dauerText(plan?.seconds, tr))
+        : tr('{0} Platte(n) werden aus den Magazinen geholt und über die freien Fächer verteilt — geschätzt {1}. Danach sind die Magazine LEER und die Platten liegen verstreut; zurückräumen ist Handarbeit. Der Arm fährt durchgehend: steht jemand in der Anlage oder liegt etwas im Weg, jetzt nicht starten.',
                   anzahl, dauerText(plan?.seconds, tr)),
       danger: true,
     })
     if (!ok) return
     try {
-      const r = await autofarmService.stressStart()
+      const r = await autofarmService.stressStart({ include_printer: mitDrucker })
       // Gefahren wird der Wurf, den der Start zurückgibt — nicht der aus der
       // Vorschau. Also gleich den anzeigen.
       if (r.data?.moves) setPlan(r.data)
@@ -160,7 +168,9 @@ function StressTest({ open, onToggle, busy }) {
           : null}
       subtitle={plan
         ? (anzahl > 0
-            ? tr('{0} Platte(n) aus den Magazinen verteilen · geschätzt {1}', anzahl, dauerText(plan.seconds, tr))
+            ? (mitDrucker
+                ? tr('{0} Platte(n) über den Drucker verteilen · geschätzt {1}', anzahl, dauerText(plan.seconds, tr))
+                : tr('{0} Platte(n) aus den Magazinen verteilen · geschätzt {1}', anzahl, dauerText(plan.seconds, tr)))
             : plan.plate_count > 0
               ? tr('Kein freies Fach für die Platten — erst Fächer räumen.')
               : tr('Die Magazine sind leer — nichts zu verteilen.'))
@@ -176,6 +186,27 @@ function StressTest({ open, onToggle, busy }) {
       <p className="text-[10px] text-surface-600 leading-relaxed">
         {tr('Nicht als Ziel vergeben werden: Magazin-Fächer (dort steht der Stapel), gesperrte Fächer, belegte Fächer und Fächer unter einem hohen Druck — dort käme die Platte nicht herein.')}
       </p>
+
+      <label className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+        mitDrucker ? 'border-blue-800/60 bg-blue-950/20' : 'border-surface-700/60 bg-surface-900/40'
+      } ${laeuft ? 'opacity-50 pointer-events-none' : ''}`}>
+        <input type="checkbox" className="mt-0.5 shrink-0" checked={mitDrucker}
+          disabled={laeuft} onChange={e => setMitDrucker(e.target.checked)} />
+        <span className="min-w-0">
+          <span className="block text-[11px] text-surface-200">{tr('Drucker einbeziehen')}</span>
+          <span className="block text-[10px] text-surface-500 leading-relaxed">
+            {tr('Jede Platte macht unterwegs den Umweg über den Drucker: auflegen, wieder herunternehmen, dann erst ins Fach. Damit hängen auch Anfahrt, Bett-Höhe, Auswerfen und Einlegen mit im Dauerlauf — der reine Regal-Lauf lässt genau das aus.')}
+          </span>
+          <span className="block text-[10px] text-amber-400/80 leading-relaxed mt-0.5">
+            {tr('⚠ Das Bett fährt einmal zu Beginn auf Z200 und bleibt dort. Im Drucker darf nichts liegen, und er darf nicht drucken.')}
+          </span>
+          {plan?.has_door && (
+            <span className="block text-[10px] text-surface-500 leading-relaxed mt-0.5">
+              {tr('Die Tür geht einmal auf und am Ende wieder zu — nicht bei jeder Platte.')}
+            </span>
+          )}
+        </span>
+      </label>
 
       {plan?.moves?.length > 0 && (
         <div className="rounded-lg border border-surface-700/60 bg-surface-900/50 divide-y divide-surface-800/60 max-h-52 overflow-y-auto">

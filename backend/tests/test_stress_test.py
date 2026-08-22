@@ -195,3 +195,96 @@ def test_entferntestes_regal_wird_gemeldet():
     g = geo(3)
     assert st.printer_x(g) > m.rack_x(g, 1) > m.rack_x(g, 3)
     assert st.plan(rack_data(counts=(1, 0, 0)), g, seed=1)["farthest_rack"] == 3
+
+
+# ── Option: Umweg über den Drucker ───────────────────────────────────────────
+# „Jede Platte zwischendurch auf den Drucker legen, wieder nehmen, dann ins Fach."
+# Das ist die Zusage; die Tests halten sie fest.
+
+def test_ohne_option_bleibt_der_drucker_aussen_vor():
+    """Vorgabe ist AUS. Wer nur den Regal-Lauf will, darf kein Bett auf Z200 und
+    keine offene Tuer bekommen."""
+    p = st.plan(rack_data(counts=(2, 0, 0)), geo(), seed=1)
+    assert p["include_printer"] is False
+    assert p["has_door"] is False
+
+
+def test_mit_option_meldet_der_plan_den_umweg():
+    p = st.plan(rack_data(counts=(2, 0, 0)), geo(), seed=1, include_printer=True)
+    assert p["include_printer"] is True
+
+
+def test_der_umweg_ist_auflegen_und_wieder_herunternehmen():
+    """Reihenfolge ist die Zusage: erst auf den Drucker, dann herunter, dann ins
+    Fach. Umgedreht griffe der Arm ins Leere."""
+    assert st.printer_ops(geo()) == ("place", "eject")
+
+
+def test_der_umweg_aendert_die_ziele_nicht():
+    """Der Drucker ist eine Zwischenstation, kein Ziel — dieselben Faecher wie ohne."""
+    a = st.plan(rack_data(counts=(3, 0, 0)), geo(), seed=7)
+    b = st.plan(rack_data(counts=(3, 0, 0)), geo(), seed=7, include_printer=True)
+    assert a["moves"] == b["moves"]
+
+
+def test_der_umweg_kostet_zeit_und_die_schaetzung_zeigt_es():
+    """Wer den Haken setzt, soll VOR dem Start sehen, dass es laenger dauert."""
+    a = st.plan(rack_data(counts=(3, 0, 0)), geo(), seed=7)
+    b = st.plan(rack_data(counts=(3, 0, 0)), geo(), seed=7, include_printer=True)
+    assert b["seconds"] > a["seconds"]
+
+
+def test_ohne_platten_kostet_der_umweg_nichts():
+    """Kein Umzug, keine Umwegzeit — sonst zeigte die Vorschau eine Dauer fuer
+    einen Lauf, der gar nicht stattfindet."""
+    g = m.expand(m.merge_defaults({
+        "racks": 3,
+        "printers": [{"id": "p1", "name": "Offen", "enclosed": False,
+                      "eject": {"x": 1067, "y": 343, "z": 20},
+                      "load": {"x": 1067, "y": 343, "z": 20}}],
+    }))
+    assert st.has_door(g) is False        # Vorbedingung: keine Tuerzeit im Sockel
+    assert st.estimate_seconds(g, [], include_printer=True) == 0
+
+
+def test_eine_tuer_wird_einmal_gefahren_nicht_pro_platte():
+    """Auf und zu bei jeder Platte waere nur Verschleiss. Der Beleg: die Tuerzeit
+    haengt nicht an der Plattenzahl."""
+    g = m.expand(m.merge_defaults({
+        "racks": 3,
+        "printers": [{"id": "p1", "name": "X1C", "enclosed": True,
+                      "eject": {"x": 1067, "y": 343, "z": 20},
+                      "load": {"x": 1067, "y": 343, "z": 20},
+                      "door": {"open": {"x": 720, "y": 280, "z": 85},
+                               "close": {"x": 1065, "y": 0, "z": 85}}}],
+    }))
+    assert st.has_door(g) is True
+    # Tuerzeit = Aufschlag gegenueber demselben Drucker ohne Tuer. Er muss bei einer
+    # Platte GENAUSO gross sein wie bei fuenf; waere die Tuer pro Platte dabei,
+    # wuechse er mit.
+    ohne = m.expand(m.merge_defaults({
+        "racks": 3,
+        "printers": [{**g["printers"][0], "door": None}],
+    }))
+    assert st.has_door(ohne) is False
+
+    def aufschlag(n):
+        d = rack_data(counts=(n, 0, 0))
+        return (st.plan(d, g, seed=3, include_printer=True)["seconds"]
+                - st.plan(d, ohne, seed=3, include_printer=True)["seconds"])
+
+    assert aufschlag(1) == aufschlag(5) > 0
+
+
+def test_ohne_tuer_wird_keine_gefahren():
+    """Ein offener Drucker hat nichts zu oeffnen — sonst faehrt der Arm eine
+    Tuerbewegung ins Nichts."""
+    g = m.expand(m.merge_defaults({
+        "racks": 3,
+        "printers": [{"id": "p1", "name": "Offen", "enclosed": False,
+                      "eject": {"x": 1067, "y": 343, "z": 20},
+                      "load": {"x": 1067, "y": 343, "z": 20}}],
+    }))
+    assert st.has_door(g) is False
+    assert st.plan(rack_data(counts=(2, 0, 0)), g, seed=1,
+                   include_printer=True)["has_door"] is False

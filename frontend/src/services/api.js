@@ -280,8 +280,8 @@ export const autofarmService = {
   setFileAms:        (id, ams_map) => api.put(`/autofarm/file_ams/${id}`, { ams_map }),
   // Stresstest: alle liegenden Platten ins entfernteste Regal umlagern.
   // `plan` bewegt nichts — nur Vorschau samt hochgerechneter Dauer.
-  stressPlan:        ()      => api.get('/autofarm/stress-test/plan'),
-  stressStart:       ()      => api.post('/autofarm/stress-test'),
+  stressPlan:        (mitDrucker = false) => api.get('/autofarm/stress-test/plan', { params: { include_printer: !!mitDrucker } }),
+  stressStart:       (body = {}) => api.post('/autofarm/stress-test', body),
   stressStop:        ()      => api.post('/autofarm/stress-test/stop'),
   stressStatus:      ()      => api.get('/autofarm/stress-test/status'),
   testCycle:         ()      => api.post('/autofarm/test-cycle'),

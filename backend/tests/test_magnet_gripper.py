@@ -398,11 +398,20 @@ def test_auswerfen_trifft_die_gemessene_bewegung():
 
 
 def test_einlegen_trifft_die_gemessene_bewegung():
-    """Gemessen: X1067 Y25 Z73 · Y220 · Z75 · Y343 · Z20"""
+    """Gemessen: X1067 Y25 Z73 · Y220 · Z75 · Y343 · Z20 · Y300"""
     script = m.build_op(printer_geo(), "place", check=False)
     assert coords(script, "X") == [1067.0]
-    assert coords(script, "Y") == [25.0, 220.0, 343.0]
+    assert coords(script, "Y") == [25.0, 220.0, 343.0, 300.0]
     assert coords(script, "Z") == [73.0, 75.0, 20.0]
+
+
+def test_nach_dem_einlegen_zieht_der_arm_aus_dem_drucker():
+    """Der Arm darf nicht ueber dem Bett stehen bleiben: der Drucker koennte nicht
+    anfahren, und die naechste Bewegung startete aus dem Gehaeuse heraus."""
+    script = m.build_op(printer_geo(), "place", check=False)
+    ys = coords(script, "Y")
+    assert ys[-1] < ys[-2], "letzter Zug muss aus dem Drucker herausfuehren"
+    assert script.rstrip().endswith("M400")
 
 
 @pytest.mark.parametrize("op", ("eject", "place"))

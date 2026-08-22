@@ -2176,6 +2176,44 @@ def _macro_to_op(val: str, rack_num: str, slot_num: str, stack_rack: str, stack_
     return None
 
 
+async def _start_homing_print(device: Device) -> None:
+    """Homing-.3mf hochladen und starten (G28 + Bett auf Z200). Wartet NICHT auf
+    das Ende — dafür ist `_wait_bambu_finish` da.
+
+    Die Datei wird bei jedem Senden frisch erzeugt (deterministischer Inhalt), damit
+    G-code-Änderungen (z. B. schnelleres Z200) sofort wirken, ohne dass jemand in den
+    Einstellungen „Erstellen" drückt. Eine alte Datei ist der Rückfall.
+
+    Eigene Funktion, weil ausser dem Sequenzschritt auch der Stresstest das Bett auf
+    Z200 braucht — zwei Kopien wuerden beim naechsten Umbau auseinanderlaufen."""
+    try:
+        with open(HOMING_3MF_PATH, "wb") as f:
+            f.write(_build_homing_3mf())
+    except Exception as e:
+        if not os.path.exists(HOMING_3MF_PATH):
+            raise RuntimeError(f"Homing-Datei konnte nicht erstellt werden: {e}")
+        logger.warning(f"Homing-Datei nicht erneuerbar ({e}) — nutze vorhandene")
+    homing_name = "printloom_homing.3mf"
+    loop = asyncio.get_event_loop()
+    _log("[↑] Homing senden (G28+Z200)…")
+    ftp = BambuFTP(device.ip_address, device.access_code)
+    up = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, HOMING_3MF_PATH, homing_name)
+    if not up:
+        raise RuntimeError("Homing FTP-Upload fehlgeschlagen")
+    # Über die persistente Verbindung (bambu_manager) starten — kein eigener Connect.
+    connected = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
+    if not connected:
+        raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
+    await asyncio.sleep(5)
+    ok = await loop.run_in_executor(
+        bambu_manager.executor,
+        lambda: bambu_manager.start_print(device, homing_name, use_ams=False, ams_mapping=[], plate_param="")
+    )
+    await asyncio.sleep(2)
+    if not ok:
+        raise RuntimeError("Homing-Druck Start fehlgeschlagen")
+
+
 async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                       poll_sec: int, min_min: int, prep_steps: list, fail_steps: list = []):
     if _farm["stopping"]:
@@ -2334,36 +2372,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             await asyncio.sleep(1)
 
     elif t == "send_homing_file":
-        # Sends the homing .3mf directly via FTP+MQTT — no DB lookup needed.
-        # Die Datei wird bei jedem Senden frisch erzeugt (deterministischer Inhalt) —
-        # so wirken G-code-Änderungen (z. B. schnelleres Z200) sofort, ohne dass der
-        # Nutzer in den Einstellungen „Erstellen" drücken muss. Alte Datei = Fallback.
-        try:
-            with open(HOMING_3MF_PATH, "wb") as f:
-                f.write(_build_homing_3mf())
-        except Exception as e:
-            if not os.path.exists(HOMING_3MF_PATH):
-                raise RuntimeError(f"Homing-Datei konnte nicht erstellt werden: {e}")
-            logger.warning(f"Homing-Datei nicht erneuerbar ({e}) — nutze vorhandene")
-        homing_name = "printloom_homing.3mf"
-        loop = asyncio.get_event_loop()
-        _log("[↑] Homing senden (G28+Z200)…")
-        ftp = BambuFTP(device.ip_address, device.access_code)
-        up = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, HOMING_3MF_PATH, homing_name)
-        if not up:
-            raise RuntimeError("Homing FTP-Upload fehlgeschlagen")
-        # Über die persistente Verbindung (bambu_manager) starten — kein eigener Connect.
-        connected = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
-        if not connected:
-            raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
-        await asyncio.sleep(5)
-        ok = await loop.run_in_executor(
-            bambu_manager.executor,
-            lambda: bambu_manager.start_print(device, homing_name, use_ams=False, ams_mapping=[], plate_param="")
-        )
-        await asyncio.sleep(2)
-        if not ok:
-            raise RuntimeError("Homing-Druck Start fehlgeschlagen")
+        await _start_homing_print(device)
         timeout = float(step.get("seconds") or 180)
         if step.get("nowait"):
             # Nicht blockieren: der Drucker homet im Hintergrund, das OTTOeject kann
@@ -3525,7 +3534,7 @@ async def get_test_cycle_status():
 
 _stress_task: Optional[asyncio.Task] = None
 _stress = {"running": False, "done": 0, "total": 0, "step": "",
-           "error": None, "started_at": None}
+           "error": None, "started_at": None, "include_printer": False}
 
 
 def _stress_geometry() -> dict:
@@ -3551,19 +3560,77 @@ def _magazine_take(rack: int) -> None:
         logger.warning(f"stress magazine take failed: {e}")
 
 
-async def _run_stress_test(moves: list):
+def _stress_bambu(device_id=None) -> Device:
+    """Bambu-Gerät für den Drucker-Umweg.
+
+    EINE Quelle: gefahren werden die Positionen des Drucker-Blocks aus der
+    Geometrie (`_farm_printer`) — also muss auch das Gerät DIESER Block bestimmen.
+    Ein zweiter Weg („das erste Gerät in der Datenbank") könnte auf eine andere
+    Maschine zeigen als die Koordinaten, und das ist ein Crash, kein
+    Schönheitsfehler. Nur wenn der Block keinem Gerät zugeordnet ist, greift der
+    Rückfall auf das einzige vorhandene."""
+    db = SessionLocal()
+    try:
+        q = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB)
+        if device_id is None:
+            block = _farm_printer(_stress_geometry()) or {}
+            device_id = block.get("device_id")
+        if device_id is not None:
+            d = q.filter(Device.id == int(device_id)).first()
+            if not d:
+                raise HTTPException(
+                    400, "Der Drucker aus der Geometrie ist nicht mehr eingerichtet — "
+                         "bitte im Drucker-Tab zuordnen.")
+            return d
+        alle = q.all()
+        if not alle:
+            raise HTTPException(400, "Kein Bambu-Drucker eingerichtet — "
+                                     "ohne Drucker geht der Umweg nicht.")
+        if len(alle) > 1:
+            raise HTTPException(
+                400, "Mehrere Drucker eingerichtet, aber die Positionen im Drucker-Tab "
+                     "sind keinem zugeordnet. Ohne Zuordnung wüsste der Test nicht, "
+                     "welche Maschine zu den Koordinaten gehört.")
+        return alle[0]
+    finally:
+        db.close()
+
+
+async def _run_stress_test(moves: list, include_printer: bool = False,
+                           device: Optional[Device] = None):
     """Jede Platte einzeln: aus dem Magazin greifen, hinfahren, ablegen, buchen.
 
     Nach JEDEM Schritt wird gebucht statt erst am Ende — bricht der Test ab
     (Stopp, Fehler, Stromausfall), stimmen Magazin-Bestand und Fach-Belegung
     trotzdem mit der Wirklichkeit überein. Sonst wüsste danach niemand, wo die
-    Platten liegen."""
+    Platten liegen.
+
+    Mit `include_printer` macht jede Platte unterwegs den Umweg über den Drucker:
+    auflegen, wieder herunternehmen, dann erst ins Fach. Das Bett fährt EINMAL zu
+    Beginn auf Z200 und bleibt dort, eine Tür geht einmal auf und am Ende zu —
+    pro Platte homen und Tür klappern wäre nur Verschleiß ohne Erkenntnis."""
     geom = _stress_geometry()
     printer = _farm_printer(geom)
+    tuer = include_printer and _stress_service.has_door(geom, printer)
+    tuer_offen = False        # nur schliessen, was wir auch geoeffnet haben
+    umweg = _stress_service.printer_ops(geom, printer) if include_printer else ()
     _stress.update({"running": True, "done": 0, "total": len(moves), "error": None,
-                    "step": "", "started_at": datetime.now().isoformat()})
-    _log(f"🏋 Stresstest: {len(moves)} Platte(n) aus den Magazinen verteilen")
+                    "step": "", "started_at": datetime.now().isoformat(),
+                    "include_printer": bool(include_printer)})
+    _log(f"🏋 Stresstest: {len(moves)} Platte(n) aus den Magazinen verteilen"
+         + (" — mit Umweg über den Drucker" if include_printer else ""))
     try:
+        if include_printer:
+            # Erst das Bett auf Z200, DANN die Tür: solange das Bett fährt, hat der
+            # Arm im Gehäuse nichts zu suchen.
+            _stress["step"] = "Drucker auf Z200"
+            _log("🏋 Drucker homen (G28 + Bett auf Z200)…")
+            await _start_homing_print(device)
+            await _wait_bambu_finish(device, label="Homing (G28+Z200)", timeout=300)
+            if tuer:
+                _stress["step"] = "Tür öffnen"
+                await _do_macro(_motion.build_op(geom, "open_door", printer=printer))
+                tuer_offen = True
         for i, m in enumerate(moves):
             if not _stress["running"]:
                 _log("🏋 Stresstest abgebrochen")
@@ -3583,6 +3650,17 @@ async def _run_stress_test(moves: list):
                 _rack_update(m["from"], "free", empty_plate=False)
             _set_arm("full", m["from"])
 
+            for op in umweg:
+                _stress["step"] = f"{m['from']} → Drucker ({op})"
+                _log(f"🏋 … {op} am Drucker")
+                await _do_macro(_motion.build_op(geom, op, printer=printer))
+                # Zwischen Auflegen und Herunternehmen liegt die Platte WIRKLICH auf
+                # dem Bett — den Arm so lange als leer führen, sonst sucht eine
+                # Bergung nach einer Platte, die nicht am Greifer hängt.
+                _set_arm("none" if op in ("place", "load") else "full",
+                         "" if op in ("place", "load") else m["from"])
+            _stress["step"] = f"{m['from']} → {m['to']}"
+
             await _do_macro(_motion.build_op(geom, "store", rack=m["to_rack"],
                                              slot=m["to_slot"], printer=printer))
             # Im Fach liegt jetzt eine Platte — als belegt buchen, sonst plant die
@@ -3597,43 +3675,64 @@ async def _run_stress_test(moves: list):
         _stress["error"] = str(e)
         _log(f"🏋 ⚠ Stresstest abgebrochen: {e}")
     finally:
+        if tuer_offen:
+            # Auch nach Abbruch oder Fehler: eine offene Tür ist ein offener Drucker.
+            # Aber nur, wenn sie wirklich offen ist — „Tür zu" auf eine geschlossene
+            # Tür zu fahren heisst, mit dem Arm dagegen zu druecken.
+            try:
+                _stress["step"] = "Tür schließen"
+                await _do_macro(_motion.build_op(geom, "close_door", printer=printer))
+            except Exception as e:
+                _log(f"🏋 ⚠ Tür schließen fehlgeschlagen: {e}")
         _stress["running"] = False
         _stress["step"] = ""
 
 
-def _stress_plan(seed=None) -> dict:
+def _stress_plan(seed=None, include_printer: bool = False) -> dict:
     geom = _stress_geometry()
     return _stress_service.plan(_rack_data(), geom, seed=seed,
-                                printer=_farm_printer(geom))
+                                printer=_farm_printer(geom),
+                                include_printer=include_printer)
+
+
+class StressStartBody(BaseModel):
+    include_printer: bool = False
+    device_id: Optional[int] = None
 
 
 @router.get("/stress-test/plan")
-async def stress_test_plan():
+async def stress_test_plan(include_printer: bool = False):
     """Vorschau: wie viele Platten, wohin, wie lange? Bewegt nichts.
 
     Die Ziele sind gewürfelt, die Vorschau zeigt also EINE mögliche Verteilung —
     gefahren wird die, die beim Start ausgewürfelt und zurückgegeben wird."""
     try:
-        return {**_stress_plan(), "running": _stress["running"]}
+        return {**_stress_plan(include_printer=include_printer),
+                "running": _stress["running"]}
     except Exception as e:
         raise HTTPException(400, f"Stresstest-Plan nicht möglich: {e}")
 
 
 @router.post("/stress-test")
-async def start_stress_test():
+async def start_stress_test(body: Optional[StressStartBody] = None):
     global _stress_task
+    body = body or StressStartBody()
     if _farm["running"]:
         raise HTTPException(400, "Auto Farm läuft — Stresstest nicht möglich")
     if _test_running:
         raise HTTPException(409, "Test-Phase läuft bereits")
     if _stress["running"]:
         raise HTTPException(409, "Stresstest läuft bereits")
-    plan = _stress_plan()
+    # Gerät VOR dem Plan holen: fehlt der Drucker, soll der Test gar nicht erst
+    # starten statt mitten im Lauf auf halber Strecke stehenzubleiben.
+    device = _stress_bambu(body.device_id) if body.include_printer else None
+    plan = _stress_plan(include_printer=body.include_printer)
     if not plan["plate_count"]:
         raise HTTPException(400, "Die Magazine sind leer — nichts zu verteilen.")
     if not plan["moves"]:
         raise HTTPException(400, "Kein freies Fach für die Platten — erst Fächer räumen.")
-    _stress_task = asyncio.create_task(_run_stress_test(plan["moves"]))
+    _stress_task = asyncio.create_task(
+        _run_stress_test(plan["moves"], body.include_printer, device))
     return {"success": True, **plan}
 
 
