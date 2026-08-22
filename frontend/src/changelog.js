@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.27',
+    de: [
+      'BEHOBEN: In 1.1.26 fehlte die englische Fassung eines Hinweistextes im Drucker-Tab — die englische Oberfläche zeigte dort Deutsch. Der Übersetzungs-Wächter hatte es gemeldet, ich hatte seine Ausgabe abgeschnitten und den Fehlschlag übersehen.',
+    ],
+    en: [
+      'FIXED: version 1.1.26 was missing the English text for one hint in the printer tab — the English interface showed German there. The translation guard had reported it; I had truncated its output and missed the failure.',
+    ],
+  },
+  {
     version: '1.1.26',
     de: [
       'MAGNET-GREIFER AM DRUCKER: eigene Bewegung statt der Klemm-Wege. Bisher nutzte der Magnet beim Auswerfen und Einlegen die Bewegung des Klemm-Greifers samt X-Andruck — das war der letzte Ort, an dem er noch seitlich gefahren wäre. Jetzt richtet er die X genau einmal aus und lässt sie stehen.',
