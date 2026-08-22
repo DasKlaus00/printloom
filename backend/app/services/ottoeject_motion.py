@@ -102,6 +102,8 @@ DEFAULT_GEOMETRY = {
     "magnet_y_clear_mm": 42.0,   # Abstand vor dem Fach (Y-Vorposition)
     "magnet_y_travel_mm": 280.0, # Y, auf der die X-Ausrichtung passiert
     "magnet_y_retract_mm": 25.0, # Y, auf die nach dem Greifen zurückgezogen wird
+    "magnet_y_min_loaded_mm": 25.0,  # kleinste Y, die MIT PLATTE angefahren werden darf
+    "magnet_store_y_back_mm": 1.0,   # Ablegen: so weit vor y_engage wird abgesetzt
     "magnet_store_x_mm": 0.0,    # X-Versatz beim Ablegen (0 = wie beim Greifen)
     # Achsgrenzen des Geräts in mm ({} = unbekannt) — für die Plausibilitätsprüfung
     # (geometry_check). Am besten per „Grenzen vom Gerät holen" aus Klipper geholt,
@@ -152,7 +154,8 @@ def _sanitize_geometry(g: dict) -> dict:
     for k in ("racks", "storage_slots", "magazine_slot", "speed_factor", "clamp_push_mm",
               "magnet_lift_mm", "magnet_store_z_mm", "magnet_release_mm",
               "magnet_y_clear_mm", "magnet_store_x_mm",
-              "magnet_y_travel_mm", "magnet_y_retract_mm"):
+              "magnet_y_travel_mm", "magnet_y_retract_mm",
+              "magnet_y_min_loaded_mm", "magnet_store_y_back_mm"):
         if g.get(k) is not None:
             g[k] = _num(g.get(k), d.get(k, 0))
     sf = g.get("speed_factors")
@@ -597,6 +600,28 @@ def _magnet_y(g: dict) -> tuple[float, float, float]:
     return travel, clear, retract
 
 
+def loaded_y_floor(g: dict) -> float:
+    """Kleinste Y, die der Arm MIT PLATTE anfahren darf (0 = keine Schranke).
+
+    Der Rückzugsanschlag (`y_pullback_limit`) ist auf den LEEREN Greifer bemessen.
+    Mit Platte steht der Arm weiter vorn im Raum; wie weit er zurück darf, ist eine
+    andere Zahl — und sie gilt für jede Fahrt, nicht nur fürs Ablegen. Deshalb steht
+    sie hier einmal und wird an allen Stellen abgefragt, an denen der Arm etwas
+    trägt (Ablegen, Vor-Drucker-Fahren, Auswerfen, Einlegen).
+
+    Nur für den Magnet-Greifer: der Klemm-Greifer hält die Platte anders und fährt
+    seine gemessenen Wege seit jeher ohne diese Schranke.
+    """
+    if gripper_motion(g) != "magnet":
+        return 0.0
+    return max(0.0, _num(g.get("magnet_y_min_loaded_mm"), MAGNET_Y_MIN_LOADED_MM))
+
+
+def _y_loaded(g: dict, y: float) -> float:
+    """`y`, aber nie unter die Schranke für den beladenen Arm."""
+    return max(_num(y), loaded_y_floor(g))
+
+
 def _clamp_push(g: dict) -> float:
     """Klemm-Andruck-Weg (mm) — konfigurierbar, Default 30 (Original). 0 = ohne Andruck."""
     return _num(g.get("clamp_push_mm", 30), 30)
@@ -616,6 +641,8 @@ MAGNET_RELEASE_MM = 5.0
 MAGNET_Y_CLEAR_MM = 42.0
 MAGNET_Y_TRAVEL_MM = 280.0
 MAGNET_Y_RETRACT_MM = 25.0
+MAGNET_Y_MIN_LOADED_MM = 25.0
+MAGNET_STORE_Y_BACK_MM = 1.0
 
 
 # Greifer, die magnetisch aufnehmen (Kennung aus hardware.js).
@@ -702,7 +729,7 @@ def _grab_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
         f"G1 Y{_n(y_engage)} F600", "M400",                  # unter die Platte einfahren
         "M117 Picking up new bed (magnet)...",
         f"G1 Z{_n(z_flat + lift)} F600", "M400",             # anheben → Platte haftet
-        f"G1 Y{_n(y_retract)} F2000", "M400",                # mit Platte herausziehen
+        f"G1 Y{_n(_y_loaded(g, y_retract))} F2000", "M400",  # mit Platte herausziehen
     ]
 
 
@@ -729,13 +756,14 @@ def _store_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
     """
     _lift, store_z, release = _magnet_z(g)
     _y_travel, y_clear, _y_retract = _magnet_y(g)
+    y_back = max(0.0, _num(g.get("magnet_store_y_back_mm"), MAGNET_STORE_Y_BACK_MM))
     x_store = x_slot + _num(g.get("magnet_store_x_mm"), 0.0)
     return [
         f"M117 Store rack {rack} slot {slot} (magnet)...",
-        f"G1 X{_n(x_store)} Y{_n(y_pb)} F4000", "M400",      # X ausrichten, zurückgezogen
+        f"G1 X{_n(x_store)} Y{_n(_y_loaded(g, y_pb))} F4000", "M400",   # X ausrichten (mit Platte)
         f"G1 Z{_n(z_flat + store_z)} F1000", "M400",         # über Fachhöhe anheben
-        f"G1 Y{_n(y_engage - y_clear)} F2000", "M400",       # vor das Fach
-        f"G1 Y{_n(y_engage)} F600", "M400",                  # über das Fach einfahren
+        f"G1 Y{_n(_y_loaded(g, y_engage - y_clear))} F2000", "M400",   # vor das Fach
+        f"G1 Y{_n(y_engage - y_back)} F600", "M400",         # bis kurz vor y_engage
         f"G1 Z{_n(z_flat - release)} F300", "M400",          # absenken → Platte bleibt liegen
         f"G1 Y{_n(y_engage - y_clear)} F2000", "M400",       # unter der Platte herausziehen
     ]
@@ -773,7 +801,7 @@ def move_to_printer(g: dict, printer=None) -> list[str]:
     y_pb = float(g["storage"]["y_pullback_limit"])
     return [
         f"M117 Moving to {pb['name']}...",
-        f"G1 Z{_n(z_flat)} Y{_n(y_pb)} F3000", "M400",   # sichere Höhe + auf y_pullback zurückziehen (=5)
+        f"G1 Z{_n(z_flat)} Y{_n(_y_loaded(g, y_pb))} F3000", "M400",   # sichere Höhe + zurückziehen
         f"G1 X{_n(x)} F3000", "M400",                     # auf Drucker-X ausrichten; Y bleibt bei y_pullback
         # ENDET bei Y=y_pullback (5) — NICHT vorne an der Druckerfront (Nutzerwunsch):
         # eject/place fahren selbst aus dieser zurückgezogenen Position an die Front.
@@ -796,13 +824,17 @@ def eject_from_printer(g: dict, printer=None) -> list[str]:
         f"G1 Y{_n(y_engage)} F600", "M400",
         f"G1 X{_n(x_unclamp+5)} F600", "M400",
         f"G1 X{_n(x_mid)} F2000", "M400",
+        # Ab hier haengt die Platte im Greifer: jede Y-Fahrt der Rampe geht durch
+        # dieselbe Schranke wie der Rueckzug (siehe loaded_y_floor). Sonst haette
+        # die Regel "mit Platte nie unter Y25" nur zufaellig gegolten — bei einem
+        # kleineren Greif-Y taucht die Rampe darunter.
         f"G1 Z{_n(z_flat+52)} F1000",
-        f"G1 Y{_n(y_engage-100)} Z{_n(z_flat+49)} F3000",
-        f"G1 Y{_n(y_engage-150)} Z{_n(z_flat+45)} F3000",
-        f"G1 Y{_n(y_engage-200)} Z{_n(z_flat+35)} F3000",
-        f"G1 Y{_n(y_engage-250)} Z{_n(z_flat+30)} F3000",
-        f"G1 Y{_n(y_engage-300)} Z{_n(z_flat+15)} F3000",
-        f"G1 Y{_n(y_pb)} Z30 F3000", "M400",
+        f"G1 Y{_n(_y_loaded(g, y_engage-100))} Z{_n(z_flat+49)} F3000",
+        f"G1 Y{_n(_y_loaded(g, y_engage-150))} Z{_n(z_flat+45)} F3000",
+        f"G1 Y{_n(_y_loaded(g, y_engage-200))} Z{_n(z_flat+35)} F3000",
+        f"G1 Y{_n(_y_loaded(g, y_engage-250))} Z{_n(z_flat+30)} F3000",
+        f"G1 Y{_n(_y_loaded(g, y_engage-300))} Z{_n(z_flat+15)} F3000",
+        f"G1 Y{_n(_y_loaded(g, y_pb))} Z30 F3000", "M400",
     ]
 
 
@@ -815,9 +847,9 @@ def load_onto_printer(g: dict, printer=None) -> list[str]:
     x_mid = x_unclamp + _clamp_push(g)
     return [
         f"M117 Moving build plate to {pb['name']}...",
-        f"G1 Z{_n(z_flat+55)} Y{_n(y_pb)} F1000", "M400",
+        f"G1 Z{_n(z_flat+55)} Y{_n(_y_loaded(g, y_pb))} F1000", "M400",
         f"G1 X{_n(x_mid)} F3000", "M400",
-        f"G1 Y50 Z{_n(z_flat+40)} F1000", "M400",
+        f"G1 Y{_n(_y_loaded(g, 50))} Z{_n(z_flat+40)} F1000", "M400",
         f"G1 Y{_n(y_engage-20)} F3000", "M400",
         f"G1 Y{_n(y_engage+3)} F600",
         f"G1 Z{_n(z_flat)} Y{_n(y_engage+0.5)} F1500", "M400",

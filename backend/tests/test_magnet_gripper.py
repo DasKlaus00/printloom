@@ -9,6 +9,8 @@ im Magnet-Ablauf würde die Platte aus ihrer Halterung schieben.
 """
 import re
 
+import pytest
+
 from app.services import ottoeject_motion as m
 
 GEOM = {
@@ -122,7 +124,7 @@ def test_ablegen_kommt_hoeher_herein_und_senkt_unter_die_fachhoehe():
 def test_die_gemessene_bewegung_kommt_exakt_heraus():
     """Regal 3 Fach 1 am Referenz-Aufbau: z_flat 15, y_engage 342.
         Greifen  Y280 -> Z15 -> Y300 -> Y342 -> Z30 -> Y25
-        Ablegen  Z50 -> Y342 -> Z10 -> Y300
+        Ablegen  Y25 -> Z50 -> Y300 -> Y341 -> Z10 -> Y300
     Wenn diese Zahlen wandern, ist die Bewegung eine andere als die gefahrene."""
     g = m.merge_defaults({
         "racks": 3, "gripper": "magnet", "storage": {"y_pullback_limit": 20},
@@ -132,7 +134,7 @@ def test_die_gemessene_bewegung_kommt_exakt_heraus():
     assert coords(grab, "Y") == [280.0, 300.0, 342.0, 25.0]
     store = m.build_op(g, "store", rack=3, slot=1, check=False)
     assert coords(store, "Z") == [50.0, 10.0]
-    assert coords(store, "Y") == [20.0, 300.0, 342.0, 300.0]
+    assert coords(store, "Y") == [25.0, 300.0, 341.0, 300.0]
 
 
 def test_die_x_ausrichtung_passiert_genau_einmal_als_erste_fahrt():
@@ -156,14 +158,13 @@ def test_greifen_richtet_x_auf_der_reise_y_aus():
     assert "Y280" in first
 
 
-def test_ablegen_richtet_x_am_anschlag_aus():
-    """Hier traegt der Arm einen fertigen Druck. Ihn 275 mm weiter vorn quer durch
-    die Anlage zu fahren waere eine andere Zusage als mit leerem Greifer."""
-    g = magnet()
-    y_pb = m.slot_position(g, 2, 3)[3]
+def test_ablegen_richtet_x_auf_der_schranke_aus():
+    """Hier traegt der Arm einen fertigen Druck. Der Rueckzugsanschlag ist auf den
+    LEEREN Greifer bemessen — mit Platte gilt die Schranke (siehe loaded_y_floor)."""
+    g = magnet(magnet_y_min_loaded_mm=25)
     first = [l for l in m.build_op(g, "store", rack=2, slot=3, check=False).splitlines()
              if l.startswith("G1 ")][0]
-    assert f"Y{y_pb:g}" in first
+    assert "Y25" in first
 
 
 def test_der_rueckzug_nach_dem_greifen_ist_einstellbar():
@@ -285,3 +286,82 @@ def test_ablegen_kann_in_x_versetzt_werden():
     x_store = coords(m.build_op(g, "store", rack=2, slot=3, check=False), "X")[0]
     assert x_store == x_grab - 30
     assert coords(m.build_op(magnet(), "store", rack=2, slot=3, check=False), "X")[0] == x_grab
+
+
+# -- Mit Platte nie unter die Schranke ---------------------------------------
+#
+# Der Rueckzugsanschlag (y_pullback_limit) ist auf den LEEREN Greifer bemessen.
+# Mit Platte steht der Arm weiter vorn im Raum, und wie weit er zurueck darf, ist
+# eine andere Zahl. Sie gilt fuer JEDE Fahrt mit Platte — nicht nur fuers Ablegen.
+
+LOADED_OPS = ("store", "move_to_printer", "eject", "place")
+
+
+def with_printer(**rest):
+    return m.merge_defaults({
+        "racks": 3, "gripper": "magnet", "storage": {"y_pullback_limit": 5},
+        "rack_geo": {"3": {"x": 100, "y_engage": 342, "first_z": 15, "slot_gap": 25}},
+        "printers": [{"id": "p1", "name": "X1C",
+                      "eject": {"x": 400, "y": 330, "z": 20},
+                      "load": {"x": 400, "y": 330, "z": 20}}],
+        **rest})
+
+
+@pytest.mark.parametrize("op", LOADED_OPS)
+def test_keine_fahrt_unter_die_schranke(op):
+    g = with_printer()
+    assert min(coords(m.build_op(g, op, rack=3, slot=1, check=False), "Y")) >= 25
+
+
+def test_auch_der_rueckzug_nach_dem_greifen_haelt_die_schranke():
+    g = with_printer(magnet_y_retract_mm=5)      # bewusst zu klein eingetragen
+    assert min(coords(m.build_op(g, "grab", rack=3, slot=1, check=False), "Y")) >= 25
+
+
+def test_die_auswurf_rampe_taucht_nicht_darunter():
+    """Bei einem engen Greif-Y lagen die Zwischenpunkte der Rampe frueher unter 25
+    — die Regel haette dann nur zufaellig gegolten."""
+    g = with_printer(printers=[{"id": "p1", "name": "X1C",
+                                "eject": {"x": 400, "y": 200, "z": 20},
+                                "load": {"x": 400, "y": 200, "z": 20}}])
+    assert min(coords(m.build_op(g, "eject", check=False), "Y")) >= 25
+
+
+def test_die_schranke_ist_einstellbar():
+    g = with_printer(magnet_y_min_loaded_mm=60)
+    for op in LOADED_OPS:
+        assert min(coords(m.build_op(g, op, rack=3, slot=1, check=False), "Y")) >= 60
+
+
+def test_der_klemm_greifer_behaelt_seine_gemessenen_wege():
+    """Die Schranke gilt nur fuer den Magneten — der Klemm-Greifer haelt die Platte
+    anders und faehrt seine Wege seit jeher ohne sie."""
+    g = with_printer(gripper="standard")
+    assert m.loaded_y_floor(g) == 0.0
+    assert min(coords(m.build_op(g, "store", rack=3, slot=1, check=False), "Y")) == 5
+
+
+def test_die_schranke_hebt_nur_an_und_senkt_nie():
+    """max(), nicht ersetzen: ein bereits hoeherer Wert bleibt stehen."""
+    g = with_printer(magnet_y_min_loaded_mm=25)
+    assert m._y_loaded(g, 300) == 300
+    assert m._y_loaded(g, 5) == 25
+
+
+# -- Ablegen kurz vor dem Greif-Y --------------------------------------------
+
+def test_abgesetzt_wird_einen_millimeter_vor_dem_greif_y():
+    g = with_printer()
+    y = coords(m.build_op(g, "store", rack=3, slot=1, check=False), "Y")
+    assert 341.0 in y and 342.0 not in y
+
+
+def test_der_abstand_zum_greif_y_ist_einstellbar():
+    g = with_printer(magnet_store_y_back_mm=4)
+    assert 338.0 in coords(m.build_op(g, "store", rack=3, slot=1, check=False), "Y")
+
+
+def test_negativer_abstand_wird_verweigert():
+    """Negativ hiesse ueber das Greif-Y hinaus — der Arm faehrt ins Regal."""
+    g = with_printer(magnet_store_y_back_mm=-10)
+    assert max(coords(m.build_op(g, "store", rack=3, slot=1, check=False), "Y")) <= 342

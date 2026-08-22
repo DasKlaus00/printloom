@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.25',
+    de: [
+      'MAGNET-GREIFER: MIT PLATTE NIE UNTER Y25. Der Rückzugsanschlag ist auf den LEEREN Greifer bemessen — mit Platte steht der Arm weiter vorn im Raum, und wie weit er zurück darf, ist eine andere Zahl. Sie gilt jetzt als Regel an jeder Stelle, an der der Arm etwas trägt: Ablegen, Vor-Drucker-Fahren, Auswerfen und Einlegen.',
+      'Die Regel greift auch dort, wo sie vorher nur zufällig gehalten hätte: die Y-Rampe nach dem Auswerfen tauchte bei einem engen Greif-Y unter die Schranke, und im Einlegen stand ein fest eingetragenes Y50. Beides läuft jetzt durch dieselbe Prüfung. Die Schranke hebt nur an und senkt nie — ein bereits höherer Wert bleibt stehen.',
+      'ABLEGEN: Der Arm bleibt auf Y25 und setzt einen Millimeter vor dem Greif-Y ab (Y341 statt Y342). Beides ist einstellbar — „Y-Minimum mit Platte" und „Ablege-Abstand" im Drucker-Tab.',
+      'Ablegen fährt damit: Y25 → Z50 → Y300 → Y341 → Z10 → Y300.',
+      'Der Klemm-Greifer bleibt unberührt. Er hält die Platte anders und fährt seine gemessenen Wege seit jeher ohne diese Schranke — sie gilt ausschließlich für den Magneten.',
+    ],
+    en: [
+      'MAGNETIC GRIPPER: NEVER BELOW Y25 WHILE CARRYING A PLATE. The retract stop is dimensioned for an EMPTY gripper — with a plate the arm sits further forward, and how far back it may go is a different number. It now applies as a rule everywhere the arm carries something: storing, moving to the printer, ejecting and placing.',
+      'The rule also covers places where it would previously have held only by coincidence: the Y ramp after ejecting dipped below the limit at a tight engage Y, and placing contained a hard-coded Y50. Both now go through the same check. The limit only raises and never lowers — a value that is already higher stays as it is.',
+      'STORING: the arm stays at Y25 and sets the plate down one millimetre short of the engage Y (Y341 instead of Y342). Both are adjustable — "Y minimum when loaded" and "Store gap" in the printer tab.',
+      'Storing therefore runs: Y25 → Z50 → Y300 → Y341 → Z10 → Y300.',
+      'The clamping gripper is untouched. It holds the plate differently and has always driven its measured paths without this limit — it applies to the magnet only.',
+    ],
+  },
+  {
     version: '1.1.24',
     de: [
       'MAGNET-GREIFER: Beim Greifen richtet der Arm die X jetzt auf einer REISE-Y aus (280) statt am Rückzugsanschlag (5). Von ganz hinten auf Fachhöhe zu fahren war nur verschenkter Weg; 280 ist dieselbe Reise-Y, die auch der Original-Greifer benutzt.',
