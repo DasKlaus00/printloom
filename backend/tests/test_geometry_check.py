@@ -210,6 +210,37 @@ def test_anfahren_bleibt_moeglich_greifen_nicht():
         assert any(p["code"] == "axis_below_zero" for p in gc.check_op(g, op, rack=3, slot=1))
 
 
+def test_magnet_greifer_meldet_das_regal_nicht():
+    """Der Andruck-Weg gehoert zum KLEMM-Greifer. Der Magnet faehrt beim Greifen und
+    Ablegen gar nicht mehr in X — die Meldung beschriebe eine Bewegung, die es nicht
+    gibt, und liesse ein voellig gesundes Regal rot erscheinen."""
+    g = _rack3_dicht()
+    g["gripper"] = "magnet"
+    r = gc.check_geometry(g)
+    assert not any(p["code"] == "rack_too_close_to_home" for p in r["errors"])
+
+
+def test_magnet_greifer_faehrt_dort_auch_wirklich():
+    """Gegenprobe zur Meldung: die erzeugte Bewegung muss an demselben Regal
+    tatsaechlich fahrbar sein — sonst haette ich nur die Warnung abgeschaltet."""
+    g = _rack3_dicht()
+    g["gripper"] = "magnet"
+    for op in ("grab", "store"):
+        assert gc.check_op(g, op, rack=3, slot=1) == []
+
+
+def test_am_drucker_gilt_der_andruck_weg_weiter():
+    """Auswurf und Einlegen fahren auch beim Magnet in X — dort muss weiter
+    geprueft werden."""
+    g = _rack3_dicht()
+    g["gripper"] = "magnet"
+    g["machine_limits"] = {"x": 700, "y": 400, "z": 300}
+    g["printers"] = [{"id": "p1", "name": "X1C", "eject": {"x": 690, "y": 300, "z": 20},
+                      "load": {"x": 690, "y": 300, "z": 20}}]
+    r = gc.check_geometry(g)
+    assert any(p["code"] == "printer_too_close_to_limit" for p in r["errors"])
+
+
 def test_genug_abstand_ist_still():
     g = _rack3_dicht()
     g["rack_x_trim"]["3"] = 493 + 30                 # Regal 3 auf X 35 schieben

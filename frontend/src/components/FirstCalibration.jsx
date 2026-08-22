@@ -40,6 +40,19 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
   const nr = Math.max(1, num(numRacks, 1))
   const mag = num(magazineSlot, 0)
 
+  const runHome = async () => {
+    setHoming('run'); setErr('')
+    try {
+      const r = await controlService.executeMacro({ macro_name: 'OTTOEJECT_HOME' })
+      const ok = r?.data?.success !== false
+      setHoming(ok ? 'ok' : 'err')
+      if (!ok && r?.data?.message) setErr(r.data.message)
+    } catch (e) {
+      setHoming('err')
+      setErr(e?.response?.data?.detail || e?.message || tr('Fehler'))
+    }
+  }
+
   /* Geometrie lesen, ändern, zurückschreiben. putGeometry ERSETZT die Datei —
      ein blind gesendetes Teilobjekt würde alles andere löschen. */
   const patchGeometry = useCallback(async (fn) => {
@@ -171,6 +184,23 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
           {tr('Anfahren, mit den Pfeilen justieren, übernehmen — der Wert kommt aus der echten Ist-Position, nicht aus einem Eingabefeld.')}
         </p>
         <span className="text-[10px] font-mono text-surface-600 shrink-0">{okCount}/{total}</span>
+      </div>
+
+      {/* Referenzfahrt zuerst — ohne sie verweigert Klipper jede Bewegung. */}
+      <div className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 ${
+        homing === 'ok'  ? 'border-emerald-800/60 bg-emerald-950/20'
+        : homing === 'err' ? 'border-red-800/60 bg-red-950/20'
+        : 'border-amber-800/60 bg-amber-950/20'}`}>
+        <button type="button" onClick={runHome} disabled={homing === 'run'}
+          className="btn btn-secondary btn-sm shrink-0 disabled:opacity-50">
+          {homing === 'run' ? tr('Fährt…') : tr('⌂ OTTOeject homen')}
+        </button>
+        <span className={`text-[10px] leading-snug ${
+          homing === 'ok' ? 'text-emerald-300' : homing === 'err' ? 'text-red-300' : 'text-amber-300'}`}>
+          {homing === 'ok'  ? tr('✓ Referenzfahrt gemacht — jetzt kannst du anfahren und justieren.')
+           : homing === 'err' ? tr('Referenzfahrt fehlgeschlagen — ohne sie verweigert der OTTOeject jede Bewegung.')
+           : tr('Zuerst einmal homen. Ohne Referenzfahrt lehnt der OTTOeject jede Bewegung ab, und die Meldung sagt nicht, dass sie fehlt.')}
+        </span>
       </div>
 
       <div className="rounded-lg border border-surface-800 divide-y divide-surface-800/70">

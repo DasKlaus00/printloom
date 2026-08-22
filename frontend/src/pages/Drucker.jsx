@@ -1049,6 +1049,13 @@ export default function Drucker() {
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
   const isMagnet = gripper === 'magnet'
+  /* Andruck-Weg, wie er AN DEN REGALEN wirkt. Der Magnet-Greifer fährt beim
+     Greifen und Ablegen nicht mehr in X — dort ist der Weg also 0, auch wenn für
+     Auswurf/Einlegen am Drucker weiter 30 mm gelten. Ohne diese Trennung meldeten
+     Regal-Karte und Schienen-Übersicht „zu dicht am Endschalter" für eine
+     Bewegung, die es gar nicht mehr gibt (dieselbe Unterscheidung wie in
+     geometry_check.py). */
+  const rackPush = isMagnet ? 0 : num(clampPush, 30)
 
   const hydrated = useRef(false)
   useEffect(() => {
@@ -1287,7 +1294,7 @@ export default function Drucker() {
             return { nr, x: r1(num(g.x)), name: g.name, printerName: owner?.name || '' }
           })}
           printers={shownPrinters.map(p => ({ id: p.id, name: p.name, x: r1(num(p.eject?.x)) }))}
-          limitX={+limits.x || 0} push={num(clampPush, 30)}
+          limitX={+limits.x || 0} push={rackPush}
           activeId={openSec} onSelect={(id) => jumpTo(id)} />
       </div>
 
@@ -1380,7 +1387,7 @@ export default function Drucker() {
           teachOn={teachOp === `rack-${nr}`}
           onTeach={() => setTeachOp(t => (t === `rack-${nr}` ? null : `rack-${nr}`))}
           onTeachApply={applyTeachRack(nr)} onTeachClose={() => setTeachOp(null)}
-          geometry={geometry} push={num(clampPush, 30)} />
+          geometry={geometry} push={rackPush} />
       ))}
 
       {/* ── Gemeinsame Werte: gelten für den GREIFER, nicht für ein einzelnes Modul ── */}

@@ -2457,6 +2457,14 @@ const EN_STRINGS = {
     'The starting values come from a measurement on rack 3 slot 1 (slot height 15 mm): grabbing Z15 → Y300 → Y342 → Z30 → Y20, storing Z50 → Y342 → Z10 → Y300. If your build differs, these are the adjustments.',
   'Umgebauter Greifarm mit magnetischem Greifmechanismus. Beim Greifen fährt der Arm auf Fachhöhe unter die Platte und hebt sie an; beim Ablegen kommt er höher herein und senkt sich unter die Fachhöhe, sodass die Platte liegen bleibt. Kein Weg mehr nach links/rechts, und Magazin und Lagerfach werden zur selben Bewegung. Die Z-Wege stellst du im Drucker-Tab ein.':
     'A converted gripper arm with a magnetic grip mechanism. When grabbing, the arm moves in at slot height underneath the plate and lifts it; when storing it enters higher and lowers below the slot height so the plate stays behind. No more left/right travel, and magazine and storage slot become the same motion. You set the Z travels in the printer tab.',
+  'Fährt…': 'Moving…',
+  '⌂ OTTOeject homen': '⌂ Home the OTTOeject',
+  '✓ Referenzfahrt gemacht — jetzt kannst du anfahren und justieren.':
+    '✓ Homed — you can now drive to a position and adjust it.',
+  'Referenzfahrt fehlgeschlagen — ohne sie verweigert der OTTOeject jede Bewegung.':
+    'Homing failed — without it the OTTOeject refuses every move.',
+  'Zuerst einmal homen. Ohne Referenzfahrt lehnt der OTTOeject jede Bewegung ab, und die Meldung sagt nicht, dass sie fehlt.':
+    'Home it once first. Without a homing run the OTTOeject rejects every move, and the message does not say that homing is what is missing.',
 }
 
 function deepMerge(base, over) {

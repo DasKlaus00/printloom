@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.23',
+    de: [
+      'BEHOBEN: „Zu dicht am Endschalter" kam beim Magnet-Greifer weiterhin. Die Prüfung lag an ZWEI Stellen — im Backend (v1.1.22 korrigiert) und noch einmal im Drucker-Tab, wo Regal-Karte und Schienen-Übersicht sie selbst rechnen. Diese zweite Stelle kannte den Greifer nicht. Beide fragen jetzt denselben Wert ab: an den Regalen ist der Andruck-Weg beim Magnet 0, am Drucker gelten die 30 mm weiter.',
+      'Abgesichert ist nicht nur das Verschwinden der Meldung, sondern auch die Gegenprobe: die erzeugte Magnet-Bewegung ist an genau diesem Regal tatsächlich fahrbar. Sonst wäre nur eine Warnung stumm geschaltet worden, während der Arm weiter unter Null fährt.',
+      'EINMESSEN: Referenzfahrt-Knopf ganz oben im Schritt „Einmessen". Ohne Homing lehnt Klipper jede Bewegung ab — Anfahren und Justieren scheiterten also beide, und die Meldung sagte nicht, dass die Referenzfahrt fehlt. Der Knopf zeigt an, ob sie gelaufen ist.',
+    ],
+    en: [
+      'FIXED: "too close to the endstop" still appeared for the magnetic gripper. The check lived in TWO places — in the backend (corrected in v1.1.22) and again in the printer tab, where the rack card and the rail overview compute it themselves. That second place did not know about the gripper. Both now read the same value: at the racks the push distance is 0 for the magnet, at the printer the 30 mm still apply.',
+      'What is covered by tests is not only that the message disappears but also the counter-check: the generated magnetic motion really is drivable at that very rack. Otherwise a warning would merely have been silenced while the arm still travelled below zero.',
+      'MEASURING IN: a homing button at the top of the "measuring in" step. Without homing, Klipper rejects every move — so driving to a position and adjusting it both failed, and the message did not say that homing was what was missing. The button shows whether it has run.',
+    ],
+  },
+  {
     version: '1.1.22',
     de: [
       'MAGNET-GREIFER AUF DIE GEMESSENE BEWEGUNG UMGEBAUT. Meine erste Fassung fuhr über der Platte ein und senkte sich auf sie ab — das war falsch herum. Der Magnet nimmt die Platte von UNTEN auf: der Arm fährt auf Fachhöhe unter sie und hebt sie an. Gemessen an Regal 3 Fach 1: Greifen Z15 → Y300 → Y342 → Z30 → Y20.',
