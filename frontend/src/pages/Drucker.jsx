@@ -190,9 +190,9 @@ function StressTest({ open, onToggle, busy }) {
       <label className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
         mitDrucker ? 'border-blue-800/60 bg-blue-950/20' : 'border-surface-700/60 bg-surface-900/40'
       } ${laeuft ? 'opacity-50 pointer-events-none' : ''}`}>
-        <input type="checkbox" className="mt-0.5 shrink-0" checked={mitDrucker}
+        <input type="checkbox" className="mt-0.5" checked={mitDrucker}
           disabled={laeuft} onChange={e => setMitDrucker(e.target.checked)} />
-        <span className="min-w-0">
+        <span className="flex-1 min-w-0">
           <span className="block text-[11px] text-surface-200">{tr('Drucker einbeziehen')}</span>
           <span className="block text-[10px] text-surface-500 leading-relaxed">
             {tr('Jede Platte macht unterwegs den Umweg über den Drucker: auflegen, wieder herunternehmen, dann erst ins Fach. Damit hängen auch Anfahrt, Bett-Höhe, Auswerfen und Einlegen mit im Dauerlauf — der reine Regal-Lauf lässt genau das aus.')}

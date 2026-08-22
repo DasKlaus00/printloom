@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.30',
+    de: [
+      'BEHOBEN: Haken (Kontrollkästchen) sahen aus wie bildschirmbreite Eingabefelder und quetschten den Text daneben zu einer Spalte aus Einzelwörtern — am deutlichsten beim neuen „Drucker einbeziehen" im Stresstest. Ursache war eine globale Regel, die JEDES <input> wie ein Textfeld behandelte, also auch Haken.',
+      'Behoben an der Quelle statt an der einen Stelle: Haken und Radioknöpfe sind jetzt von der Textfeld-Regel ausgenommen und haben eine eigene, kleine Größe. Das betraf vier weitere Haken in der App (Sequenz-Editor, Drucker-Kalibrierung, Verbindungs-Einstellungen), die genauso falsch aussahen; zwei Stellen hatten sich das früher einzeln zurechtgebogen — dieser Notbehelf ist jetzt überflüssig.',
+      'Ein Test hält die Ausnahme fest. Er wurde gegengeprüft: mit der alten Regel schlägt er fehl.',
+    ],
+    en: [
+      'FIXED: checkboxes looked like full-width text fields and squeezed the text beside them into a column of single words — most visibly on the new "Include the printer" option in the stress test. The cause was a global rule that treated EVERY <input> as a text field, checkboxes included.',
+      'Fixed at the source rather than at the one spot: checkboxes and radio buttons are now excluded from the text-field rule and have their own small size. This affected four more checkboxes in the app (sequence editor, printer calibration, connection settings) that looked equally wrong; two places had patched around it individually — that workaround is now obsolete.',
+      'A test pins the exception down. It was counter-checked: with the old rule it fails.',
+    ],
+  },
+  {
     version: '1.1.29',
     de: [
       'STRESSTEST MIT DRUCKER (Option): Ein Haken im Stresstest schickt jede Platte unterwegs über den Drucker — auflegen, wieder herunternehmen, dann erst ins Fach. Damit hängen Anfahrt, Bett-Höhe, Auswerfen und Einlegen mit im Dauerlauf; der reine Regal-Lauf lässt genau das aus.',

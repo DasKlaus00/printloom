@@ -126,11 +126,19 @@
   .btn-sm { @apply px-3 py-1.5 text-xs; }
 
   /* ── Inputs ──────────────────────────────── */
-  input, textarea, select {
+  /* Haken und Radioknoepfe sind KEINE Textfelder. Ohne die Ausnahme erbten sie
+     w-full samt Polsterung und Rahmen: aus dem Haken wurde ein bildschirmbreiter
+     Kasten, und der Text daneben wurde zu einer Spalte aus Einzelwoertern
+     gequetscht. Einzelne Stellen hatten sich das mit w-auto/w-4 selbst
+     zurechtgebogen — hier ist es an der Quelle geregelt. */
+  input:not([type="checkbox"]):not([type="radio"]), textarea, select {
     @apply w-full bg-surface-900/80 text-surface-100 border border-surface-600/70 rounded-xl
            px-3 py-2 text-sm
            focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30
            placeholder:text-surface-600;
+  }
+  input[type="checkbox"], input[type="radio"] {
+    @apply w-4 h-4 shrink-0 cursor-pointer accent-blue-500;
   }
 
   /* ── Status dot ─────────────────────────── */

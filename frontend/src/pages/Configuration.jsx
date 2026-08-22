@@ -1203,7 +1203,7 @@ function Configuration() {
                     placeholder={editId != null ? tr('leer lassen = unverändert') : ''} />
                 </div>
                 <div className="col-span-2 flex items-center gap-2">
-                  <input type="checkbox" name="use_tls" id="use_tls" checked={form.use_tls} onChange={handleChange} className="w-auto" />
+                  <input type="checkbox" name="use_tls" id="use_tls" checked={form.use_tls} onChange={handleChange} />
                   <label htmlFor="use_tls" className="text-sm text-surface-400 cursor-pointer">{tr('TLS verwenden (empfohlen)')}</label>
                 </div>
               </div>
