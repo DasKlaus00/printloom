@@ -860,7 +860,7 @@ export default function Drucker() {
   const [magYTravel, setMagYTravel] = useState(280)  // Y, auf der X ausgerichtet wird
   const [magYRetr,   setMagYRetr]   = useState(25)   // Y-Rückzug nach dem Greifen
   const [magYMin,    setMagYMin]    = useState(25)   // kleinste Y MIT Platte
-  const [magYBack,   setMagYBack]   = useState(1)    // Ablegen: so weit vor y_engage
+  const [magYBack,   setMagYBack]   = useState(2)    // Ablegen: so weit vor y_engage
   const [speedFactor, setSpeedFactor] = useState(100)   // globaler M220-Vorschub in %
   const [useGcode, setUseGcode] = useState({})          // NUR Regal-Ops (grab/store)
   const [gcodeOverride, setGcodeOverride] = useState({})// NUR Regal-Ops
@@ -1048,7 +1048,7 @@ export default function Drucker() {
     magnet_y_travel_mm:  num(magYTravel, 280),
     magnet_y_retract_mm: num(magYRetr, 25),
     magnet_y_min_loaded_mm: num(magYMin, 25),
-    magnet_store_y_back_mm: num(magYBack, 1),
+    magnet_store_y_back_mm: num(magYBack, 2),
     machine_limits: { ...limits },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [shownPrinters, rackGeo, rackList, storage, yPullback, useGcode, gcodeOverride,
@@ -1452,7 +1452,7 @@ export default function Drucker() {
         </p>
         {isMagnet && (
           <p className="text-[9px] text-surface-600">
-            {tr('Die Startwerte stammen aus einer Messung an Regal 3 Fach 1 (Fachhöhe 15 mm): Greifen Y280 → Z15 → Y300 → Y342 → Z30 → Y25, Ablegen Y25 → Z50 → Y300 → Y341 → Z10 → Y300. Weicht dein Aufbau ab, sind das die Stellschrauben.')}
+            {tr('Die Startwerte stammen aus einer Messung an Regal 3 Fach 1 (Fachhöhe 15 mm): Greifen Y280 → Z15 → Y300 → Y342 → Z30 → Y25, Ablegen Y25 → Z50 → Y300 → Y340 → Z10 → Y300. Am Drucker fährt der Magnet eigene Wege — auch dort ohne Andruck. Weicht dein Aufbau ab, sind das die Stellschrauben.')}
           </p>
         )}
 

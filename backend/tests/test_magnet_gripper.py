@@ -29,7 +29,13 @@ def magnet(**rest):
 
 
 def coords(script, axis):
-    return [float(v) for v in re.findall(rf"\b{axis}(-?\d+(?:\.\d+)?)", script)]
+    """Koordinaten einer Achse — NUR aus Fahrbefehlen.
+
+    Über den ganzen Text zu suchen liest sonst den Druckernamen aus der
+    M117-Zeile mit: "X1C" ergibt eine X-Koordinate 1."""
+    return [float(v)
+            for line in script.splitlines() if line.startswith(("G1 ", "G2 ", "G3 "))
+            for v in re.findall(rf"\b{axis}(-?\d+(?:\.\d+)?)", line)]
 
 
 # ── Greif-Art erkennen ───────────────────────────────────────────────────────
@@ -124,7 +130,7 @@ def test_ablegen_kommt_hoeher_herein_und_senkt_unter_die_fachhoehe():
 def test_die_gemessene_bewegung_kommt_exakt_heraus():
     """Regal 3 Fach 1 am Referenz-Aufbau: z_flat 15, y_engage 342.
         Greifen  Y280 -> Z15 -> Y300 -> Y342 -> Z30 -> Y25
-        Ablegen  Y25 -> Z50 -> Y300 -> Y341 -> Z10 -> Y300
+        Ablegen  Y25 -> Z50 -> Y300 -> Y340 -> Z10 -> Y300
     Wenn diese Zahlen wandern, ist die Bewegung eine andere als die gefahrene."""
     g = m.merge_defaults({
         "racks": 3, "gripper": "magnet", "storage": {"y_pullback_limit": 20},
@@ -134,7 +140,7 @@ def test_die_gemessene_bewegung_kommt_exakt_heraus():
     assert coords(grab, "Y") == [280.0, 300.0, 342.0, 25.0]
     store = m.build_op(g, "store", rack=3, slot=1, check=False)
     assert coords(store, "Z") == [50.0, 10.0]
-    assert coords(store, "Y") == [25.0, 300.0, 341.0, 300.0]
+    assert coords(store, "Y") == [25.0, 300.0, 340.0, 300.0]
 
 
 def test_die_x_ausrichtung_passiert_genau_einmal_als_erste_fahrt():
@@ -350,10 +356,12 @@ def test_die_schranke_hebt_nur_an_und_senkt_nie():
 
 # -- Ablegen kurz vor dem Greif-Y --------------------------------------------
 
-def test_abgesetzt_wird_einen_millimeter_vor_dem_greif_y():
+def test_abgesetzt_wird_kurz_vor_dem_greif_y():
+    """Nicht auf dem Greif-Y selbst: dort steht der Arm beim HOLEN unter der Platte.
+    Beim Ablegen traegt er sie darueber und braucht den Abstand."""
     g = with_printer()
     y = coords(m.build_op(g, "store", rack=3, slot=1, check=False), "Y")
-    assert 341.0 in y and 342.0 not in y
+    assert 340.0 in y and 342.0 not in y
 
 
 def test_der_abstand_zum_greif_y_ist_einstellbar():
@@ -365,3 +373,75 @@ def test_negativer_abstand_wird_verweigert():
     """Negativ hiesse ueber das Greif-Y hinaus — der Arm faehrt ins Regal."""
     g = with_printer(magnet_store_y_back_mm=-10)
     assert max(coords(m.build_op(g, "store", rack=3, slot=1, check=False), "Y")) <= 342
+
+
+# -- Drucker-Seite: eigene Bewegung statt der Klemm-Wege --------------------
+#
+# Bis v1.1.25 nutzte der Magnet am Drucker die Klemm-Bewegung samt X-Andruck. Das
+# war der letzte Ort, an dem er noch seitlich gefahren waere.
+
+def printer_geo(**rest):
+    return m.merge_defaults({
+        "racks": 1, "gripper": "magnet", "storage": {"y_pullback_limit": 5},
+        "printers": [{"id": "p1", "name": "X1C",
+                      "eject": {"x": 1067, "y": 343, "z": 20},
+                      "load": {"x": 1067, "y": 343, "z": 20}}],
+        **rest})
+
+
+def test_auswerfen_trifft_die_gemessene_bewegung():
+    """Gemessen: Y250 X1067 Z20 · Y343 · Z76 · Y300 Z73 · Y250 Z70 · Y225 Z60 · Y25 Z40"""
+    script = m.build_op(printer_geo(), "eject", check=False)
+    assert coords(script, "X") == [1067.0]
+    assert coords(script, "Y") == [250.0, 343.0, 300.0, 250.0, 225.0, 25.0]
+    assert coords(script, "Z") == [20.0, 76.0, 73.0, 70.0, 60.0, 40.0]
+
+
+def test_einlegen_trifft_die_gemessene_bewegung():
+    """Gemessen: X1067 Y25 Z73 · Y220 · Z75 · Y343 · Z20"""
+    script = m.build_op(printer_geo(), "place", check=False)
+    assert coords(script, "X") == [1067.0]
+    assert coords(script, "Y") == [25.0, 220.0, 343.0]
+    assert coords(script, "Z") == [73.0, 75.0, 20.0]
+
+
+@pytest.mark.parametrize("op", ("eject", "place"))
+def test_am_drucker_faehrt_der_magnet_nur_einmal_in_x(op):
+    """Der Andruck-Weg war der letzte Rest seitlicher Bewegung — er gehoert zum
+    Klemm-Greifer. Der Magnet richtet X genau einmal aus und laesst sie stehen."""
+    assert len(coords(m.build_op(printer_geo(), op, check=False), "X")) == 1
+
+
+@pytest.mark.parametrize("op", ("eject", "place"))
+def test_der_andruck_weg_aendert_die_magnet_bewegung_nicht(op):
+    a = m.build_op(printer_geo(clamp_push_mm=30), op, check=False)
+    b = m.build_op(printer_geo(clamp_push_mm=0), op, check=False)
+    assert a == b
+
+
+def test_die_drucker_bewegung_wandert_mit_dem_drucker():
+    g = printer_geo(printers=[{"id": "p1", "name": "X1C",
+                               "eject": {"x": 500, "y": 300, "z": 10},
+                               "load": {"x": 500, "y": 300, "z": 10}}])
+    script = m.build_op(g, "eject", check=False)
+    assert coords(script, "X") == [500.0]
+    assert coords(script, "Y")[0] == 300.0 - 93.0        # Anfahr-Y
+    assert coords(script, "Z")[1] == 10.0 + 56.0         # Anheben
+
+
+@pytest.mark.parametrize("op", ("eject", "place"))
+def test_die_schranke_gilt_auch_am_drucker(op):
+    g = printer_geo(magnet_y_min_loaded_mm=60)
+    assert min(coords(m.build_op(g, op, check=False), "Y")) >= 60
+
+
+@pytest.mark.parametrize("op", ("eject", "place"))
+def test_der_klemm_greifer_faehrt_am_drucker_unveraendert(op):
+    """Gegenprobe: die gemessenen Klemm-Wege duerfen sich nicht mitbewegt haben."""
+    a = m.build_op(printer_geo(gripper="standard"), op, check=False)
+    b = m.build_op(m.merge_defaults({
+        "racks": 1, "storage": {"y_pullback_limit": 5},
+        "printers": [{"id": "p1", "name": "X1C",
+                      "eject": {"x": 1067, "y": 343, "z": 20},
+                      "load": {"x": 1067, "y": 343, "z": 20}}]}), op, check=False)
+    assert a == b

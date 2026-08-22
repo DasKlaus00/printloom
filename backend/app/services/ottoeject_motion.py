@@ -103,7 +103,7 @@ DEFAULT_GEOMETRY = {
     "magnet_y_travel_mm": 280.0, # Y, auf der die X-Ausrichtung passiert
     "magnet_y_retract_mm": 25.0, # Y, auf die nach dem Greifen zurückgezogen wird
     "magnet_y_min_loaded_mm": 25.0,  # kleinste Y, die MIT PLATTE angefahren werden darf
-    "magnet_store_y_back_mm": 1.0,   # Ablegen: so weit vor y_engage wird abgesetzt
+    "magnet_store_y_back_mm": 2.0,   # Ablegen: so weit vor y_engage wird abgesetzt
     "magnet_store_x_mm": 0.0,    # X-Versatz beim Ablegen (0 = wie beim Greifen)
     # Achsgrenzen des Geräts in mm ({} = unbekannt) — für die Plausibilitätsprüfung
     # (geometry_check). Am besten per „Grenzen vom Gerät holen" aus Klipper geholt,
@@ -642,7 +642,19 @@ MAGNET_Y_CLEAR_MM = 42.0
 MAGNET_Y_TRAVEL_MM = 280.0
 MAGNET_Y_RETRACT_MM = 25.0
 MAGNET_Y_MIN_LOADED_MM = 25.0
-MAGNET_STORE_Y_BACK_MM = 1.0
+# Drucker-Seite, gemessen (eject/load bei X1067 Y343 Z20):
+#   Auswerfen  Y250 X1067 Z20 · Y343 · Z76 · Y300 Z73 · Y250 Z70 · Y225 Z60 · Y25 Z40
+#   Einlegen   X1067 Y25 Z73 · Y220 · Z75 · Y343 · Z20
+# Alle Zahlen als Versatz zur eingegebenen Drucker-Position — so wandert die
+# Bewegung mit, wenn der Drucker woanders steht.
+MAGNET_EJECT_APPROACH_Y_MM = 93.0     # Anfahr-Y vor der Front (343 − 250)
+MAGNET_EJECT_LIFT_MM = 56.0           # Anheben mit Platte (20 → 76)
+MAGNET_EJECT_RAMP = ((43.0, 53.0), (93.0, 50.0), (118.0, 40.0))   # (Y vor Greif-Y, Z über)
+MAGNET_EJECT_END_Z_MM = 20.0          # Z am Ende der Rampe (20 → 40)
+MAGNET_PLACE_APPROACH_Z_MM = 53.0     # Anfahr-Z mit Platte (20 → 73)
+MAGNET_PLACE_IN_Y_MM = 123.0          # Zwischen-Y (343 − 220)
+MAGNET_PLACE_OVER_Z_MM = 55.0
+MAGNET_STORE_Y_BACK_MM = 2.0
 
 
 # Greifer, die magnetisch aufnehmen (Kennung aus hardware.js).
@@ -808,12 +820,58 @@ def move_to_printer(g: dict, printer=None) -> list[str]:
     ]
 
 
+def _eject_magnet(g, name, x, y_engage, z_flat, y_pb) -> list[str]:
+    """Platte mit dem Magnet-Greifer aus dem Drucker holen — gemessen:
+
+        G1 Y250 X1067 Z20 · G1 Y343 · G1 Z76
+        · G1 Y300 Z73 · G1 Y250 Z70 · G1 Y225 Z60 · G1 Y25 Z40
+
+    Kein X-Andruck: der Arm fährt auf Druckbett-Höhe unter die Platte, hebt sie an
+    und zieht auf einer Rampe heraus, die gleichzeitig hochgeht — der Greifer muss
+    über die Druckerkante. Die Rampe endet auf der Schranke für den beladenen Arm.
+    """
+    lift = MAGNET_EJECT_LIFT_MM
+    L = [
+        f"M117 Removing build plate from {name} (magnet)...",
+        f"G1 X{_n(x)} Y{_n(y_engage - MAGNET_EJECT_APPROACH_Y_MM)} Z{_n(z_flat)} F3000", "M400",
+        f"G1 Y{_n(y_engage)} F600", "M400",          # unter die Platte einfahren
+        f"G1 Z{_n(z_flat + lift)} F600", "M400",     # anheben → Platte haftet
+    ]
+    # Rampe bewusst OHNE M400 dazwischen: die Teilstücke sollen ineinander laufen,
+    # sonst ruckelt der Arm mit der Platte über die Druckerkante.
+    for dy, dz in MAGNET_EJECT_RAMP:
+        L.append(f"G1 Y{_n(_y_loaded(g, y_engage - dy))} Z{_n(z_flat + dz)} F3000")
+    L += [f"G1 Y{_n(_y_loaded(g, y_pb))} Z{_n(z_flat + MAGNET_EJECT_END_Z_MM)} F3000", "M400"]
+    return L
+
+
+def _place_magnet(g, name, x, y_engage, z_flat, y_pb) -> list[str]:
+    """Platte mit dem Magnet-Greifer in den Drucker legen — gemessen:
+
+        G1 X1067 Y25 Z73 · G1 Y220 · G1 Z75 · G1 Y343 · G1 Z20
+
+    Der Arm kommt HOCH herein, fährt über das Bett und senkt die Platte darauf ab.
+    Beim Absenken löst der Magnet, weil die Platte aufliegt — dieselbe Mechanik wie
+    beim Ablegen ins Regal, nur ohne das Untertauchen (das Bett ist der Anschlag).
+    """
+    return [
+        f"M117 Moving build plate to {name} (magnet)...",
+        f"G1 X{_n(x)} Y{_n(_y_loaded(g, y_pb))} Z{_n(z_flat + MAGNET_PLACE_APPROACH_Z_MM)} F3000", "M400",
+        f"G1 Y{_n(y_engage - MAGNET_PLACE_IN_Y_MM)} F3000", "M400",
+        f"G1 Z{_n(z_flat + MAGNET_PLACE_OVER_Z_MM)} F1000", "M400",   # über das Bett
+        f"G1 Y{_n(y_engage)} F600", "M400",                            # ganz herein
+        f"G1 Z{_n(z_flat)} F300", "M400",                              # absetzen → Magnet löst
+    ]
+
+
 def eject_from_printer(g: dict, printer=None) -> list[str]:
     pb = printer_block(g, printer)
     p = pb["eject"]
     x_unclamp = float(p["x"])
     y_engage, z_flat = float(p["y"]), float(p["z"])
     y_pb = float(g["storage"]["y_pullback_limit"])
+    if gripper_motion(g) == "magnet":
+        return _eject_magnet(g, pb["name"], x_unclamp, y_engage, z_flat, y_pb)
     x_mid = x_unclamp + _clamp_push(g)
     return [
         f"M117 Removing build plate from {pb['name']}...",
@@ -844,6 +902,8 @@ def load_onto_printer(g: dict, printer=None) -> list[str]:
     x_unclamp = float(p["x"])
     y_engage, z_flat = float(p["y"]), float(p["z"])
     y_pb = float(g["storage"]["y_pullback_limit"])
+    if gripper_motion(g) == "magnet":
+        return _place_magnet(g, pb["name"], x_unclamp, y_engage, z_flat, y_pb)
     x_mid = x_unclamp + _clamp_push(g)
     return [
         f"M117 Moving build plate to {pb['name']}...",

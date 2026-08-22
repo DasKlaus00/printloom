@@ -2471,8 +2471,8 @@ const EN_STRINGS = {
   'nie weiter zurück, wenn beladen': 'never further back while carrying a plate',
   'Ablege-Abstand (mm)': 'Store gap (mm)',
   'so weit vor dem Greif-Y absetzen': 'set down this far short of the engage Y',
-  'Die Startwerte stammen aus einer Messung an Regal 3 Fach 1 (Fachhöhe 15 mm): Greifen Y280 → Z15 → Y300 → Y342 → Z30 → Y25, Ablegen Y25 → Z50 → Y300 → Y341 → Z10 → Y300. Weicht dein Aufbau ab, sind das die Stellschrauben.':
-    'The starting values come from a measurement on rack 3 slot 1 (slot height 15 mm): grabbing Y280 → Z15 → Y300 → Y342 → Z30 → Y25, storing Y25 → Z50 → Y300 → Y341 → Z10 → Y300. If your build differs, these are the adjustments.',
+  'Die Startwerte stammen aus einer Messung an Regal 3 Fach 1 (Fachhöhe 15 mm): Greifen Y280 → Z15 → Y300 → Y342 → Z30 → Y25, Ablegen Y25 → Z50 → Y300 → Y340 → Z10 → Y300. Am Drucker fährt der Magnet eigene Wege — auch dort ohne Andruck.':
+    'The starting values come from a measurement on rack 3 slot 1 (slot height 15 mm): grabbing Y280 → Z15 → Y300 → Y342 → Z30 → Y25, storing Y25 → Z50 → Y300 → Y340 → Z10 → Y300. At the printer the magnet drives its own paths — there too without any push.',
 }
 
 function deepMerge(base, over) {

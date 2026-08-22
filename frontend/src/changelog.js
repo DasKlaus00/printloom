@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.26',
+    de: [
+      'MAGNET-GREIFER AM DRUCKER: eigene Bewegung statt der Klemm-Wege. Bisher nutzte der Magnet beim Auswerfen und Einlegen die Bewegung des Klemm-Greifers samt X-Andruck — das war der letzte Ort, an dem er noch seitlich gefahren wäre. Jetzt richtet er die X genau einmal aus und lässt sie stehen.',
+      'Auswerfen (gemessen): Y250 → Y343 → Z76 → Y300/Z73 → Y250/Z70 → Y225/Z60 → Y25/Z40. Der Arm fährt auf Bett-Höhe unter die Platte, hebt sie an und zieht auf einer Rampe heraus, die gleichzeitig hochgeht — der Greifer muss über die Druckerkante. Die Rampe läuft bewusst ohne Zwischenhalt durch, sonst ruckelt der Arm mit der Platte über die Kante.',
+      'Einlegen (gemessen): Y25/Z73 → Y220 → Z75 → Y343 → Z20. Der Arm kommt hoch herein, fährt über das Bett und senkt die Platte darauf ab — dieselbe Mechanik wie beim Ablegen ins Regal, nur ohne das Untertauchen, weil das Bett der Anschlag ist.',
+      'Alle Zahlen sind Versätze zur eingetragenen Drucker-Position: steht der Drucker woanders, wandert die ganze Bewegung mit. Die Regel „mit Platte nie unter Y25" gilt auch hier.',
+      'ABLEGEN INS REGAL: Abstand zum Greif-Y von 1 auf 2 mm. Ablegen fährt damit Y25 → Z50 → Y300 → Y340 → Z10 → Y300.',
+      'Der Klemm-Greifer bleibt am Drucker unverändert — abgesichert durch eine Gegenprobe, die seine erzeugte Bewegung mit der von vorher vergleicht.',
+    ],
+    en: [
+      'MAGNETIC GRIPPER AT THE PRINTER: its own motion instead of the clamping paths. Until now the magnet used the clamping gripper motion including the X push when ejecting and placing — the last place where it would still have travelled sideways. It now aligns X exactly once and leaves it there.',
+      'Ejecting (measured): Y250 → Y343 → Z76 → Y300/Z73 → Y250/Z70 → Y225/Z60 → Y25/Z40. The arm moves in at bed height underneath the plate, lifts it and pulls out along a ramp that rises at the same time — the gripper has to clear the printer edge. The ramp deliberately runs through without intermediate stops, otherwise the arm judders over the edge with the plate.',
+      'Placing (measured): Y25/Z73 → Y220 → Z75 → Y343 → Z20. The arm enters high, travels over the bed and lowers the plate onto it — the same mechanism as storing into a rack, only without dipping below, because the bed is the stop.',
+      'All numbers are offsets from the printer position you entered: if the printer sits elsewhere, the whole motion moves with it. The rule "never below Y25 while carrying a plate" applies here too.',
+      'STORING INTO A RACK: the gap to the engage Y goes from 1 to 2 mm. Storing therefore runs Y25 → Z50 → Y300 → Y340 → Z10 → Y300.',
+      'The clamping gripper is unchanged at the printer — covered by a counter-check that compares its generated motion against the previous one.',
+    ],
+  },
+  {
     version: '1.1.25',
     de: [
       'MAGNET-GREIFER: MIT PLATTE NIE UNTER Y25. Der Rückzugsanschlag ist auf den LEEREN Greifer bemessen — mit Platte steht der Arm weiter vorn im Raum, und wie weit er zurück darf, ist eine andere Zahl. Sie gilt jetzt als Regel an jeder Stelle, an der der Arm etwas trägt: Ablegen, Vor-Drucker-Fahren, Auswerfen und Einlegen.',
