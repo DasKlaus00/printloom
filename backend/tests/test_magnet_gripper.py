@@ -200,11 +200,14 @@ def test_magazin_und_lagerfach_sind_dieselbe_bewegung():
     assert a == b
 
 
-def test_die_durchbiegung_des_stapels_wird_weiter_eingerechnet():
-    """Der Stapel hängt durch — das gilt unabhängig vom Greifer."""
-    ohne = m.build_op(magnet(magazine_counts=[0, 0, 0]), "grab_magazine",
+def test_die_durchbiegung_des_stapels_gilt_nur_fuer_den_klemm_greifer():
+    """Umgestellt in v1.1.31. Vorher galt der Versatz je Platte fuer BEIDE Greifer.
+    Beim Magneten ist er falsch: er schiebt sich unter die Platte und zieht sie
+    beim Anheben an sich — die eingemessene Hoehe gilt bei jedem Fuellstand.
+    Beim Klemm-Greifer bleibt er, dort haengt der Stapel wirklich durch."""
+    ohne = m.build_op(geo(magazine_counts=[0, 0, 0]), "grab_magazine",
                       rack=1, slot=1, check=False)
-    mit = m.build_op(magnet(magazine_counts=[6, 0, 0]), "grab_magazine",
+    mit = m.build_op(geo(magazine_counts=[6, 0, 0]), "grab_magazine",
                      rack=1, slot=1, check=False)
     assert min(coords(mit, "Z")) < min(coords(ohne, "Z"))
 
@@ -454,3 +457,112 @@ def test_der_klemm_greifer_faehrt_am_drucker_unveraendert(op):
                       "eject": {"x": 1067, "y": 343, "z": 20},
                       "load": {"x": 1067, "y": 343, "z": 20}}]}), op, check=False)
     assert a == b
+
+
+# ── Magazin: eigene Bewegung, feste Hoehe ────────────────────────────────────
+# Gemessen (Magazin 1): G1 X622 Y295 Z345 · G1 Y328 · G1 Z350 · G1 Y25
+# Zwei Zusagen stecken darin: der Hub am Magazin ist klein (ueber dem obersten
+# Fach endet die Achse), und die Hoehe ist FEST — sie wandert nicht mit dem
+# Fuellstand.
+
+def mag_script(**rest):
+    return m.build_op(magnet(**rest), "grab_magazine", rack=1, slot=1, check=False)
+
+
+def test_magazin_griff_faehrt_x_y_z_in_einem_zug():
+    """Ueber dem obersten Fach steht der Arm frei — der Umweg ueber die Reise-Y
+    (280) waere verschenkt. Gemessen ist EIN kombinierter Zug."""
+    erste = [z for z in mag_script().splitlines() if z.startswith("G1 ")][0]
+    assert "X" in erste and "Y" in erste and "Z" in erste
+
+
+def test_am_magazin_wird_nur_wenig_angehoben():
+    """15 mm wie im Lagerfach fuehrten ueber die Achsgrenze."""
+    zs = coords(mag_script(), "Z")
+    assert zs[1] - zs[0] == 5.0
+
+
+def test_der_hub_am_magazin_ist_kleiner_als_im_lagerfach():
+    lager = coords(m.build_op(magnet(), "grab", rack=1, slot=1, check=False), "Z")
+    mag = coords(mag_script(), "Z")
+    assert (mag[1] - mag[0]) < (lager[1] - lager[0])
+
+
+def test_der_magazin_hub_bleibt_in_der_achse():
+    """Der Fall aus der Praxis: Magazin auf 350, Achse endet bei 364. Mit dem Hub
+    eines Lagerfachs waeren es 365 — Klipper braeche die Bewegung ab."""
+    g = magnet(storage={**GEOM["storage"], "first_z_flat": 20, "slot_gap": 25},
+               machine_limits={"x": 1200, "y": 400, "z": 364})
+    from app.services import geometry_check as gc
+    assert gc.check_op(g, "grab_magazine", rack=1, slot=7) == []
+
+
+def test_der_magazin_griff_endet_auf_der_schranke_mit_platte():
+    assert coords(mag_script(), "Y")[-1] == m.loaded_y_floor(magnet())
+
+
+# ── Feste Hoehe statt Versatz je Platte ──────────────────────────────────────
+
+@pytest.mark.parametrize("anzahl", (0, 1, 3, 6))
+def test_der_magnet_kennt_keinen_versatz_je_platte(anzahl):
+    """„Immer auf dieselbe, festgelegte Hoehe" — sonst stimmte die eingemessene
+    Hoehe nur bei genau einem Fuellstand."""
+    assert m.magazine_z_offset(magnet(magazine_counts=[anzahl] * 3), 1) == 0.0
+
+
+def test_die_magazin_hoehe_wandert_nicht_mit_dem_fuellstand():
+    voll = mag_script(magazine_counts=[6, 6, 6])
+    fast_leer = mag_script(magazine_counts=[1, 1, 1])
+    assert coords(voll, "Z") == coords(fast_leer, "Z")
+
+
+def test_der_klemm_greifer_senkt_weiter_je_platte_ab():
+    """Gegenprobe: beim Original haengt der Stapel durch, der Versatz bleibt."""
+    assert m.magazine_z_offset(geo(magazine_counts=[6, 6, 6]), 1) == -6.0
+    assert m.magazine_z_offset(geo(magazine_counts=[2, 2, 2]), 1) == -2.0
+
+
+def test_der_klemm_magazin_griff_bleibt_unveraendert():
+    """Der Umbau darf den Original-Greifer nicht anfassen."""
+    s = m.build_op(geo(magazine_counts=[4, 4, 4]), "grab_magazine",
+                   rack=1, slot=1, check=False)
+    assert "(magnet)" not in s
+    assert coords(s, "Z") == [m.slot_position(geo(), 1, 7)[2] - 4.0]
+
+
+# ── Einlagern: X und Z gleichzeitig ──────────────────────────────────────────
+
+def store_lines(**rest):
+    s = m.build_op(magnet(**rest), "store", rack=3, slot=1, check=False)
+    return [z for z in s.splitlines() if z.startswith("G1 ")]
+
+
+def test_beim_einlagern_fahren_x_und_z_zusammen():
+    """Nacheinander stand der Arm erst am Ziel und hob DANN an — die Hubzeit kam
+    bei jeder Platte oben drauf. Ein Zug statt zwei."""
+    erste = store_lines()[0]
+    assert "X" in erste and "Z" in erste
+
+
+def test_das_einlagern_hebt_nicht_zweimal_an():
+    """Gegenprobe zum Zusammenlegen: es darf keine uebrig gebliebene reine
+    Z-Fahrt direkt danach stehen."""
+    zweite = store_lines()[1]
+    assert "Z" not in zweite
+
+
+def test_die_ziele_beim_einlagern_bleiben_dieselben():
+    """Zusammenlegen ist eine Frage der Reihenfolge, nicht der Koordinaten."""
+    s = m.build_op(magnet(), "store", rack=3, slot=1, check=False)
+    x_slot, y_engage, z_flat, y_pb = m.slot_position(magnet(), 3, 1)
+    assert coords(s, "X") == [x_slot]
+    assert coords(s, "Z")[0] == z_flat + 35.0        # store_z ueber Fachhoehe
+    assert coords(s, "Z")[-1] == z_flat - 5.0        # release unter Fachhoehe
+
+
+def test_der_klemm_greifer_machte_das_schon_immer():
+    """Das Original faehrt X, Y und Z seit jeher in einem Zug — der Magnet war der
+    Ausreisser, nicht die neue Regel."""
+    erste = [z for z in m.build_op(geo(), "store", rack=3, slot=1,
+                                   check=False).splitlines() if z.startswith("G1 ")][0]
+    assert "X" in erste and "Z" in erste

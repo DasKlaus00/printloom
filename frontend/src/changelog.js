@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.31',
+    de: [
+      'BEHOBEN: „Aus Magazin holen" fuhr mit dem Magnet-Greifer über die Z-Achsgrenze (365 statt höchstens 364 mm) — Klipper hätte die Bewegung mitten im Ablauf abgebrochen. Der Magnet holte die Platte aus dem Magazin mit derselben Bewegung wie aus einem Lagerfach, samt vollem Hub von 15 mm. Über dem obersten Fach ist dafür kein Platz.',
+      'Der Magazin-Griff ist jetzt eine eigene, gemessene Bewegung: X, Y und Z fahren in EINEM Zug (oben ist nichts zu umfahren), und angehoben wird nur um 5 mm. Beide Werte stehen im Drucker-Tab und lassen sich nachjustieren.',
+      'MAGAZIN-HÖHE IST JETZT FEST: Beim Magnet-Greifer wird die Greif-Höhe nicht mehr pro Platte im Stapel abgesenkt. Der Magnet schiebt sich unter die Platte und zieht sie beim Anheben an sich — wie tief der Stapel durchhängt, ändert daran nichts. Vorher wanderte die Höhe mit jeder entnommenen Platte, und die eingemessene Höhe stimmte nur bei genau einem Füllstand. Beim Original-Greifer bleibt die Absenkung: dort hängt der Stapel wirklich durch.',
+      'EINLAGERN SCHNELLER: Beim Magnet-Greifer fahren X und Z jetzt gleichzeitig statt nacheinander. Der Arm stellt sich schon während der Fahrt quer durch die Anlage auf Fachhöhe; vorher stand er erst am Ziel und hob dann an. Das Original machte das ohnehin schon so — der Magnet war der Ausreißer.',
+    ],
+    en: [
+      'FIXED: "take from magazine" drove past the Z axis limit with the magnet gripper (365 instead of at most 364 mm) — Klipper would have aborted the motion mid-sequence. The magnet took the plate out of the magazine with the same motion as out of a storage slot, full 15 mm lift included. There is no room for that above the topmost slot.',
+      'The magazine grab is now its own measured motion: X, Y and Z move in ONE go (there is nothing to work around up there), and the lift is only 5 mm. Both values live in the printer tab and can be adjusted.',
+      'MAGAZINE HEIGHT IS NOW FIXED: with the magnet gripper the grab height is no longer lowered per plate in the stack. The magnet slides under the plate and pulls it up against itself — how far the stack sags makes no difference. Previously the height moved with every plate taken out, and the measured height was only correct at exactly one fill level. For the original gripper the lowering stays: there the stack really does sag.',
+      'STORING IS FASTER: with the magnet gripper X and Z now move at the same time instead of one after the other. The arm reaches slot height while still travelling across the setup; previously it arrived first and lifted afterwards. The original gripper always did it this way — the magnet was the odd one out.',
+    ],
+  },
+  {
     version: '1.1.30',
     de: [
       'BEHOBEN: Haken (Kontrollkästchen) sahen aus wie bildschirmbreite Eingabefelder und quetschten den Text daneben zu einer Spalte aus Einzelwörtern — am deutlichsten beim neuen „Drucker einbeziehen" im Stresstest. Ursache war eine globale Regel, die JEDES <input> wie ein Textfeld behandelte, also auch Haken.',

@@ -103,6 +103,8 @@ DEFAULT_GEOMETRY = {
     "magnet_y_travel_mm": 280.0, # Y, auf der die X-Ausrichtung passiert
     "magnet_y_retract_mm": 25.0, # Y, auf die nach dem Greifen zurückgezogen wird
     "magnet_y_min_loaded_mm": 25.0,  # kleinste Y, die MIT PLATTE angefahren werden darf
+    "magnet_mag_lift_mm": 5.0,     # Anheben am Magazin (die Achse endet dicht darüber)
+    "magnet_mag_y_clear_mm": 33.0, # Y-Vorposition vor dem Magazin
     "magnet_store_y_back_mm": 2.0,   # Ablegen: so weit vor y_engage wird abgesetzt
     "magnet_store_x_mm": 0.0,    # X-Versatz beim Ablegen (0 = wie beim Greifen)
     # Achsgrenzen des Geräts in mm ({} = unbekannt) — für die Plausibilitätsprüfung
@@ -155,7 +157,8 @@ def _sanitize_geometry(g: dict) -> dict:
               "magnet_lift_mm", "magnet_store_z_mm", "magnet_release_mm",
               "magnet_y_clear_mm", "magnet_store_x_mm",
               "magnet_y_travel_mm", "magnet_y_retract_mm",
-              "magnet_y_min_loaded_mm", "magnet_store_y_back_mm"):
+              "magnet_y_min_loaded_mm", "magnet_store_y_back_mm",
+              "magnet_mag_lift_mm", "magnet_mag_y_clear_mm"):
         if g.get(k) is not None:
             g[k] = _num(g.get(k), d.get(k, 0))
     sf = g.get("speed_factors")
@@ -525,7 +528,15 @@ def mirror_rack_params(script: str, racks) -> str:
 def magazine_z_offset(g: dict, rack: int) -> float:
     """Z-Absenkung beim Greifen aus dem Magazin: die flach gestapelten Platten biegen
     sich durch, der Stapel liegt pro Platte ~magazine_sag_mm tiefer. 6 Platten → −6 mm,
-    4 → −4 mm (bei 1 mm/Platte). Zähler je Regal aus magazine_counts; ohne Zähler 0."""
+    4 → −4 mm (bei 1 mm/Platte). Zähler je Regal aus magazine_counts; ohne Zähler 0.
+
+    NUR für den Klemm-Greifer. Der Magnet fährt das Magazin IMMER auf derselben,
+    festgelegten Höhe an: er schiebt sich unter die Platte und zieht sie beim
+    Anheben an sich — wie tief der Stapel durchhängt, ändert daran nichts. Mit dem
+    Versatz wanderte die Greif-Höhe mit jeder entnommenen Platte, und die
+    eingemessene Höhe stimmte nur bei genau einem Füllstand."""
+    if gripper_motion(g) == "magnet":
+        return 0.0
     try:
         counts = g.get("magazine_counts") or []
         cnt = max(0, int(counts[int(rack) - 1]))
@@ -642,6 +653,12 @@ MAGNET_Y_CLEAR_MM = 42.0
 MAGNET_Y_TRAVEL_MM = 280.0
 MAGNET_Y_RETRACT_MM = 25.0
 MAGNET_Y_MIN_LOADED_MM = 25.0
+# Magazin, gemessen (Magazin 1, x 622, y_engage 328, z 345):
+#   G1 X622 Y295 Z345 · G1 Y328 · G1 Z350 · G1 Y25
+# Zwei Unterschiede zum Lagerfach: X/Y/Z fahren in EINEM Zug (oben ist nichts zu
+# umfahren), und der Hub ist klein — ueber dem obersten Fach ist die Achse zu Ende.
+MAGNET_MAG_LIFT_MM = 5.0              # Anheben am Magazin (345 -> 350)
+MAGNET_MAG_Y_CLEAR_MM = 33.0          # Y-Vorposition vor dem Magazin (328 - 295)
 # Drucker-Seite, gemessen (eject/load bei X1067 Y343 Z20):
 #   Auswerfen  Y250 X1067 Z20 · Y343 · Z76 · Y300 Z73 · Y250 Z70 · Y225 Z60 · Y25 Z40
 #   Einlegen   X1067 Y25 Z73 · Y220 · Z75 · Y343 · Z20
@@ -687,6 +704,8 @@ def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
     if mag > 0 and int(slot) == mag:
         z_flat += magazine_z_offset(g, rack)
     if gripper_motion(g) == "magnet":
+        if nolift:      # Magazin: eigene Bewegung, die Achse endet dicht darüber
+            return _grab_magnet_magazine(g, rack, slot, x_unclamp, y_engage, z_flat)
         return _grab_magnet(g, rack, slot, x_unclamp, y_engage, z_flat, y_pb)
     x_mid = x_unclamp - _clamp_push(g)
     L = [f"M117 Grab rack {rack} slot {slot}..."]
@@ -715,6 +734,42 @@ def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
             f"G1 Y{_n(y_pb)} F2000", "M400",
         ]
     return L
+
+
+def _magnet_mag(g) -> tuple[float, float]:
+    """(Hub am Magazin, Y-Vorposition vor dem Magazin) — beide nie negativ."""
+    lift = max(0.0, _num(g.get("magnet_mag_lift_mm"), MAGNET_MAG_LIFT_MM))
+    clear = max(0.0, _num(g.get("magnet_mag_y_clear_mm"), MAGNET_MAG_Y_CLEAR_MM))
+    return lift, clear
+
+
+def _grab_magnet_magazine(g, rack, slot, x_slot, y_engage, z_mag) -> list[str]:
+    """Platte mit dem Magnet-Greifer aus dem MAGAZIN holen — gemessen (Magazin 1):
+
+        G1 X622 Y295 Z345 · G1 Y328 · G1 Z350 · G1 Y25
+
+    Zwei Unterschiede zum Griff aus einem Lagerfach, beide aus der Messung:
+
+      • X, Y und Z fahren in EINEM Zug. Über dem obersten Fach steht der Arm frei,
+        es ist nichts zu umfahren — der Umweg über die Reise-Y wäre verschenkt.
+      • Der Hub ist klein (5 statt 15 mm). Über dem Magazin ist die Achse zu Ende:
+        mit dem Hub eines Lagerfachs führte die Bewegung über die Achsgrenze, und
+        Klipper bräche sie mitten im Ablauf ab.
+
+    Die Höhe ist FEST — kein Versatz je Platte im Stapel (siehe
+    magazine_z_offset). Der Magnet zieht die Platte beim Anheben an sich; wie voll
+    das Magazin ist, ändert daran nichts.
+    """
+    lift, clear = _magnet_mag(g)
+    _, _, y_retract = _magnet_y(g)
+    return [
+        f"M117 Grab magazine rack {rack} slot {slot} (magnet)...",
+        f"G1 X{_n(x_slot)} Y{_n(y_engage - clear)} Z{_n(z_mag)} F4000", "M400",
+        f"G1 Y{_n(y_engage)} F600", "M400",                  # unter die Platte einfahren
+        "M117 Picking up new bed (magnet)...",
+        f"G1 Z{_n(z_mag + lift)} F600", "M400",              # anheben → Platte haftet
+        f"G1 Y{_n(_y_loaded(g, y_retract))} F2000", "M400",  # mit Platte herausziehen
+    ]
 
 
 def _grab_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
@@ -753,6 +808,8 @@ def _store_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
 
         G1 Z50 · G1 Y342 · G1 Z10 · G1 Y300
 
+    Seit v1.1.31 fahren X und Z dabei GLEICHZEITIG (ein Zug statt zwei).
+
     Der Arm kommt HÖHER herein als die Fachhöhe (store_z) und senkt sich dann UNTER
     sie (release). Damit ist auch das Ablösen geklärt, das vorher offen war: die
     Platte setzt auf dem Fach auf, der Arm fährt darunter weg und der Magnet lässt
@@ -773,8 +830,11 @@ def _store_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
     x_store = x_slot + _num(g.get("magnet_store_x_mm"), 0.0)
     return [
         f"M117 Store rack {rack} slot {slot} (magnet)...",
-        f"G1 X{_n(x_store)} Y{_n(_y_loaded(g, y_pb))} F4000", "M400",   # X ausrichten (mit Platte)
-        f"G1 Z{_n(z_flat + store_z)} F1000", "M400",         # über Fachhöhe anheben
+        # X und Z in EINEM Zug: der Arm fährt quer durch die Anlage und stellt sich
+        # dabei schon auf Fachhöhe. Nacheinander stand er erst am Ziel und hob dann
+        # an — die Hubzeit kam bei jeder Platte oben drauf, ohne dass etwas dagegen
+        # spräche. Vorschub ist der Reise-Vorschub: die X-Strecke bestimmt die Dauer.
+        f"G1 X{_n(x_store)} Y{_n(_y_loaded(g, y_pb))} Z{_n(z_flat + store_z)} F4000", "M400",
         f"G1 Y{_n(_y_loaded(g, y_engage - y_clear))} F2000", "M400",   # vor das Fach
         f"G1 Y{_n(y_engage - y_back)} F600", "M400",         # bis kurz vor y_engage
         f"G1 Z{_n(z_flat - release)} F300", "M400",          # absenken → Platte bleibt liegen

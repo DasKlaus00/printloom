@@ -890,6 +890,8 @@ export default function Drucker() {
   const [magStoreX,  setMagStoreX]  = useState(0)    // X-Versatz beim Ablegen
   const [magYTravel, setMagYTravel] = useState(280)  // Y, auf der X ausgerichtet wird
   const [magYRetr,   setMagYRetr]   = useState(25)   // Y-Rückzug nach dem Greifen
+  const [magMagLift, setMagMagLift] = useState(5)    // Anheben am Magazin (Achse endet dicht darüber)
+  const [magMagClear, setMagMagClear] = useState(33) // Y-Vorposition vor dem Magazin
   const [magYMin,    setMagYMin]    = useState(25)   // kleinste Y MIT Platte
   const [magYBack,   setMagYBack]   = useState(2)    // Ablegen: so weit vor y_engage
   const [speedFactor, setSpeedFactor] = useState(100)   // globaler M220-Vorschub in %
@@ -1078,13 +1080,16 @@ export default function Drucker() {
     magnet_store_x_mm:  num(magStoreX, 0),
     magnet_y_travel_mm:  num(magYTravel, 280),
     magnet_y_retract_mm: num(magYRetr, 25),
+    magnet_mag_lift_mm:  num(magMagLift, 5),
+    magnet_mag_y_clear_mm: num(magMagClear, 33),
     magnet_y_min_loaded_mm: num(magYMin, 25),
     magnet_store_y_back_mm: num(magYBack, 2),
     machine_limits: { ...limits },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [shownPrinters, rackGeo, rackList, storage, yPullback, useGcode, gcodeOverride,
        speedFactor, speedFactors, clampPush, gripper, magLift, magStoreZ, magRelease, magYClear,
-       magStoreX, magYTravel, magYRetr, magYMin, magYBack, limits, rackXTrim])
+       magStoreX, magYTravel, magYRetr, magMagLift, magMagClear, magYMin, magYBack,
+       limits, rackXTrim])
 
   // Persistenz: gespeicherte Geometrie beim Laden übernehmen (einmal), Änderungen debounced speichern
   const isMagnet = gripper === 'magnet'
@@ -1116,6 +1121,8 @@ export default function Drucker() {
       if (g.magnet_store_z_mm != null) setMagStoreZ(g.magnet_store_z_mm)
       if (g.magnet_release_mm != null) setMagRelease(g.magnet_release_mm)
       if (g.magnet_y_clear_mm != null) setMagYClear(g.magnet_y_clear_mm)
+      if (g.magnet_mag_lift_mm != null) setMagMagLift(g.magnet_mag_lift_mm)
+      if (g.magnet_mag_y_clear_mm != null) setMagMagClear(g.magnet_mag_y_clear_mm)
       if (g.magnet_store_x_mm != null) setMagStoreX(g.magnet_store_x_mm)
       if (g.magnet_y_travel_mm != null) setMagYTravel(g.magnet_y_travel_mm)
       if (g.magnet_y_retract_mm != null) setMagYRetr(g.magnet_y_retract_mm)
@@ -1456,6 +1463,10 @@ export default function Drucker() {
                 value={magYTravel} onChange={setMagYTravel} />
               <NumField label={tr('Y-Rückzug (mm)')} hint={tr('Greifen: mit Platte heraus')}
                 value={magYRetr} onChange={setMagYRetr} />
+              <NumField label={tr('Anheben Magazin (mm)')} hint={tr('kleiner — die Achse endet darüber')}
+                value={magMagLift} onChange={setMagMagLift} />
+              <NumField label={tr('Y-Vorposition Magazin (mm)')} hint={tr('Abstand vor dem Magazin')}
+                value={magMagClear} onChange={setMagMagClear} />
               <NumField label={tr('Y-Minimum mit Platte (mm)')} hint={tr('nie weiter zurück, wenn beladen')}
                 value={magYMin} onChange={setMagYMin} />
               <NumField label={tr('Ablege-Abstand (mm)')} hint={tr('so weit vor dem Greif-Y absetzen')}
@@ -1483,7 +1494,7 @@ export default function Drucker() {
         </p>
         {isMagnet && (
           <p className="text-[9px] text-surface-600">
-            {tr('Die Startwerte stammen aus einer Messung an Regal 3 Fach 1 (Fachhöhe 15 mm): Greifen Y280 → Z15 → Y300 → Y342 → Z30 → Y25, Ablegen Y25 → Z50 → Y300 → Y340 → Z10 → Y300. Am Drucker fährt der Magnet eigene Wege — auch dort ohne Andruck. Weicht dein Aufbau ab, sind das die Stellschrauben.')}
+            {tr('Die Startwerte stammen aus Messungen: Lagerfach (Regal 3 Fach 1, Höhe 15 mm) Greifen Y280 → Z15 → Y300 → Y342 → Z30 → Y25, Ablegen X/Z zusammen → Y300 → Y340 → Z10 → Y300. Magazin (Höhe 345 mm) X/Y/Z in einem Zug → Y328 → Z350 → Y25 — dort wird nur wenig angehoben, weil die Achse dicht darüber endet, und die Höhe bleibt fest, egal wie voll das Magazin ist. Am Drucker fährt der Magnet eigene Wege — auch dort ohne Andruck. Weicht dein Aufbau ab, sind das die Stellschrauben.')}
           </p>
         )}
 
