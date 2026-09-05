@@ -142,6 +142,13 @@ let dynamicPacks = (() => {
 // English overrides keyed by the exact German source string (see tr() below).
 // Filled in incrementally per page; missing entries fall back to German.
 const EN_STRINGS = {
+  "Vor dem Auswerfen abkühlen lassen": "Let it cool down before ejecting",
+  "Die Magnete halten eine warme Druckplatte nicht — der Arm käme leer zurück, ohne dass es auffällt. Die Farm wartet, bis das Bett kalt genug ist.": "The magnets do not hold a warm build plate — the arm would come back empty without anyone noticing. The farm waits until the bed is cool enough.",
+  "Zieltemperatur": "Target temperature",
+  "°C": "°C",
+  "Zeitlimit": "Time limit",
+  "(ohne Limit)": "(no limit)",
+  "Läuft das Zeitlimit ab, wird trotzdem ausgeworfen — ein Zyklus, der ewig steht, wäre schlimmer. Im Verlauf steht dann, mit welcher Temperatur.": "If the time limit runs out, it ejects anyway — a cycle stuck forever would be worse. The log then says at what temperature.",
   "Anheben Magazin (mm)": "Lift at magazine (mm)",
   "kleiner — die Achse endet darüber": "smaller — the axis ends above it",
   "Y-Vorposition Magazin (mm)": "Y pre-position at magazine (mm)",

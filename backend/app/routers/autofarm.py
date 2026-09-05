@@ -84,6 +84,12 @@ _DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": Tru
                      # läuft i. d. R. in UTC; die Betriebszeiten müssen aber in der lokalen
                      # Zeit des Nutzers ausgewertet werden. Frontend liefert sie automatisch.
                      "timezone": "",
+                     # Magnet-Greifer: vor dem Auswerfen warten, bis die Druckplatte
+                     # kalt genug ist. Die Magnete halten eine warme Platte nicht —
+                     # der Arm käme leer zurück, ohne dass es jemand merkt.
+                     "cool_before_eject":       True,
+                     "cool_temp_c":             30.0,
+                     "cool_timeout_min":        30,
                      # Betriebszeiten (Roadmap 2.5) — neue Jobs nur im Zeitfenster starten
                      "operating_hours_enabled": False,
                      # Pro Wochentag (Index 0=Mo … 6=So) ein eigenes Fenster.
@@ -229,6 +235,9 @@ def _live_settings(s: dict) -> dict:
         "operating_schedule":      _operating_schedule(s),
         "operating_tz":            str(s.get("timezone", "") or ""),
         "exact_color_only":        bool(s.get("exact_color_only", False)),
+        "cool_before_eject":       bool(s.get("cool_before_eject", True)),
+        "cool_temp_c":             float(s.get("cool_temp_c", 30.0) or 30.0),
+        "cool_timeout_min":        max(0, int(s.get("cool_timeout_min", 30) or 0)),
     }
 
 
@@ -1370,6 +1379,71 @@ async def _eval_condition(cond: dict, device: Device) -> tuple:
     return passed, f"{check}={cur_n:g} {op} {val_n:g}"
 
 
+COOL_POLL_S = 20.0          # Abstand zwischen zwei Temperatur-Abfragen
+
+
+def _cool_needed() -> bool:
+    """Gilt die Abkühl-Wartezeit für diesen Aufbau?
+
+    Nur mit dem Magnet-Greifer. Der Klemm-Greifer hält die Platte mechanisch —
+    ihn warten zu lassen wäre verschenkte Zeit bei jedem Zyklus."""
+    if not _farm.get("cool_before_eject", True):
+        return False
+    try:
+        geom = _farm.get("geometry") or _load_farm_geometry()
+        return _motion.gripper_motion(geom) == "magnet"
+    except Exception:
+        return False
+
+
+async def _await_bed_cool(device: Device) -> None:
+    """Vor dem Auswerfen warten, bis die Druckplatte kalt genug ist.
+
+    Die Magnete halten eine WARME Platte nicht: erst um die 30 °C reicht die
+    Haftkraft. Fährt der Arm vorher los, bleibt die Platte im Drucker liegen und
+    er kommt leer zurück — ohne Fehlermeldung, denn er kann nicht fühlen, ob
+    etwas am Greifer hängt. Der Zyklus liefe weiter, als wäre nichts gewesen.
+
+    Läuft das Zeitlimit ab, wird TROTZDEM ausgeworfen (fail-open) und die Meldung
+    sagt, mit welcher Temperatur. Ein Zyklus, der ewig steht, wäre schlimmer —
+    und ob es an der Platte oder am Thermometer lag, weiß hier niemand.
+    """
+    if not _cool_needed():
+        return
+    ziel = float(_farm.get("cool_temp_c", 30.0) or 30.0)
+    grenze_min = max(0.0, float(_farm.get("cool_timeout_min", 30) or 0))
+    loop = asyncio.get_event_loop()
+    start = loop.time()
+    gemeldet = False
+    while True:
+        if _farm["stopping"]:
+            raise RuntimeError("Gestoppt")
+        p = await _read_live_print(device, max_age=COOL_POLL_S / 2)
+        roh = (p or {}).get("bed_temper")
+        try:
+            ist = float(roh)
+        except (TypeError, ValueError):
+            # Ohne Messwert nicht blockieren: dieselbe Fail-open-Regel wie bei den
+            # Schritt-Bedingungen — ein Lesefehler darf keinen Zyklus anhalten.
+            _log("❄ Bett-Temperatur nicht lesbar — wird ohne Warten ausgeworfen")
+            return
+        if ist <= ziel:
+            if gemeldet:
+                _log(f"❄ Bett auf {ist:.0f} °C — Auswerfen kann losgehen")
+            return
+        if grenze_min and (loop.time() - start) >= grenze_min * 60:
+            _log(f"❄ ⚠ Nach {grenze_min:g} min noch {ist:.0f} °C (Ziel {ziel:.0f} °C) — "
+                 f"es wird trotzdem ausgeworfen. Der Magnet könnte die Platte "
+                 f"liegen lassen.")
+            return
+        if not gemeldet:
+            _log(f"❄ Bett {ist:.0f} °C — warte auf {ziel:.0f} °C "
+                 f"(der Magnet hält eine warme Platte nicht)")
+            gemeldet = True
+        _farm["seq_step_label"] = f"Abkühlen — Bett {ist:.0f} °C / Ziel {ziel:.0f} °C"
+        await asyncio.sleep(COOL_POLL_S)
+
+
 async def _wait_bambu_finish(device: Device, label: str = "Bewegung", timeout: float = 180.0):
     """Wait until the printer reports the one-shot move/homing print as done
     (gcode_state FINISH/IDLE) → confirms the bed is truly in position.
@@ -2288,7 +2362,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         # Opt-in: bekannte Drucker-/Regal-Macros können als Printloom-G-code laufen
         # (geometry.use_gcode[op] = true). Standard aus → Geräte-Macro wie bisher.
         # Die Magazin-/Fach-Buchhaltung unten prüft weiter val (Macro-Name, unverändert).
-        send_val, op_used = val, None
+        send_val, op_used, op_map = val, None, None
         try:
             op_map = _macro_to_op(val, rack_num, slot_num, stack_rack, stack_slot)
             if op_map:
@@ -2300,6 +2374,11 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         except Exception as e:
             send_val, op_used = val, None
             logger.warning(f"use_gcode-Auswertung fehlgeschlagen ({e}) — nutze Macro {val!r}")
+        # Auch hier abkühlen lassen — ob der Auswurf als Geräte-Macro oder als
+        # Printloom-G-code fährt, ändert nichts daran, dass der Magnet eine warme
+        # Platte nicht hält. `op_map` kennt die Operation in beiden Fällen.
+        if op_map and op_map[0] == "eject":
+            await _await_bed_cool(device)
         _log(f"▶ {val}" + (f"  →  Printloom-G-code ({op_used})" if op_used else ""))
         await _do_macro(send_val)
         if "GRAB_FROM_RACK" in val or val.startswith("GRAB_FROM_SLOT_"):
@@ -2342,6 +2421,8 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                  (int(rack_num), int(slot_num)) if is_store else (1, 1)
         geom = _farm.get("geometry") or _load_farm_geometry()
         script = _motion.build_op(geom, op, rack=rk, slot=sl, printer=_farm_printer(geom))
+        if op == "eject":
+            await _await_bed_cool(device)
         _log(f"▶ Printloom-Op: {op}" + (f" (Regal {rk} Fach {sl})" if (is_grab or is_store) else ""))
         await _do_macro(script)   # Klipper HTTP blocks until movement is complete
         if is_grab:
@@ -3122,6 +3203,9 @@ class SettingsPayload(BaseModel):
     operating_hours_enabled: bool = False
     operating_schedule:      List[dict] = []   # 7 Einträge [{enabled,start,end}], Index 0=Mo
     exact_color_only:        bool = False      # nur exakte Farbe drucken, sonst pausieren
+    cool_before_eject:       bool  = True      # Magnet: vor dem Auswerfen abkühlen lassen
+    cool_temp_c:             float = 30.0      # Druckplatte gilt ab hier als kalt genug
+    cool_timeout_min:        int   = 30        # 0 = ohne Zeitlimit warten
     # Legacy (vor v1.0.59) — weiterhin akzeptiert für alte Clients/Backups:
     operating_start:         str  = "22:00"
     operating_end:           str  = "06:00"

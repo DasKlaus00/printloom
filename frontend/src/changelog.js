@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.32',
+    de: [
+      'NEU: „Vor dem Auswerfen abkühlen lassen" (Einstellungen → Magnet-Greifer). Die Farm wartet mit dem Griff, bis die Druckplatte unter einer Zieltemperatur liegt — Standard 30 °C. Die Magnete halten eine warme Platte nicht: der Arm führe los, die Platte bliebe im Drucker liegen, und er käme leer zurück, ohne dass es auffällt — er kann nicht fühlen, ob etwas am Greifer hängt.',
+      'Standardmäßig AN, aber nur beim Magnet-Greifer. Der Klemm-Greifer hält die Platte mechanisch; ihn warten zu lassen wäre bei jedem Zyklus verschenkte Zeit. Der Schalter ist deshalb auch nur sichtbar, wenn der Magnet verbaut ist.',
+      'Zieltemperatur und Zeitlimit sind einstellbar (Standard 30 °C / 30 min). Läuft das Zeitlimit ab, wird TROTZDEM ausgeworfen und im Verlauf steht, mit welcher Temperatur — ein Zyklus, der ewig steht, wäre schlimmer. Lässt sich die Temperatur gar nicht lesen, wird ohne Warten ausgeworfen, statt den Lauf an einem Lesefehler anzuhalten. „Stopp" bricht das Warten sofort ab.',
+      'Der Halt sitzt an beiden Auswurf-Wegen — ob die Sequenz ein Geräte-Macro oder Printloom-G-code fährt, ändert nichts daran, dass der Magnet eine warme Platte nicht hält.',
+    ],
+    en: [
+      'NEW: "Let it cool down before ejecting" (settings → magnet gripper). The farm holds off the grab until the build plate is below a target temperature — 30 °C by default. The magnets do not hold a warm plate: the arm would set off, the plate would stay in the printer, and it would come back empty without anyone noticing — it cannot feel whether something is on the gripper.',
+      'On by default, but only for the magnet gripper. The clamp gripper holds the plate mechanically; making it wait would waste time on every cycle. The switch is therefore only visible when the magnet is installed.',
+      'Target temperature and time limit are adjustable (30 °C / 30 min by default). If the time limit runs out it ejects ANYWAY and the log says at what temperature — a cycle stuck forever would be worse. If the temperature cannot be read at all, it ejects without waiting rather than halting the run on a read error. "Stop" aborts the wait immediately.',
+      'The hold sits on both ejection paths — whether the sequence runs a device macro or Printloom G-code makes no difference to the magnet not holding a warm plate.',
+    ],
+  },
+  {
     version: '1.1.31',
     de: [
       'BEHOBEN: „Aus Magazin holen" fuhr mit dem Magnet-Greifer über die Z-Achsgrenze (365 statt höchstens 364 mm) — Klipper hätte die Bewegung mitten im Ablauf abgebrochen. Der Magnet holte die Platte aus dem Magazin mit derselben Bewegung wie aus einem Lagerfach, samt vollem Hub von 15 mm. Über dem obersten Fach ist dafür kein Platz.',
