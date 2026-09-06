@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { deviceService, configService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService, controlService } from '../services/api'
+import { deviceService, configService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
 import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 
@@ -140,10 +140,6 @@ function FarmSettings() {
   const [minPrintMinutes, setMinPrintMinutes] = useState(0)
   const [useAms,          setUseAms]          = useState(true)
   const [exactColorOnly,  setExactColorOnly]  = useState(false)   // 1.4
-  const [coolEject,       setCoolEject]       = useState(true)    // Magnet: vor dem Auswerfen abkühlen lassen
-  const [coolTemp,        setCoolTemp]        = useState(30)
-  const [coolTimeout,     setCoolTimeout]     = useState(30)
-  const [isMagnet,        setIsMagnet]        = useState(false)
   const [connAlarm,       setConnAlarm]       = useState(true)
   const [stallMin,        setStallMin]        = useState(0)
   const [ophEnabled,      setOphEnabled]      = useState(false)         // 2.5 Betriebszeiten
@@ -170,9 +166,6 @@ function FarmSettings() {
         setMinPrintMinutes(r.data.min_print_minutes ?? 0)
         setUseAms(r.data.use_ams ?? true)
         setExactColorOnly(!!r.data.exact_color_only)
-        setCoolEject(r.data.cool_before_eject ?? true)
-        setCoolTemp(r.data.cool_temp_c ?? 30)
-        setCoolTimeout(r.data.cool_timeout_min ?? 30)
         setConnAlarm(r.data.conn_alarm ?? true)
         setStallMin(r.data.progress_stall_min ?? 0)
         setOphEnabled(r.data.operating_hours_enabled ?? false)
@@ -189,10 +182,6 @@ function FarmSettings() {
           autofarmService.saveSettings({ timezone: browserTz }).catch(() => {})
         }
       }).catch(() => {}).finally(() => setLoaded(true))
-    controlService.getGeometry()
-      .then(r => setIsMagnet(
-        (r?.data?.geometry?.gripper_motion || r?.data?.geometry?.gripper || '') === 'magnet'))
-      .catch(() => {})
     autofarmService.getHomingFileInfo()
       .then(r => setHomingFile(r.data)).catch(() => {})
   }, [])
@@ -203,9 +192,6 @@ function FarmSettings() {
       await autofarmService.saveSettings({
         poll_interval: pollInterval, min_print_minutes: minPrintMinutes, use_ams: useAms,
         exact_color_only: exactColorOnly,
-        cool_before_eject: coolEject,
-        cool_temp_c: Math.max(0, Number(coolTemp) || 0),
-        cool_timeout_min: Math.max(0, Math.round(Number(coolTimeout) || 0)),
         conn_alarm: connAlarm, progress_stall_min: Math.max(0, Math.round(Number(stallMin) || 0)),
         operating_hours_enabled: ophEnabled, operating_schedule: ophSchedule,
         timezone: tz || browserTz,
@@ -268,47 +254,6 @@ function FarmSettings() {
             className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${exactColorOnly ? 'bg-blue-600' : 'bg-surface-700'}`}>
             <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${exactColorOnly ? 'translate-x-4' : 'translate-x-0'}`} />
           </button>
-        </div>
-      )}
-
-      {/* Magnet-Greifer: abkuehlen lassen, bevor der Arm die Platte holt.
-          Nur sichtbar, wenn der Magnet verbaut ist — beim Klemm-Greifer waere es
-          ein Schalter ohne Wirkung. */}
-      {isMagnet && (
-        <div className="border-t border-surface-800/40 pt-3 space-y-2.5">
-          <p className="text-[10px] text-surface-400 font-medium">{tr('Magnet-Greifer')}</p>
-          <div className="flex items-center gap-3">
-            <label className="text-xs text-surface-400 select-none flex-1">{tr('Vor dem Auswerfen abkühlen lassen')}
-              <span className="block text-[9px] text-surface-700">{tr('Die Magnete halten eine warme Druckplatte nicht — der Arm käme leer zurück, ohne dass es auffällt. Die Farm wartet, bis das Bett kalt genug ist.')}</span></label>
-            <button onClick={() => setCoolEject(v => !v)}
-              className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${coolEject ? 'bg-blue-600' : 'bg-surface-700'}`}>
-              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${coolEject ? 'translate-x-4' : 'translate-x-0'}`} />
-            </button>
-          </div>
-          {coolEject && (
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs text-surface-400 select-none">{tr('Zieltemperatur')}</label>
-                <div className="flex items-center gap-2 mt-1">
-                  <input type="number" min="0" max="120" value={coolTemp}
-                    onChange={e => setCoolTemp(e.target.value)} className="w-20 text-sm" />
-                  <span className="text-[10px] text-surface-700">{tr('°C')}</span>
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-surface-400 select-none">{tr('Zeitlimit')}</label>
-                <div className="flex items-center gap-2 mt-1">
-                  <input type="number" min="0" max="240" value={coolTimeout}
-                    onChange={e => setCoolTimeout(e.target.value)} className="w-20 text-sm" />
-                  <span className="text-[10px] text-surface-700">
-                    {Number(coolTimeout) === 0 ? tr('(ohne Limit)') : tr('min')}</span>
-                </div>
-              </div>
-              <p className="col-span-2 text-[9px] text-surface-700 leading-relaxed">
-                {tr('Läuft das Zeitlimit ab, wird trotzdem ausgeworfen — ein Zyklus, der ewig steht, wäre schlimmer. Im Verlauf steht dann, mit welcher Temperatur.')}
-              </p>
-            </div>
-          )}
         </div>
       )}
 

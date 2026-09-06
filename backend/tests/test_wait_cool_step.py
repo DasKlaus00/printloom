@@ -1,15 +1,18 @@
-"""Abkuehlen vor dem Auswerfen — nur beim Magnet-Greifer.
+"""Abkuehlen vor dem Auswerfen — der Sequenz-Schritt "wait_cool".
 
 Die Magnete halten eine WARME Platte nicht. Faehrt der Arm zu frueh los, bleibt
 die Platte im Drucker liegen und er kommt leer zurueck — ohne Fehlermeldung, denn
 er kann nicht fuehlen, ob etwas am Greifer haengt. Der Zyklus liefe weiter, als
 waere nichts gewesen. Genau das verhindert die Wartezeit.
 
-Vier Zusagen stehen hier fest:
-  • Warten NUR mit dem Magnet-Greifer (der Klemm-Greifer haelt mechanisch).
+Der Schritt steht im Sequenz-Editor VOR dem Auswurf — sichtbar und verschiebbar.
+Als unsichtbare Automatik haette niemand verstanden, warum die Farm nach dem
+Druck erst einmal nichts tut.
+
+Drei Zusagen stehen hier fest:
   • Gewartet wird, bis die Bett-Temperatur unter dem Zielwert liegt.
   • Kein Messwert → nicht blockieren (fail-open, wie bei den Schritt-Bedingungen).
-  • Zeitlimit erreicht → trotzdem auswerfen, aber sichtbar melden.
+  • Zeitlimit erreicht → trotzdem weiter, aber sichtbar melden.
 """
 import asyncio
 
@@ -45,39 +48,17 @@ def bett(tmp_path, monkeypatch):
     monkeypatch.setattr(af, "STATE_PATH", str(tmp_path / "farm_state.json"))
     monkeypatch.setitem(af._farm, "log", [])
     monkeypatch.setitem(af._farm, "stopping", False)
-    monkeypatch.setitem(af._farm, "cool_before_eject", True)
-    monkeypatch.setitem(af._farm, "cool_temp_c", 30.0)
-    monkeypatch.setitem(af._farm, "cool_timeout_min", 30)
-    monkeypatch.setitem(af._farm, "geometry", {"gripper": "magnet"})
-    monkeypatch.setattr(af, "_load_farm_geometry", lambda: {"gripper": "magnet"})
     return zustand
 
 
-def warte(zustand, temps):
+def warte(zustand, temps, ziel=30.0, timeout_s=1800):
     zustand["temps"] = temps
-    asyncio.run(af._await_bed_cool(FakeDevice()))
+    asyncio.run(af._await_bed_cool(FakeDevice(), ziel, timeout_s))
     return zustand
 
 
 def log():
     return " | ".join(af._farm.get("log") or [])
-
-
-# ── Nur der Magnet wartet ────────────────────────────────────────────────────
-
-def test_der_klemm_greifer_wartet_nicht(bett, monkeypatch):
-    """Er haelt die Platte mechanisch — warten waere bei jedem Zyklus verschenkte
-    Zeit, und zwar genau so viel, wie das Bett zum Abkuehlen braucht."""
-    monkeypatch.setitem(af._farm, "geometry", {"gripper": "standard"})
-    monkeypatch.setattr(af, "_load_farm_geometry", lambda: {"gripper": "standard"})
-    z = warte(bett, [90.0])
-    assert z["gelesen"] == 0
-
-
-def test_ausgeschaltet_wird_nicht_gewartet(bett, monkeypatch):
-    monkeypatch.setitem(af._farm, "cool_before_eject", False)
-    z = warte(bett, [90.0])
-    assert z["gelesen"] == 0
 
 
 # ── Warten, bis es kalt genug ist ────────────────────────────────────────────
@@ -99,9 +80,8 @@ def test_die_grenze_gilt_einschliesslich(bett):
     assert z["gelesen"] == 1
 
 
-def test_der_eigene_zielwert_gilt(bett, monkeypatch):
-    monkeypatch.setitem(af._farm, "cool_temp_c", 45.0)
-    z = warte(bett, [50.0, 44.0])
+def test_der_eigene_zielwert_gilt(bett):
+    z = warte(bett, [50.0, 44.0], ziel=45.0)
     assert z["gelesen"] == 2
 
 
@@ -118,25 +98,14 @@ def test_ohne_messwert_wird_nicht_blockiert(bett):
 def test_nach_dem_zeitlimit_wird_trotzdem_ausgeworfen(bett, monkeypatch):
     """Ein Zyklus, der ewig steht, waere schlimmer als ein Versuch — aber es muss
     dabeistehen, dass die Platte liegen bleiben koennte."""
-    monkeypatch.setitem(af._farm, "cool_timeout_min", 0.0001)   # 6 ms
-    z = warte(bett, [90.0] * 5)      # wird nie kalt
+    z = warte(bett, [90.0] * 5, timeout_s=0.006)      # wird nie kalt
     assert z["gelesen"] >= 1
-    assert "trotzdem ausgeworfen" in log()
+    assert "trotzdem weiter" in log()
 
 
-def test_ein_halbes_minutenlimit_bleibt_ein_limit(bett, monkeypatch):
-    """Vorher machte int() aus 0,5 min eine 0 — und 0 heisst „ohne Zeitlimit".
-    Aus einem knappen Limit wurde damit das Gegenteil: unbegrenztes Warten."""
-    monkeypatch.setitem(af._farm, "cool_timeout_min", 0.5 / 60 / 100)   # 0,3 ms
-    warte(bett, [90.0] * 5)
-    assert "trotzdem ausgeworfen" in log()
-
-
-def test_ohne_zeitlimit_wird_weiter_gewartet(bett, monkeypatch):
-    """0 = ohne Zeitlimit. Sonst braeche der Lauf nach der Vorgabe ab, obwohl der
-    Nutzer das Limit ausdruecklich abgeschaltet hat."""
-    monkeypatch.setitem(af._farm, "cool_timeout_min", 0)
-    z = warte(bett, [90.0] * 20 + [25.0])
+def test_ohne_zeitlimit_wird_weiter_gewartet(bett):
+    """0 = ohne Zeitlimit — dann wird bis zum kalten Bett gewartet."""
+    z = warte(bett, [90.0] * 20 + [25.0], timeout_s=0)
     assert z["gelesen"] == 21
 
 
@@ -145,3 +114,22 @@ def test_stoppen_bricht_das_warten_ab(bett, monkeypatch):
     monkeypatch.setitem(af._farm, "stopping", True)
     with pytest.raises(RuntimeError):
         warte(bett, [90.0])
+
+
+# ── Leere Felder im Schritt ───────────────────────────────────────────
+
+@pytest.mark.parametrize("leer", (None, "", "abc", 0))
+def test_ein_leeres_feld_wird_zur_vorgabe_nicht_zur_null(leer):
+    """0 °C waere ein Ziel, das nie kommt — der Zyklus stuende bis zum Zeitlimit."""
+    assert af._num_or(leer, af.COOL_DEFAULT_C) == af.COOL_DEFAULT_C
+
+
+def test_eingetragene_werte_gelten():
+    assert af._num_or("45", af.COOL_DEFAULT_C) == 45.0
+    assert af._num_or(600, af.COOL_DEFAULT_S) == 600.0
+
+
+def test_abkuehlen_ist_keine_vorpositionierung():
+    """Eine Minute vor Druckende ist das Bett heiss — als prep-Schritt wuerde er
+    die ganze Vorbereitung blockieren."""
+    assert "wait_cool" in af._PREP_FORBIDDEN

@@ -142,6 +142,12 @@ let dynamicPacks = (() => {
 // English overrides keyed by the exact German source string (see tr() below).
 // Filled in incrementally per page; missing entries fall back to German.
 const EN_STRINGS = {
+  "Auf Abkühlung warten": "Wait for cool-down",
+  "Wartet, bis die Druckplatte abgekühlt ist. Der Magnet-Greifer hält eine warme Platte nicht — der Arm führe los, die Platte bliebe im Drucker liegen und er käme leer zurück, ohne dass es auffällt. Gehört VOR den Auswurf.": "Waits until the build plate has cooled down. The magnet gripper does not hold a warm plate — the arm would set off, the plate would stay in the printer and it would come back empty without anyone noticing. Belongs BEFORE the ejection.",
+  "Zieltemperatur (°C)": "Target temperature (°C)",
+  "Zeitlimit (s)": "Time limit (s)",
+  "Leer = Vorgabe (30 °C / 30 min). Läuft das Zeitlimit ab, geht es TROTZDEM weiter — ein Zyklus, der ewig steht, wäre schlimmer. Im Verlauf steht dann, mit welcher Temperatur.": "Empty = default (30 °C / 30 min). If the time limit runs out it continues ANYWAY — a cycle stuck forever would be worse. The log then says at what temperature.",
+  "Magnet-Greifer verbaut, aber vor dem Auswerfen wird nicht abgekühlt. Die Magnete halten eine warme Druckplatte nicht — der Arm fährt los, die Platte bleibt im Drucker liegen und er kommt leer zurück, ohne dass es auffällt. Bitte „Auf Abkühlung warten\" vor den Auswurf setzen.": "Magnet gripper installed, but there is no cooling step before the ejection. The magnets do not hold a warm build plate — the arm sets off, the plate stays in the printer and it comes back empty without anyone noticing. Please put „Auf Abkühlung warten“ before the ejection.",
   "Vor dem Auswerfen abkühlen lassen": "Let it cool down before ejecting",
   "Die Magnete halten eine warme Druckplatte nicht — der Arm käme leer zurück, ohne dass es auffällt. Die Farm wartet, bis das Bett kalt genug ist.": "The magnets do not hold a warm build plate — the arm would come back empty without anyone noticing. The farm waits until the bed is cool enough.",
   "Zieltemperatur": "Target temperature",

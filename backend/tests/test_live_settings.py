@@ -59,7 +59,6 @@ def test_alle_entscheidungswerte_sind_dabei(settings_file):
         "hms_ignore", "conn_alarm", "progress_stall_min", "error_strategy",
         "failed_retries", "operating_hours_enabled", "move_timeout_s",
         "operating_schedule", "operating_tz", "exact_color_only",
-        "cool_before_eject", "cool_temp_c", "cool_timeout_min",
     }
 
 

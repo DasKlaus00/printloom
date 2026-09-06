@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.33',
+    de: [
+      'UMGEZOGEN: Das Abkühlen vor dem Auswerfen ist jetzt ein Schritt im Sequenz-Editor („❄ Auf Abkühlung warten") statt einer Einstellung auf einer anderen Seite. Damit steht es dort, wo der Ablauf ohnehin gebaut wird — sichtbar, verschiebbar und abschaltbar wie jeder andere Schritt. Zieltemperatur und Zeitlimit stehen am Schritt selbst.',
+      'Als unsichtbare Automatik hätte niemand verstanden, warum die Farm nach dem Druck erst einmal nichts tut. Im Verlauf und im Fortschritt steht jetzt „Abkühlen — Bett 47 °C / Ziel 30 °C".',
+      'Der Schritt ist Teil der Standard-Zyklus-Sequenz (vor dem Auswerfen). Bestehende Sequenzen bleiben unangetastet — ein neuer Standard-Schritt erreicht sie nicht von allein. Deshalb weist der Editor darauf hin, wenn der Magnet-Greifer verbaut ist und vor dem Auswerfen nicht abgekühlt wird.',
+      'Beim Klemm-Greifer ist der Schritt überflüssig (er hält die Platte mechanisch) — dort einfach deaktivieren oder löschen. Der Hinweis erscheint nur mit dem Magnet-Greifer.',
+      'Als Vorpositionierung (⏱) ist der Schritt gesperrt: eine Minute vor Druckende ist das Bett heiß, er würde die ganze Vorbereitung blockieren. Ein leeres Feld gilt als Vorgabe (30 °C / 30 min), nicht als 0 — 0 °C wäre ein Ziel, das nie kommt.',
+    ],
+    en: [
+      'MOVED: cooling down before ejection is now a step in the sequence editor ("❄ Wait for cool-down") instead of a setting on another page. It now sits where the sequence is built anyway — visible, movable and switchable like any other step. Target temperature and time limit live on the step itself.',
+      'As invisible automation nobody would have understood why the farm does nothing after a print finishes. The log and the progress line now show "cooling — bed 47 °C / target 30 °C".',
+      'The step is part of the default cycle sequence (before the ejection). Existing sequences are left untouched — a new default step does not reach them on its own. That is why the editor points it out when the magnet gripper is installed and there is no cooling before the ejection.',
+      'For the clamp gripper the step is unnecessary (it holds the plate mechanically) — just disable or delete it there. The hint only appears with the magnet gripper.',
+      'The step cannot be used as a pre-positioning step (⏱): one minute before the print ends the bed is hot, and it would block the whole preparation. An empty field counts as the default (30 °C / 30 min), not as 0 — 0 °C would be a target that never arrives.',
+    ],
+  },
+  {
     version: '1.1.32',
     de: [
       'NEU: „Vor dem Auswerfen abkühlen lassen" (Einstellungen → Magnet-Greifer). Die Farm wartet mit dem Griff, bis die Druckplatte unter einer Zieltemperatur liegt — Standard 30 °C. Die Magnete halten eine warme Platte nicht: der Arm führe los, die Platte bliebe im Drucker liegen, und er käme leer zurück, ohne dass es auffällt — er kann nicht fühlen, ob etwas am Greifer hängt.',

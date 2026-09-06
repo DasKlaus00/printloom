@@ -41,7 +41,10 @@ export const DEFAULT_SEQ_NEXT = [
   s(9,  'app_op',     'Vor Drucker fahren',   'move_to_printer', 0, { prep: true, optional: true }),
   // Nach Druckende — Bett schnell auf Z200 (Roh-G-Code), OTTOeject sicher homen, auswerfen:
   s(10, 'bambu_move', 'Bambu Position Z200',  '', 0, { z: 200, feed: 3000 }),
-  s(11, 'macro',      'OTTOeject homen',      'OTTOEJECT_HOME'),  // garantiert gehomed vor Auswurf
-  s(12, 'app_op',     'Auswerfen',            'eject'),
-  s(13, 'app_op',     'Platte zurücklegen',   'store'),
+  // Magnet-Greifer: eine warme Platte hält er nicht — erst abkühlen lassen. Beim
+  // Klemm-Greifer ist der Schritt überflüssig; dann hier deaktivieren oder löschen.
+  s(11, 'wait_cool',  'Auf Abkühlung warten', '30', 1800),
+  s(12, 'macro',      'OTTOeject homen',      'OTTOEJECT_HOME'),  // garantiert gehomed vor Auswurf
+  s(13, 'app_op',     'Auswerfen',            'eject'),
+  s(14, 'app_op',     'Platte zurücklegen',   'store'),
 ]
