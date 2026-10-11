@@ -14,7 +14,7 @@ import pytest
 
 pytest.importorskip("fastapi")
 
-from app.routers.files import filament_grams          # noqa: E402
+from app.services.print_file import filament_grams          # noqa: E402
 
 
 def head(grams):

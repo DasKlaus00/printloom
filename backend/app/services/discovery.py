@@ -224,7 +224,7 @@ async def discover(timeout: float = 4.0, subnet: str | None = None) -> dict:
         else:
             scan_target = own_ip.rsplit(".", 1)[0]
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     ssdp_task = loop.run_in_executor(None, discover_bambu, timeout)
     scan_task = asyncio.ensure_future(
         scan_subnet(scan_target, own_ip) if scan_target else _empty_scan())

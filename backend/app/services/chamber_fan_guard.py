@@ -88,7 +88,7 @@ def _enforce_one(dev) -> None:
 
 async def _loop():
     from app.services import bambu_manager
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     while True:
         interval = _INTERVAL_IDLE_S
         try:

@@ -3,6 +3,9 @@ services:
     build: .
     container_name: printloom-app
     ports:
+      # Hinter einem Reverse-Proxy mit Anmeldung (z. B. authentik) nur lokal
+      # veröffentlichen — sonst ist Printloom über Port 8000 am Proxy vorbei
+      # erreichbar:   - "127.0.0.1:8000:8000"
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1

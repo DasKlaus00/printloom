@@ -37,7 +37,7 @@ one unattended, with live status, cameras and ETA in a clean web UI.
 - **Cameras** — **WIP** — external webcam (WebRTC / HLS / MJPEG) and the built-in X1C chamber
   camera via a Home Assistant proxy (token stays server-side).
 - **Live status & control** — temperatures, progress, AMS, chamber light, manual moves.
-- **Notifications** **WIP** — optional Telegram messages on job events.
+- **Notifications** — Web Push to the browsers you subscribe (job done, errors, pauses).
 - **In-app updates** — switch between **Latest** and **Beta** channels and update with
   one click from the System page (see [Updates](#updates)).
 - **Backup / restore**, multi-language UI, downloadable language packs.
@@ -96,7 +96,7 @@ the `printloom` service — updating then needs a manual `docker compose pull &&
 ## Configuration
 
 Everything operational is configured **in the web UI** (printer IP + access code,
-OTTOeject, rack, cameras, notifications) and stored in the runtime `db/` volume — so
+OTTOeject, rack, cameras) and stored in the runtime `db/` volume — so
 **no secrets ever enter the image or git**.
 
 Optional deployment settings are plain environment variables (no `.env` required):

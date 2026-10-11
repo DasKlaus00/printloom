@@ -1,37 +1,19 @@
 import asyncio
 import logging
+from typing import List
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
 from app.db.database import get_db
 from app.models.models import Device, PrinterType
 from app.schemas.schemas import DeviceCreate, DeviceUpdate, DeviceResponse
-from app.services import bambu_manager
+from app.services import bambu_manager, device_settings
 from app.services.bambu_ftp import BambuFTP
-from typing import List
-import httpx
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# Webcam + per-device settings stored in SystemConfig as JSON
-from app.models.models import SystemConfig
-import json as _json
-
-def _get_device_settings(db: Session, device_id: int) -> dict:
-    row = db.query(SystemConfig).filter(SystemConfig.key == f"device_settings_{device_id}").first()
-    if row:
-        try: return _json.loads(row.value)
-        except: pass
-    return {"webcam_url": ""}
-
-def _set_device_settings(db: Session, device_id: int, settings: dict):
-    row = db.query(SystemConfig).filter(SystemConfig.key == f"device_settings_{device_id}").first()
-    if row:
-        row.value = _json.dumps(settings)
-    else:
-        row = SystemConfig(key=f"device_settings_{device_id}", value=_json.dumps(settings))
-    db.add(row)
-    db.commit()
 
 
 @router.get("/discover")
@@ -81,7 +63,7 @@ async def list_power(db: Session = Depends(get_db)):
     ist es einer, und die Steckdosen werden nebenläufig gelesen."""
     from app.services import power
     geraete = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB).all()
-    mit_dose = [(d, _get_device_settings(db, d.id)) for d in geraete]
+    mit_dose = [(d, device_settings.get(db, d.id)) for d in geraete]
     mit_dose = [(d, s) for d, s in mit_dose if power.plug_configured(s)]
     if not mit_dose:
         return {"plugs": []}
@@ -122,7 +104,7 @@ async def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
     existing = db.query(Device).filter(Device.name == device.name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Device name already exists")
-    data = device.dict()
+    data = device.model_dump()
     data["model"] = _clean_model(data.get("model"), data.get("serial_number")) or None
     db_device = Device(**data)
     db.add(db_device)
@@ -136,7 +118,7 @@ async def update_device(device_id: int, device: DeviceUpdate, db: Session = Depe
     db_device = db.query(Device).filter(Device.id == device_id).first()
     if not db_device:
         raise HTTPException(status_code=404, detail="Device not found")
-    fields = device.dict(exclude_unset=True)
+    fields = device.model_dump(exclude_unset=True)
     if "model" in fields:
         # Beim Ändern zählt die AUSDRÜCKLICHE Wahl: hat der Nutzer „nicht angegeben"
         # gewählt, wird das Modell geleert (dann probt die Kamera wieder) und NICHT
@@ -181,13 +163,13 @@ def _mask_secrets(settings: dict) -> dict:
 async def get_device_settings(device_id: int, db: Session = Depends(get_db)):
     if not db.query(Device).filter(Device.id == device_id).first():
         raise HTTPException(404, "Device not found")
-    return _mask_secrets(_get_device_settings(db, device_id))
+    return _mask_secrets(device_settings.get(db, device_id))
 
 @router.put("/{device_id}/settings")
 async def update_device_settings(device_id: int, body: dict, db: Session = Depends(get_db)):
     if not db.query(Device).filter(Device.id == device_id).first():
         raise HTTPException(404, "Device not found")
-    settings = _get_device_settings(db, device_id)
+    settings = device_settings.get(db, device_id)
     body = dict(body)
     for f in _SECRET_FIELDS:
         body.pop(f"{f}_set", None)  # rein informativ, nie speichern
@@ -200,7 +182,7 @@ async def update_device_settings(device_id: int, body: dict, db: Session = Depen
             elif not body[f] and settings.get(f):
                 body.pop(f)
     settings.update(body)
-    _set_device_settings(db, device_id, settings)
+    device_settings.put(db, device_id, settings)
     return _mask_secrets(settings)
 
 
@@ -211,7 +193,7 @@ async def device_power(device_id: int, db: Session = Depends(get_db)):
     if not db.query(Device).filter(Device.id == device_id).first():
         raise HTTPException(404, "Device not found")
     from app.services import power
-    settings = _get_device_settings(db, device_id)
+    settings = device_settings.get(db, device_id)
     if not power.plug_configured(settings):
         return {"configured": False, "watts": None, "energy_kwh": None, "on": None}
     data = await power.read_power(settings)
@@ -223,7 +205,7 @@ async def device_power_switch(device_id: int, body: dict, db: Session = Depends(
     if not db.query(Device).filter(Device.id == device_id).first():
         raise HTTPException(404, "Device not found")
     from app.services import power
-    settings = _get_device_settings(db, device_id)
+    settings = device_settings.get(db, device_id)
     if not power.plug_configured(settings):
         raise HTTPException(400, "Keine Steckdose konfiguriert")
     ok = await power.set_plug(settings, bool(body.get("on")))
@@ -238,7 +220,7 @@ async def test_device(device_id: int, db: Session = Depends(get_db)):
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     if device.device_type == PrinterType.BAMBU_LAB:
         # MQTT-Test über die persistente Verbindung (bambu_manager) — kein konkurrierender

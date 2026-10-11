@@ -16,8 +16,9 @@ const PRINTER_MODELS = [
   ['OTHER',       'Anderer / generisch'],
 ]
 
+// Ältere Profile enthalten noch `macro_config` (Werte alter Geräte-Makros) — das
+// bewirkt seit dem Drucker-Tab nichts mehr und wird weder angezeigt noch eingespielt.
 const SECTION_LABELS = {
-  macro_config: 'Kalibrierung',
   sequences:    'Sequenzen',
   rack_config:  'Regal-Konfig',
   settings:     'Einstellungen',
@@ -39,51 +40,6 @@ function Banner({ kind, children, onClose }) {
 function SectionDetail({ section, data }) {
   const { tr } = useLanguage()
   if (!data) return null
-
-  if (section === 'macro_config') {
-    const entries = Object.entries(data)
-    if (!entries.length) return null
-    return (
-      <div className="mt-1.5 space-y-2">
-        {entries.map(([key, macro]) => {
-          const fields = macro?.fields ? Object.entries(macro.fields) : []
-          return (
-            <div key={key} className="rounded-lg border border-surface-800/60 bg-surface-900/40 p-3">
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <div>
-                  <p className="text-[11px] font-medium text-surface-200">{macro?.label || key}</p>
-                  <p className="text-[9px] text-surface-600 font-mono mt-0.5">{key}</p>
-                </div>
-                {macro?.internal_macro && (
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-surface-800 border border-surface-700/50 text-surface-500 shrink-0">
-                    {macro.internal_macro}
-                  </span>
-                )}
-              </div>
-              {fields.length > 0 && (
-                <div className="grid gap-x-4 gap-y-1" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
-                  {fields.map(([fk, fv]) => (
-                    <div key={fk} className="flex items-center justify-between gap-2 bg-surface-800/40 rounded px-2 py-1">
-                      <span className="text-[9px] text-surface-500 truncate" title={fv?.label || fk}>
-                        {fv?.label || fk}
-                      </span>
-                      <span className="text-[10px] font-mono text-blue-300 shrink-0 font-semibold">
-                        {fv?.value ?? '—'}
-                        {fv?.step != null && <span className="text-[8px] text-surface-600 ml-0.5">±{fv.step}</span>}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {fields.length === 0 && (
-                <p className="text-[9px] text-surface-600">{tr('Keine Felder')}</p>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    )
-  }
 
   if (section === 'sequences') {
     return (
@@ -162,7 +118,6 @@ function SectionTabs({ profile }) {
   const [expanded, setExpanded] = useState(null)
 
   const present = []
-  if (profile?.macro_config && Object.keys(profile.macro_config).length) present.push('macro_config')
   if (profile?.sequences && ((profile.sequences.seq_new || []).length || (profile.sequences.seq_next || []).length)) present.push('sequences')
   if (profile?.rack_config && Object.keys(profile.rack_config).length) present.push('rack_config')
   if (profile?.settings && Object.keys(profile.settings).length) present.push('settings')

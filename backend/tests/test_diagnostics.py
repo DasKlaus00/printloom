@@ -30,12 +30,26 @@ def test_geheimnisse_werden_ersetzt():
 
 
 def test_harmlose_felder_bleiben():
-    """Ohne IP/Port ist die Diagnose wertlos — die dürfen bleiben."""
     r = _redact(DATA)
-    assert r["ip_address"] == "192.168.1.50"
     assert r["nested"]["port"] == 7125
     assert r["camera_type"] == "rtsp"
     assert r["nested"]["deep"][1]["name"] == "ok"
+
+
+def test_das_netz_bleibt_erkennbar_das_geraet_nicht():
+    """Bei „nicht erreichbar" muss man sehen, ob Printloom im selben Netz sucht
+    (192.168.1.x) oder im Docker-Netz (172.17.0.x) — welches Gerät, verrät es nicht."""
+    assert _redact(DATA)["ip_address"] == "192.168.1.x"
+    assert _redact({"log": ["Klipper 10.0.0.7 antwortet nicht"]})["log"] == \
+        ["Klipper 10.0.0.x antwortet nicht"]
+
+
+def test_rechnernamen_und_zugangsdaten_in_urls_verschwinden():
+    r = _redact({"ha_url": "http://wohnzimmer-nas.fritz.box:8123/api",
+                 "webcam_url": "rtsp://admin:geheim@192.168.1.60/stream"})
+    assert r["ha_url"] == "http://<host>:8123/api"
+    assert "geheim" not in r["webcam_url"] and "admin" not in r["webcam_url"]
+    assert r["webcam_url"] == "rtsp://192.168.1.x/stream"
 
 
 def test_leeres_geheimnis_bleibt_leer():

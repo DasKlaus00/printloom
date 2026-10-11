@@ -11,7 +11,7 @@ pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
 from app.routers import autofarm  # noqa: E402
-from app.services import storage  # noqa: E402
+from app.services import rack_store, storage  # noqa: E402
 
 SEQ = {
     "seq_new": [
@@ -39,7 +39,7 @@ def store(tmp_path, monkeypatch):
         "slots": slots,
     })
     storage.write_json(str(tmp_path / "seq.json"), SEQ)
-    monkeypatch.setattr(autofarm, "SLOTS_PATH", str(tmp_path / "rack.json"))
+    monkeypatch.setattr(rack_store, "SLOTS_PATH", str(tmp_path / "rack.json"))
     monkeypatch.setattr(autofarm, "SEQ_PATH", str(tmp_path / "seq.json"))
     monkeypatch.setitem(autofarm._farm, "jobs", [])
 

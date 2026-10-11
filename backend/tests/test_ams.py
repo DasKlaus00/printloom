@@ -3,7 +3,7 @@ import pytest
 
 pytest.importorskip("fastapi")
 
-from app.routers.printer import _ams_match_confident  # noqa: E402
+from app.services.ams_match import match_confident as _ams_match_confident  # noqa: E402
 
 
 def _ams(tray_type, color):
@@ -76,7 +76,7 @@ def test_exact_color_beats_emptier_similar():
     Latte Brown ersetzt. Eine EXAKTE Farbe muss eine nur ähnliche immer schlagen,
     auch wenn die ähnliche Spule leerer ist — sowohl im Live-Mapping (Druck) als
     auch in der Confident-Prüfung."""
-    from app.routers.printer import _match_ams_live
+    from app.services.ams_match import match_live as _match_ams_live
     ams = {"ams": [{"id": 0, "tray": [
         {"id": 0, "tray_type": "PLA", "tray_color": "A06840FF", "remain": 10},   # Latte Brown, fast leer, farbnah (~51)
         {"id": 2, "tray_type": "PLA", "tray_color": "BB3D43FF", "remain": 90},   # exaktes Dark Red, fast voll

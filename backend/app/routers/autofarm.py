@@ -9,7 +9,6 @@ import asyncio
 import io
 import json
 import logging
-import math
 import os
 import zipfile
 from datetime import datetime, timedelta
@@ -21,16 +20,16 @@ from pydantic import BaseModel
 
 from app.db.database import SessionLocal
 from app.models.models import Device, PrinterType, UploadedFile
-from app.services.bambu_ftp import BambuFTP
-from app.services import storage
-from app.services import bambu_manager
-from app.services import ottoeject_motion as _motion
-from app.routers.printer import _make_print_name, _get_ams_mapping, _read_filament_info, _match_ams_live, _expand_mapping_to_slots, _get_plate_gcode_param, _list_plates, _repack_single_plate, _ams_match_confident, _ams_slots_from_raw, capture_snapshot, publish_live_status
-from app.routers.rack_manager import analyze_3mf_height, analyze_gcode_height, _load as _rack_load
-from app.services import hms
-from app.services import rack_logic as _rack_logic
+from app.paths import db_path
+from app.routers.printer import capture_snapshot, publish_live_status
+from app.services import ams_match, bambu_manager, device_settings, farm_settings, hms
+from app.services import print_file, rack_store, storage
 from app.services import geometry_check as _geometry_check
+from app.services import ottoeject_motion as _motion
+from app.services import rack_logic as _rack_logic
+from app.services import sequence_steps
 from app.services import stress_test as _stress_service
+from app.services.bambu_ftp import BambuFTP
 from app.services.rack_logic import (
     slots_needed as _slots_needed_base,
     is_blocked_from_below as _is_blocked_base,
@@ -40,11 +39,9 @@ from app.services.rack_logic import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-from app.paths import db_path
-
-SLOTS_PATH    = db_path("rack_slots.json")
+# Regal-Zustand: app/services/rack_store.py (gemeinsam mit der Regalverwaltung).
 SEQ_PATH      = db_path("farm_sequences.json")
-SETTINGS_PATH = db_path("farm_settings.json")
+SETTINGS_PATH = farm_settings.PATH
 QUEUE_PATH    = db_path("farm_queue.json")
 LOG_PATH      = db_path("farm_log.txt")
 STATS_PATH    = db_path("farm_stats.json")
@@ -61,43 +58,9 @@ HISTORY_KEEP  = 8     # rolling samples per file for the duration average
 SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
 
 HOMING_3MF_PATH = db_path("printloom_homing.3mf")
-FILE_AMSMAP_PATH = db_path("file_ams_map.json")   # pro Datei manuell gewählte AMS-Slots {file_id: "gid,gid"}
 GEOMETRY_PATH = db_path("ottoeject_geometry.json")  # Drucker-Geometrie (Drucker-Tab) — opt-in App-G-code
 
-_DEFAULT_SETTINGS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": True,
-                     "hms_ignore": ["0C00-0100-0001-0004"],
-                     # Energie & Kosten (Roadmap 3.1/3.2/3.4) — reine Zahlen, keine Geheimnisse
-                     "power_price_eur_kwh":   0.30,
-                     "machine_rate_eur_h":    0.0,
-                     "filament_price_eur_kg": 20.0,
-                     "idle_off_min":          0,    # 0 = Auto-Abschaltung aus
-                     # Zeitlimit EINER OTTOeject-Bewegung (s) — danach gilt sie als
-                     # hängend (Phase 3.3). Ein Griff über mehrere Regale darf dauern.
-                     "move_timeout_s":        180,
-                     # Watchdog (Roadmap 1.1/1.7)
-                     "conn_alarm":            True,  # Push bei wiederholtem Verbindungsverlust (1.1)
-                     "progress_stall_min":    0,     # 0 = aus; sonst Pause bei N min ohne Fortschritt (1.7)
-                     # Fehlerstrategie (Roadmap 1.3) — {error_key: action}; leer = Defaults
-                     "error_strategy":        {},
-                     "failed_retries":        1,     # Wiederholungen bei FAILED vor der gewählten Aktion
-                     # Zeitzone des Nutzers (IANA, z. B. "Europe/Berlin") — der Container
-                     # läuft i. d. R. in UTC; die Betriebszeiten müssen aber in der lokalen
-                     # Zeit des Nutzers ausgewertet werden. Frontend liefert sie automatisch.
-                     "timezone": "",
-                     # Betriebszeiten (Roadmap 2.5) — neue Jobs nur im Zeitfenster starten
-                     "operating_hours_enabled": False,
-                     # Pro Wochentag (Index 0=Mo … 6=So) ein eigenes Fenster.
-                     "operating_schedule": [
-                         {"enabled": True, "start": "22:00", "end": "06:00"} for _ in range(7)
-                     ],
-                     # Legacy-Felder (vor v1.0.59) — nur noch für Migration alter Configs:
-                     "operating_start":         "22:00",
-                     "operating_end":           "06:00",
-                     "operating_days":          [0, 1, 2, 3, 4, 5, 6],  # 0=Mo … 6=So
-                     # „Nur exakte Farbe" (1.4): True → es wird NICHT auf eine nur
-                     # ähnliche Ersatzfarbe ausgewichen. Ohne exakten Treffer pausiert
-                     # die Farm (manuelle AMS-Zuordnung), statt falsch zu drucken.
-                     "exact_color_only":        False}
+_DEFAULT_SETTINGS = farm_settings.DEFAULTS
 
 # ── Homing .3mf generator ────────────────────────────────────
 _HOMING_GCODE = """; Printloom Homing Sequence
@@ -125,23 +88,6 @@ def _build_3mf(gcode: str) -> bytes:
 
 def _build_homing_3mf() -> bytes:
     return _build_3mf(_HOMING_GCODE)
-
-def _move_3mf_path(z: int, feed: int) -> str:
-    """Cached one-shot move .3mf for `G1 Z{z} F{feed}` + M400 (position-confirmed)."""
-    path = db_path(f"move_z{int(z)}_f{int(feed)}.3mf")
-    if not os.path.exists(path):
-        gcode = (
-            "; Printloom Position Move\n"
-            f"G1 Z{int(z)} F{int(feed)} ; move bed to position\n"
-            "M400 ; wait for moves to complete\n"
-        )
-        try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "wb") as f:
-                f.write(_build_3mf(gcode))
-        except Exception as e:
-            logger.warning(f"move .3mf build failed: {e}")
-    return path
 
 def _read_config(path: str, default):
     return storage.read_json(path, default)
@@ -280,7 +226,6 @@ async def _job_filament_g(job: dict):
     Warteschlange (Bibliothek, Projekt, Planer) statt nur für einen.
     """
     try:
-        from app.routers.files import filament_grams
         db = SessionLocal()
         try:
             f = db.query(UploadedFile).filter(UploadedFile.id == job.get("fileId")).first()
@@ -289,8 +234,8 @@ async def _job_filament_g(job: dict):
             db.close()
         if not path or not os.path.exists(path):
             return None
-        return await asyncio.get_event_loop().run_in_executor(
-            None, filament_grams, path, ftype, job.get("plate"))
+        return await asyncio.get_running_loop().run_in_executor(
+            None, print_file.filament_grams, path, ftype, job.get("plate"))
     except Exception as e:
         logger.warning(f"filament grams for job failed: {e}")
         return None
@@ -349,16 +294,7 @@ def _record_duration(file_id, minutes: float, kwh: float = 0.0):
 
 # ── Smart-Plug-Anbindung (Roadmap 3.1/3.2) ───────────────────────────────────
 def _device_settings(device_id: int) -> dict:
-    from app.models.models import SystemConfig
-    db = SessionLocal()
-    try:
-        row = db.query(SystemConfig).filter(SystemConfig.key == f"device_settings_{device_id}").first()
-        if row:
-            try: return json.loads(row.value)
-            except Exception: return {}
-        return {}
-    finally:
-        db.close()
+    return device_settings.read(device_id)
 
 
 async def _read_energy_kwh(device_id: int):
@@ -492,7 +428,6 @@ def halt_all(reason: str = "Notaus") -> list:
 
     Bewusst KEIN Senden an den Drucker hier: das macht der Aufrufer, damit diese
     Funktion ohne Netzwerk sofort zurückkehrt. → Liste der angehaltenen Abläufe."""
-    global _test_running
     angehalten = []
     if _farm.get("running"):
         _farm["stopping"] = True
@@ -504,11 +439,6 @@ def halt_all(reason: str = "Notaus") -> list:
         angehalten.append("stress_test")
     if _stress_task is not None and not _stress_task.done():
         _stress_task.cancel()
-    if _test_running:
-        _test_running = False
-        angehalten.append("test_cycle")
-    if _test_task is not None and not _test_task.done():
-        _test_task.cancel()
     _log(f"🛑 {reason}: " + (", ".join(angehalten) + " angehalten" if angehalten
                             else "kein laufender Ablauf"))
     return angehalten
@@ -611,36 +541,17 @@ def _rack_update(slot: str, status: str, file_name: str = None, object_height_mm
     „hier liegt eine leere Platte" wirklich ändert (Aufbau ohne Magazin) — sonst
     bleibt sie, wie sie ist."""
     try:
-        if not os.path.exists(SLOTS_PATH):
-            return
-        with open(SLOTS_PATH) as f:
-            data = json.load(f)
-        s = data["slots"].get(str(slot))
-        if s is None:
-            return
-        s["status"] = status
-        if file_name is not None:
-            s["file_name"] = file_name
-        if object_height_mm is not None:
-            s["object_height_mm"] = object_height_mm
-        if status == "free":
-            s["object_height_mm"] = None
-        if empty_plate is not None:
-            s["empty_plate"] = bool(empty_plate)
-        storage.write_json(SLOTS_PATH, data)
+        rack_store.update_slot(slot, status, file_name, object_height_mm, empty_plate)
     except Exception as e:
         logger.warning(f"rack slot update failed: {e}")
 
 
 def _rack_data() -> dict:
-    """slots.json lesen (leeres Dict bei Fehler) — für die Platten-Quelle."""
+    """Regal-Zustand ({} ohne Regal-Datei) — für Platten-Quelle und Fachwahl."""
     try:
-        if os.path.exists(SLOTS_PATH):
-            with open(SLOTS_PATH) as f:
-                return json.load(f) or {}
+        return rack_store.load() if rack_store.exists() else {}
     except Exception:
-        pass
-    return {}
+        return {}
 
 
 # Dünne Wrapper um die reine Platten-Quellen-Logik (app/services/rack_logic.py):
@@ -668,31 +579,21 @@ def _reserved_source_slots(data: dict) -> set:
 def _magazine_count() -> int:
     """Wie viele LEERE Platten stehen bereit? Mit Magazin die Summe der Zähler, ohne
     Magazin die Zahl der als bestückt markierten Fächer (rack_logic)."""
-    try:
-        if os.path.exists(SLOTS_PATH):
-            with open(SLOTS_PATH) as f:
-                d = json.load(f)
-            if d.get("magazine_counts") or _rack_logic.uses_marks(d):
-                return max(0, _rack_logic.empty_plate_count(d))
-            # Legacy: max_plates minus belegte Slots
-            max_p    = int(d.get("max_plates", 4))
-            occupied = sum(1 for s in d.get("slots", {}).values()
-                           if s.get("status") in ("done", "printing"))
-            return max(0, max_p - occupied)
-    except Exception:
-        pass
-    return 4
+    d = _rack_data()
+    if not d:
+        return 4
+    if d.get("magazine_counts") or _rack_logic.uses_marks(d):
+        return max(0, _rack_logic.empty_plate_count(d))
+    # Alt: max_plates minus belegte Fächer
+    occupied = sum(1 for s in d.get("slots", {}).values()
+                   if s.get("status") in ("done", "printing"))
+    return max(0, int(d.get("max_plates", 4)) - occupied)
 
 
 def _slot_tolerance(data: dict = None) -> float:
     """Konfigurierte Fächer-Toleranz (mm) aus der Regal-Config; Default 20.
-    Wird `data` (bereits geladene slots.json) übergeben, wird nicht neu gelesen."""
-    if data is None:
-        try:
-            with open(SLOTS_PATH) as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
+    Wird `data` (bereits geladener Regal-Zustand) übergeben, wird nicht neu gelesen."""
+    data = _rack_data() if data is None else data
     try:
         return float(data.get("slot_tolerance_mm", DEFAULT_SLOT_TOLERANCE_MM))
     except (TypeError, ValueError):
@@ -701,13 +602,7 @@ def _slot_tolerance(data: dict = None) -> float:
 
 def _stacked_pct(data: dict = None) -> float:
     """Nutzbarer Anteil der Fachhöhe, wenn im Fach darüber schon eine Platte liegt."""
-    if data is None:
-        try:
-            with open(SLOTS_PATH) as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
-    return _rack_logic.stacked_pct_of(data)
+    return _rack_logic.stacked_pct_of(_rack_data() if data is None else data)
 
 
 # Dünne Wrapper um die reine Logik (app/services/rack_logic.py): ziehen die
@@ -729,10 +624,9 @@ def _is_blocked_from_below(rack: int, slot_num: int, slots: dict, slot_h: float,
 
 def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optional[str]:
     try:
-        if not os.path.exists(SLOTS_PATH):
+        data = _rack_data()
+        if not data:
             return None
-        with open(SLOTS_PATH) as f:
-            data = json.load(f)
         slots  = data.get("slots", {})
         nr     = int(data.get("num_racks", 3))
         spr    = int(data.get("slots_per_rack", 6))
@@ -779,10 +673,8 @@ def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optio
 
 async def _assign_slot_for_height(job: dict, height_mm: float):
     while not _farm["stopping"]:
-        try:
-            with open(SLOTS_PATH) as f:
-                data = json.load(f)
-        except Exception:
+        data = _rack_data()
+        if not data:
             return
         slot_h  = float(data.get("slot_height_mm", 50))
         spr     = int(data.get("slots_per_rack", 6))
@@ -855,7 +747,6 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
         # Reserve actual slot as 'printing' + store height for clearance blocking
         _rack_update(new_slot, "printing", job.get("fileName", ""), object_height_mm=height_mm)
         _set_job(job["id"], {"slot": new_slot, "object_height_mm": height_mm})
-        slot_h = float(data.get("slot_height_mm", 50))
         boeden = _slots_needed(height_mm, slot_h)
         _log(f"📏 Objekt {height_mm:.0f}mm → Fach {new_slot} reserviert ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
         return
@@ -863,30 +754,27 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
 
 
 async def _notify(msg: str):
-    try:
-        from app.routers.system import _read_notif, _send_telegram
-        cfg = _read_notif()
-        if cfg.get("enabled") and cfg.get("telegram_bot_token") and cfg.get("telegram_chat_id"):
-            await _send_telegram(cfg["telegram_bot_token"], cfg["telegram_chat_id"], msg)
-    except Exception:
-        pass
-    # Web-Push (PWA) — best-effort, never blocks the farm.
+    """Web-Push an alle abonnierten Browser — erste Zeile = Titel, Rest = Text.
+
+    Bis v1.1.34 ging dieselbe Meldung zusätzlich an Telegram, falls irgendwann einmal
+    ein Bot eingerichtet worden war. Die Einstellung dafür war seit v0.5.4 aus der
+    Oberfläche verschwunden — gesendet wurde trotzdem, unsichtbar und nicht
+    abschaltbar. Das widersprach der Regel, dass Printloom nichts ungefragt nach
+    außen schickt; Web-Push abonniert jeder Browser selbst. Nie blockierend."""
     try:
         from app.services import push
-        loop = asyncio.get_event_loop()
-        # strip simple Markdown for a clean push body; first line = title
-        clean = msg.replace("*", "").replace("`", "").strip()
-        lines = [ln for ln in clean.split("\n") if ln.strip()]
+        lines = [ln for ln in msg.strip().split("\n") if ln.strip()]
         title = lines[0] if lines else "Printloom"
-        body  = "\n".join(lines[1:]) if len(lines) > 1 else ""
-        await loop.run_in_executor(None, lambda: push.send_to_all(title, body, "/"))
+        body = "\n".join(lines[1:])
+        await asyncio.get_running_loop().run_in_executor(
+            None, lambda: push.send_to_all(title, body, "/"))
     except Exception:
         pass
 
 
 async def _send_print_cmd(cmd: str):
-    """Pause/Resume/Stop an den X1C senden (best effort), damit die Farm-Bedienung
-    den Drucker direkt mitsteuert. Nutzt eine kurze eigene MQTT-Verbindung."""
+    """Pause/Resume/Stop an den Drucker der Farm senden (best effort), damit die
+    Farm-Bedienung ihn direkt mitsteuert. Über die persistente MQTT-Verbindung."""
     bid = _farm.get("bambu_id")
     if not bid:
         return
@@ -898,11 +786,10 @@ async def _send_print_cmd(cmd: str):
         db.close()
     if not device:
         return
-    loop = asyncio.get_event_loop()
+    if cmd not in ("pause", "resume", "stop"):
+        return
+    loop = asyncio.get_running_loop()
     try:
-        # Über die persistente Verbindung (bambu_manager) — kein eigener Connect/Disconnect.
-        if cmd not in ("pause", "resume", "stop"):
-            return
         ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.print_command, device, cmd)
         if ok:
             _log(f"⏯ Drucker: {cmd} gesendet")
@@ -1002,7 +889,7 @@ async def _do_macro(name: str, _recover: bool = True):
     # Drucker → RACK=-Nummern erst hier beim Senden spiegeln (mirror_rack_params).
     send = name
     try:
-        send = _motion.mirror_rack_params(name, (_rack_load() or {}).get("num_racks"))
+        send = _motion.mirror_rack_params(name, rack_store.load().get("num_racks"))
     except Exception:
         send = name
     if send != name:
@@ -1051,7 +938,7 @@ async def _do_macro(name: str, _recover: bool = True):
 
 
 async def _do_bambu_gcode(gcode: str, device: Device):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     # Über die persistente Verbindung (bambu_manager) senden — kein eigener Connect.
     sent = await loop.run_in_executor(bambu_manager.executor, bambu_manager.send_gcode, device, gcode)
     await asyncio.sleep(1)
@@ -1059,183 +946,99 @@ async def _do_bambu_gcode(gcode: str, device: Device):
         raise RuntimeError(f"GCode fehlgeschlagen: {gcode[:40]}")
 
 
-def _effective_filaments(file_id, fpath: str, ftype: str, plate=None) -> tuple:
-    """Die im Druck WIRKLICH verwendeten Filamente (Material+Farbe) — immer aus der
-    Datei selbst, plattengenau. KEIN „festnageln"/Override mehr: das echte Material
-    der Datei zählt, sonst druckt z. B. PETG mit PLA."""
-    return _read_filament_info(fpath, ftype, plate)
-
-
-# ── Pro-Datei manuell gewählte AMS-Slots (vom Nutzer im Datei-Browser) ──────
-def _file_ams_map(file_id) -> str:
-    try:
-        return str(storage.read_json(FILE_AMSMAP_PATH, {}).get(str(file_id), "") or "")
-    except Exception:
-        return ""
-
-
-def _save_file_ams_map(file_id, ams_map: str):
-    data = storage.read_json(FILE_AMSMAP_PATH, {})
-    if (ams_map or "").strip():
-        data[str(file_id)] = ams_map.strip()
-    else:
-        data.pop(str(file_id), None)
-    storage.write_json(FILE_AMSMAP_PATH, data)
-
-
 def _job_manual_map(job: dict) -> str:
     """Manuelle AMS-Zuordnung eines Jobs: zuerst der Job selbst, sonst die pro Datei
     im Browser gespeicherte Zuordnung."""
-    return (job.get("amsMap") or "").strip() or _file_ams_map(job.get("fileId"))
-
-
-def _material_base(t: str) -> str:
-    return (t or "").upper().strip().split()[0] if t else ""
-
-
-def _material_mismatch(types: list, ams_map_str: str, ams_raw: dict) -> str:
-    """Sicherheitsnetz: prüft, ob eine MANUELLE AMS-Zuordnung das Material kreuzt
-    (z. B. Datei PETG → Slot PLA). Gibt eine Klartext-Beschreibung der Konflikte
-    zurück, oder '' wenn alle Materialien passen."""
-    slots = {s["gid"]: s for s in _ams_slots_from_raw(ams_raw)}
-    gids = []
-    for x in str(ams_map_str).split(","):
-        x = x.strip()
-        if x.lstrip("-").isdigit():
-            gids.append(int(x))
-    bad = []
-    for i, ftype in enumerate(types):
-        if i >= len(gids):
-            continue
-        slot = slots.get(gids[i])
-        if not slot:
-            bad.append(f"Slot {gids[i]} leer/unbekannt")
-            continue
-        fb, sb = _material_base(ftype), _material_base(slot.get("type"))
-        if fb and sb and fb != sb and fb not in (slot.get("type") or "").upper() and sb not in (ftype or "").upper():
-            bad.append(f"{ftype}→{slot.get('type')}")
-    return ", ".join(bad)
+    return (job.get("amsMap") or "").strip() or ams_match.file_map(job.get("fileId"))
 
 
 async def _do_send_file(job: dict, device: Device, use_ams: bool):
-    loop = asyncio.get_event_loop()
+    """Druckdatei des Jobs hochladen und starten. AMS-Zuordnung: manuell (Job/Datei)
+    oder Live-Abgleich; ob überhaupt gedruckt werden DARF, hat _ensure_ams_ready
+    vorher geprüft."""
+    loop = asyncio.get_running_loop()
     db = SessionLocal()
     try:
         file = db.query(UploadedFile).filter(UploadedFile.id == job["fileId"]).first()
-        if not file:
-            raise RuntimeError(f"Datei {job['fileId']} nicht gefunden")
+    finally:
+        db.close()
+    if not file:
+        raise RuntimeError(f"Datei {job['fileId']} nicht gefunden")
 
-        print_name = _make_print_name(file.original_filename)
-        # Persistente Verbindung (bambu_manager) — kein eigener Connect/Disconnect.
-        connected = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
-        if not connected:
-            raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
+    print_name = print_file.make_print_name(file.original_filename)
+    if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
+        raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
 
-        ams_map_str = _job_manual_map(job)   # Job-Map oder pro-Datei im Browser gewählt
+    ams_mapping: list = []
+    ams_map_str = _job_manual_map(job)   # Job-Map oder pro-Datei im Browser gewählt
+    if not use_ams:
+        _log("AMS deaktiviert")
+    elif ams_map_str:
+        ams_mapping = ams_match.parse_manual(ams_map_str)
+        if ams_mapping:
+            _log(f"AMS-Mapping: {ams_mapping} (manuell)")
+        else:
+            _log(f"⚠ AMS-Mapping '{ams_map_str}' ungültig — Auto-Matching")
+    if use_ams and not ams_mapping:
+        _log("AMS-Status abfragen…")
+        ams_raw = await bambu_manager.fresh_ams(device)
+        fil_types, fil_colors = await loop.run_in_executor(
+            None, print_file.read_filament_info, file.file_path, file.file_type, job.get("plate"))
+        _log(f"Filamente in Datei: {list(zip(fil_types, fil_colors))}")
+        if ams_raw.get("ams"):
+            ams_mapping = ams_match.match_live(fil_types, fil_colors, ams_raw)
+            _log(f"AMS-Match (Live): {ams_mapping}")
+        else:
+            _log("⚠ Kein Live-AMS — Fallback aus Datei")
+            ams_mapping = await loop.run_in_executor(
+                None, print_file.file_ams_mapping, file.file_path, file.file_type, None)
+            _log(f"AMS-Mapping (Datei): {ams_mapping}")
 
-        if not use_ams:
-            ams_mapping = []
-            _log("AMS deaktiviert")
+    if use_ams and ams_mapping:
+        # Auf Slicer-Slot-Positionen heben: druckt die Datei z. B. nur mit
+        # Filament 3, erwartet der Drucker [-1, -1, Fach]. No-op bei Filamenten 1..n.
+        expanded = await loop.run_in_executor(
+            None, ams_match.expand_to_slots, ams_mapping, file.file_path, file.file_type, job.get("plate"))
+        if expanded != ams_mapping:
+            _log(f"AMS-Mapping auf Slicer-Slots gehoben (unbenutzte = -1): {expanded}")
+            ams_mapping = expanded
 
-        elif ams_map_str:
-            try:
-                ams_mapping = [int(x.strip()) for x in ams_map_str.split(',') if x.strip().lstrip('-').isdigit()]
-                if not ams_mapping:
-                    raise ValueError("empty")
-                _log(f"AMS-Mapping: {ams_mapping} (manuell)")
-            except Exception:
-                _log(f"⚠ AMS-Mapping '{ams_map_str}' ungültig — Auto-Matching")
-                ams_map_str = ''
+    # Multi-Plate: gewählte Platte als Einzel-Platten-.3mf — der Drucker parst sonst
+    # das GESAMTE Projekt und hängt minutenlang in „Vorbereitung 100 %".
+    upload_path, repack_tmp, plate_param, note = await loop.run_in_executor(
+        None, print_file.upload_plan, file.file_path, file.file_type, job.get("plate"))
+    if note:
+        _log(("📦 " if repack_tmp else "⚠ ") + note)
 
-        if use_ams and not ams_map_str:
-            _log("AMS-Status abfragen…")
-            await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
-            await asyncio.sleep(3.0)
-            raw = bambu_manager.last_status(device)
-            ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
-
-            if not ams_raw or not ams_raw.get("ams"):
-                _log("AMS-Daten leer — nochmal…")
-                await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
-                await asyncio.sleep(3.0)
-                raw = bambu_manager.last_status(device)
-                ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
-
-            fil_types, fil_colors = await loop.run_in_executor(
-                None, _effective_filaments, file.id, file.file_path, file.file_type, job.get("plate")
-            )
-            _log(f"Filamente in Datei: {list(zip(fil_types, fil_colors))}")
-
-            if ams_raw and ams_raw.get("ams"):
-                ams_mapping = await loop.run_in_executor(
-                    None, _match_ams_live, fil_types, fil_colors, ams_raw
-                )
-                _log(f"AMS-Match (Live): {ams_mapping}")
-            else:
-                _log("⚠ Kein Live-AMS — Fallback aus Datei")
-                ams_mapping = await loop.run_in_executor(
-                    None, _get_ams_mapping, file.file_path, file.file_type, None
-                )
-                _log(f"AMS-Mapping (Datei): {ams_mapping}")
-
-        if use_ams and ams_mapping:
-            # Auf Slicer-Slot-Positionen heben: druckt die Datei z. B. nur mit
-            # Filament 3, erwartet der X1C [-1, -1, Tray] — ein Eintrag pro
-            # BENUTZTEM Filament ordnet sonst Filament 1 zu und lässt Filament 3
-            # leer („AMS-Zuordnung passt nicht"). No-op bei Filamenten 1..n.
-            expanded = await loop.run_in_executor(
-                None, _expand_mapping_to_slots, ams_mapping, file.file_path, file.file_type, job.get("plate")
-            )
-            if expanded != ams_mapping:
-                _log(f"AMS-Mapping auf Slicer-Slots gehoben (unbenutzte = -1): {expanded}")
-                ams_mapping = expanded
-
-        # Multi-Plate: gewählte Platte als Einzel-Platten-.3mf umpacken — der X1C
-        # parst sonst das GESAMTE Projekt (z. B. 16 Platten ≈ 38 MB → minutenlang
-        # „Vorbereitung 100 %"). Bambu Studio schickt selbst auch nur EINE Platte.
-        upload_path, repack_tmp, plate_param = file.file_path, None, ""
-        if file.file_type == '.3mf':
-            plates = _list_plates(file.file_path)
-            if len(plates) > 1:
-                target = int(job.get("plate") or plates[0])
-                try:
-                    upload_path = await loop.run_in_executor(None, _repack_single_plate, file.file_path, target)
-                    repack_tmp = upload_path
-                    plate_param = "Metadata/plate_1.gcode"
-                    _log(f"📦 Multi-Plate ({len(plates)} Platten) — Platte {target} einzeln umgepackt "
-                         f"({os.path.getsize(upload_path) / 1e6:.1f} statt {os.path.getsize(file.file_path) / 1e6:.1f} MB)")
-                except Exception as e:
-                    _log(f"⚠ Umpacken fehlgeschlagen ({e}) — sende Originaldatei")
-                    upload_path, repack_tmp = file.file_path, None
-                    plate_param = _get_plate_gcode_param(file.file_path, job.get("plate"))
-            else:
-                plate_param = _get_plate_gcode_param(file.file_path, job.get("plate"))
-
-        ftp = BambuFTP(device.ip_address, device.access_code)
+    ftp = BambuFTP(device.ip_address, device.access_code)
+    try:
         up = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, upload_path, print_name)
+    finally:
         if repack_tmp:
             try:
                 os.remove(repack_tmp)
             except OSError:
                 pass
-        if not up:
-            raise RuntimeError("FTP-Upload fehlgeschlagen")
+    if not up:
+        raise RuntimeError("FTP-Upload fehlgeschlagen")
+    _log(f"Plate-GCode: {plate_param or 'n/a'}")
 
-        _log(f"Plate-GCode: {plate_param or 'n/a'}")
+    await asyncio.sleep(5)
+    ok = await loop.run_in_executor(
+        bambu_manager.executor,
+        lambda: bambu_manager.start_print(device, print_name, use_ams=use_ams,
+                                          ams_mapping=ams_mapping, plate_param=plate_param))
+    await asyncio.sleep(2)
+    if not ok:
+        raise RuntimeError("Druckstart fehlgeschlagen")
+    _log(f"'{file.original_filename}' gestartet (AMS: {ams_mapping})")
 
-        await asyncio.sleep(5)
-        ok = await loop.run_in_executor(
-            bambu_manager.executor,
-            lambda: bambu_manager.start_print(device, print_name, use_ams=use_ams, ams_mapping=ams_mapping, plate_param=plate_param)
-        )
-        await asyncio.sleep(2)
 
-        if not ok:
-            raise RuntimeError("Druckstart fehlgeschlagen")
-
-        _log(f"'{file.original_filename}' gestartet (AMS: {ams_mapping})")
-    finally:
-        db.close()
+def _subst(value, rack_num: str, slot_num: str, stack_rack: str, stack_slot: str) -> str:
+    """Platzhalter eines Schritts füllen: {rack}/{slot} = Ziel-Fach des Jobs,
+    {stack_rack}/{stack_slot} = Quelle der nächsten leeren Platte."""
+    return (str(value or "").replace("{rack}", rack_num).replace("{slot}", slot_num)
+            .replace("{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot))
 
 
 def _slot_vars(slot: str) -> tuple[str, str]:
@@ -1311,58 +1114,42 @@ def _decrement_magazine(rack: int = None, slot: int = None):
     OHNE Magazin: die Markierung des Fachs löschen, aus dem gegriffen wurde. Ohne
     Angabe wird das Fach genommen, das die Quelle gerade meldet — also genau das
     eben gegriffene (der Bestand ist noch unverändert)."""
+    if not rack_store.exists():
+        return
+    meldung = None
     try:
-        if not os.path.exists(SLOTS_PATH):
-            return
-        with open(SLOTS_PATH) as f:
-            d = json.load(f)
-
-        if _rack_logic.magazine_slot_of(d) <= 0:
-            if rack is None or slot is None:
-                rack, slot, _ = _rack_logic.plate_source(d)
-            key = f"{int(rack)}-{int(slot)}"
-            s = (d.get("slots") or {}).get(key)
-            if isinstance(s, dict) and s.get("empty_plate"):
-                s["empty_plate"] = False
-                storage.write_json(SLOTS_PATH, d)
-                _log(f"📥 Leerplatte aus Fach {key} entnommen — "
-                     f"{_rack_logic.empty_plate_count(d)} verbleibend")
-            return
-
-        counts = d.get("magazine_counts")
-        if counts:
-            for i, cnt in enumerate(counts):
-                if int(cnt) > 0:
-                    d["magazine_counts"][i] = max(0, int(cnt) - 1)
-                    storage.write_json(SLOTS_PATH, d)
-                    _log(f"📦 Magazin R{i+1}: {d['magazine_counts'][i]} Platten verbleibend")
-                    return
+        with rack_store.edit() as d:
+            if _rack_logic.magazine_slot_of(d) <= 0:
+                if rack is None or slot is None:
+                    rack, slot, _ = _rack_logic.plate_source(d)
+                key = f"{int(rack)}-{int(slot)}"
+                s = (d.get("slots") or {}).get(key)
+                if isinstance(s, dict) and s.get("empty_plate"):
+                    s["empty_plate"] = False
+                    meldung = (f"📥 Leerplatte aus Fach {key} entnommen — "
+                               f"{_rack_logic.empty_plate_count(d)} verbleibend")
+            else:
+                counts = d.get("magazine_counts") or []
+                for i, cnt in enumerate(counts):
+                    if int(cnt) > 0:
+                        counts[i] = max(0, int(cnt) - 1)
+                        meldung = f"📦 Magazin R{i+1}: {counts[i]} Platten verbleibend"
+                        break
     except Exception as e:
         logger.warning(f"_decrement_magazine failed: {e}")
+    if meldung:
+        _log(meldung)
 
 
 async def _read_live_ams(device: Device) -> dict:
-    """Read live AMS status from the printer (with one retry). Returns {} if unavailable."""
-    loop = asyncio.get_event_loop()
-    # Persistente Verbindung (bambu_manager) — kein eigener Connect.
-    connected = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
-    if not connected:
-        return {}
-    ams_raw = {}
-    for _ in range(2):
-        await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
-        await asyncio.sleep(3.0)
-        raw = bambu_manager.last_status(device)
-        ams_raw = (raw.get("print", {}).get("ams", {}) if raw else {})
-        if ams_raw and ams_raw.get("ams"):
-            return ams_raw
-    return ams_raw or {}
+    """Live-AMS des Druckers ({} wenn nicht lesbar)."""
+    return await bambu_manager.fresh_ams(device)
 
 
 async def _read_live_print(device: Device, max_age: float = 8.0) -> dict:
     """Live printer `print` status dict, cached briefly so conditional steps don't
     each hammer the printer. Returns {} if unavailable."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     cache = _farm.get("_status_cache")
     if cache and (loop.time() - cache["t"]) < max_age:
         return cache["data"]
@@ -1455,7 +1242,7 @@ async def _await_bed_cool(device: Device, ziel: float = COOL_DEFAULT_C,
     sagt, mit welcher Temperatur. Ein Zyklus, der ewig steht, wäre schlimmer —
     und ob es an der Platte oder am Thermometer lag, weiß hier niemand.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     start = loop.time()
     gemeldet = False
     while True:
@@ -1496,7 +1283,7 @@ async def _wait_bambu_finish(device: Device, label: str = "Bewegung", timeout: f
     silently until timeout). Logs progress every few seconds so it never *looks*
     frozen. Fail-safe: returns after `timeout` instead of hanging; raises only on
     farm stop."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     start = loop.time()
     seen_running = False
     last_log = -999.0
@@ -1565,7 +1352,7 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
     if not use_ams:
         return
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     db = SessionLocal()
     try:
         file = db.query(UploadedFile).filter(UploadedFile.id == job["fileId"]).first()
@@ -1574,7 +1361,7 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
         db.close()
     if not fpath:
         return
-    types, colors = await loop.run_in_executor(None, _effective_filaments, job["fileId"], fpath, ftype, job.get("plate"))
+    types, colors = await loop.run_in_executor(None, print_file.read_filament_info, fpath, ftype, job.get("plate"))
     if not types or all(not t for t in types):
         return  # no filament info in file (older format) → cannot validate
 
@@ -1585,7 +1372,7 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
         if manual:
             # Manuelle Zuordnung (Job oder pro-Datei im Browser) — vertrauen, ABER
             # niemals materialübergreifend: das Material muss zur Datei passen.
-            bad = _material_mismatch(types, manual, ams_raw)
+            bad = ams_match.material_mismatch(types, manual, ams_raw)
             if not bad:
                 _set_job(job["id"], {"needs_ams": False, "ams_missing": []})
                 _farm["error"] = None
@@ -1593,7 +1380,7 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
             desc = f"manuelle Zuordnung kreuzt Material ({bad}) — bitte korrigieren"
             missing = [{"type": "", "color": "", "reason": desc}]
         else:
-            _, missing = _ams_match_confident(types, colors, ams_raw, _farm.get("exact_color_only", False))
+            _, missing = ams_match.match_confident(types, colors, ams_raw, _farm.get("exact_color_only", False))
             if not missing:
                 _set_job(job["id"], {"needs_ams": False, "ams_missing": []})
                 _farm["error"] = None
@@ -1611,12 +1398,12 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
             raise RuntimeError("Gestoppt")
         if action == "skip":
             _log(f"⚠ AMS-Abgleich fehlt — Job übersprungen (Strategie): {desc}")
-            await _notify(f"⚠ *Printloom — AMS fehlt, Job übersprungen*\n`{job['fileName']}`\n{desc}")
+            await _notify(f"⚠ Printloom — AMS fehlt, Job übersprungen\n{job['fileName']}\n{desc}")
             raise RuntimeError(f"AMS-Abgleich fehlgeschlagen — {desc}")
         _farm["paused"] = True
         _farm["error"] = f"Manuelle AMS-Festlegung notwendig für {job['fileName']} — {desc}"
         if not notified:
-            await _notify(f"⚠ *Printloom — AMS-Festlegung nötig*\n`{job['fileName']}`\n{desc}")
+            await _notify(f"⚠ Printloom — AMS-Festlegung nötig\n{job['fileName']}\n{desc}")
             notified = True
         while _farm["paused"] and not _farm["stopping"]:
             await asyncio.sleep(0.5)
@@ -1847,19 +1634,19 @@ async def _handle_hms(hms_list: list):
             why = "Soft-Liste" if hms.normalize_code(cs) in soft else "Strategie: ignorieren"
             _log(f"ℹ HMS {sev} (ignoriert, {why}): {cs} — {text}")
             _record_hms(cs, sev, text, f"ignoriert ({why})")
-            await _notify(f"ℹ *Printloom — Drucker-Hinweis (unkritisch)*\nHMS {cs} ({sev})\n{text}")
+            await _notify(f"ℹ Printloom — Drucker-Hinweis (unkritisch)\nHMS {cs} ({sev})\n{text}")
             continue
         _record_failure(f"HMS {cs}")
         _record_event("error", "", f"HMS {cs} ({sev})")
         _record_hms(cs, sev, text, action)
         if action == "stop":
             _log(f"🛑 HMS {sev}: {cs} — Farm wird gestoppt (Strategie)")
-            await _notify(f"🛑 *Printloom — Drucker-Fehler, Farm gestoppt*\nHMS {cs} ({sev})\n{text}")
+            await _notify(f"🛑 Printloom — Drucker-Fehler, Farm gestoppt\nHMS {cs} ({sev})\n{text}")
             _farm["stopping"] = True
             return
         if action == "skip":
             _log(f"🛑 HMS {sev}: {cs} — Job wird übersprungen (Strategie)")
-            await _notify(f"🛑 *Printloom — Drucker-Fehler, Job übersprungen*\nHMS {cs} ({sev})\n{text}")
+            await _notify(f"🛑 Printloom — Drucker-Fehler, Job übersprungen\nHMS {cs} ({sev})\n{text}")
             raise RuntimeError(f"HMS {cs}: {text}")
         sev_de = hms.HMS_SEVERITY_DE.get(sev, sev)
         _log(f"🛑 HMS {sev}: {cs} — {text} ({hms.wiki_url(cs)})")
@@ -1868,7 +1655,7 @@ async def _handle_hms(hms_list: list):
         # klickbaren Bambu-Wiki-Link mit der genauen Beschreibung.
         _farm["error"] = (f"Drucker-Fehler HMS {cs} ({sev_de}) — {text} "
                           f"Code antippen für die Bambu-Wiki-Seite, beheben, dann fortsetzen.")
-        await _notify(f"🛑 *Printloom — Drucker-Fehler*\nHMS {cs} ({sev_de})\n{text}\n{hms.wiki_url(cs)}")
+        await _notify(f"🛑 Printloom — Drucker-Fehler\nHMS {cs} ({sev_de})\n{text}\n{hms.wiki_url(cs)}")
 
 
 async def _run_prep(steps: list, slot: str, device: Device):
@@ -1877,7 +1664,7 @@ async def _run_prep(steps: list, slot: str, device: Device):
     for step in steps:
         if _farm["stopping"]:
             return
-        val = (step.get("value") or "").replace("{rack}", rack_num).replace("{slot}", slot_num).replace("{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot)
+        val = _subst(step.get("value"), rack_num, slot_num, stack_rack, stack_slot)
         try:
             t = step.get("type", "")
             if t == "macro":
@@ -1916,7 +1703,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
     _log(f"Warte auf Druckende (Poll alle {poll_sec}s)…")
     _farm["_hms_seen"] = set()  # reset HMS dedupe per print
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     prep_started = False
     prep_task: Optional[asyncio.Task] = None
     was_running = False
@@ -1935,284 +1722,270 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
     last_progress_t = loop.time()
     stall_notified  = False
 
-    # Status kommt jetzt aus der EINEN persistenten Verbindung (bambu_manager) —
-    # keine eigene Poll-Verbindung mehr. _wp_disconnect bleibt als No-op, damit die
-    # vorhandenen Aufrufstellen (vor _do_send_file, bei Abriss …) unverändert bleiben;
-    # die geteilte Verbindung darf NICHT pro Poll geschlossen werden.
-    def _wp_disconnect():
-        return
-    try:
-        while not _farm["stopping"]:
-            if _farm["paused"]:
-                while _farm["paused"] and not _farm["stopping"]:
-                    await asyncio.sleep(0.5)
-                # Nach manuellem Fortsetzen den Fortschritts-Watchdog neu scharf stellen.
-                last_progress_t = loop.time()
-                stall_notified = False
-            if _farm["stopping"]:
-                break
+    # Status kommt aus der EINEN persistenten Verbindung (bambu_manager); sie wird
+    # hier nie geschlossen — auch nicht bei einem Abriss (paho verbindet selbst neu).
+    while not _farm["stopping"]:
+        if _farm["paused"]:
+            while _farm["paused"] and not _farm["stopping"]:
+                await asyncio.sleep(0.5)
+            # Nach manuellem Fortsetzen den Fortschritts-Watchdog neu scharf stellen.
+            last_progress_t = loop.time()
+            stall_notified = False
+        if _farm["stopping"]:
+            break
 
-            # Einstellungen, die WÄHREND des Drucks geändert werden, gelten ab dem
-            # nächsten Abfragezyklus. Bis v1.1.33 wurden Takt, Mindestdruckzeit und
-            # beide Watchdog-Werte einmal zu Beginn in lokale Variablen kopiert und
-            # blieben für den ganzen Druck stehen.
-            _refresh_live_settings()
-            poll_sec   = max(1, int(_live("poll_interval", poll_sec)))
-            min_min    = max(0, int(_live("min_print_minutes", min_min)))
-            conn_alarm = bool(_live("conn_alarm", conn_alarm))
-            stall_min  = int(_live("progress_stall_min", stall_min) or 0)
+        # Einstellungen, die WÄHREND des Drucks geändert werden, gelten ab dem
+        # nächsten Abfragezyklus. Bis v1.1.33 wurden Takt, Mindestdruckzeit und
+        # beide Watchdog-Werte einmal zu Beginn in lokale Variablen kopiert und
+        # blieben für den ganzen Druck stehen.
+        _refresh_live_settings()
+        poll_sec   = max(1, int(_live("poll_interval", poll_sec)))
+        min_min    = max(0, int(_live("min_print_minutes", min_min)))
+        conn_alarm = bool(_live("conn_alarm", conn_alarm))
+        stall_min  = int(_live("progress_stall_min", stall_min) or 0)
 
-            await asyncio.sleep(poll_sec)
-            if _farm["stopping"]:
-                break
+        await asyncio.sleep(poll_sec)
+        if _farm["stopping"]:
+            break
 
-            try:
-                # Über die EINE persistente Verbindung (bambu_manager) lesen — kein
-                # Connect/Disconnect pro Poll mehr über die gesamte Druckdauer.
-                if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
-                    raise ConnectionError("MQTT nicht erreichbar")
-                await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
-                await asyncio.sleep(1.5)
-                raw = bambu_manager.last_status(device)
+        try:
+            # Über die EINE persistente Verbindung (bambu_manager) lesen — kein
+            # Connect/Disconnect pro Poll mehr über die gesamte Druckdauer.
+            if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
+                raise ConnectionError("MQTT nicht erreichbar")
+            await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
+            await asyncio.sleep(1.5)
+            raw = bambu_manager.last_status(device)
 
-                if not raw:
-                    raise ConnectionError("Keine MQTT-Antwort")
+            if not raw:
+                raise ConnectionError("Keine MQTT-Antwort")
 
-                # Live-Status für die Steuerung/Dashboard cachen → die teilen sich die
-                # persistente Verbindung der Farm, statt eine eigene aufzubauen.
-                publish_live_status(raw, getattr(device, "id", None))
+            # Live-Status für die Steuerung/Dashboard cachen → die teilen sich die
+            # persistente Verbindung der Farm, statt eine eigene aufzubauen.
+            publish_live_status(raw, getattr(device, "id", None))
 
-                p = raw.get("print", {})
-                state = p.get("gcode_state", "IDLE")
-                pct   = p.get("mc_percent", 0)
-                rem   = p.get("mc_remaining_time", 0)
+            p = raw.get("print", {})
+            state = p.get("gcode_state", "IDLE")
+            pct   = p.get("mc_percent", 0)
+            rem   = p.get("mc_remaining_time", 0)
 
-                _set_job(job["id"], {"progress": pct, "remaining": rem})
-                _log(f"Drucker: {state}  {pct}%{f'  ~{rem} min' if rem > 0 else ''}")
-                reconn_fails = 0
-                conn_alarmed = False
-                await _handle_hms(p.get("hms", []) or [])
+            _set_job(job["id"], {"progress": pct, "remaining": rem})
+            _log(f"Drucker: {state}  {pct}%{f'  ~{rem} min' if rem > 0 else ''}")
+            reconn_fails = 0
+            conn_alarmed = False
+            await _handle_hms(p.get("hms", []) or [])
 
-                if state == "RUNNING":
-                    was_running = True
+            if state == "RUNNING":
+                was_running = True
+                fail_count = 0
+                idle_grace = 0
+                if pct > max_pct:
+                    max_pct = pct
+
+                # ── Fortschritts-Watchdog (1.7) — kein mc_percent-Fortschritt während
+                # RUNNING deutet auf Verstopfung/Extrusions-/Vorschubfehler hin. Greift
+                # erst wenn der Druck wirklich läuft (pct > 0), nicht beim Aufheizen. ──
+                progressed = pct > last_pct_seen or (rem > 0 and rem < last_rem_seen)
+                if progressed:
+                    last_pct_seen = max(last_pct_seen, pct)
+                    last_rem_seen = rem if rem > 0 else last_rem_seen
+                    last_progress_t = loop.time()
+                    stall_notified = False
+                elif stall_min > 0 and pct > 0 and not stall_notified \
+                        and (loop.time() - last_progress_t) >= stall_min * 60:
+                    stall_notified = True
+                    _record_event("error", job.get("fileName", ""), f"Stillstand {stall_min}min @ {pct}%")
+                    await _notify(f"🛑 Printloom — Stillstand erkannt\n{job.get('fileName','')}\n"
+                                  f"Kein Fortschritt seit {stall_min} min bei {pct}% — mögliche Verstopfung")
+                    action = _estrat("progress_stall")
+                    if action == "stop":
+                        _log(f"🛑 Watchdog: Stillstand bei {pct}% — Farm wird gestoppt (Strategie)")
+                        _farm["stopping"] = True
+                    elif action == "skip":
+                        _log(f"🛑 Watchdog: Stillstand bei {pct}% — Job übersprungen (Strategie)")
+                        raise RuntimeError(f"Stillstand seit {stall_min} min bei {pct}% — mögliche Verstopfung")
+                    else:
+                        _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — pausiert")
+                        _farm["paused"] = True
+                        _farm["error"] = (f"Kein Druckfortschritt seit {stall_min} min ({pct}%) — "
+                                          "Düse/Filament prüfen (mögliche Verstopfung), dann fortsetzen")
+                if first_run and rem > 0:
+                    total_layers = p.get("total_layer_num", 0)
+                    layer_h      = job.get("layerHeightMm", 0.0)
+                    unassigned   = job.get("slot", "1-1") == "1-0"
+                    if total_layers > 0 and layer_h > 0:
+                        first_run = False
+                        actual_h  = round(total_layers * layer_h, 1)
+                        _set_job(job["id"], {"estimatedMinutes": rem, "object_height_mm": actual_h})
+                        if min_min > 0 and rem < min_min:
+                            raise RuntimeError(
+                                f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
+                            )
+                        if unassigned:
+                            # Rack was full at planning time — find a real slot now
+                            await _assign_slot_for_height(job, actual_h)
+                        else:
+                            # Use pre-planned slot — just update height
+                            _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=actual_h)
+                            _sh = float(_rack_data().get("slot_height_mm", 50) or 50)
+                            boeden = _slots_needed(actual_h, _sh)
+                            _log(f"📏 Fach {job['slot']}: {actual_h:.0f}mm ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
+                    elif total_layers == 0 and rem > 0:
+                        # total_layer_num not yet available — wait for next poll
+                        pass
+                    else:
+                        # No layer height data — use pre-planned height from queue analysis
+                        first_run = False
+                        _set_job(job["id"], {"estimatedMinutes": rem})
+                        if min_min > 0 and rem < min_min:
+                            raise RuntimeError(
+                                f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
+                            )
+                        pre_h = job.get("object_height_mm") or 1.0
+                        if unassigned:
+                            await _assign_slot_for_height(job, pre_h)
+                        elif job.get("object_height_mm"):
+                            _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=pre_h)
+                            _log(f"📏 Fach {job['slot']}: {pre_h:.0f}mm (aus Planung)")
+            else:
+                if state != "FAILED":
                     fail_count = 0
-                    idle_grace = 0
-                    if pct > max_pct:
-                        max_pct = pct
 
-                    # ── Fortschritts-Watchdog (1.7) — kein mc_percent-Fortschritt während
-                    # RUNNING deutet auf Verstopfung/Extrusions-/Vorschubfehler hin. Greift
-                    # erst wenn der Druck wirklich läuft (pct > 0), nicht beim Aufheizen. ──
-                    progressed = pct > last_pct_seen or (rem > 0 and rem < last_rem_seen)
-                    if progressed:
-                        last_pct_seen = max(last_pct_seen, pct)
-                        last_rem_seen = rem if rem > 0 else last_rem_seen
-                        last_progress_t = loop.time()
-                        stall_notified = False
-                    elif stall_min > 0 and pct > 0 and not stall_notified \
-                            and (loop.time() - last_progress_t) >= stall_min * 60:
-                        stall_notified = True
-                        _record_event("error", job.get("fileName", ""), f"Stillstand {stall_min}min @ {pct}%")
-                        await _notify(f"🛑 *Printloom — Stillstand erkannt*\n`{job.get('fileName','')}`\n"
-                                      f"Kein Fortschritt seit {stall_min} min bei {pct}% — mögliche Verstopfung")
-                        action = _estrat("progress_stall")
-                        if action == "stop":
-                            _log(f"🛑 Watchdog: Stillstand bei {pct}% — Farm wird gestoppt (Strategie)")
-                            _farm["stopping"] = True
-                        elif action == "skip":
-                            _log(f"🛑 Watchdog: Stillstand bei {pct}% — Job übersprungen (Strategie)")
-                            raise RuntimeError(f"Stillstand seit {stall_min} min bei {pct}% — mögliche Verstopfung")
-                        else:
-                            _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — pausiert")
-                            _farm["paused"] = True
-                            _farm["error"] = (f"Kein Druckfortschritt seit {stall_min} min ({pct}%) — "
-                                              "Düse/Filament prüfen (mögliche Verstopfung), dann fortsetzen")
-                    if first_run and rem > 0:
-                        total_layers = p.get("total_layer_num", 0)
-                        layer_h      = job.get("layerHeightMm", 0.0)
-                        unassigned   = job.get("slot", "1-1") == "1-0"
-                        if total_layers > 0 and layer_h > 0:
-                            first_run = False
-                            actual_h  = round(total_layers * layer_h, 1)
-                            _set_job(job["id"], {"estimatedMinutes": rem, "object_height_mm": actual_h})
-                            if min_min > 0 and rem < min_min:
-                                raise RuntimeError(
-                                    f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
-                                )
-                            if unassigned:
-                                # Rack was full at planning time — find a real slot now
-                                await _assign_slot_for_height(job, actual_h)
-                            else:
-                                # Use pre-planned slot — just update height
-                                _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=actual_h)
-                                try:
-                                    with open(SLOTS_PATH) as _f:
-                                        _sh = float(json.load(_f).get("slot_height_mm", 50))
-                                except Exception:
-                                    _sh = 50.0
-                                boeden = _slots_needed(actual_h, _sh)
-                                _log(f"📏 Fach {job['slot']}: {actual_h:.0f}mm ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
-                        elif total_layers == 0 and rem > 0:
-                            # total_layer_num not yet available — wait for next poll
-                            pass
-                        else:
-                            # No layer height data — use pre-planned height from queue analysis
-                            first_run = False
-                            _set_job(job["id"], {"estimatedMinutes": rem})
-                            if min_min > 0 and rem < min_min:
-                                raise RuntimeError(
-                                    f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
-                                )
-                            pre_h = job.get("object_height_mm") or 1.0
-                            if unassigned:
-                                await _assign_slot_for_height(job, pre_h)
-                            elif job.get("object_height_mm"):
-                                _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=pre_h)
-                                _log(f"📏 Fach {job['slot']}: {pre_h:.0f}mm (aus Planung)")
-                else:
-                    if state != "FAILED":
-                        fail_count = 0
+            if not prep_started and state == "RUNNING" and rem > 0 and rem <= 1:
+                prep_started = True
+                _log("⚡ ~1 min — Vorstart-Sequenz…")
+                prep_task = asyncio.create_task(_run_prep(prep_steps, job["slot"], device))
 
-                if not prep_started and state == "RUNNING" and rem > 0 and rem <= 1:
-                    prep_started = True
-                    _log("⚡ ~1 min — Vorstart-Sequenz…")
-                    prep_task = asyncio.create_task(_run_prep(prep_steps, job["slot"], device))
+            idle_done = state == "IDLE" and was_running and (max_pct >= 90 or pct >= 99)
+            if state == "FINISH" or idle_done:
+                if state != "FINISH":
+                    _log(f"Druck fertig erkannt ({state} {pct}%, max {max_pct}%)")
+                snap = await capture_snapshot(device.id)
+                if snap:
+                    _set_job(job["id"], {"snapshot": snap})
+                    _log("📷 Snapshot gespeichert")
+                if prep_task and not prep_task.done():
+                    _log("Warte auf Vorstart-Sequenz…")
+                    try:
+                        await prep_task
+                    except Exception as e:
+                        _log(f"Warnung Vorstart: {e}")
+                return prep_started
 
-                idle_done = state == "IDLE" and was_running and (max_pct >= 90 or pct >= 99)
-                if state == "FINISH" or idle_done:
-                    if state != "FINISH":
-                        _log(f"Druck fertig erkannt ({state} {pct}%, max {max_pct}%)")
-                    snap = await capture_snapshot(device.id)
-                    if snap:
-                        _set_job(job["id"], {"snapshot": snap})
-                        _log("📷 Snapshot gespeichert")
-                    if prep_task and not prep_task.done():
-                        _log("Warte auf Vorstart-Sequenz…")
-                        try:
-                            await prep_task
-                        except Exception as e:
-                            _log(f"Warnung Vorstart: {e}")
-                    return prep_started
-
-                if state == "FAILED":
-                    fail_count += 1
-                    if fail_count < 2:
-                        _log(f"⚠ FAILED ({fail_count}/2) — warte…")
-                        continue
-                    max_retries = int(_farm.get("failed_retries", 1) or 0)
-                    if retries < max_retries:
-                        retries += 1
-                        _log(f"⚠ Retry {retries}/{max_retries}…")
-                        _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
-                        _wp_disconnect()  # persistente Verbindung schließen, bevor _do_send_file neu verbindet (kein Doppel-Connect)
-                        # Bis v1.1.33 stand hier fest `True`: jeder neue Versuch nach einem
-                        # Druckfehler lief MIT AMS — auch wenn „AMS verwenden" aus war.
-                        await _do_send_file(job, device, bool(_live("use_ams", True)))
-                        _set_job(job["id"], {"status": "printing"})
-                        fail_count = 0
-                        continue
-                    action = _estrat("print_failed")
-                    if action == "stop":
-                        _log("🔴 Druck fehlgeschlagen — Farm wird gestoppt (Strategie)")
-                        await _notify(f"🔴 *Printloom — Druck fehlgeschlagen, Farm gestoppt*\n`{job['fileName']}`")
-                        _farm["stopping"] = True
+            if state == "FAILED":
+                fail_count += 1
+                if fail_count < 2:
+                    _log(f"⚠ FAILED ({fail_count}/2) — warte…")
+                    continue
+                max_retries = int(_farm.get("failed_retries", 1) or 0)
+                if retries < max_retries:
+                    retries += 1
+                    _log(f"⚠ Retry {retries}/{max_retries}…")
+                    _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
+                    # Bis v1.1.33 stand hier fest `True`: jeder neue Versuch nach einem
+                    # Druckfehler lief MIT AMS — auch wenn „AMS verwenden" aus war.
+                    await _do_send_file(job, device, bool(_live("use_ams", True)))
+                    _set_job(job["id"], {"status": "printing"})
+                    fail_count = 0
+                    continue
+                action = _estrat("print_failed")
+                if action == "stop":
+                    _log("🔴 Druck fehlgeschlagen — Farm wird gestoppt (Strategie)")
+                    await _notify(f"🔴 Printloom — Druck fehlgeschlagen, Farm gestoppt\n{job['fileName']}")
+                    _farm["stopping"] = True
+                    raise RuntimeError("Gestoppt")
+                if action == "pause":
+                    _log("🔴 Druck fehlgeschlagen — pausiert (Strategie)")
+                    _farm["paused"] = True
+                    _farm["error"] = "Druck fehlgeschlagen — prüfen, dann fortsetzen (neuer Versuch)"
+                    await _notify(f"🔴 Printloom — Druck fehlgeschlagen, pausiert\n{job['fileName']}")
+                    while _farm["paused"] and not _farm["stopping"]:
+                        await asyncio.sleep(0.5)
+                    if _farm["stopping"]:
                         raise RuntimeError("Gestoppt")
-                    if action == "pause":
-                        _log("🔴 Druck fehlgeschlagen — pausiert (Strategie)")
+                    # Nach Fortsetzen erneut senden und weiter beobachten.
+                    _farm["error"] = None
+                    retries = 0
+                    fail_count = 0
+                    _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
+                    # Bis v1.1.33 stand hier fest `True`: jeder neue Versuch nach einem
+                    # Druckfehler lief MIT AMS — auch wenn „AMS verwenden" aus war.
+                    await _do_send_file(job, device, bool(_live("use_ams", True)))
+                    _set_job(job["id"], {"status": "printing"})
+                    continue
+                if action == "eject" and fail_steps:
+                    # Bergen: fehlgeschlagene Platte auf Z200 heben, Tür öffnen, auswerfen
+                    # und ins vorgesehene Fach einlagern — dann weiter mit dem nächsten Job.
+                    # Ohne diese Bergung würde der nächste Zyklus blind auf die alte Platte
+                    # laden (Kollision) — genau der gemeldete Fehler.
+                    _log("🔴 Druck fehlgeschlagen — Auswurf-Sequenz (Platte bergen)…")
+                    await _notify(f"🔴 Printloom — Druck fehlgeschlagen\n{job['fileName']}\n"
+                                  "Platte wird ausgeworfen & eingelagert, dann weiter.")
+                    # Bergung nach der JETZT gespeicherten Sequenz — wurde während des
+                    # Drucks etwa ein Abkühl-Schritt eingefügt, gilt er auch hier.
+                    _jetzt = _read_sequences()
+                    bergung = (_eject_recovery_steps(_jetzt["seq_next"]) if _jetzt else None) \
+                        or fail_steps
+                    try:
+                        await _exec_sequence(bergung, job, device, False, poll_sec, min_min, [], [])
+                    except Exception as fe:
+                        # Auswurf misslungen → NICHT blind weiterfahren (Kollisionsgefahr) → pausieren.
+                        _log(f"🛑 Auswurf-Sequenz fehlgeschlagen: {fe} — pausiert")
                         _farm["paused"] = True
-                        _farm["error"] = "Druck fehlgeschlagen — prüfen, dann fortsetzen (neuer Versuch)"
-                        await _notify(f"🔴 *Printloom — Druck fehlgeschlagen, pausiert*\n`{job['fileName']}`")
+                        _farm["error"] = (f"Auswurf nach Druckfehler misslungen ({fe}) — Platte "
+                                          "manuell entnehmen, dann fortsetzen")
+                        await _notify(f"🛑 Printloom — Auswurf misslungen\n{job['fileName']}\n{fe}")
                         while _farm["paused"] and not _farm["stopping"]:
                             await asyncio.sleep(0.5)
                         if _farm["stopping"]:
                             raise RuntimeError("Gestoppt")
-                        # Nach Fortsetzen erneut senden und weiter beobachten.
-                        _farm["error"] = None
-                        retries = 0
-                        fail_count = 0
-                        _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
-                        _wp_disconnect()  # persistente Verbindung schließen, bevor _do_send_file neu verbindet (kein Doppel-Connect)
-                        # Bis v1.1.33 stand hier fest `True`: jeder neue Versuch nach einem
-                        # Druckfehler lief MIT AMS — auch wenn „AMS verwenden" aus war.
-                        await _do_send_file(job, device, bool(_live("use_ams", True)))
-                        _set_job(job["id"], {"status": "printing"})
-                        continue
-                    if action == "eject" and fail_steps:
-                        # Bergen: fehlgeschlagene Platte auf Z200 heben, Tür öffnen, auswerfen
-                        # und ins vorgesehene Fach einlagern — dann weiter mit dem nächsten Job.
-                        # Ohne diese Bergung würde der nächste Zyklus blind auf die alte Platte
-                        # laden (Kollision) — genau der gemeldete Fehler.
-                        _log("🔴 Druck fehlgeschlagen — Auswurf-Sequenz (Platte bergen)…")
-                        await _notify(f"🔴 *Printloom — Druck fehlgeschlagen*\n`{job['fileName']}`\n"
-                                      "Platte wird ausgeworfen & eingelagert, dann weiter.")
-                        # Bergung nach der JETZT gespeicherten Sequenz — wurde während des
-                        # Drucks etwa ein Abkühl-Schritt eingefügt, gilt er auch hier.
-                        _jetzt = _read_sequences()
-                        bergung = (_eject_recovery_steps(_jetzt["seq_next"]) if _jetzt else None) \
-                            or fail_steps
-                        try:
-                            await _exec_sequence(bergung, job, device, False, poll_sec, min_min, [], [])
-                        except Exception as fe:
-                            # Auswurf misslungen → NICHT blind weiterfahren (Kollisionsgefahr) → pausieren.
-                            _log(f"🛑 Auswurf-Sequenz fehlgeschlagen: {fe} — pausiert")
-                            _farm["paused"] = True
-                            _farm["error"] = (f"Auswurf nach Druckfehler misslungen ({fe}) — Platte "
-                                              "manuell entnehmen, dann fortsetzen")
-                            await _notify(f"🛑 *Printloom — Auswurf misslungen*\n`{job['fileName']}`\n{fe}")
-                            while _farm["paused"] and not _farm["stopping"]:
-                                await asyncio.sleep(0.5)
-                            if _farm["stopping"]:
-                                raise RuntimeError("Gestoppt")
-                            raise RuntimeError("Druck fehlgeschlagen (FAILED)")
-                        raise _EjectRecovered(
-                            "Druck fehlgeschlagen (FAILED) — Platte ausgeworfen & eingelagert")
-                    # skip: Job als Fehler markieren, nächster Job. ACHTUNG: die fehlgeschlagene
-                    # Platte bleibt im Drucker — der nächste Zyklus lädt darauf. Nur wählen, wenn
-                    # die Platte manuell entnommen wird. Sichere Alternative: 'eject'.
-                    raise RuntimeError("Druck fehlgeschlagen (FAILED)")
+                        raise RuntimeError("Druck fehlgeschlagen (FAILED)")
+                    raise _EjectRecovered(
+                        "Druck fehlgeschlagen (FAILED) — Platte ausgeworfen & eingelagert")
+                # skip: Job als Fehler markieren, nächster Job. ACHTUNG: die fehlgeschlagene
+                # Platte bleibt im Drucker — der nächste Zyklus lädt darauf. Nur wählen, wenn
+                # die Platte manuell entnommen wird. Sichere Alternative: 'eject'.
+                raise RuntimeError("Druck fehlgeschlagen (FAILED)")
 
-                if state == "IDLE" and pct == 0 and not was_running:
-                    idle_grace += 1
-                    if idle_grace >= 3:
-                        raise RuntimeError("Drucker dauerhaft IDLE — abgebrochen")
-                    _log(f"⚠ Drucker noch IDLE — warte auf Druckstart ({idle_grace}/3)…")
+            if state == "IDLE" and pct == 0 and not was_running:
+                idle_grace += 1
+                if idle_grace >= 3:
+                    raise RuntimeError("Drucker dauerhaft IDLE — abgebrochen")
+                _log(f"⚠ Drucker noch IDLE — warte auf Druckstart ({idle_grace}/3)…")
 
-            except RuntimeError:
-                raise
-            except Exception as e:
-                _wp_disconnect()  # abgerissene Verbindung verwerfen → nächster Poll baut neu auf
-                reconn_fails += 1
-                if reconn_fails >= 5:
-                    action = _estrat("connection_lost")
-                    if action == "stop":
-                        _log("⚠ Verbindung dauerhaft unterbrochen — Farm wird gestoppt (Strategie)")
-                        _farm["stopping"] = True
+        except RuntimeError:
+            raise
+        except Exception as e:
+            reconn_fails += 1
+            if reconn_fails >= 5:
+                action = _estrat("connection_lost")
+                if action == "stop":
+                    _log("⚠ Verbindung dauerhaft unterbrochen — Farm wird gestoppt (Strategie)")
+                    _farm["stopping"] = True
+                    raise RuntimeError("Gestoppt")
+                if action == "pause":
+                    _log("⚠ Verbindung dauerhaft unterbrochen — pausiert (Strategie)")
+                    _farm["paused"] = True
+                    _farm["error"] = "Verbindung zum Drucker verloren — prüfen, dann fortsetzen"
+                    while _farm["paused"] and not _farm["stopping"]:
+                        await asyncio.sleep(0.5)
+                    if _farm["stopping"]:
                         raise RuntimeError("Gestoppt")
-                    if action == "pause":
-                        _log("⚠ Verbindung dauerhaft unterbrochen — pausiert (Strategie)")
-                        _farm["paused"] = True
-                        _farm["error"] = "Verbindung zum Drucker verloren — prüfen, dann fortsetzen"
-                        while _farm["paused"] and not _farm["stopping"]:
-                            await asyncio.sleep(0.5)
-                        if _farm["stopping"]:
-                            raise RuntimeError("Gestoppt")
-                        _farm["error"] = None
-                        reconn_fails = 0
-                        conn_alarmed = False
-                        continue
-                    # skip (Default): Job als Fehler markieren, nächster Job
-                    raise RuntimeError(f"Verbindung dauerhaft unterbrochen ({reconn_fails}×)")
-                # Verbindungs-Watchdog (1.1): einmaliger Alarm, sobald der Reconnect
-                # mehrfach scheitert — der Druck läuft am Gerät weiter, nur die Brücke fehlt.
-                if conn_alarm and reconn_fails >= 3 and not conn_alarmed:
-                    conn_alarmed = True
-                    await _notify("⚠ *Printloom — Verbindung zum Drucker verloren*\n"
-                                  f"`{job.get('fileName','')}`\nReconnect läuft — Drucker/Netzwerk prüfen")
-                _log(f"⚠ Verbindung unterbrochen ({reconn_fails}/5) — retry…")
+                    _farm["error"] = None
+                    reconn_fails = 0
+                    conn_alarmed = False
+                    continue
+                # skip (Default): Job als Fehler markieren, nächster Job
+                raise RuntimeError(f"Verbindung dauerhaft unterbrochen ({reconn_fails}×)")
+            # Verbindungs-Watchdog (1.1): einmaliger Alarm, sobald der Reconnect
+            # mehrfach scheitert — der Druck läuft am Gerät weiter, nur die Brücke fehlt.
+            if conn_alarm and reconn_fails >= 3 and not conn_alarmed:
+                conn_alarmed = True
+                await _notify("⚠ Printloom — Verbindung zum Drucker verloren\n"
+                              f"{job.get('fileName','')}\nReconnect läuft — Drucker/Netzwerk prüfen")
+            _log(f"⚠ Verbindung unterbrochen ({reconn_fails}/5: {e}) — retry…")
 
-        raise RuntimeError("Gestoppt")
-    finally:
-        _wp_disconnect()
+    raise RuntimeError("Gestoppt")
 
 
 # ── OTTOeject-Geometrie (opt-in: Farm sendet App-G-code statt Geräte-Macro) ──
@@ -2222,7 +1995,7 @@ def _load_farm_geometry() -> dict:
     Ohne Datei → Defaults ohne use_gcode → Farm fährt wie bisher die Geräte-Macros."""
     g = _motion.merge_defaults(storage.read_json(GEOMETRY_PATH, None))
     try:
-        _motion.apply_rack_config(g, _rack_load())
+        _motion.apply_rack_config(g, rack_store.load())
     except Exception:
         pass
     # Seit v1.1.8 gibt es keine zweite X-Quelle mehr: das Farm-Layout wird aus
@@ -2330,7 +2103,7 @@ async def _start_homing_print(device: Device) -> None:
             raise RuntimeError(f"Homing-Datei konnte nicht erstellt werden: {e}")
         logger.warning(f"Homing-Datei nicht erneuerbar ({e}) — nutze vorhandene")
     homing_name = "printloom_homing.3mf"
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     _log("[↑] Homing senden (G28+Z200)…")
     ftp = BambuFTP(device.ip_address, device.access_code)
     up = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, HOMING_3MF_PATH, homing_name)
@@ -2350,6 +2123,32 @@ async def _start_homing_print(device: Device) -> None:
         raise RuntimeError("Homing-Druck Start fehlgeschlagen")
 
 
+def _after_grab(job: dict, rack, slot) -> None:
+    """Leere Platte ist gegriffen: Bestand nachziehen, Greifer und Ziel-Fach buchen."""
+    _decrement_magazine(rack, slot)
+    _set_arm("empty", f"{rack}-{slot}", job.get("id"))
+    if job.get("slot") and job["slot"] != "1-0":
+        _rack_update(job["slot"], "printing", job["fileName"])
+    if _farm.get("_in_first_start"):
+        _farm["_plate_ready"] = True   # Zyklus-Griff des ersten Jobs überspringen
+
+
+def _after_store(job: dict) -> None:
+    """Fertige Platte liegt im Fach: Fach als fertig, Greifer leer."""
+    _rack_update(job["slot"], "done", object_height_mm=job.get("object_height_mm"))
+    _set_arm("none")
+
+
+def _plate_ready_skip() -> bool:
+    """First Start hat die Platte schon geholt (wartet vor dem Drucker) → der
+    Zyklus-Griff des ersten Jobs entfällt, sonst würde doppelt gegriffen. Die
+    Buchhaltung lief bereits beim Griff im First Start."""
+    if not _farm.get("_in_first_start") and _farm.pop("_plate_ready", False):
+        _log("⏭ Platte schon im Greifer (im First Start geholt) — Griff übersprungen")
+        return True
+    return False
+
+
 async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                       poll_sec: int, min_min: int, prep_steps: list, fail_steps: list = []):
     if _farm["stopping"]:
@@ -2366,14 +2165,14 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
 
     rack_num, slot_num = _slot_vars(job["slot"])
     stack_rack, stack_slot = _stack_vars()
-    val = (step.get("value") or "").replace("{rack}", rack_num).replace("{slot}", slot_num).replace("{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot)
+    val = _subst(step.get("value"), rack_num, slot_num, stack_rack, stack_slot)
     t = step.get("type", "")
 
     if t == "gcode":
         _log(f"[GCode] {step.get('label', val[:40])}")
         await _do_bambu_gcode(val, device)
         # Record when this gcode was sent so wait_bambu_idle can compute elapsed time
-        _farm["_last_gcode_time"] = asyncio.get_event_loop().time()
+        _farm["_last_gcode_time"] = asyncio.get_running_loop().time()
 
     elif t == "klipper_gcode":
         label = step.get("label") or val.replace("\n", " · ")[:40]
@@ -2388,7 +2187,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         # → so wird nur die wirklich noch fehlende Zeit gewartet.
         label = step.get("label") or "Warte Z200"
         min_duration = max(5, int(step.get("seconds") or 50))
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         gcode_time = _farm.get("_last_gcode_time")
         if gcode_time is not None:
@@ -2409,18 +2208,13 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
 
     elif t == "macro":
         if "GRAB_FROM_RACK" in val or val.startswith("GRAB_FROM_SLOT_"):
-            # First Start hat die Platte schon geholt (wartet vor dem Drucker) →
-            # der Zyklus-Griff des ersten Jobs entfällt, sonst würde doppelt gegriffen.
-            # Buchhaltung (Magazin-Zähler, Fach „printing") lief bereits beim Griff.
-            if not _farm.get("_in_first_start") and _farm.pop("_plate_ready", False):
-                _log("⏭ Platte schon im Greifer (im First Start geholt) — Griff übersprungen")
+            if _plate_ready_skip():
                 return
             # Magazin-Gate: leer → parken/pausieren, nach Auffüllen homen. Liefert das
             # DANN aktive Magazin → Macro-String mit den FRISCHEN Werten neu aufbauen
             # (der vorab substituierte fuhr sonst zum vor der Pause gemerkten Regal).
             stack_rack, stack_slot = await _magazine_gate()
-            val = (step.get("value") or "").replace("{rack}", rack_num).replace("{slot}", slot_num) \
-                .replace("{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot)
+            val = _subst(step.get("value"), rack_num, slot_num, stack_rack, stack_slot)
         # Opt-in: bekannte Drucker-/Regal-Macros können als Printloom-G-code laufen
         # (geometry.use_gcode[op] = true). Standard aus → Geräte-Macro wie bisher.
         # Die Magazin-/Fach-Buchhaltung unten prüft weiter val (Macro-Name, unverändert).
@@ -2439,16 +2233,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         _log(f"▶ {val}" + (f"  →  Printloom-G-code ({op_used})" if op_used else ""))
         await _do_macro(send_val)
         if "GRAB_FROM_RACK" in val or val.startswith("GRAB_FROM_SLOT_"):
-            _decrement_magazine()
-            _set_arm("empty", f"{stack_rack}-{stack_slot}", job.get("id"))
-            if job.get("slot") and job["slot"] != "1-0":
-                _rack_update(job["slot"], "printing", job["fileName"])
-            if _farm.get("_in_first_start"):
-                _farm["_plate_ready"] = True   # Zyklus-Griff des ersten Jobs überspringen
+            _after_grab(job, stack_rack, stack_slot)
         elif "STORE_TO_RACK" in val or val.startswith("STORE_TO_SLOT_"):
-            _rack_update(job["slot"], "done",
-                         object_height_mm=job.get("object_height_mm"))
-            _set_arm("none")
+            _after_store(job)
 
     elif t == "app_op":
         # Printloom-eigene Operation (Drucker-Tab-Geometrie → G-code), frei in Sequenzen
@@ -2460,9 +2247,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             raise RuntimeError(f"Unbekannte Printloom-Op: {op!r}")
         # grab UND grab_magazine zählen als Greifen (Magazin-Check + Zähler dekrementieren).
         is_grab, is_store = op in ("grab", "grab_magazine"), op == "store"
-        if is_grab and not _farm.get("_in_first_start") and _farm.pop("_plate_ready", False):
-            # First Start hat die Platte schon geholt — Zyklus-Griff des ersten Jobs entfällt.
-            _log("⏭ Platte schon im Greifer (im First Start geholt) — Griff übersprungen")
+        if is_grab and _plate_ready_skip():
             return
         if is_grab:
             # Magazin-Gate: leer → parken/pausieren, nach Auffüllen homen. Liefert das
@@ -2483,15 +2268,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         if is_grab:
             # Gegriffenes Fach ausdrücklich mitgeben — ohne Magazin wird genau dessen
             # Markierung gelöscht (nicht „das nächstbeste" Fach).
-            _decrement_magazine(rk, sl)
-            _set_arm("empty", f"{rk}-{sl}", job.get("id"))
-            if job.get("slot") and job["slot"] != "1-0":
-                _rack_update(job["slot"], "printing", job["fileName"])
-            if _farm.get("_in_first_start"):
-                _farm["_plate_ready"] = True   # Zyklus-Griff des ersten Jobs überspringen
+            _after_grab(job, rk, sl)
         elif is_store:
-            _rack_update(job["slot"], "done", object_height_mm=job.get("object_height_mm"))
-            _set_arm("none")
+            _after_store(job)
         elif op == "eject":
             # Fertige Platte kommt aus dem Drucker → sie hängt jetzt am Arm.
             _set_arm("printed", "", job.get("id"))
@@ -2554,7 +2333,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         # can't poll FINISH, so we wait a short computed settle instead.
         z    = int(step.get("z", 200) or 200)
         feed = int(step.get("feed", 3000) or 3000)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         _log(f"[↑] Bambu Position Z{z} (F{feed}) per G-Code…")
         # Über die persistente Verbindung (bambu_manager) senden — kein eigener Connect.
         ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.send_gcode, device, f"G90\nG1 Z{z} F{feed}")
@@ -2614,7 +2393,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
     elif t == "wait_print_failed":
         label = step.get("label") or "Warte auf Druckfehler"
         _log(f"[✗] {label} — warte auf FAILED…")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         while not _farm["stopping"]:
             while _farm["paused"] and not _farm["stopping"]:
                 await asyncio.sleep(0.5)
@@ -2648,7 +2427,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         label = step.get("label") or "Warte auf PAUSE"
         timeout_sec = max(30, int(step.get("seconds") or 120))
         _log(f"[⏸] {label} — warte auf PAUSE (Timeout {timeout_sec}s)…")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         elapsed = 0.0
         conn_fails = 0
         while not _farm["stopping"]:
@@ -2705,7 +2484,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
     elif t == "clear_error":
         label = step.get("label") or "Fehler quittieren"
         _log(f"[⚠] {label}…")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         # Persistente Verbindung (bambu_manager); clear_error = stop-Befehl (FAILED → IDLE).
         if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
             raise RuntimeError("MQTT nicht erreichbar für clear_error")
@@ -2750,11 +2529,8 @@ def _filter_disabled(steps: list) -> list:
     return result
 
 
-# These step types must ALWAYS stay in the normal flow — pre-positioning them is
-# nonsensical and breaks the cycle. Pulling `wait_print` into prep removes the wait
-# entirely → the cycle ejects mid-print; `send_file` likewise must run in order;
-# `wait_homing` würde während eines echten Drucks endlos auf FINISH warten.
-_PREP_FORBIDDEN = ("wait_print", "send_file", "wait_homing", "wait_cool")
+# Schritte, die nie vorgezogen werden (Begründung in sequence_steps).
+_PREP_FORBIDDEN = sequence_steps.PREP_FORBIDDEN
 
 
 def _split_prep(steps: list) -> tuple:
@@ -2944,16 +2720,12 @@ async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
 async def _wait_for_slot(slot: str, poll_sec: int):
     """Block until rack slot is free or ready. Raises RuntimeError on stop."""
     while not _farm["stopping"]:
-        try:
-            if os.path.exists(SLOTS_PATH):
-                with open(SLOTS_PATH) as f:
-                    data = json.load(f)
-                status = data.get("slots", {}).get(str(slot), {}).get("status", "free")
-                if status in ("free", "ready"):
-                    return
-                _log(f"⏳ Fach {slot} ist '{status}' — warte auf Freigabe…")
-        except Exception as e:
-            _log(f"⚠ Fach-Status-Prüfung: {e}")
+        data = _rack_data()
+        if data:
+            status = data.get("slots", {}).get(str(slot), {}).get("status", "free")
+            if status in ("free", "ready"):
+                return
+            _log(f"⏳ Fach {slot} ist '{status}' — warte auf Freigabe…")
         while _farm["paused"] and not _farm["stopping"]:
             await asyncio.sleep(0.5)
         if _farm["stopping"]:
@@ -3117,8 +2889,8 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 tag = job.get("tag") or ""
                 if tag.startswith("proj:"):
                     try:
-                        from app.routers.project import mark_item_printed
-                        mark_item_printed(tag[5:])
+                        from app.routers import project
+                        project.mark_item_printed(tag[5:])
                     except Exception as e:
                         logger.warning(f"project mark done failed: {e}")
                 used_g = await _job_filament_g(job)
@@ -3131,7 +2903,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 _farm["current_job_id"] = None
                 _log(f"✓ Fertig: {job['fileName']}")
                 await _notify(
-                    f"✅ *Printloom — Druck fertig*\n`{job['fileName']}`\nFach {job['slot']}"
+                    f"✅ Printloom — Druck fertig\n{job['fileName']}\nFach {job['slot']}"
                 )
 
             except _EjectRecovered as e:
@@ -3149,7 +2921,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 cur_slot = None
                 _farm["current_job_id"] = None
                 _farm["error"] = None
-                await _notify(f"➡️ *Printloom — weiter nach Druckfehler*\n`{job['fileName']}`\n"
+                await _notify(f"➡️ Printloom — weiter nach Druckfehler\n{job['fileName']}\n"
                               "Platte eingelagert, nächster Job startet.")
 
             except _MoveTimeout as e:
@@ -3164,7 +2936,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 _log(f"⏱ {msg} — Strategie: {action}")
                 _record_failure(msg)
                 _record_event("error", job.get("fileName", ""), msg[:70])
-                await _notify(f"⏱ *Printloom — Bewegung hängt*\n`{job['fileName']}`\n{msg}")
+                await _notify(f"⏱ Printloom — Bewegung hängt\n{job['fileName']}\n{msg}")
                 if action == "stop":
                     _farm["stopping"] = True
                     _farm["error"] = msg
@@ -3204,7 +2976,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 cur_slot = None
                 _farm["current_job_id"] = None
                 _farm["error"] = msg
-                await _notify(f"❌ *Printloom — Job fehlgeschlagen*\n`{job['fileName']}`\n{msg}")
+                await _notify(f"❌ Printloom — Job fehlgeschlagen\n{job['fileName']}\n{msg}")
                 # Continue loop — pick up next pending job
 
     except Exception as e:
@@ -3233,19 +3005,17 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
         # physische Platte (die liegt im Drucker). Wir loggen sie aber, damit der
         # Nutzer prüfen kann, falls der Stopp ausnahmsweise mitten im Einlagern kam.
         try:
-            if os.path.exists(SLOTS_PATH):
-                with open(SLOTS_PATH) as f:
-                    data = json.load(f)
-                freed = []
-                for key, slot_data in data.get("slots", {}).items():
-                    if slot_data.get("status") == "printing":
-                        slot_data["status"] = "free"
-                        slot_data["object_height_mm"] = None
-                        freed.append(key)
-                if freed:
-                    storage.write_json(SLOTS_PATH, data)
-                    _log(f"⚠ Reservierte Fächer beim Stopp freigegeben: {', '.join(freed)} "
-                         f"— falls dort doch eine Platte liegt, im Rack Manager prüfen")
+            freed = []
+            if rack_store.exists():
+                with rack_store.edit() as data:
+                    for key, slot_data in data.get("slots", {}).items():
+                        if slot_data.get("status") == "printing":
+                            slot_data["status"] = "free"
+                            slot_data["object_height_mm"] = None
+                            freed.append(key)
+            if freed:
+                _log(f"⚠ Reservierte Fächer beim Stopp freigegeben: {', '.join(freed)} "
+                     f"— falls dort doch eine Platte liegt, im Rack Manager prüfen")
         except Exception as e:
             logger.warning(f"slot cleanup on stop failed: {e}")
 
@@ -3361,11 +3131,22 @@ class QueuePayload(BaseModel):
 
 
 # ── Endpoints ────────────────────────────────────────────────
+def _assert_released() -> None:
+    """Nach einem Notaus startet nichts, bis „Betrieb fortsetzen" gedrückt wurde."""
+    from app.routers.control import assert_released
+    db = SessionLocal()
+    try:
+        assert_released(db)
+    finally:
+        db.close()
+
+
 @router.post("/start")
 async def start_farm(req: StartRequest):
     global _task
     if _farm["running"]:
         raise HTTPException(409, "Auto Farm läuft bereits")
+    _assert_released()
 
     # Validate sequences BEFORE touching farm state
     seq_data = _read_config(SEQ_PATH, {"seq_new": [], "seq_next": []})
@@ -3450,15 +3231,13 @@ async def enqueue_job(job: EnqueueRequest):
         if f and os.path.exists(f.file_path) and f.file_type in (".3mf", ".gcode"):
             # Plattengenau: Multi-Plate-Jobs bekommen die Höhe IHRER Platte,
             # nicht die der ersten (falsche Fach-Reservierung sonst).
-            result = analyze_3mf_height(f.file_path, job.plate) if f.file_type == ".3mf" else analyze_gcode_height(f.file_path)
-            lc = result.get("layer_count", 0)
-            lh = result.get("layer_height_mm", 0.0)
-            mz = result.get("max_z_mm", 0.0)
-            margin = 1.0 + float(_rack_load().get("height_margin_pct", 15.0)) / 100.0
-            if lc > 0 and lh > 0:
-                obj_h, layer_h = round(lc * lh * margin, 1), lh
-            elif mz > 0:
-                obj_h = round(mz * margin, 1)
+            result = await asyncio.get_running_loop().run_in_executor(
+                None, print_file.object_height, f.file_path, f.file_type, job.plate,
+                rack_store.load().get("height_margin_pct", 15.0))
+            if result["computed_height_mm"] > 0:
+                obj_h = result["computed_height_mm"]
+            if result.get("layer_count", 0) > 0 and result.get("layer_height_mm", 0) > 0:
+                layer_h = result["layer_height_mm"]
     except Exception as e:
         logger.warning(f"enqueue height analysis failed for file {job.fileId}: {e}")
 
@@ -3589,7 +3368,7 @@ def _ws_drop(ws):
         except Exception:
             pass
     try:
-        asyncio.get_event_loop().create_task(_close())
+        asyncio.get_running_loop().create_task(_close())
     except Exception:
         pass
 
@@ -3683,77 +3462,6 @@ async def force_reset():
     return {"success": True}
 
 
-_test_task: Optional[asyncio.Task] = None
-_test_running = False
-_test_state   = {"step_label": "", "step_idx": 0, "step_total": 0}
-
-async def _run_test_cycle():
-    global _test_running, _test_state
-    _test_running = True
-    _log("🧪 Test-Phase gestartet…")
-    try:
-        seq_data = _read_config(SEQ_PATH, {"seq_new": []})
-        all_steps = seq_data.get("seq_new", [])
-        # Only run executable steps (skip wait_print, send_file, etc.)
-        steps = [s for s in all_steps if s.get("type") in ("macro", "klipper_gcode", "delay")]
-        stack_rack, stack_slot = _stack_vars()
-        _test_state["step_total"] = len(steps)
-        for idx, step in enumerate(steps):
-            if not _test_running:
-                break
-            label = step.get("label") or step.get("value", "")
-            _test_state["step_idx"]   = idx
-            _test_state["step_label"] = label
-            t   = step.get("type", "")
-            val = (step.get("value") or "").replace(
-                "{rack}", "1").replace("{slot}", "1").replace(
-                "{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot)
-            if t in ("macro", "klipper_gcode"):
-                _log(f"🧪 ▶ {label}")
-                try:
-                    await _do_macro(val)
-                except Exception as e:
-                    _log(f"🧪 ⚠ {val}: {e}")
-            elif t == "delay":
-                secs = int(step.get("seconds", 0))
-                _log(f"🧪 ⏱ {secs}s…")
-                for _ in range(secs):
-                    if not _test_running:
-                        break
-                    await asyncio.sleep(1)
-        _log("🧪 Test-Phase abgeschlossen")
-    except Exception as e:
-        _log(f"🧪 Fehler: {e}")
-    finally:
-        _test_running = False
-        _test_state["step_label"] = ""
-
-
-@router.post("/test-cycle")
-async def start_test_cycle():
-    global _test_task, _test_running
-    if _farm["running"]:
-        raise HTTPException(400, "Auto Farm läuft — Test-Phase nicht möglich")
-    if _test_running:
-        raise HTTPException(409, "Test-Phase läuft bereits")
-    _test_task = asyncio.create_task(_run_test_cycle())
-    return {"success": True}
-
-
-@router.post("/test-cycle/stop")
-async def stop_test_cycle():
-    global _test_running, _test_task
-    _test_running = False
-    if _test_task and not _test_task.done():
-        _test_task.cancel()
-    return {"success": True}
-
-
-@router.get("/test-cycle/status")
-async def get_test_cycle_status():
-    return {**_test_state, "running": _test_running}
-
-
 # ── Stresstest: die Magazine leerräumen ──────────────────────────────────────
 # Platte aus Magazin 1 holen, in ein GEWÜRFELTES freies Fach legen, wiederholen,
 # bis alle Magazine leer sind. Die zufälligen Ziele ergeben lauter unterschiedlich
@@ -3774,19 +3482,20 @@ def _magazine_take(rack: int) -> None:
     """Zähler GENAU dieses Magazins um eins senken. Bewusst nicht
     _decrement_magazine(): das nimmt „das erste Regal mit Bestand" und würde beim
     Stresstest von der geplanten Reihenfolge abweichen können."""
+    if not rack_store.exists():
+        return
+    rest = None
     try:
-        if not os.path.exists(SLOTS_PATH):
-            return
-        with open(SLOTS_PATH) as f:
-            d = json.load(f)
-        counts = d.get("magazine_counts") or []
-        i = int(rack) - 1
-        if 0 <= i < len(counts):
-            d["magazine_counts"][i] = max(0, int(counts[i]) - 1)
-            storage.write_json(SLOTS_PATH, d)
-            _log(f"📦 Magazin R{rack}: {d['magazine_counts'][i]} Platten verbleibend")
+        with rack_store.edit() as d:
+            counts = d.get("magazine_counts") or []
+            i = int(rack) - 1
+            if 0 <= i < len(counts):
+                counts[i] = max(0, int(counts[i]) - 1)
+                rest = counts[i]
     except Exception as e:
         logger.warning(f"stress magazine take failed: {e}")
+    if rest is not None:
+        _log(f"📦 Magazin R{rack}: {rest} Platten verbleibend")
 
 
 def _stress_bambu(device_id=None) -> Device:
@@ -3948,12 +3657,11 @@ async def start_stress_test(body: Optional[StressStartBody] = None):
     body = body or StressStartBody()
     if _farm["running"]:
         raise HTTPException(400, "Auto Farm läuft — Stresstest nicht möglich")
-    if _test_running:
-        raise HTTPException(409, "Test-Phase läuft bereits")
     if _stress["running"]:
         raise HTTPException(409, "Stresstest läuft bereits")
     # Gerät VOR dem Plan holen: fehlt der Drucker, soll der Test gar nicht erst
     # starten statt mitten im Lauf auf halber Strecke stehenzubleiben.
+    _assert_released()
     device = _stress_bambu(body.device_id) if body.include_printer else None
     plan = _stress_plan(include_printer=body.include_printer)
     if not plan["plate_count"]:
@@ -3996,12 +3704,12 @@ async def pause_farm():
 def _printer_pool() -> list:
     """Drucker aus dem Layout mit allem, was die Verteilung braucht: Auslastung,
     freie Fächer in den zugeordneten Regalen, Bauraumhöhe aus dem Modell."""
+    from app.services import farm_layout
     try:
-        from app.routers.layout import load_layout
-        from app.services import farm_layout, printer_models
-    except Exception:
+        lay = farm_layout.load()
+    except Exception as e:
+        logger.warning(f"Farm-Layout nicht ableitbar: {e}")
         return []
-    lay = load_layout()
     if not lay.get("modules"):
         return []
 
@@ -4184,9 +3892,7 @@ async def dry_run(payload: dict = None):
         out = []
         for i, step in enumerate(_filter_disabled(steps or [])):
             t = step.get("type", "")
-            raw = (step.get("value") or "")
-            val = (raw.replace("{rack}", rack_num).replace("{slot}", slot_num)
-                      .replace("{stack_rack}", stack_rack).replace("{stack_slot}", stack_slot))
+            val = _subst(step.get("value"), rack_num, slot_num, stack_rack, stack_slot)
             # target_rack/target_slot getrennt mitliefern: die Oberfläche baut daraus
             # den Text in der eingestellten Sprache. `target`/`note` bleiben als
             # fertiger deutscher Text für Logs und ältere Clients.
@@ -4285,7 +3991,7 @@ async def save_sequences(payload: SequencesPayload):
 
 @router.get("/settings")
 async def get_settings():
-    s = _read_config(SETTINGS_PATH, _DEFAULT_SETTINGS)
+    s = dict(_read_config(SETTINGS_PATH, _DEFAULT_SETTINGS))
     # Immer einen normalisierten 7-Tage-Plan mitliefern (migriert alte Configs),
     # damit das Frontend nicht selbst migrieren muss.
     s["operating_schedule"] = _operating_schedule(s)
@@ -4347,17 +4053,6 @@ async def download_log():
     return FileResponse(LOG_PATH, filename="printloom_log.txt", media_type="text/plain")
 
 
-@router.delete("/log/file")
-async def clear_log_file():
-    """Delete the persisted log file."""
-    try:
-        if os.path.exists(LOG_PATH):
-            os.remove(LOG_PATH)
-    except Exception:
-        pass
-    return {"success": True}
-
-
 @router.get("/file_filaments/{file_id}")
 async def get_file_filaments(file_id: int, plate: Optional[int] = None):
     """Return the filament types and colors a print USES — immer aus der Datei
@@ -4369,9 +4064,9 @@ async def get_file_filaments(file_id: int, plate: Optional[int] = None):
             raise HTTPException(404, "Datei nicht gefunden")
         if not os.path.exists(f.file_path):
             raise HTTPException(404, "Datei nicht auf Disk")
-        types, colors = _read_filament_info(f.file_path, f.file_type, plate)
+        types, colors = print_file.read_filament_info(f.file_path, f.file_type, plate)
         return {"filaments": [{"type": t, "color": c} for t, c in zip(types, colors)],
-                "ams_map": _file_ams_map(file_id)}
+                "ams_map": ams_match.file_map(file_id)}
     finally:
         db.close()
 
@@ -4384,8 +4079,8 @@ class FileAmsPayload(BaseModel):
 async def set_file_ams(file_id: int, payload: FileAmsPayload):
     """Pro Datei manuell gewählte AMS-Slots speichern (im Datei-Browser). Wird beim
     Druck verwendet; leer = wieder automatisches Matching (material-/farbgenau)."""
-    _save_file_ams_map(file_id, payload.ams_map)
-    return {"success": True, "ams_map": _file_ams_map(file_id)}
+    ams_match.save_file_map(file_id, payload.ams_map)
+    return {"success": True, "ams_map": ams_match.file_map(file_id)}
 
 
 @router.get("/stats")

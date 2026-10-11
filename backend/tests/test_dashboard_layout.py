@@ -55,11 +55,11 @@ def test_die_farm_ueberschreibt_die_startseite_nicht(client):
 
 
 def test_zuruecksetzen_trifft_nur_die_eine_ansicht(client):
+    """Die Oberfläche setzt zurück, indem sie die Standard-Anordnung speichert."""
     put(client, FARM, "farm")
     put(client, HOME, "home")
-    assert client.delete("/api/system/dashboard-layout",
-                         params={"view": "home"}).status_code == 200
-    assert get(client, "home") == {}
+    put(client, {"layouts": {}, "hidden": []}, "home")
+    assert get(client, "home")["layouts"] == {}
     assert get(client, "farm")["layout"] == FARM["layout"]
 
 

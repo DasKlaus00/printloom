@@ -36,17 +36,14 @@ def ablaeufe(monkeypatch, tmp_path):
     monkeypatch.setitem(af._farm, "stopping", False)
     monkeypatch.setitem(af._farm, "paused", True)
     monkeypatch.setitem(af._stress, "running", True)
-    monkeypatch.setattr(af, "_test_running", True)
     monkeypatch.setattr(af, "_stress_task", None)
-    monkeypatch.setattr(af, "_test_task", None)
 
 
 def test_alle_ablaeufe_werden_angehalten(ablaeufe):
     angehalten = af.halt_all("Notaus")
-    assert set(angehalten) == {"farm", "stress_test", "test_cycle"}
+    assert set(angehalten) == {"farm", "stress_test"}
     assert af._farm["stopping"] is True
     assert af._stress["running"] is False
-    assert af._test_running is False
 
 
 def test_eine_pausierte_farm_haengt_nicht_in_der_pause_fest(ablaeufe):
@@ -61,9 +58,7 @@ def test_ohne_laufenden_ablauf_passiert_nichts(monkeypatch, tmp_path):
     monkeypatch.setitem(af._farm, "running", False)
     monkeypatch.setitem(af._farm, "stopping", False)
     monkeypatch.setitem(af._stress, "running", False)
-    monkeypatch.setattr(af, "_test_running", False)
     monkeypatch.setattr(af, "_stress_task", None)
-    monkeypatch.setattr(af, "_test_task", None)
     assert af.halt_all("Notaus") == []
     assert af._farm["stopping"] is False
 

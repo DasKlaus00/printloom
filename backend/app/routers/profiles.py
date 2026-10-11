@@ -2,7 +2,7 @@
 
 See app/services/profiles.py for the safety model (import never runs G-code).
 """
-from typing import Optional, List
+from typing import List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 

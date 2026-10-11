@@ -23,7 +23,6 @@ from typing import Iterator, Optional
 
 from app.paths import resolve_ffmpeg
 from app.services import camera_hub
-from app.services.camera_hub import executor  # re-export: geteilter Kamera-Pool
 
 logger = logging.getLogger(__name__)
 

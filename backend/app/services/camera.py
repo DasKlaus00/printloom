@@ -19,10 +19,12 @@ import socket
 import time
 import logging
 
-from app.services import rtsp_camera, bambu_camera, printer_models
-from app.services.camera_hub import executor  # noqa: F401  (re-export für Aufrufer)
+from app.services import rtsp_camera, bambu_camera, camera_hub, printer_models
 
 logger = logging.getLogger(__name__)
+
+# Geteilter Kamera-Pool — Aufrufer reichen Einzelbilder hierüber aus dem Event-Loop.
+executor = camera_hub.executor
 
 RTSP = "rtsp"
 BAMBU = "bambu"

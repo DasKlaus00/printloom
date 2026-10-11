@@ -21,6 +21,7 @@ class FakeKlipper:
     device_type = None
     ip_address = "127.0.0.1"
     port = 7125
+    is_active = True
 
 
 class FakeQuery:

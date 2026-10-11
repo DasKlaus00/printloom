@@ -23,15 +23,20 @@ Aufbau
 
 `home` ist der feste Anker (Endschalter). Module werden nach X sortiert gehalten.
 
-Sperre
-──────
-Falsche X-Werte fahren den Arm gegen die Mechanik. Das Layout ist deshalb
-standardmäßig GESPERRT (`locked`), und bei laufender Farm lässt es sich gar nicht
-erst entsperren (das entscheidet der Aufrufer, siehe routers/layout.py).
+Seit v1.1.8 hat das Layout keine eigenen X-Werte mehr — es wird bei jedem Zugriff
+aus der Drucker-Geometrie abgeleitet (`load`). Gespeichert ist nur noch, was die
+Geometrie nicht kennt: welches Gerät an einem Drucker-Modul hängt (aus der Zeit, als
+es dafür eine eigene Seite gab). Seit v1.1.35 gibt es auch die Schnittstelle zum
+Bearbeiten nicht mehr; eingestellt wird alles im Drucker-Tab.
 """
 from __future__ import annotations
 
+from app.paths import db_path
+from app.services import storage
 from app.services.geometry_check import problem
+
+LAYOUT_PATH = db_path("farm_layout.json")
+GEOMETRY_PATH = db_path("ottoeject_geometry.json")
 
 TYPES = ("printer", "rack", "home")
 
@@ -146,6 +151,30 @@ def sync_from_geometry(stored: dict, geometry: dict, rack_cfg: dict = None,
             m["printer"] = "printer-1" if "printer-1" in ids else None
     fresh["locked"] = bool((stored or {}).get("locked", True))
     return fresh
+
+
+def _bambu_devices() -> list:
+    """Bambu-Geräte für die Drucker-Module (eigene Sitzung: läuft auch im Farm-Zyklus)."""
+    from app.db.database import SessionLocal
+    from app.models.models import Device, PrinterType
+    db = SessionLocal()
+    try:
+        return [{"id": d.id, "name": d.name, "model": d.model}
+                for d in db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB).all()]
+    except Exception:
+        return []
+    finally:
+        db.close()
+
+
+def load() -> dict:
+    """Aktuelles Layout — IMMER frisch aus der Geometrie abgeleitet, damit es nie von
+    den Werten im Drucker-Tab abweichen kann."""
+    from app.services import ottoeject_motion as motion
+    from app.services import rack_store
+    geometry = motion.merge_defaults(storage.read_json(GEOMETRY_PATH, None))
+    return sync_from_geometry(storage.read_json(LAYOUT_PATH, None), geometry,
+                              rack_store.load(), _bambu_devices())
 
 
 # ── Normalisieren / Prüfen ───────────────────────────────────────────────────

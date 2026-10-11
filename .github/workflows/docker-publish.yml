@@ -14,8 +14,6 @@ env:
 jobs:
   # Erst testen, dann bauen. Vorher liefen beide Workflows unabhängig: bei v1.1.26
   # waren die Tests rot, das Image wurde trotzdem gebaut und stand zum Update bereit.
-  # Kostet je Push einmal die Testlaufzeit (die Tests laufen dadurch doppelt —
-  # einmal hier, einmal als eigener Workflow mit Status am Commit).
   tests:
     uses: ./.github/workflows/tests.yml
 

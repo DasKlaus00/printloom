@@ -1,19 +1,35 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.db.database import get_db
-from app.models.models import Device, PrinterType
-from app.schemas.schemas import MacroExecutionRequest, MacroExecutionResponse
-from datetime import datetime, timezone
+"""OTTOeject steuern: Notaus, Makros, G-code, Einmessen, Geometrie.
+
+Alles, was den Arm bewegt, geht über `_klipper(db, bewegt=True)` — dort sitzt die
+Notaus-Sperre. Bis v1.1.34 beachtete nur der Makro-Knopf einen ausgelösten Notaus;
+Joggen, G-code und die Drucker-Tab-Bewegungen fuhren trotzdem los.
+"""
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 import httpx
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.db.database import get_db
+from app.models.models import Device, PrinterType
+from app.paths import db_path
+from app.schemas.schemas import MacroExecutionRequest, MacroExecutionResponse
+from app.services import geometry_check as _geometry_check
+from app.services import ottoeject_motion as _motion
+from app.services import rack_store
+from app.services import storage as _storage
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Macro names for Klipper
+GEOMETRY_PATH = db_path("ottoeject_geometry.json")
+
+NOTAUS_AKTIV = ("Notaus aktiv — erst „Betrieb fortsetzen“ (Steuerung), dann wieder bewegen.")
+
+# Geräte-Makros, die der Steuerungs-Tab direkt auslösen darf.
 VALID_MACROS = {
     "GRAB_FROM_SLOT_1", "GRAB_FROM_SLOT_2", "GRAB_FROM_SLOT_3",
     "GRAB_FROM_SLOT_4", "GRAB_FROM_SLOT_5", "GRAB_FROM_SLOT_6",
@@ -24,116 +40,127 @@ VALID_MACROS = {
     "OTTOEJECT_HOME", "PARK_OTTOEJECT", "TEST_STORAGE_RACK_CONFIGURATION"
 }
 
+
+# ── Klipper / Moonraker ──────────────────────────────────────────────────────
+def _klipper(db: Session, bewegt: bool = False) -> Device:
+    """Der OTTOeject. `bewegt=True` für alles, was den Arm fahren lässt: dann ist
+    ein ausgelöster Notaus ein Grund abzulehnen (409) — auch wenn Klipper selbst
+    den Notaus gar nicht bestätigt hat."""
+    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
+    if not klipper:
+        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
+    if bewegt and not klipper.is_active:
+        raise HTTPException(409, NOTAUS_AKTIV)
+    return klipper
+
+
+def _base(klipper: Device) -> str:
+    return f"http://{klipper.ip_address}:{klipper.port}"
+
+
+async def _moonraker_get(klipper: Device, path: str, timeout: float = 5.0):
+    """GET an Moonraker → Response. Nicht erreichbar / Fehlerstatus → 502 mit Grund."""
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.get(f"{_base(klipper)}{path}")
+    except Exception as e:
+        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
+    if r.status_code == 404:
+        raise HTTPException(404, "Nicht gefunden")
+    if r.status_code != 200:
+        raise HTTPException(502, f"Moonraker: {r.text}")
+    return r
+
+
+async def _toolhead(klipper: Device) -> dict:
+    """Klipper-Objekt `toolhead` (Position, referenzierte Achsen, Achsgrenzen)."""
+    r = await _moonraker_get(klipper, "/printer/objects/query?toolhead")
+    try:
+        return (r.json().get("result", {}).get("status", {}) or {}).get("toolhead", {}) or {}
+    except Exception as e:
+        raise HTTPException(502, f"Unerwartete Antwort von Moonraker: {e}")
+
+
+# Moonraker's /printer/gcode/script blocks until the G-code has FULLY executed. For a
+# manual trigger/test that is fragile: a real grab/eject/place move runs 20-60 s — longer
+# than any sane HTTP timeout, and longer than a reverse proxy (or the vite dev proxy) in
+# front of Printloom will hold the connection open. The socket gets reset before a result
+# arrives → the browser shows "Network Error". For a trigger we only need Klipper to ACCEPT
+# and START the move; once it is running, that is success. So we wait a short window: the
+# move finishes fast → report done; it is still moving when the window elapses → report
+# started (it keeps running on the machine). Only a fast rejection (unknown macro, not
+# homed) or an unreachable host is a real error.
+_MOONRAKER_TRIGGER_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+
+
+def _force_absolute(script: str) -> str:
+    """G90 (absolute Positionierung) VOR jedem Klipper-Script erzwingen. Der OTTOeject
+    kann nach Homing/manuellem Jog relativ (G91) stehen; auch die Geräte-Macros
+    (EJECT_FROM…/GRAB_FROM_RACK…) setzen selbst kein G90 → ihre internen G1-Moves liefen
+    dann als Offset ab Ist-Position und fahren aus dem Bereich. Idempotent (kein Doppel-G90,
+    falls das Script — z. B. aus build_op — bereits mit G90 beginnt)."""
+    s = (script or "").lstrip()
+    return script if s.upper().startswith("G90") else "G90\n" + script
+
+
+async def _fire_moonraker_script(url: str, script: str) -> bool:
+    """POST a G-code script to Moonraker and wait briefly. Returns True if the move is
+    still running when the wait window elapsed, False if it already finished. Raises
+    HTTPException on a real failure (Klipper rejected it, or the host is unreachable)."""
+    script = _force_absolute(script)
+    try:
+        async with httpx.AsyncClient(timeout=_MOONRAKER_TRIGGER_TIMEOUT) as client:
+            r = await client.post(url, json={"script": script})
+        if r.status_code != 200:
+            raise HTTPException(502, f"Moonraker: {r.text}")
+        return False
+    except httpx.ReadTimeout:
+        # Connected + command sent, but the move is still running → treat as started.
+        return True
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
+
+
+async def _send_script(db: Session, script: str) -> tuple:
+    """Script an den OTTOeject (Notaus-Sperre, RACK=-Spiegelung) → (gesendet, läuft)."""
+    klipper = _klipper(db, bewegt=True)
+    script = _mirror_for_device(script)
+    running = await _fire_moonraker_script(f"{_base(klipper)}/printer/gcode/script", script)
+    return script, running
+
+
+# ── Makros ───────────────────────────────────────────────────────────────────
 @router.post("/macro", response_model=MacroExecutionResponse)
 async def execute_macro(request: MacroExecutionRequest, db: Session = Depends(get_db)):
-    """Execute a Klipper macro via Moonraker API"""
-    
-    # Validate macro name
+    """Ein Geräte-Makro ausführen und auf das Ende warten (Homing, Parken …)."""
     if request.macro_name not in VALID_MACROS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid macro. Valid macros: {', '.join(sorted(VALID_MACROS))}"
-        )
-    
-    # Get Klipper device
-    klipper_device = db.query(Device).filter(
-        Device.device_type == PrinterType.KLIPPER
-    ).first()
-    
-    if not klipper_device:
-        raise HTTPException(
-            status_code=400,
-            detail="Klipper device not configured"
-        )
-    
-    if not klipper_device.is_active:
-        raise HTTPException(
-            status_code=400,
-            detail="Klipper device is not active"
-        )
-    
-    try:
-        # Execute macro via Moonraker API
-        url = f"http://{klipper_device.ip_address}:{klipper_device.port}/printer/gcode/script"
-        
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                url,
-                json={"script": request.macro_name}
-            )
-        
-        if response.status_code == 200:
-            return MacroExecutionResponse(
-                success=True,
-                macro_name=request.macro_name,
-                message="Macro executed successfully",
-                timestamp=datetime.now(timezone.utc)
-            )
-        else:
-            return MacroExecutionResponse(
-                success=False,
-                macro_name=request.macro_name,
-                message=f"Macro execution failed: {response.text}",
-                timestamp=datetime.now(timezone.utc)
-            )
-    
-    except Exception as e:
-        return MacroExecutionResponse(
-            success=False,
-            macro_name=request.macro_name,
-            message=f"Error executing macro: {str(e)}",
-            timestamp=datetime.now(timezone.utc)
-        )
+        raise HTTPException(400, f"Invalid macro. Valid macros: {', '.join(sorted(VALID_MACROS))}")
+    klipper = _klipper(db, bewegt=True)
 
-@router.get("/macros")
-async def list_macros():
-    """List available macros"""
-    return {
-        "macros": sorted(VALID_MACROS),
-        "total": len(VALID_MACROS)
-    }
+    def antwort(ok: bool, msg: str):
+        return MacroExecutionResponse(success=ok, macro_name=request.macro_name,
+                                      message=msg, timestamp=datetime.now(timezone.utc))
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(f"{_base(klipper)}/printer/gcode/script",
+                                         json={"script": request.macro_name})
+    except Exception as e:
+        return antwort(False, f"Error executing macro: {e}")
+    if response.status_code == 200:
+        return antwort(True, "Macro executed successfully")
+    return antwort(False, f"Macro execution failed: {response.text}")
 
 
 @router.get("/app-ops")
 async def list_app_ops():
     """Printloom-eigene Operationen (Drucker-Tab-Geometrie → G-code), die in Sequenzen
     als app_op-Schritt frei nutzbar sind — wie Geräte-Macros, aber immer App-G-code."""
-    from app.services.ottoeject_motion import APP_OPS
-    return {"ops": APP_OPS}
+    return {"ops": _motion.APP_OPS}
 
-@router.get("/macro/{macro_name}")
-async def get_macro_info(macro_name: str):
-    """Get information about a specific macro"""
-    if macro_name not in VALID_MACROS:
-        raise HTTPException(status_code=404, detail="Macro not found")
-    
-    macro_descriptions = {
-        "GRAB_FROM_SLOT_1": "Grab part from slot 1",
-        "GRAB_FROM_SLOT_2": "Grab part from slot 2",
-        "GRAB_FROM_SLOT_3": "Grab part from slot 3",
-        "GRAB_FROM_SLOT_4": "Grab part from slot 4",
-        "GRAB_FROM_SLOT_5": "Grab part from slot 5",
-        "GRAB_FROM_SLOT_6": "Grab part from slot 6",
-        "STORE_TO_SLOT_1": "Store part to slot 1",
-        "STORE_TO_SLOT_2": "Store part to slot 2",
-        "STORE_TO_SLOT_3": "Store part to slot 3",
-        "STORE_TO_SLOT_4": "Store part to slot 4",
-        "STORE_TO_SLOT_5": "Store part to slot 5",
-        "STORE_TO_SLOT_6": "Store part to slot 6",
-        "OPEN_DOOR_BAMBU_X_ONE_C": "Open Bambu Lab X1C door",
-        "CLOSE_DOOR_BAMBU_X_ONE_C": "Close Bambu Lab X1C door",
-        "EJECT_FROM_BAMBULAB_X_ONE_C": "Eject plate from Bambu Lab X1C",
-        "LOAD_ONTO_BAMBULAB_X_ONE_C": "Load plate onto Bambu Lab X1C",
-        "OTTOEJECT_HOME": "Home OTTOeject system",
-        "PARK_OTTOEJECT": "Park OTTOeject in safe position",
-        "TEST_STORAGE_RACK_CONFIGURATION": "Test storage rack configuration"
-    }
-    
-    return {
-        "macro_name": macro_name,
-        "description": macro_descriptions.get(macro_name, "No description available")
-    }
 
+# ── Notaus ───────────────────────────────────────────────────────────────────
 PRINTER_PAUSE_TIMEOUT_S = 8.0   # je Drucker — ein toter Drucker darf den Notaus nicht aufhalten
 
 
@@ -151,7 +178,7 @@ async def _pause_printers(db: Session) -> list:
     fortsetzen, ein abgebrochener Druck nicht. Bei einem Drucker, der gerade nicht
     druckt, ist die Pause wirkungslos und schadet nicht."""
     from app.services import bambu_manager
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     drucker = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB).all()
 
     async def eins(d):
@@ -165,6 +192,19 @@ async def _pause_printers(db: Session) -> list:
 
     ergebnisse = await asyncio.gather(*(eins(d) for d in drucker))
     return [{"name": d.name, "ok": bool(r)} for d, r in zip(drucker, ergebnisse)]
+
+
+def notaus_aktiv(db: Session) -> bool:
+    """Steht ein Notaus an? Merkmal: gesperrte Geräte (bis „Betrieb fortsetzen")."""
+    geraete = db.query(Device).all()
+    return bool(geraete) and any(not d.is_active for d in geraete)
+
+
+def assert_released(db: Session) -> None:
+    """Für Abläufe, die den Arm oder einen Drucker in Gang setzen (Farm, Stresstest,
+    Direktdruck): bei aktivem Notaus ablehnen."""
+    if notaus_aktiv(db):
+        raise HTTPException(409, NOTAUS_AKTIV)
 
 
 @router.post("/emergency-stop")
@@ -208,7 +248,7 @@ async def emergency_stop(db: Session = Depends(get_db)):
         logger.warning(f"Notaus: Drucker nicht pausiert: {e}")
         drucker = []
 
-    # 4. Geräte sperren — hält manuelle Makros bis „Fortsetzen" zurück.
+    # 4. Geräte sperren — hält jede Bewegung bis „Fortsetzen" zurück.
     try:
         for device in db.query(Device).all():
             device.is_active = False
@@ -267,281 +307,87 @@ async def resume_operations(db: Session = Depends(get_db)):
 async def emergency_state(db: Session = Depends(get_db)):
     """Ist ein Notaus aktiv? Steht in der Datenbank — sonst wüsste die Oberfläche nach
     dem Neuladen der Seite nichts davon, und „Fortsetzen" bliebe ausgegraut."""
-    geraete = db.query(Device).all()
-    return {"active": bool(geraete) and any(not d.is_active for d in geraete)}
-
-# Moonraker's /printer/gcode/script blocks until the G-code has FULLY executed. For a
-# manual trigger/test that is fragile: a real grab/eject/place move runs 20-60 s — longer
-# than any sane HTTP timeout, and longer than a reverse proxy (or the vite dev proxy) in
-# front of Printloom will hold the connection open. The socket gets reset before a result
-# arrives → the browser shows "Network Error". For a trigger we only need Klipper to ACCEPT
-# and START the move; once it is running, that is success. So we wait a short window: the
-# move finishes fast → report done; it is still moving when the window elapses → report
-# started (it keeps running on the machine). Only a fast rejection (unknown macro, not
-# homed) or an unreachable host is a real error.
-_MOONRAKER_TRIGGER_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+    return {"active": notaus_aktiv(db)}
 
 
-def _force_absolute(script: str) -> str:
-    """G90 (absolute Positionierung) VOR jedem Klipper-Script erzwingen. Der OTTOeject
-    kann nach Homing/manuellem Jog relativ (G91) stehen; auch die Geräte-Macros
-    (EJECT_FROM…/GRAB_FROM_RACK…) setzen selbst kein G90 → ihre internen G1-Moves liefen
-    dann als Offset ab Ist-Position und fahren aus dem Bereich. Idempotent (kein Doppel-G90,
-    falls das Script — z. B. aus build_op — bereits mit G90 beginnt)."""
-    s = (script or "").lstrip()
-    return script if s.upper().startswith("G90") else "G90\n" + script
-
-
-async def _fire_moonraker_script(url: str, script: str) -> bool:
-    """POST a G-code script to Moonraker and wait briefly. Returns True if the move is
-    still running when the wait window elapsed, False if it already finished. Raises
-    HTTPException on a real failure (Klipper rejected it, or the host is unreachable)."""
-    script = _force_absolute(script)
-    try:
-        async with httpx.AsyncClient(timeout=_MOONRAKER_TRIGGER_TIMEOUT) as client:
-            r = await client.post(url, json={"script": script})
-        if r.status_code != 200:
-            raise HTTPException(502, f"Moonraker: {r.text}")
-        return False
-    except httpx.ReadTimeout:
-        # Connected + command sent, but the move is still running → treat as started.
-        return True
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
-
-
+# ── Klipper direkt ───────────────────────────────────────────────────────────
 @router.post("/klipper/gcode")
 async def send_klipper_gcode(request: dict, db: Session = Depends(get_db)):
     """Send raw GCode to Klipper via Moonraker (Z move, jog, single-step test). Returns as
     soon as the move has started — never holds the request open for the whole physical
-    motion (see _fire_moonraker_script)."""
+    motion (see _fire_moonraker_script). RACK=-Nummern werden in die Geräte-Zählung
+    gespiegelt (Printloom R1 = am Drucker, Geräte-Macro Regal 1 = am Homing-Punkt)."""
     gcode = request.get("gcode", "").strip()
     if not gcode:
         raise HTTPException(400, "Kein GCode angegeben")
-
-    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
-    if not klipper:
-        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
-
-    # RACK=-Nummern in die Geräte-Zählung spiegeln (Printloom R1 = am Drucker,
-    # Geräte-Macro Regal 1 = am Homing-Punkt rechts) — siehe mirror_rack_params.
-    gcode = _mirror_for_device(gcode)
-
-    url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
-    running = await _fire_moonraker_script(url, gcode)
+    gcode, running = await _send_script(db, gcode)
     return {"success": True, "gcode": gcode, "running": running}
 
 
 @router.get("/klipper/position")
 async def get_klipper_position(db: Session = Depends(get_db)):
-    """Query current toolhead position from Moonraker."""
-    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
-    if not klipper:
-        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
-
-    url = f"http://{klipper.ip_address}:{klipper.port}/printer/objects/query?toolhead"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(url)
-        if r.status_code != 200:
-            raise HTTPException(502, f"Moonraker: {r.text}")
-        data = r.json()
-        th = data.get("result", {}).get("status", {}).get("toolhead", {})
-        pos = th.get("position", [0, 0, 0, 0])
-        return {
-            "success": True,
-            "x": round(pos[0], 2),
-            "y": round(pos[1], 2),
-            "z": round(pos[2], 2),
-            "homed_axes": th.get("homed_axes", ""),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
-
-
-@router.get("/ottoeject/variables")
-async def get_ottoeject_variables(db: Session = Depends(get_db)):
-    """Read _GLOBAL_VARS from Klipper/Moonraker (storage calibration)."""
-    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
-    if not klipper:
-        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
-
-    url = (
-        f"http://{klipper.ip_address}:{klipper.port}"
-        "/printer/objects/query?gcode_macro%20_GLOBAL_VARS"
-    )
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(url)
-        if r.status_code != 200:
-            raise HTTPException(502, f"Moonraker Fehler: {r.text}")
-        data = r.json()
-        variables = (
-            data.get("result", {})
-                .get("status", {})
-                .get("gcode_macro _GLOBAL_VARS", {})
-        )
-        return {"success": True, "variables": variables}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
-
-
-_ALLOWED_VARS = {
-    "global_x_unclamp",
-    "global_y_engage",
-    "global_first_z_flat",
-    "global_slot_gap",
-    "global_y_pullback_limit",
-}
-
-
-@router.post("/ottoeject/variables")
-async def set_ottoeject_variables(variables: dict, db: Session = Depends(get_db)):
-    """Set _GLOBAL_VARS at runtime via SET_GCODE_VARIABLE (resets on Klipper restart)."""
-    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
-    if not klipper:
-        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
-
-    lines = [
-        f"SET_GCODE_VARIABLE MACRO=_GLOBAL_VARS VARIABLE={k} VALUE={float(v)}"
-        for k, v in variables.items()
-        if k in _ALLOWED_VARS
-    ]
-    if not lines:
-        raise HTTPException(400, "Keine gültigen Variablen übergeben")
-
-    url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(url, json={"script": "\n".join(lines)})
-        if r.status_code != 200:
-            raise HTTPException(502, f"Moonraker Fehler: {r.text}")
-        return {"success": True, "message": "Variablen aktualisiert", "applied": list(variables.keys())}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
+    """Aktuelle Werkzeugposition aus Moonraker."""
+    th = await _toolhead(_klipper(db))
+    pos = th.get("position", [0, 0, 0, 0])
+    return {"success": True, "x": round(pos[0], 2), "y": round(pos[1], 2),
+            "z": round(pos[2], 2), "homed_axes": th.get("homed_axes", "")}
 
 
 @router.get("/klipper/info")
 async def get_klipper_info(db: Session = Depends(get_db)):
-    """Query Klipper firmware state via Moonraker /printer/info."""
-    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
-    if not klipper:
-        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
-
-    url = f"http://{klipper.ip_address}:{klipper.port}/printer/info"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(url)
-        if r.status_code != 200:
-            raise HTTPException(502, f"Moonraker: {r.text}")
-        data = r.json().get("result", {})
-        state = data.get("state", "unknown")
-        return {
-            "success": True,
-            "state": state,
-            "state_message": data.get("state_message", ""),
-            "ready": state == "ready",
-            "software_version": data.get("software_version", ""),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
+    """Zustand der Klipper-Firmware (Moonraker /printer/info)."""
+    r = await _moonraker_get(_klipper(db), "/printer/info")
+    data = r.json().get("result", {})
+    state = data.get("state", "unknown")
+    return {"success": True, "state": state, "state_message": data.get("state_message", ""),
+            "ready": state == "ready", "software_version": data.get("software_version", "")}
 
 
 @router.get("/klipper/configs")
 async def list_klipper_configs(db: Session = Depends(get_db)):
-    """List config files available in Moonraker's config root."""
-    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
-    if not klipper:
-        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
-    url = f"http://{klipper.ip_address}:{klipper.port}/server/files/list?root=config"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(url)
-        if r.status_code != 200:
-            raise HTTPException(502, f"Moonraker: {r.text}")
-        data = r.json().get("result", [])
-        files = [
-            {"filename": f["filename"], "size": f.get("size", 0), "modified": f.get("modified", 0)}
-            for f in data if isinstance(f, dict) and f.get("filename", "").endswith(".cfg")
-        ]
-        return {"files": sorted(files, key=lambda x: x["filename"])}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
+    """.cfg-Dateien im Konfig-Ordner von Moonraker."""
+    r = await _moonraker_get(_klipper(db), "/server/files/list?root=config")
+    files = [
+        {"filename": f["filename"], "size": f.get("size", 0), "modified": f.get("modified", 0)}
+        for f in r.json().get("result", [])
+        if isinstance(f, dict) and f.get("filename", "").endswith(".cfg")
+    ]
+    return {"files": sorted(files, key=lambda x: x["filename"])}
 
 
 @router.get("/klipper/config/{filename:path}")
 async def read_klipper_config(filename: str, db: Session = Depends(get_db)):
-    """Read a single .cfg file from Moonraker's config root."""
+    """Eine .cfg aus dem Konfig-Ordner lesen (nur lesend)."""
     if not filename.endswith(".cfg"):
         raise HTTPException(400, "Nur .cfg Dateien erlaubt")
-    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
-    if not klipper:
-        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
-    url = f"http://{klipper.ip_address}:{klipper.port}/server/files/config/{filename}"
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(url)
-        if r.status_code == 404:
+        r = await _moonraker_get(_klipper(db), f"/server/files/config/{filename}", timeout=10.0)
+    except HTTPException as e:
+        if e.status_code == 404:
             raise HTTPException(404, f"Datei '{filename}' nicht gefunden")
-        if r.status_code != 200:
-            raise HTTPException(502, f"Moonraker: {r.text}")
-        return {"filename": filename, "content": r.text}
-    except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
+    return {"filename": filename, "content": r.text}
 
 
 @router.get("/status")
 async def get_control_status(db: Session = Depends(get_db)):
-    """Get overall control system status"""
+    """Übersicht der eingerichteten Geräte."""
     devices = db.query(Device).all()
-    active_devices = sum(1 for d in devices if d.is_active)
-    
     return {
         "total_devices": len(devices),
-        "active_devices": active_devices,
-        "devices": [
-            {
-                "id": d.id,
-                "name": d.name,
-                "type": d.device_type.value,
-                "is_active": d.is_active,
-                "ip_address": d.ip_address
-            }
-            for d in devices
-        ]
+        "active_devices": sum(1 for d in devices if d.is_active),
+        "devices": [{"id": d.id, "name": d.name, "type": d.device_type.value,
+                     "is_active": d.is_active, "ip_address": d.ip_address}
+                    for d in devices],
     }
 
 
 # ── OTTOeject-Geometrie: Printloom kennt ALLE Koordinaten (Single Source) ────
 # Statt Klipper-Macros erzeugt Printloom die G-code-Sequenzen aus dieser Geometrie.
-from app.services import storage as _storage
-from app.services import ottoeject_motion as _motion
-from app.services import geometry_check as _geometry_check
-from app.paths import db_path
-
-GEOMETRY_PATH = db_path("ottoeject_geometry.json")
-
-
 def _rack_config() -> dict | None:
-    """Globale Rack-Konfiguration (Configuration → Rack Configuration) — eine Quelle
-    für Regalzahl / Fächer / Magazin-Fach."""
+    """Globale Rack-Konfiguration — eine Quelle für Regalzahl / Fächer / Magazin-Fach."""
     try:
-        from app.routers.rack_manager import _load as _rack_load
-        return _rack_load()
+        return rack_store.load()
     except Exception:
         return None
 
@@ -557,17 +403,11 @@ def _mirror_for_device(script: str) -> str:
 
 
 def _load_geometry() -> dict:
-    """Gespeicherte Geometrie — die EINZIGE Quelle für alle X-Positionen.
-
-    Bis v1.1.7 wurde hier zusätzlich das Farm-Layout überlagert, im Test-Pfad
-    unten aber NICHT. Derselbe Knopf konnte damit je nach Weg unterschiedliche
-    Positionen fahren. Seit v1.1.8 leitet sich das Layout aus der Geometrie ab,
-    diese Überlagerung entfällt ersatzlos."""
+    """Gespeicherte Geometrie — die EINZIGE Quelle für alle X-Positionen, in der vollen
+    Form (ein Block je Drucker/Regal, absolute Werte): so liest die Oberfläche genau
+    die Zahlen, die auch gefahren werden."""
     g = _motion.merge_defaults(_storage.read_json(GEOMETRY_PATH, None))
     g = _motion.apply_rack_config(g, _rack_config())
-    # Seit v1.1.9 in der vollen Form (ein Block je Drucker/Regal, absolute Werte):
-    # so liest die Oberfläche genau die Zahlen, die auch gefahren werden — die
-    # Umrechnung des Alt-Modells passiert genau hier, an einer Stelle.
     return _motion.expand(_motion.apply_layout(g, None))
 
 
@@ -614,26 +454,11 @@ async def get_ottoeject_limits(db: Session = Depends(get_db)):
 
     Damit muss niemand raten, wie weit seine X-Schiene reicht: einmal holen, in der
     Geometrie speichern — danach wird jede Bewegung vor dem Senden dagegen geprüft."""
-    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
-    if not klipper:
-        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
-    url = f"http://{klipper.ip_address}:{klipper.port}/printer/objects/query?toolhead"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(url)
-        if r.status_code != 200:
-            raise HTTPException(502, f"Moonraker: {r.text}")
-        th = (r.json().get("result", {}).get("status", {}) or {}).get("toolhead", {})
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Verbindung zu Moonraker fehlgeschlagen: {e}")
-    limits = _geometry_check.limits_from_toolhead(th)
+    limits = _geometry_check.limits_from_toolhead(await _toolhead(_klipper(db)))
     if not limits:
         raise HTTPException(502, "Moonraker hat keine Achsgrenzen gemeldet "
                                  "(toolhead.axis_maximum fehlt)")
-    return {"success": True, "limits": limits,
-            "standard": _geometry_check.STANDARD_LIMITS}
+    return {"success": True, "limits": limits, "standard": _geometry_check.STANDARD_LIMITS}
 
 
 @router.post("/ottoeject/jog")
@@ -659,25 +484,19 @@ async def jog_ottoeject(request: dict, db: Session = Depends(get_db)):
     if abs(delta) > 100:
         raise HTTPException(400, "Einzelschritt beim Einmessen ist auf 100 mm begrenzt")
 
-    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
-    if not klipper:
-        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
+    klipper = _klipper(db, bewegt=True)
 
     # Ist-Position lesen — ohne sie wüssten wir das Ziel nicht und könnten es nicht prüfen.
-    base = f"http://{klipper.ip_address}:{klipper.port}"
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{base}/printer/objects/query?toolhead")
-        th = (r.json().get("result", {}).get("status", {}) or {}).get("toolhead", {})
-        pos = th.get("position") or []
-        homed = str(th.get("homed_axes", "")).lower()
-    except Exception as e:
-        raise HTTPException(502, f"Position nicht lesbar: {e}")
+        th = await _toolhead(klipper)
+    except HTTPException as e:
+        raise HTTPException(502, f"Position nicht lesbar: {e.detail}")
+    pos = th.get("position") or []
+    homed = str(th.get("homed_axes", "")).lower()
     if axis not in homed:
         raise HTTPException(400, f"Achse {axis.upper()} ist nicht referenziert — erst homen")
-    idx = {"x": 0, "y": 1, "z": 2}[axis]
     try:
-        current = float(pos[idx])
+        current = float(pos[{"x": 0, "y": 1, "z": 2}[axis]])
     except (IndexError, TypeError, ValueError):
         raise HTTPException(502, "Position nicht lesbar (unerwartete Antwort)")
 
@@ -694,7 +513,7 @@ async def jog_ottoeject(request: dict, db: Session = Depends(get_db)):
     except (TypeError, ValueError):
         feed = 1500
     script = f"G90\nG1 {axis.upper()}{target:g} F{feed}\nM400"
-    running = await _fire_moonraker_script(f"{base}/printer/gcode/script", script)
+    running = await _fire_moonraker_script(f"{_base(klipper)}/printer/gcode/script", script)
     return {"success": True, "axis": axis, "from": round(current, 3), "to": target,
             "running": running}
 
@@ -722,20 +541,12 @@ async def run_ottoeject_op(request: dict, db: Session = Depends(get_db)):
             check=not request.get("force"),
             printer=request.get("printer"),
         )
-    except _geometry_check.GeometryError as e:
+    except (_geometry_check.GeometryError, ValueError) as e:
         # Bewegung würde die Achse verlassen → NICHT senden. Klipper würde sie mitten
         # im Ablauf abbrechen; hier kommt stattdessen eine Meldung mit Achse und Wert.
         raise HTTPException(400, str(e))
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-
-    klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
-    if not klipper:
-        raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
     # Falls ein gcode_override ein Geräte-Macro mit RACK=… aufruft: Nummer spiegeln.
-    script = _mirror_for_device(script)
-    url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
-    running = await _fire_moonraker_script(url, script)
+    script, running = await _send_script(db, script)
     return {"success": True, "op": op, "script": script, "running": running}
 
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { deviceService, configService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
+import { deviceService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
 import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 

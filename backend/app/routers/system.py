@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import asyncio
@@ -14,7 +15,7 @@ from typing import Optional
 from app.services import storage
 from app.db.database import SessionLocal
 from app.models.models import Device, PrinterType, SystemConfig
-from app.services import bambu_manager
+from app.services import bambu_manager, device_settings
 from app import paths
 
 router = APIRouter(tags=["System"])
@@ -30,31 +31,6 @@ CONTAINER_NAME   = os.getenv("PRINTLOOM_CONTAINER", "printloom-app")
 def _db_dir() -> Path:
     paths.DB_DIR.mkdir(parents=True, exist_ok=True)
     return paths.DB_DIR
-
-
-def _notif_file() -> Path:
-    return _db_dir() / "notifications.json"
-
-
-def _read_notif() -> dict:
-    return storage.read_json(str(_notif_file()),
-                             {"telegram_bot_token": "", "telegram_chat_id": "", "enabled": False})
-
-
-def _write_notif(cfg: dict) -> None:
-    storage.write_json(str(_notif_file()), cfg)
-
-
-async def _send_telegram(token: str, chat_id: str, text: str) -> bool:
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
-            )
-        return r.status_code == 200
-    except Exception:
-        return False
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
@@ -423,85 +399,32 @@ async def save_camera_settings(body: CameraSettingsIn):
     return {"success": True, **cfg}
 
 
-# ─── Notification endpoints ──────────────────────────────────────────────────
-
-class NotifConfigIn(BaseModel):
-    telegram_bot_token: Optional[str] = None
-    telegram_chat_id: Optional[str] = None
-    enabled: Optional[bool] = None
-
-
-class NotifyIn(BaseModel):
-    message: str
-
-
-@router.get("/notifications")
-async def get_notifications():
-    cfg = _read_notif()
-    token = cfg.get("telegram_bot_token", "")
-    return {
-        "telegram_bot_token": (token[:8] + "…" if len(token) > 8 else token),
-        "telegram_chat_id": cfg.get("telegram_chat_id", ""),
-        "enabled": cfg.get("enabled", False),
-        "has_token": bool(token),
-    }
-
-
-@router.post("/notifications")
-async def save_notifications(data: NotifConfigIn):
-    cfg = _read_notif()
-    if data.telegram_bot_token is not None and "…" not in data.telegram_bot_token:
-        cfg["telegram_bot_token"] = data.telegram_bot_token
-    if data.telegram_chat_id is not None:
-        cfg["telegram_chat_id"] = data.telegram_chat_id
-    if data.enabled is not None:
-        cfg["enabled"] = data.enabled
-    _write_notif(cfg)
-    return {"success": True}
-
-
-@router.post("/notify/test")
-async def test_notification():
-    cfg = _read_notif()
-    token = cfg.get("telegram_bot_token", "")
-    chat  = cfg.get("telegram_chat_id", "")
-    if not token or not chat:
-        raise HTTPException(400, "Bot Token und Chat ID müssen konfiguriert sein")
-    ok = await _send_telegram(token, chat, "🤖 *Printloom Test* — Benachrichtigungen funktionieren!")
-    if not ok:
-        raise HTTPException(502, "Telegram-Nachricht fehlgeschlagen — Token oder Chat ID prüfen")
-    return {"success": True}
-
-
-@router.post("/notify")
-async def send_notification(data: NotifyIn):
-    cfg = _read_notif()
-    if not cfg.get("enabled") or not cfg.get("telegram_bot_token") or not cfg.get("telegram_chat_id"):
-        return {"success": False, "reason": "disabled"}
-    ok = await _send_telegram(cfg["telegram_bot_token"], cfg["telegram_chat_id"], data.message)
-    return {"success": ok}
-
-
 # ─── Backup endpoints ────────────────────────────────────────────────────────
-# A backup is the user's *complete* configuration so a fresh install can be fully
-# restored: devices (incl. credentials), per-device settings (camera/HA token),
-# calibration, sequences, farm settings, rack layout + slots, racks, schedules,
-# custom filaments, notifications and installed language packs. Because it contains
-# secrets (printer access code, HA/Telegram token), the UI warns it's sensitive.
+# Ein Backup ist die KOMPLETTE Konfiguration, damit eine Neuinstallation vollständig
+# wiederhergestellt werden kann: Geräte (mit Zugangsdaten), Einstellungen je Gerät
+# (Kamera/HA-Token/Steckdose), Sequenzen, Farm-Einstellungen, Regal + Fächer,
+# Geometrie, Projekte, AMS-Zuordnungen je Datei, Filamente, Profile, Sprachpakete,
+# Dashboard-Anordnung. Weil Zugangsdaten drinstehen, warnt die Oberfläche davor.
+#
+# Bis v1.1.34 fehlten Projekte, die manuellen AMS-Zuordnungen je Datei und das
+# Drucker-Modell der Geräte — Arbeit des Nutzers, die nach einer Wiederherstellung
+# weg war. Ältere Backups mit "calibration", "racks", "schedules" oder
+# "notifications" lassen sich weiter einspielen; diese Teile gibt es nicht mehr.
 
 BACKUP_SCHEMA = "printloom-backup/2"
 
 # (path, backup-key) for the flat JSON config files in the db dir.
 def _backup_files() -> list:
-    from app.routers import calibration, autofarm, rack_manager, filaments, control
+    from app.routers import autofarm, filaments, control, project
+    from app.services import ams_match, farm_settings, rack_store
     db_dir = _db_dir()
     return [
-        (calibration.CONFIG_PATH,    "calibration"),
         (autofarm.SEQ_PATH,          "sequences"),
-        (autofarm.SETTINGS_PATH,     "settings"),
-        (rack_manager.SLOTS_PATH,    "rack_slots"),
-        (rack_manager.RACKS_PATH,    "racks"),
+        (farm_settings.PATH,         "settings"),
+        (rack_store.SLOTS_PATH,      "rack_slots"),
         (filaments.CUSTOM_PATH,      "filaments"),
+        (project.PROJECT_PATH,       "projects"),
+        (ams_match.FILE_AMSMAP_PATH, "file_ams_map"),
         # OTTOeject-Geometrie (Drucker-Tab: X-Positionen je Regal/Drucker,
         # G-code-Overrides, Geschwindigkeiten je Op) — war bisher NICHT im Backup.
         (control.GEOMETRY_PATH,      "geometry"),
@@ -509,7 +432,6 @@ def _backup_files() -> list:
         (str(db_dir / "profiles.json"),        "profiles"),
         # Globaler Kamera-Aus-Schalter (Energiesparmodus).
         (str(db_dir / "camera_settings.json"), "camera_settings"),
-        (str(db_dir / "schedules.json"), "schedules"),
         (_langpacks_file(),          "langpacks"),
         (_dashboard_file("farm"),    "dashboard_layout"),
         (_dashboard_file("home"),    "dashboard_layout_home"),
@@ -525,10 +447,26 @@ _SECRET_KEY_HINTS = ("access_code", "password", "passwd", "token", "secret",
                      "api_key", "apikey", "auth", "credential", "private_key")
 _REDACTED = "***entfernt***"
 
+# Adressen: Das NETZ bleibt erkennbar (192.168.1.x oder Docker-Netz 172.17.0.x — genau
+# das braucht man bei „Drucker nicht erreichbar"), das einzelne Gerät nicht. Rechnernamen
+# in URLs (oft mit Personen- oder Ortsnamen) und Zugangsdaten darin fallen ganz weg.
+# Bis v1.1.34 standen die Adressen vollständig im Paket.
+_IPV4 = re.compile(r"\b((?:\d{1,3}\.){3})\d{1,3}\b")
+_URL_HOST = re.compile(r"\b([a-z][a-z0-9+.-]*://)(?:[^@/\s]*@)?([^/\s:]+)", re.IGNORECASE)
+
+
+def _mask_hosts(text: str) -> str:
+    """Letzte Stelle von IP-Adressen und Rechnernamen in URLs unkenntlich machen."""
+    def host(m):
+        h = m.group(2)
+        return m.group(1) + (h if _IPV4.fullmatch(h) else "<host>")
+    return _IPV4.sub(r"\1x", _URL_HOST.sub(host, text))
+
 
 def _redact(value, _depth: int = 0):
-    """Rekursiv Geheimnisse ersetzen. Werte bleiben strukturell erhalten (damit man
-    sieht, DASS etwas konfiguriert ist), nur der Inhalt verschwindet."""
+    """Rekursiv Geheimnisse ersetzen und Adressen unkenntlich machen. Werte bleiben
+    strukturell erhalten (damit man sieht, DASS etwas konfiguriert ist), nur der
+    Inhalt verschwindet."""
     if _depth > 30:
         return value
     if isinstance(value, dict):
@@ -542,26 +480,29 @@ def _redact(value, _depth: int = 0):
         return out
     if isinstance(value, list):
         return [_redact(v, _depth + 1) for v in value]
+    if isinstance(value, str):
+        return _mask_hosts(value)
     return value
 
 
 def _diag_devices() -> tuple:
-    """(devices, per_device_settings, error) — Geräteliste OHNE Access-Code/Seriennummer
-    und die pro-Gerät-Einstellungen mit redigierten Tokens. Eigene Session, damit die
+    """(devices, per_device_settings, error) — Geräteliste OHNE Zugangsdaten und
+    Adressen, die Einstellungen je Gerät redigiert. Eigene Session, damit die
     ZIP-Erzeugung keine offene DB-Verbindung hält."""
     db = SessionLocal()
     try:
         devices = [{
             "id": d.id, "name": d.name,
             "device_type": getattr(d.device_type, "value", str(d.device_type)),
-            "ip_address": d.ip_address, "port": d.port, "mqtt_port": d.mqtt_port,
+            "model": d.model, "ip_address": _mask_hosts(d.ip_address or ""),
+            "port": d.port, "mqtt_port": d.mqtt_port,
             "use_tls": d.use_tls, "is_active": d.is_active,
             # Nur ob etwas gesetzt ist — nie der Wert selbst.
             "has_access_code": bool(d.access_code), "has_serial": bool(d.serial_number),
         } for d in db.query(Device).all()]
         per_dev = {}
         for r in db.query(SystemConfig).filter(
-                SystemConfig.key.like("device_settings_%")).all():
+                SystemConfig.key.like(f"{device_settings.KEY_PREFIX}%")).all():
             try:
                 per_dev[r.key] = _redact(json.loads(r.value))
             except Exception:
@@ -611,7 +552,7 @@ async def download_diagnostics():
             from app.routers import autofarm
             log = (autofarm._farm.get("log") or [])[-500:]
             if log:
-                z.writestr("farm_log.txt", "\n".join(str(l) for l in log))
+                z.writestr("farm_log.txt", "\n".join(_mask_hosts(str(entry)) for entry in log))
                 included.append("farm_log (letzte 500 Zeilen)")
         except Exception:
             pass
@@ -635,7 +576,7 @@ async def download_diagnostics():
                    f"Laufzeit: {env['runtime']}\n\n"
                    "Enthalten:\n  - " + "\n  - ".join(included) + "\n\n"
                    "NICHT enthalten (absichtlich): Access-Codes, Tokens, Passwörter,\n"
-                   "Druckdateien, Kamerabilder.\n\n"
+                   "IP-Adressen und Rechnernamen, Druckdateien, Kamerabilder.\n\n"
                    "Dieses Paket wird NICHT automatisch verschickt — du entscheidest,\n"
                    "wem du es gibst.\n")
 
@@ -647,10 +588,6 @@ async def download_diagnostics():
                  f'attachment; filename="printloom_diagnose_{stamp}.zip"'})
 
 
-def _safe_load_json(path: str):
-    return storage.read_json(path, None)
-
-
 def _safe_write_json(path: str, data):
     try:
         storage.write_json(path, data)
@@ -659,28 +596,24 @@ def _safe_write_json(path: str, data):
 
 
 def _export_devices(db) -> tuple:
-    """All devices (with credentials) + their settings, keyed by device NAME so
-    a restore survives the device IDs changing on a fresh database."""
+    """Alle Geräte (mit Zugangsdaten) + ihre Einstellungen, über den NAMEN
+    zugeordnet — auf einer frischen Datenbank haben die Geräte andere IDs."""
     devices, settings = [], {}
     for d in db.query(Device).all():
         devices.append({
             "name":          d.name,
             "device_type":   d.device_type.value if d.device_type else None,
+            "model":         d.model,
             "ip_address":    d.ip_address,
             "port":          d.port,
             "serial_number": d.serial_number,
             "access_code":   d.access_code,
             "mqtt_port":     d.mqtt_port,
             "use_tls":       d.use_tls,
-            "is_active":     d.is_active,
         })
-        row = db.query(SystemConfig).filter(
-            SystemConfig.key == f"device_settings_{d.id}").first()
-        if row and row.value:
-            try:
-                settings[d.name] = json.loads(row.value)
-            except Exception:
-                pass
+        s = device_settings.get(db, d.id)
+        if s:
+            settings[d.name] = s
     return devices, settings
 
 
@@ -690,7 +623,7 @@ async def export_backup():
     try:
         db = SessionLocal()
         try:
-            devices, device_settings = _export_devices(db)
+            devices, settings = _export_devices(db)
         finally:
             db.close()
 
@@ -699,11 +632,10 @@ async def export_backup():
             "current_version": _get_current_version(),
             "exported_at":     datetime.now().isoformat(),
             "devices":         devices,
-            "device_settings": device_settings,
-            "notifications":   _read_notif(),
+            "device_settings": settings,
         }
         for path, key in _backup_files():
-            data = _safe_load_json(path)
+            data = storage.read_json(path, None)
             if data is not None:
                 out[key] = data
         return out
@@ -713,8 +645,9 @@ async def export_backup():
 
 
 def _restore_devices(db, devices: list, settings: dict) -> int:
-    """Upsert devices by name, then write each device's settings under its (new) id."""
-    from app.models.models import PrinterType
+    """Geräte über den Namen anlegen/aktualisieren, dann ihre Einstellungen unter der
+    (evtl. neuen) ID ablegen."""
+    from app.services import printer_models
     n = 0
     name_to_id = {}
     for d in devices or []:
@@ -723,20 +656,23 @@ def _restore_devices(db, devices: list, settings: dict) -> int:
             continue
         try:
             dtype = PrinterType(d.get("device_type")) if d.get("device_type") else None
-        except Exception:
+        except ValueError:
             dtype = None
         row = db.query(Device).filter(Device.name == name).first()
         if not row:
             row = Device(name=name)
             db.add(row)
-        row.device_type   = dtype
+        row.device_type    = dtype
+        row.model          = printer_models.normalize(d.get("model")) or             printer_models.from_serial(d.get("serial_number")) or None
         row.ip_address     = d.get("ip_address")
         row.port           = d.get("port")
         row.serial_number  = d.get("serial_number")
         row.access_code    = d.get("access_code")
         row.mqtt_port      = d.get("mqtt_port", 8883)
         row.use_tls        = d.get("use_tls", True)
-        row.is_active      = d.get("is_active", True)
+        # Immer freigegeben: Ein Backup aus einem Notaus-Zustand (ältere Backups
+        # enthalten `is_active`) hätte sonst eine frische Anlage gesperrt eingespielt.
+        row.is_active      = True
         db.flush()  # assign id
         name_to_id[name] = row.id
         n += 1
@@ -744,16 +680,8 @@ def _restore_devices(db, devices: list, settings: dict) -> int:
 
     for name, s in (settings or {}).items():
         did = name_to_id.get(name)
-        if not did or not isinstance(s, dict):
-            continue
-        key = f"device_settings_{did}"
-        cfg = db.query(SystemConfig).filter(SystemConfig.key == key).first()
-        if not cfg:
-            cfg = SystemConfig(key=key, value=json.dumps(s))
-            db.add(cfg)
-        else:
-            cfg.value = json.dumps(s)
-    db.commit()
+        if did and isinstance(s, dict):
+            device_settings.put(db, did, s)
     return n
 
 
@@ -764,7 +692,6 @@ async def import_backup(backup: dict):
         raise HTTPException(400, "Ungültiges Backup")
     restored = []
 
-    # Devices + per-device settings (the actual config the user cares about).
     if backup.get("devices"):
         db = SessionLocal()
         try:
@@ -774,20 +701,7 @@ async def import_backup(backup: dict):
         finally:
             db.close()
 
-    # Notifications (merge non-empty, keep existing token if backup omits it).
-    if "notifications" in backup and isinstance(backup["notifications"], dict):
-        cfg = _read_notif()
-        n = backup["notifications"]
-        if n.get("telegram_chat_id"):
-            cfg["telegram_chat_id"] = n["telegram_chat_id"]
-        if n.get("telegram_bot_token"):
-            cfg["telegram_bot_token"] = n["telegram_bot_token"]
-        if "enabled" in n:
-            cfg["enabled"] = n["enabled"]
-        _write_notif(cfg)
-        restored.append("notifications")
-
-    # Flat config files — restore each present, non-empty section verbatim.
+    # Einfache Konfig-Dateien — jeder vorhandene, nicht leere Abschnitt wörtlich.
     for path, key in _backup_files():
         if key in backup and backup[key] not in (None, {}, []):
             _safe_write_json(path, backup[key])
@@ -807,7 +721,7 @@ async def _health_printer() -> dict:
             return {"status": "unconfigured", "detail": "Kein Drucker konfiguriert"}
         name = device.name
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             # Persistente Verbindung (bambu_manager) — kein eigener Connect/Disconnect pro Health-Poll.
             connected = await loop.run_in_executor(
                 bambu_manager.executor, lambda: bambu_manager.ensure(device, wait_timeout=3.0))
@@ -948,11 +862,4 @@ async def save_dashboard_layout(body: dict, view: str = "farm"):
         "grid_v": body.get("grid_v") or 1,   # Raster-Version (für Migration des feineren Grids)
     }
     storage.write_json(_dashboard_file(view), payload)
-    return {"success": True}
-
-
-@router.delete("/dashboard-layout")
-async def reset_dashboard_layout(view: str = "farm"):
-    """Layout auf Standard zurücksetzen (Datei leeren)."""
-    storage.write_json(_dashboard_file(view), {})
     return {"success": True}

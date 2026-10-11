@@ -1,13 +1,14 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from pathlib import Path
 
-from app.routers import config, files, devices, control, printer, calibration, rack_manager, system, autofarm, project, profiles, filaments, push, folders, online, layout
+from app.routers import (files, devices, control, printer, rack_manager, system, autofarm,
+                         project, profiles, filaments, push, folders, online)
 from app.db.database import init_db
 from app import paths
-import logging
 
 # Datenordner (db/, uploads/) früh sicherstellen — nativ liegen sie im
 # Nutzerverzeichnis, in Docker unter /app (siehe app.paths).
@@ -32,24 +33,31 @@ _appsettings.init_camera_default()
 init_db()
 
 
-app = FastAPI(title="Printloom - 3D Print Farm Controller", version="4.1.1")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # Bauraumlüfter-Guard: hält bei aktivierter Geräte-Option die Bauraumlüftung aus
+    # (nutzt die persistente MQTT-Verbindung, ~5-s-Takt). Idempotent.
+    try:
+        from app.services import chamber_fan_guard
+        chamber_fan_guard.start()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"chamber_fan_guard start failed: {e}")
+    yield
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+# Kein CORS-Middleware: Die Oberfläche kommt vom selben Server (im Dev über den
+# Vite-Proxy), braucht also keine Freigabe für fremde Herkunft. Bis v1.1.34 stand
+# hier allow_origins=["*"] MIT allow_credentials — Starlette spiegelt dann bei
+# Anfragen mit Cookie die Herkunft zurück. Hinter einer Anmeldung (authentik) hätte
+# damit jede fremde Webseite im Browser des angemeldeten Nutzers die API lesen
+# dürfen, das Backup mit allen Zugangsdaten eingeschlossen.
+app = FastAPI(title="Printloom - 3D Print Farm Controller", lifespan=_lifespan)
 
 # Include routers
-app.include_router(config.router,        prefix="/api/config",       tags=["Configuration"])
 app.include_router(devices.router,       prefix="/api/devices",       tags=["Devices"])
 app.include_router(files.router,         prefix="/api/files",         tags=["File Management"])
 app.include_router(control.router,       prefix="/api/control",       tags=["Control"])
 app.include_router(printer.router,       prefix="/api/printer",       tags=["Printer"])
-app.include_router(calibration.router,   prefix="/api/calibration",   tags=["Calibration"])
 app.include_router(rack_manager.router,  prefix="/api/rack-manager",  tags=["Rack Manager"])
 app.include_router(system.router,        prefix="/api/system",        tags=["System"])
 app.include_router(autofarm.router,      prefix="/api/autofarm",      tags=["AutoFarm"])
@@ -59,18 +67,6 @@ app.include_router(filaments.router,     prefix="/api/filaments",       tags=["F
 app.include_router(push.router,          prefix="/api/push",            tags=["Web-Push"])
 app.include_router(folders.router,       prefix="/api/folders",         tags=["Folders"])
 app.include_router(online.router,        prefix="/api/online",          tags=["Online-Dienste"])
-app.include_router(layout.router,        prefix="/api/layout",          tags=["Farm-Layout"])
-
-
-@app.on_event("startup")
-async def _start_background_tasks():
-    # Bauraumlüfter-Guard: hält bei aktivierter Geräte-Option die Bauraumlüftung aus
-    # (nutzt die persistente MQTT-Verbindung, ~5-s-Takt). Idempotent.
-    try:
-        from app.services import chamber_fan_guard
-        chamber_fan_guard.start()
-    except Exception as e:
-        logging.getLogger(__name__).warning(f"chamber_fan_guard start failed: {e}")
 
 
 @app.get("/api/health")

@@ -870,7 +870,7 @@ def move_to_printer(g: dict, printer=None) -> list[str]:
     pb = printer_block(g, printer)
     p = pb.get("move") or pb["eject"]
     x = float(p["x"])
-    y_engage, z_flat = float(p["y"]), float(p["z"])
+    z_flat = float(p["z"])
     y_pb = float(g["storage"]["y_pullback_limit"])
     return [
         f"M117 Moving to {pb['name']}...",

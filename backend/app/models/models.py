@@ -1,32 +1,34 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, Enum as SQLEnum
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
 import enum
+from datetime import datetime, timezone
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Enum as SQLEnum
+from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
+
+
+def _utcnow() -> datetime:
+    """Jetzt in UTC, ohne Zeitzonen-Angabe — so stehen alle Zeitstempel in der
+    Datenbank (die Schemas kennzeichnen sie beim Ausliefern als UTC).
+    Ersetzt `datetime.utcnow`, das Python als veraltet markiert hat."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 class PrinterType(str, enum.Enum):
     BAMBU_LAB = "bambu_lab"
     KLIPPER = "klipper"
     OTTO = "otto"
 
-class SlotStatus(str, enum.Enum):
-    FREE = "free"
-    OCCUPIED = "occupied"
-    PRINTING = "printing"
 
-class PrintStatus(str, enum.Enum):
-    PENDING = "pending"
-    UPLOADING = "uploading"
-    STARTING = "starting"
-    PRINTING = "printing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    PAUSED = "paused"
+# Ältere Installationen haben noch die Tabellen rack_configuration, rack_slots,
+# print_jobs und queue — Reste eines frühen Entwurfs, den der Regal-Zustand
+# (rack_slots.json) und die Farm-Warteschlange (farm_queue.json) abgelöst haben.
+# Sie bleiben in der Datenbank liegen (schadet nicht), werden aber nicht mehr angelegt.
+
 
 class Device(Base):
     __tablename__ = "devices"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, index=True)
     device_type = Column(SQLEnum(PrinterType))
@@ -40,29 +42,11 @@ class Device(Base):
     access_code = Column(String(255), nullable=True)
     mqtt_port = Column(Integer, default=8883)
     use_tls = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    # False = gesperrt durch den Notaus (bis „Betrieb fortsetzen").
     is_active = Column(Boolean, default=True)
 
-class RackConfiguration(Base):
-    __tablename__ = "rack_configuration"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    num_slots = Column(Integer, default=6)
-    klipper_device_id = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class RackSlot(Base):
-    __tablename__ = "rack_slots"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    rack_id = Column(Integer)
-    slot_number = Column(Integer)
-    status = Column(SQLEnum(SlotStatus), default=SlotStatus.FREE)
-    current_job_id = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Folder(Base):
     __tablename__ = "folders"
@@ -70,7 +54,8 @@ class Folder(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255))
     parent_id = Column(Integer, nullable=True, index=True)  # self-referencing tree
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+
 
 class UploadedFile(Base):
     __tablename__ = "uploaded_files"
@@ -81,7 +66,7 @@ class UploadedFile(Base):
     file_type = Column(String(10))  # .3mf, .stl, .gcode
     file_path = Column(String(512))
     file_size = Column(Integer)
-    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    uploaded_at = Column(DateTime, default=_utcnow)
     # ── Teile-Management (Phase 1) ──────────────────────────────
     folder_id   = Column(Integer, nullable=True, index=True)   # None = Wurzel
     part_number = Column(String(120), nullable=True, index=True)
@@ -89,39 +74,11 @@ class UploadedFile(Base):
     material    = Column(String(80),  nullable=True)
     color       = Column(String(32),  nullable=True)           # Hex (#RRGGBB) oder Name
 
-class PrintJob(Base):
-    __tablename__ = "print_jobs"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    file_id = Column(Integer)
-    assigned_slot = Column(Integer, nullable=True)
-    status = Column(SQLEnum(PrintStatus), default=PrintStatus.PENDING)
-    printer_id = Column(Integer, nullable=True)
-    progress = Column(Float, default=0.0)  # 0-100
-    current_layer = Column(Integer, default=0)
-    total_layers = Column(Integer, nullable=True)
-    estimated_time_remaining = Column(Integer, nullable=True)  # in seconds
-    mqtt_message_id = Column(String(255), nullable=True)
-    error_message = Column(Text, nullable=True)
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class QueueItem(Base):
-    __tablename__ = "queue"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, unique=True)
-    position = Column(Integer)  # Priority/order
-    status = Column(SQLEnum(PrintStatus), default=PrintStatus.PENDING)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class SystemConfig(Base):
     __tablename__ = "system_config"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String(255), unique=True, index=True)
     value = Column(Text)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

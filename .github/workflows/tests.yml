@@ -1,12 +1,12 @@
 name: Tests
 
 on:
-  push:
-    branches: [ main, beta ]
   pull_request:
-  # Vom Docker-Build aufgerufen: ein Image entsteht erst, wenn diese Tests grün
-  # sind. Bei v1.1.26 lief der Build trotz roter Tests durch, und das kaputte
-  # Image stand zum Update bereit.
+  workflow_dispatch:
+  # Pushes auf main/beta testet der Docker-Build selbst (Job „tests" in
+  # docker-publish.yml) — ein Image entsteht erst, wenn diese Tests grün sind. Bei
+  # v1.1.26 lief der Build trotz roter Tests durch. Ein eigener push-Trigger hier
+  # ließ dieselben Tests bis v1.1.34 je Push zweimal laufen.
   workflow_call:
 
 jobs:

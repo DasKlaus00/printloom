@@ -49,25 +49,6 @@ export const deviceService = {
   }),
 }
 
-/* Farm-Layout: Drucker & Regale als Module auf einer X-Schiene.
-   Seit v1.1.8 wird es aus der Drucker-Geometrie ABGELEITET — eingestellt wird
-   alles im Drucker-Tab, hier gibt es nur noch die fertige Sicht (Übersicht,
-   Job-Verteilung) und die Zuordnung Regal → Drucker. */
-export const layoutService = {
-  get:      ()       => api.get('/layout/'),
-  save:     (lay)    => api.put('/layout/', lay),
-  setLock:  (locked) => api.post('/layout/lock', { locked }),
-  reset:    ()       => api.delete('/layout/'),
-  printers: ()       => api.get('/layout/printers'),
-}
-
-export const configService = {
-  getRackConfig:    ()       => api.get('/config/rack'),
-  updateRackConfig: (data)   => api.put('/config/rack', data),
-  getSlotStatus:    (slotId) => api.get(`/config/slot/${slotId}`),
-  updateSlotStatus: (slotId, data) => api.put(`/config/slot/${slotId}/status`, data),
-}
-
 export const fileService = {
   // Kein Timeout: eine 40-MB-.3mf über WLAN darf so lange dauern, wie sie dauert.
   uploadFile:   (formData, folderId = null) => api.post('/files/upload', formData, {
@@ -102,14 +83,11 @@ export const controlService = {
   // Moonraker antwortet erst, wenn die Fahrt DURCH ist (Backend wartet bis 120 s) —
   // dieser Aufruf darf den Default-Timeout also nicht erben.
   executeMacro:        (data)  => api.post('/control/macro', data, { timeout: 150000 }),
-  listMacros:          ()      => api.get('/control/macros'),
   listAppOps:          ()      => api.get('/control/app-ops'),
   emergencyStop:       ()      => api.post('/control/emergency-stop'),
   resume:              ()      => api.post('/control/resume'),
   emergencyState:      ()      => api.get('/control/emergency-state'),
   getStatus:           ()      => api.get('/control/status'),
-  getOttoejectVars:    ()      => api.get('/control/ottoeject/variables'),
-  setOttoejectVars:    (vars)  => api.post('/control/ottoeject/variables', vars),
   sendKlipperGcode:    (gcode) => api.post('/control/klipper/gcode', { gcode }),
   getKlipperPosition:  ()      => api.get('/control/klipper/position'),
   getKlipperInfo:      ()      => api.get('/control/klipper/info'),
@@ -162,7 +140,6 @@ export const printerService = {
   calibrate:            (deviceId, options) => api.post(`/printer/calibrate/${deviceId}`, { options }),
   getHistory:           ()                 => api.get('/printer/history'),
   takeSnapshot:         (deviceId)         => api.post(`/printer/snapshot/${deviceId}`),
-  getSnapshots:         ()                 => api.get('/printer/snapshots'),
   getSendDiagnostics:   ()                 => api.get('/printer/send-diagnostics'),
   clearSendDiagnostics: ()                 => api.delete('/printer/send-diagnostics'),
   amsLoad:              (deviceId, tray)          => api.post(`/printer/ams/${deviceId}/load`, { tray }),
@@ -188,16 +165,6 @@ export const rackManagerService = {
   updateSlot:    (slotId, data)        => api.put(`/rack-manager/slots/${slotId}`, data),
   clearSlots:    (body)                => api.post('/rack-manager/slots/clear', body ?? {}),
   analyzeFile:   (fileId, plate = null) => api.post(`/rack-manager/analyze/${fileId}`, null, { params: (plate !== null && plate !== undefined) ? { plate } : {} }),
-  getRacks:      ()                    => api.get('/rack-manager/racks'),
-  createRack:    (data)                => api.post('/rack-manager/racks', data),
-  deleteRack:    (rackId)              => api.delete(`/rack-manager/racks/${rackId}`),
-}
-
-export const calibrationService = {
-  getConfigs:      ()                      => api.get('/calibration/configs'),
-  updateConfig:    (key, values)           => api.put(`/calibration/configs/${key}`, values),
-  runConfig:       (key)                   => api.post(`/calibration/run/${key}`),
-  runWithValues:   (key, values)           => api.post(`/calibration/run/${key}/with-values`, values),
 }
 
 export const systemService = {
@@ -209,10 +176,6 @@ export const systemService = {
   // Kein Timeout: Image ziehen + Container neu starten dauert Minuten.
   triggerUpdate:    (channel) => api.post('/system/update', channel ? { channel } : {},
                                           { timeout: NO_TIMEOUT }),
-  getNotifications: () => api.get('/system/notifications'),
-  saveNotifications:(data) => api.post('/system/notifications', data),
-  sendNotification: (data) => api.post('/system/notify', data),
-  testNotification: () => api.post('/system/notify/test'),
   exportBackup:     () => api.get('/system/backup'),
   importBackup:     (data) => api.post('/system/backup/restore', data),
   getLangInstalled: () => api.get('/system/lang/installed'),
@@ -221,7 +184,6 @@ export const systemService = {
   // view: 'farm' (Auto-Farm) | 'home' (Startseite) — getrennte Layouts
   getDashboardLayout:  (view = 'farm') => api.get('/system/dashboard-layout', { params: { view } }),
   saveDashboardLayout: (data, view = 'farm') => api.put('/system/dashboard-layout', data, { params: { view } }),
-  resetDashboardLayout:(view = 'farm') => api.delete('/system/dashboard-layout', { params: { view } }),
   getCameraSettings:   () => api.get('/system/camera'),
   saveCameraSettings:  (data) => api.post('/system/camera', data),
   // Diagnose-Paket (ZIP, ohne Zugangsdaten) — direkter Download-Link
@@ -270,7 +232,6 @@ export const autofarmService = {
   setupHomingFile:   ()      => api.post('/autofarm/homing_file/setup'),
   clearLog:          ()      => api.post('/autofarm/clear_log'),
   downloadLogFile:   ()      => window.open('/api/autofarm/log/download', '_blank'),
-  clearLogFile:      ()      => api.delete('/autofarm/log/file'),
   getStats:          ()      => api.get('/autofarm/stats'),
   resetStats:        ()      => api.delete('/autofarm/stats'),
   getCompleted:      (limit = 500) => api.get('/autofarm/completed', { params: { limit } }),
@@ -285,9 +246,6 @@ export const autofarmService = {
   stressStart:       (body = {}) => api.post('/autofarm/stress-test', body),
   stressStop:        ()      => api.post('/autofarm/stress-test/stop'),
   stressStatus:      ()      => api.get('/autofarm/stress-test/status'),
-  testCycle:         ()      => api.post('/autofarm/test-cycle'),
-  testCycleStop:     ()      => api.post('/autofarm/test-cycle/stop'),
-  testCycleStatus:   ()      => api.get('/autofarm/test-cycle/status'),
 }
 
 export const projectService = {
