@@ -12,7 +12,15 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Erst testen, dann bauen. Vorher liefen beide Workflows unabhängig: bei v1.1.26
+  # waren die Tests rot, das Image wurde trotzdem gebaut und stand zum Update bereit.
+  # Kostet je Push einmal die Testlaufzeit (die Tests laufen dadurch doppelt —
+  # einmal hier, einmal als eigener Workflow mit Status am Commit).
+  tests:
+    uses: ./.github/workflows/tests.yml
+
   build-and-push:
+    needs: tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -67,6 +75,7 @@ jobs:
   #    Vite-Build nicht selbst ausführen — install-native.sh/update-native.sh
   #    laden stattdessen dieses Tarball (Tag native-latest bzw. native-beta). ──
   native-dist:
+    needs: tests
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/beta')
     permissions:

@@ -106,6 +106,7 @@ export const controlService = {
   listAppOps:          ()      => api.get('/control/app-ops'),
   emergencyStop:       ()      => api.post('/control/emergency-stop'),
   resume:              ()      => api.post('/control/resume'),
+  emergencyState:      ()      => api.get('/control/emergency-state'),
   getStatus:           ()      => api.get('/control/status'),
   getOttoejectVars:    ()      => api.get('/control/ottoeject/variables'),
   setOttoejectVars:    (vars)  => api.post('/control/ottoeject/variables', vars),

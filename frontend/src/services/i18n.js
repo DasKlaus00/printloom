@@ -142,6 +142,14 @@ let dynamicPacks = (() => {
 // English overrides keyed by the exact German source string (see tr() below).
 // Filled in incrementally per page; missing entries fall back to German.
 const EN_STRINGS = {
+  "ARM NICHT ANGEHALTEN — Klipper hat den Notaus nicht bestätigt. Strom des OTTOeject trennen!": "ARM NOT STOPPED — Klipper did not confirm the emergency stop. Cut power to the OTTOeject!",
+  "Notaus: Arm angehalten, Abläufe gestoppt, Drucker pausiert": "Emergency stop: arm halted, routines stopped, printers paused",
+  "Notaus: kein OTTOeject eingerichtet — Abläufe gestoppt, Drucker pausiert": "Emergency stop: no OTTOeject configured — routines stopped, printers paused",
+  "Notaus konnte nicht gesendet werden ({0}). Strom des OTTOeject trennen!": "Emergency stop could not be sent ({0}). Cut power to the OTTOeject!",
+  "Betrieb fortsetzen?": "Resume operation?",
+  "Klipper wird neu gestartet und die Geräte werden freigegeben. Die Farm startet NICHT von selbst; die erste Bewegung fährt eine Referenzfahrt. Ist der Arbeitsbereich frei?": "Klipper will be restarted and the devices released. The farm does NOT start on its own; the first move runs a homing pass. Is the work area clear?",
+  "Freigeben": "Release",
+  "Betrieb freigegeben": "Operation released",
   "Auf Abkühlung warten": "Wait for cool-down",
   "Wartet, bis die Druckplatte abgekühlt ist. Der Magnet-Greifer hält eine warme Platte nicht — der Arm führe los, die Platte bliebe im Drucker liegen und er käme leer zurück, ohne dass es auffällt. Gehört VOR den Auswurf.": "Waits until the build plate has cooled down. The magnet gripper does not hold a warm plate — the arm would set off, the plate would stay in the printer and it would come back empty without anyone noticing. Belongs BEFORE the ejection.",
   "Zieltemperatur (°C)": "Target temperature (°C)",

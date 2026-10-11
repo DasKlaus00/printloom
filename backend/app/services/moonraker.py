@@ -99,6 +99,25 @@ class MoonrakerAPI:
             logger.error(f"Error triggering emergency stop: {str(e)}")
             return False
     
+    async def firmware_restart(self) -> bool:
+        """Klipper nach einem Notaus (M112) wieder hochfahren.
+
+        Nach M112 steht Klipper im Zustand „shutdown" und nimmt keinen Befehl mehr an,
+        bis die Firmware neu startet. Ohne diesen Schritt wäre „Betrieb fortsetzen"
+        ein Knopf, nach dem trotzdem nichts fährt."""
+        try:
+            url = f"{self.base_url}/printer/firmware_restart"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url)
+            if response.status_code == 200:
+                logger.info("Firmware restart triggered")
+                return True
+            logger.error(f"Firmware restart failed: {response.text}")
+            return False
+        except Exception as e:
+            logger.error(f"Error triggering firmware restart: {str(e)}")
+            return False
+
     async def is_connected(self) -> bool:
         """Check if Moonraker API is accessible"""
         try:

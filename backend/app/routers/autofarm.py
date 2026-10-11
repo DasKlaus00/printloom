@@ -229,6 +229,12 @@ def _live_settings(s: dict) -> dict:
         "operating_schedule":      _operating_schedule(s),
         "operating_tz":            str(s.get("timezone", "") or ""),
         "exact_color_only":        bool(s.get("exact_color_only", False)),
+        # Bis v1.1.33 kamen diese drei nur über den Start-Aufruf herein und blieben
+        # für den GANZEN Lauf eingefroren — „AMS verwenden" auszuschalten wirkte erst
+        # nach Stopp und Neustart der Farm.
+        "use_ams":                 bool(s.get("use_ams", True)),
+        "poll_interval":           max(1, int(s.get("poll_interval", 20) or 20)),
+        "min_print_minutes":       max(0, int(s.get("min_print_minutes", 0) or 0)),
     }
 
 
@@ -242,6 +248,11 @@ def _refresh_live_settings() -> None:
 
     Neu geparst wird nur, wenn sich die Datei geändert hat — sonst läge hier ein
     JSON-Lesevorgang je Schleifendurchlauf.
+
+    Seit v1.1.34 auch WÄHREND des Drucks: aufgerufen wird in jedem Abfragezyklus
+    der Druck-Warteschleife und vor jedem Sequenzschritt. Vorher nur oben in der
+    Farm-Schleife — also zwischen zwei Jobs. Wer während eines vierstündigen Drucks
+    die Fehlerstrategie umstellte, bekam sie für genau diesen Druck nicht.
     """
     try:
         mtime = os.path.getmtime(SETTINGS_PATH)
@@ -251,6 +262,14 @@ def _refresh_live_settings() -> None:
         return
     _farm["_settings_mtime"] = mtime
     _farm.update(_live_settings(_read_config(SETTINGS_PATH, _DEFAULT_SETTINGS)))
+
+
+def _live(key: str, fallback):
+    """Wert aus den nachgezogenen Einstellungen, sonst der Startwert des Laufs.
+    Der Rückfall greift nur, wenn die Einstellungsdatei nie gelesen wurde (Tests,
+    beschädigte Datei) — dann gilt, was beim Start übergeben wurde."""
+    v = _farm.get(key)
+    return fallback if v is None else v
 
 
 async def _job_filament_g(job: dict):
@@ -460,6 +479,39 @@ def mark_position_unknown(reason: str = ""):
     if reason:
         _log(f"⌂ {reason}: Position des OTTOeject gilt als unbekannt — "
              f"vor der nächsten Bewegung wird referenziert.")
+
+
+def halt_all(reason: str = "Notaus") -> list:
+    """Jeden Ablauf in Printloom anhalten, der den Arm bewegen könnte.
+
+    Für den Notaus: Klipper hält die Motoren selbst an (M112), aber danach darf
+    nichts in Printloom einfach weitermachen. Ohne das hier lief die Farm nach dem
+    Neustart von Klipper weiter, als wäre nichts gewesen — und weil der Notaus die
+    Position als unbekannt markiert, hätte sie sogar zuerst eine Referenzfahrt
+    gemacht und dann den nächsten Griff.
+
+    Bewusst KEIN Senden an den Drucker hier: das macht der Aufrufer, damit diese
+    Funktion ohne Netzwerk sofort zurückkehrt. → Liste der angehaltenen Abläufe."""
+    global _test_running
+    angehalten = []
+    if _farm.get("running"):
+        _farm["stopping"] = True
+        _farm["paused"] = False      # sonst wartet die Schleife ewig in der Pause
+        _farm["stop_reason"] = reason
+        angehalten.append("farm")
+    if _stress.get("running"):
+        _stress["running"] = False
+        angehalten.append("stress_test")
+    if _stress_task is not None and not _stress_task.done():
+        _stress_task.cancel()
+    if _test_running:
+        _test_running = False
+        angehalten.append("test_cycle")
+    if _test_task is not None and not _test_task.done():
+        _test_task.cancel()
+    _log(f"🛑 {reason}: " + (", ".join(angehalten) + " angehalten" if angehalten
+                            else "kein laufender Ablauf"))
+    return angehalten
 
 
 def _record_hms(code: str, severity: str, text: str, action: str = ""):
@@ -734,8 +786,6 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
             return
         slot_h  = float(data.get("slot_height_mm", 50))
         spr     = int(data.get("slots_per_rack", 6))
-        nr      = int(data.get("num_racks", 3))
-        max_h   = spr * slot_h * nr  # absolute max across all racks
 
         # Was maximal in EIN Regal passt: alle Fächer voll ausgenutzt — über dem
         # obersten liegt aber das Magazin, dort gilt nur der Stapel-Anteil. Ohne
@@ -1902,6 +1952,16 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
             if _farm["stopping"]:
                 break
 
+            # Einstellungen, die WÄHREND des Drucks geändert werden, gelten ab dem
+            # nächsten Abfragezyklus. Bis v1.1.33 wurden Takt, Mindestdruckzeit und
+            # beide Watchdog-Werte einmal zu Beginn in lokale Variablen kopiert und
+            # blieben für den ganzen Druck stehen.
+            _refresh_live_settings()
+            poll_sec   = max(1, int(_live("poll_interval", poll_sec)))
+            min_min    = max(0, int(_live("min_print_minutes", min_min)))
+            conn_alarm = bool(_live("conn_alarm", conn_alarm))
+            stall_min  = int(_live("progress_stall_min", stall_min) or 0)
+
             await asyncio.sleep(poll_sec)
             if _farm["stopping"]:
                 break
@@ -2045,7 +2105,9 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         _log(f"⚠ Retry {retries}/{max_retries}…")
                         _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
                         _wp_disconnect()  # persistente Verbindung schließen, bevor _do_send_file neu verbindet (kein Doppel-Connect)
-                        await _do_send_file(job, device, True)
+                        # Bis v1.1.33 stand hier fest `True`: jeder neue Versuch nach einem
+                        # Druckfehler lief MIT AMS — auch wenn „AMS verwenden" aus war.
+                        await _do_send_file(job, device, bool(_live("use_ams", True)))
                         _set_job(job["id"], {"status": "printing"})
                         fail_count = 0
                         continue
@@ -2070,7 +2132,9 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         fail_count = 0
                         _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
                         _wp_disconnect()  # persistente Verbindung schließen, bevor _do_send_file neu verbindet (kein Doppel-Connect)
-                        await _do_send_file(job, device, True)
+                        # Bis v1.1.33 stand hier fest `True`: jeder neue Versuch nach einem
+                        # Druckfehler lief MIT AMS — auch wenn „AMS verwenden" aus war.
+                        await _do_send_file(job, device, bool(_live("use_ams", True)))
                         _set_job(job["id"], {"status": "printing"})
                         continue
                     if action == "eject" and fail_steps:
@@ -2081,8 +2145,13 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         _log("🔴 Druck fehlgeschlagen — Auswurf-Sequenz (Platte bergen)…")
                         await _notify(f"🔴 *Printloom — Druck fehlgeschlagen*\n`{job['fileName']}`\n"
                                       "Platte wird ausgeworfen & eingelagert, dann weiter.")
+                        # Bergung nach der JETZT gespeicherten Sequenz — wurde während des
+                        # Drucks etwa ein Abkühl-Schritt eingefügt, gilt er auch hier.
+                        _jetzt = _read_sequences()
+                        bergung = (_eject_recovery_steps(_jetzt["seq_next"]) if _jetzt else None) \
+                            or fail_steps
                         try:
-                            await _exec_sequence(fail_steps, job, device, False, poll_sec, min_min, [], [])
+                            await _exec_sequence(bergung, job, device, False, poll_sec, min_min, [], [])
                         except Exception as fe:
                             # Auswurf misslungen → NICHT blind weiterfahren (Kollisionsgefahr) → pausieren.
                             _log(f"🛑 Auswurf-Sequenz fehlgeschlagen: {fe} — pausiert")
@@ -2504,6 +2573,8 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
 
     elif t == "send_file":
         _set_job(job["id"], {"status": "sending"})
+        # „AMS verwenden" gilt so, wie es JETZT eingestellt ist — nicht wie beim Start.
+        use_ams = bool(_live("use_ams", use_ams))
         # Block printing until filaments confidently match the live AMS (or manual map set).
         await _ensure_ams_ready(job, device, use_ams)
         _log(f"[↑] Datei senden: {job['fileName']}")
@@ -2733,30 +2804,94 @@ def _handover_trim(steps: list) -> list:
     return steps
 
 
-async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
-                          poll_sec: int, min_min: int, prep_steps: list, fail_steps: list = []):
-    steps = _filter_disabled(steps)
-    # Drucker-Geometrie einmal je Job laden → zwischenzeitliche Positions-Änderungen
-    # (Drucker-Tab) wirken ab dem nächsten Job. Nur wirksam, wo use_gcode[op] aktiv ist.
-    try:
-        _farm["geometry"] = _load_farm_geometry()
-    except Exception:
-        _farm["geometry"] = None
+def _group_steps(steps: list) -> list:
+    """Schritte zu Gruppen bündeln: ein Schritt mit `parallel` läuft zusammen mit dem
+    vorigen. → [[step, …], …]"""
     groups: list = []
     for step in steps:
         if step.get("parallel") and groups:
             groups[-1].append(step)
         else:
             groups.append([step])
+    return groups
 
-    total = len(groups)
-    for gi, group in enumerate(groups):
+
+def _read_sequences() -> Optional[dict]:
+    """Die JETZT gespeicherten Sequenzen — oder None, wenn sie nicht taugen.
+
+    None heißt: weiterfahren, womit der Lauf ohnehin unterwegs ist. Das gilt bei
+    veraltetem Schema (das Starten verweigert so etwas, ein Nachladen darf es nicht
+    durch die Hintertür hereinlassen) und bei einem leeren Zyklus — eine leere Liste
+    ist eher ein halbfertiger Speichervorgang als ein Wunsch."""
+    d = _read_config(SEQ_PATH, {})
+    if not isinstance(d, dict) or d.get("schema_version") != SEQ_SCHEMA_VERSION:
+        return None
+    seq_next = d.get("seq_next") or []
+    if not seq_next:
+        return None
+    return {"seq_new": d.get("seq_new") or [], "seq_next": seq_next}
+
+
+def _fresh_cycle_tail(started_with: list) -> Optional[list]:
+    """Nach dem Druckende: der Rest des Zyklus aus der JETZT gespeicherten Sequenz.
+
+    Wofür: Wer während eines Drucks im Sequenz-Editor etwas ändert — etwa den Schritt
+    „Auf Abkühlung warten" vor das Auswerfen setzt —, will das für GENAU diesen
+    Druck. Bis v1.1.33 galt eine Sequenz-Änderung erst nach Stopp und Neustart der
+    ganzen Farm.
+
+    Ersetzt wird nur, was hinter `wait_print` steht. Alles davor ist schon passiert,
+    und ein Arm, der mitten im Zyklus eine andere Schrittliste untergeschoben bekommt,
+    wüsste nicht mehr, was er in der Hand hat. Nach dem Druckende ist die Lage
+    dagegen eindeutig: Platte liegt im Drucker, Arm steht bereit.
+
+    → neue Schrittliste, oder None (nichts geändert / nicht eindeutig zuordenbar)."""
+    neu = _read_sequences()
+    if neu is None or neu["seq_next"] == started_with:
+        return None
+    normal, _prep = _split_prep(neu["seq_next"])
+    normal = _filter_disabled(normal)
+    wps = [i for i, s in enumerate(normal) if s.get("type") == "wait_print"]
+    if len(wps) != 1:
+        _log("↻ Sequenz wurde während des Drucks geändert, aber ohne eindeutiges "
+             "„Auf Druckende warten“ — der Rest dieses Zyklus läuft nach der alten "
+             "Fassung, ab dem nächsten Job gilt die neue.")
+        return None
+    return normal[wps[0] + 1:]
+
+
+async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
+                          poll_sec: int, min_min: int, prep_steps: list, fail_steps: list = [],
+                          started_with: Optional[list] = None):
+    """Eine Schrittfolge abarbeiten.
+
+    `started_with` = die Zyklus-Sequenz, mit der dieser Job begann. Nur der Zyklus
+    gibt sie mit — dann darf nach dem Druckende der Rest durch eine inzwischen
+    gespeicherte Fassung ersetzt werden (siehe _fresh_cycle_tail)."""
+    steps = _filter_disabled(steps)
+    groups = _group_steps(steps)
+
+    gi = 0
+    while gi < len(groups):
+        group = groups[gi]
         if _farm["stopping"]:
             raise RuntimeError("Gestoppt")
         while _farm["paused"] and not _farm["stopping"]:
             await asyncio.sleep(0.5)
 
+        # Vor JEDEM Schritt frisch: Einstellungen und Drucker-Geometrie. Bis v1.1.33
+        # wurde die Geometrie einmal zu Beginn des Jobs geladen — eine Position, die
+        # man während des Drucks im Drucker-Tab nachjustierte, galt für das Auswerfen
+        # NACH genau diesem Druck nicht. Zwei kleine Dateien je Schritt; ein Schritt
+        # dauert Sekunden bis Stunden.
+        _refresh_live_settings()
+        try:
+            _farm["geometry"] = _load_farm_geometry()
+        except Exception:
+            _farm["geometry"] = None
+
         label = " + ".join(s.get("label", s.get("type", "?")) for s in group)
+        total = len(groups)
         _farm["seq_step_idx"] = gi
         _farm["seq_step_total"] = total
         _farm["seq_step_label"] = label
@@ -2789,6 +2924,16 @@ async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
                         _log(f"⚠ '{s.get('label', '')}' fehlgeschlagen (optional) — als fertig gewertet")
                     else:
                         raise result
+
+        # Druck ist durch → wurde die Sequenz in der Zwischenzeit geändert, läuft der
+        # Rest dieses Zyklus schon nach der neuen Fassung.
+        if started_with is not None and any(s.get("type") == "wait_print" for s in group):
+            tail = _fresh_cycle_tail(started_with)
+            if tail is not None:
+                groups = groups[:gi + 1] + _group_steps(tail)
+                _log("↻ Sequenz wurde während des Drucks geändert — der Rest dieses "
+                     "Zyklus läuft bereits nach der neuen Fassung.")
+        gi += 1
 
     _farm["seq_step_idx"] = 0
     _farm["seq_step_total"] = 0
@@ -2847,6 +2992,14 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
         while not _farm["stopping"]:
             # Geänderte Einstellungen übernehmen (nur bei geänderter Datei).
             _refresh_live_settings()
+            # Sequenzen ebenso: bis v1.1.33 galten sie für den GANZEN Lauf so, wie sie
+            # beim Start gespeichert waren — eine Änderung im Sequenz-Editor wirkte erst
+            # nach Stopp und Neustart der Farm. Jetzt ab dem nächsten Job (und für den
+            # laufenden ab dem Druckende, siehe _fresh_cycle_tail).
+            _neu = _read_sequences()
+            if _neu is not None and (_neu["seq_next"] != seq_next or _neu["seq_new"] != seq_new):
+                seq_new, seq_next = _neu["seq_new"], _neu["seq_next"]
+                _log("↻ Sequenzen neu geladen — gelten ab diesem Job")
 
             # Respect pause
             while _farm["paused"] and not _farm["stopping"]:
@@ -2951,7 +3104,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 # Auswurf → Einlagern der fehlgeschlagenen Platte). Bei Erfolg ungenutzt.
                 eject_recovery = _eject_recovery_steps(seq_next)
                 await _exec_sequence(cycle_normal, job, device, use_ams, poll_sec, min_min,
-                                     cycle_prep, eject_recovery)
+                                     cycle_prep, eject_recovery, started_with=seq_next)
                 completed += 1
                 actual_min = (datetime.now() - job_started_at).total_seconds() / 60.0
                 end_kwh  = await _read_energy_kwh(bambu_id)

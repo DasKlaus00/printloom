@@ -59,7 +59,42 @@ def test_alle_entscheidungswerte_sind_dabei(settings_file):
         "hms_ignore", "conn_alarm", "progress_stall_min", "error_strategy",
         "failed_retries", "operating_hours_enabled", "move_timeout_s",
         "operating_schedule", "operating_tz", "exact_color_only",
+        "use_ams", "poll_interval", "min_print_minutes",
     }
+
+
+def test_ams_schalter_takt_und_mindestzeit_ziehen_nach(settings_file):
+    """Bis v1.1.33 kamen diese drei nur über den Start-Aufruf und galten für den
+    ganzen Lauf. „AMS verwenden" auszuschalten wirkte erst nach Stopp und Neustart."""
+    write(settings_file, use_ams=True, poll_interval=20, min_print_minutes=0)
+    af._farm.pop("_settings_mtime", None)
+    af._refresh_live_settings()
+    assert af._farm["use_ams"] is True
+
+    write(settings_file, use_ams=False, poll_interval=45, min_print_minutes=7)
+    af._farm.pop("_settings_mtime", None)
+    af._refresh_live_settings()
+    assert af._farm["use_ams"] is False
+    assert af._farm["poll_interval"] == 45
+    assert af._farm["min_print_minutes"] == 7
+
+
+@pytest.mark.parametrize("roh, erwartet", ((0, 20), (None, 20), (-5, 1)))
+def test_der_takt_wird_nie_null(settings_file, roh, erwartet):
+    """0 s Abfragetakt hieße: die Warteschleife fragt den Drucker ohne Pause ab.
+    Leer oder 0 → Vorgabe 20 s (wie überall in diesen Einstellungen); ein negativer
+    Wert wird auf 1 s angehoben."""
+    assert af._live_settings({**af._DEFAULT_SETTINGS, "poll_interval": roh})["poll_interval"] == erwartet
+
+
+def test_live_faellt_auf_den_startwert_zurueck(monkeypatch):
+    """Nie gelesene Einstellungen dürfen keinen Wert auf None setzen."""
+    monkeypatch.delitem(af._farm, "poll_interval", raising=False)
+    assert af._live("poll_interval", 33) == 33
+    monkeypatch.setitem(af._farm, "poll_interval", 12)
+    assert af._live("poll_interval", 33) == 12
+    monkeypatch.setitem(af._farm, "use_ams", False)
+    assert af._live("use_ams", True) is False     # False ist ein Wert, kein „fehlt"
 
 
 def test_laufzeit_zustand_wird_nicht_angefasst(settings_file):

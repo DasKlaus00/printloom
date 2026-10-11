@@ -29,6 +29,12 @@ DEFAULT_NUM_RACKS      = 3
 DEFAULT_SLOTS_PER_RACK = 6
 DEFAULT_SLOT_H         = 50
 DEFAULT_MAGAZINE_SLOT  = 7
+# Altes Mehrregal-Modell (/racks): ein Regal = eine Spalte Fächer. Die Namen waren
+# beim Umbau auf num_racks/slots_per_rack verschwunden, die Endpunkte nicht — eine
+# Neuinstallation (noch keine racks.json) bekam beim Laden einen NameError, und
+# „Regal anlegen" scheiterte IMMER, weil der Ersatzwert sofort ausgewertet wird.
+DEFAULT_ROWS = DEFAULT_SLOTS_PER_RACK
+DEFAULT_COLS = 1
 # Fest konfigurierte Platten pro Magazin (je Rack) — die „Sollzahl". `magazine_counts`
 # ist der LIVE-Bestand (sinkt beim Drucken, steigt beim Entnehmen), `magazine_defaults`
 # ist der in den Einstellungen fest gesetzte Ausgangswert, auf den ein Reset zurückgeht

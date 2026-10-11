@@ -4,6 +4,27 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.34',
+    de: [
+      'NOTAUS HÄLT JETZT WIRKLICH AN. Bisher setzte der Knopf nur ein Flag in der Datenbank, das ausschließlich der manuelle Makro-Knopf beachtete: Farm, Stresstest, Joggen und Einlernen fuhren weiter — und die nächste Farm-Bewegung fuhr sogar erst eine Referenzfahrt und machte dann weiter. Jetzt: zuerst Klipper-Notaus (M112, Motoren sofort aus), dann werden alle Abläufe in Printloom angehalten und die Drucker PAUSIERT (nicht abgebrochen — eine Pause lässt sich fortsetzen). Der Notaus fragt nicht mehr „Sind Sie sicher?" — die Sekunde ist genau die, um die es geht.',
+      'Konnte der Arm nicht angehalten werden (Klipper antwortet nicht), steht das jetzt groß und bleibend auf der Seite, mit der Aufforderung, den Strom zu trennen. Vorher hieß es in jedem Fall „Notaus aktiviert". „Betrieb fortsetzen" startet Klipper neu (nach M112 nötig), fragt nach, ob der Arbeitsbereich frei ist, und startet die Farm NICHT von selbst. Der Notaus-Zustand übersteht das Neuladen der Seite.',
+      'EINSTELLUNGEN WIRKEN WÄHREND DES DRUCKS. Vorher war fast alles eingefroren: Sequenzen für den GANZEN Lauf (erst nach Stopp und Neustart der Farm), Positionen aus dem Drucker-Tab für den ganzen Job, Fehlerstrategie und Watchdog bis zum nächsten Job, „AMS verwenden", Abfragetakt und Mindestdruckzeit bis zum Neustart.',
+      'Jetzt: Einstellungen und Positionen werden vor JEDEM Schritt frisch gelesen, die Druck-Warteschleife zieht Takt, Mindestdruckzeit und beide Watchdog-Werte in jedem Abfragezyklus nach. Eine während des Drucks geänderte Zyklus-Sequenz gilt ab dem Druckende DIESES Jobs — wer also „Auf Abkühlung warten" vor das Auswerfen setzt, während gedruckt wird, bekommt es schon für diesen Druck. Ersetzt wird dabei nur, was hinter „Auf Druckende warten" steht; was schon gelaufen ist, wird nie nachträglich ausgetauscht.',
+      'BEHOBEN: Nach einem fehlgeschlagenen Druck lief der neue Versuch immer MIT AMS — auch wenn „AMS verwenden" aus war. Und die Bergung einer fehlgeschlagenen Platte nutzt jetzt ebenfalls die aktuell gespeicherte Sequenz.',
+      'BEHOBEN: Zwei Stellen, die erst beim Ausführen abgestürzt wären — in der Fehlerbehandlung des Notaus fehlte der Logger (statt einer Warnung kam ein Absturz mit Fehler 500), und die Regal-Liste einer Neuinstallation griff auf zwei Werte zu, die es nicht mehr gab („Regal anlegen" scheiterte dadurch immer). Beide hätte eine Prüfung auf undefinierte Namen gefunden; die läuft jetzt in jedem Testlauf mit.',
+      'Ein Docker-Image wird nur noch gebaut, wenn die Tests grün sind. Bei 1.1.26 war das nicht so: Tests rot, Image trotzdem gebaut und zum Update angeboten.',
+    ],
+    en: [
+      'EMERGENCY STOP NOW ACTUALLY STOPS. Until now the button only set a flag in the database that only the manual macro button respected: the farm, stress test, jogging and teach-in kept moving — and the next farm move even ran a homing pass first and then carried on. Now: Klipper emergency stop first (M112, motors off immediately), then every Printloom routine is halted and the printers are PAUSED (not cancelled — a pause can be resumed). The emergency stop no longer asks "Are you sure?" — that second is exactly the one that matters.',
+      'If the arm could not be stopped (Klipper not responding), that now stays on the page in large print, telling you to cut power. Previously it said "emergency stop activated" in every case. "Resume operation" restarts Klipper (required after M112), asks whether the work area is clear, and does NOT start the farm by itself. The emergency-stop state survives a page reload.',
+      'SETTINGS TAKE EFFECT DURING A PRINT. Previously almost everything was frozen: sequences for the WHOLE run (only after stopping and restarting the farm), printer-tab positions for the whole job, error strategy and watchdog until the next job, "use AMS", poll interval and minimum print time until a restart.',
+      'Now settings and positions are re-read before EVERY step, and the print wait loop picks up poll interval, minimum print time and both watchdog values on every poll. A cycle sequence changed during a print applies from the end of THIS print — so adding "Wait for cool-down" before the ejection while printing already applies to this print. Only what comes after "Wait for print end" is replaced; anything that already ran is never swapped retroactively.',
+      'FIXED: after a failed print, the retry always ran WITH the AMS — even with "use AMS" switched off. Recovering a failed plate now also uses the currently saved sequence.',
+      'FIXED: two spots that would only have crashed when executed — the emergency stop error handling was missing its logger (a crash with error 500 instead of a warning), and the rack list of a fresh install referenced two values that no longer existed ("create rack" therefore always failed). A check for undefined names would have caught both; it now runs in every test run.',
+      'A Docker image is only built when the tests are green. In 1.1.26 that was not the case: tests red, image built anyway and offered as an update.',
+    ],
+  },
+  {
     version: '1.1.33',
     de: [
       'UMGEZOGEN: Das Abkühlen vor dem Auswerfen ist jetzt ein Schritt im Sequenz-Editor („❄ Auf Abkühlung warten") statt einer Einstellung auf einer anderen Seite. Damit steht es dort, wo der Ablauf ohnehin gebaut wird — sichtbar, verschiebbar und abschaltbar wie jeder andere Schritt. Zieltemperatur und Zeitlimit stehen am Schritt selbst.',

@@ -4,7 +4,12 @@ from app.db.database import get_db
 from app.models.models import Device, PrinterType
 from app.schemas.schemas import MacroExecutionRequest, MacroExecutionResponse
 from datetime import datetime, timezone
+import asyncio
+import logging
+
 import httpx
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -129,44 +134,141 @@ async def get_macro_info(macro_name: str):
         "description": macro_descriptions.get(macro_name, "No description available")
     }
 
+PRINTER_PAUSE_TIMEOUT_S = 8.0   # je Drucker — ein toter Drucker darf den Notaus nicht aufhalten
+
+
+async def _klipper_estop(db: Session) -> list:
+    """M112 an jeden OTTOeject. Gleichzeitig, mit kurzem Zeitlimit."""
+    from app.services.moonraker import MoonrakerAPI
+    arme = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).all()
+    ergebnisse = await asyncio.gather(
+        *(MoonrakerAPI(d).emergency_stop() for d in arme), return_exceptions=True)
+    return [{"name": d.name, "ok": r is True} for d, r in zip(arme, ergebnisse)]
+
+
+async def _pause_printers(db: Session) -> list:
+    """Jeden Bambu-Drucker pausieren — PAUSE, nicht Abbruch: eine Pause lässt sich
+    fortsetzen, ein abgebrochener Druck nicht. Bei einem Drucker, der gerade nicht
+    druckt, ist die Pause wirkungslos und schadet nicht."""
+    from app.services import bambu_manager
+    loop = asyncio.get_event_loop()
+    drucker = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB).all()
+
+    async def eins(d):
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(bambu_manager.executor,
+                                     bambu_manager.print_command, d, "pause"),
+                timeout=PRINTER_PAUSE_TIMEOUT_S)
+        except Exception:
+            return False
+
+    ergebnisse = await asyncio.gather(*(eins(d) for d in drucker))
+    return [{"name": d.name, "ok": bool(r)} for d, r in zip(drucker, ergebnisse)]
+
+
 @router.post("/emergency-stop")
 async def emergency_stop(db: Session = Depends(get_db)):
-    """Emergency stop all operations"""
-    # Deactivate all devices
-    devices = db.query(Device).all()
-    for device in devices:
-        device.is_active = False
-        db.add(device)
-    db.commit()
+    """NOTAUS — Bewegung SOFORT anhalten.
 
-    # Nach einem Notaus steht der Arm irgendwo — die gespeicherte Position stimmt
-    # nicht mehr. Vor der nächsten Bewegung MUSS referenziert werden, sonst fährt
-    # der erste Move von einer falschen Annahme los (Phase 3.7).
+    Bis v1.1.33 setzte dieser Endpunkt nur `is_active = False` in der Datenbank. Das
+    beachtete ausschließlich der manuelle Makro-Endpunkt: Farm, Stresstest, Joggen
+    und Einlernen fuhren weiter. Schlimmer noch: weil der Notaus die Position als
+    unbekannt markierte, fuhr die nächste Farm-Bewegung erst eine Referenzfahrt und
+    machte dann einfach weiter. Ein Notaus, der nicht anhält.
+
+    Reihenfolge ist Absicht: ZUERST der Arm (M112 schaltet in Klipper die Motoren
+    ab), dann alles andere. Jeder Schritt ist für sich abgesichert — scheitert einer,
+    laufen die übrigen trotzdem. Die Antwort sagt genau, was gegriffen hat; nie ein
+    500 und nie „aktiviert", wenn der Arm nicht angehalten wurde.
+    """
+    # 1. Arm anhalten — das Einzige, was in den ersten Millisekunden zählt.
+    try:
+        arme = await _klipper_estop(db)
+    except Exception as e:
+        logger.error(f"Notaus: Klipper nicht erreichbar: {e}")
+        arme = []
+    arm_ok = bool(arme) and all(a["ok"] for a in arme)
+
+    # 2. Printloom-Abläufe anhalten, damit nach dem Klipper-Neustart nichts weiterfährt.
+    angehalten = []
     try:
         from app.routers import autofarm
+        angehalten = autofarm.halt_all("Notaus")
+        # Nach einem Notaus steht der Arm irgendwo — vor der nächsten Bewegung MUSS
+        # referenziert werden (Phase 3.7).
         autofarm.mark_position_unknown("Notaus")
     except Exception as e:
-        logger.warning(f"needs_home nach Notaus nicht gesetzt: {e}")
+        logger.warning(f"Notaus: Abläufe nicht angehalten: {e}")
 
+    # 3. Drucker pausieren.
+    try:
+        drucker = await _pause_printers(db)
+    except Exception as e:
+        logger.warning(f"Notaus: Drucker nicht pausiert: {e}")
+        drucker = []
+
+    # 4. Geräte sperren — hält manuelle Makros bis „Fortsetzen" zurück.
+    try:
+        for device in db.query(Device).all():
+            device.is_active = False
+            db.add(device)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Notaus: Geräte nicht gesperrt: {e}")
+
+    if not arme:
+        meldung = "Kein OTTOeject eingerichtet — es gab keinen Arm anzuhalten."
+    elif arm_ok:
+        meldung = "Arm angehalten (Klipper-Notaus)."
+    else:
+        meldung = ("ARM NICHT ANGEHALTEN — Klipper hat den Notaus nicht bestätigt. "
+                   "Strom des OTTOeject trennen!")
     return {
-        "success": True,
-        "message": "Emergency stop activated - all devices deactivated"
+        "success": arm_ok or not arme,
+        "arm_stopped": arm_ok,
+        "arms": arme,
+        "printers": drucker,
+        "halted": angehalten,
+        "message": meldung,
     }
+
 
 @router.post("/resume")
 async def resume_operations(db: Session = Depends(get_db)):
-    """Resume operations after emergency stop"""
-    # Reactivate all devices
-    devices = db.query(Device).all()
-    for device in devices:
+    """Nach dem Notaus wieder freigeben.
+
+    Klipper steht nach M112 im Zustand „shutdown" und nimmt bis zum Firmware-Neustart
+    keinen Befehl an — ohne diesen Schritt bliebe der Arm nach „Fortsetzen" trotzdem
+    stumm. Die Farm startet NICHT von selbst wieder: wer nach einem Notaus weitermacht,
+    soll das bewusst tun. Die erste Bewegung referenziert automatisch (needs_home)."""
+    from app.services.moonraker import MoonrakerAPI
+    arme = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).all()
+    neu = await asyncio.gather(*(MoonrakerAPI(d).firmware_restart() for d in arme),
+                               return_exceptions=True)
+
+    for device in db.query(Device).all():
         device.is_active = True
         db.add(device)
     db.commit()
-    
+
+    fehlgeschlagen = [d.name for d, r in zip(arme, neu) if r is not True]
     return {
-        "success": True,
-        "message": "Operations resumed"
+        "success": not fehlgeschlagen,
+        "restarted": [d.name for d, r in zip(arme, neu) if r is True],
+        "failed": fehlgeschlagen,
+        "message": ("Betrieb freigegeben — die Farm startet nicht von selbst, die erste "
+                    "Bewegung referenziert." if not fehlgeschlagen else
+                    f"Klipper-Neustart fehlgeschlagen: {', '.join(fehlgeschlagen)}"),
     }
+
+
+@router.get("/emergency-state")
+async def emergency_state(db: Session = Depends(get_db)):
+    """Ist ein Notaus aktiv? Steht in der Datenbank — sonst wüsste die Oberfläche nach
+    dem Neuladen der Seite nichts davon, und „Fortsetzen" bliebe ausgegraut."""
+    geraete = db.query(Device).all()
+    return {"active": bool(geraete) and any(not d.is_active for d in geraete)}
 
 # Moonraker's /printer/gcode/script blocks until the G-code has FULLY executed. For a
 # manual trigger/test that is fragile: a real grab/eject/place move runs 20-60 s — longer
