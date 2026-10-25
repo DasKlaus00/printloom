@@ -1178,12 +1178,14 @@ const EN_STRINGS = {
   'Beta-Update verfügbar': 'Beta update available',
   'Update verfügbar — v{0}': 'Update available — v{0}',
   'Beta ist aktuell': 'Beta is up to date',
+  'v{0} wird gerade gebaut (dauert 3–8 Minuten) — danach erneut prüfen.':
+    'v{0} is being built right now (takes 3–8 minutes) — check again afterwards.',
   'App ist aktuell (v{0})': 'App is up to date (v{0})',
   'Beta wird installiert/gewechselt': 'Installing/switching beta',
   'Update läuft': 'Update running',
   ' — App startet neu, bitte warten…': ' — app is restarting, please wait…',
   'Fertig — Seite wird neu geladen…': 'Done — reloading the page…',
-  'Weder Docker-Socket noch Watchtower verfügbar — manuell:': 'Neither Docker socket nor Watchtower available — manually:',
+  'Kein Docker-Socket — Update auf dem Server ausführen:': 'No Docker socket — run the update on the server:',
   'Schließen': 'Close',
   'Kein Docker-Socket erkannt — Ein-Klick-Update ist nicht möglich. In der Compose-Datei':
     'No Docker socket detected — one-click update is not possible. In the compose file',
@@ -1210,10 +1212,27 @@ const EN_STRINGS = {
     ') and restarts the app (including the channel switch). Requirement: Docker socket mounted (see compose).',
   'Sichert die': 'Backs up the',
   'komplette Konfiguration': 'complete configuration',
-  'als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Kamera-/HA-Einstellungen, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.':
-    'as JSON: devices (printer & OTTOeject incl. credentials), camera/HA settings, calibration, sequences, farm settings, rack layout, filaments, schedules & language packs — export or restore.',
-  '⚠ Die Datei enthält Zugangsdaten (Drucker-Access-Code, Home-Assistant-Token, Zugang zur Smart-Steckdose). Sicher aufbewahren und nicht teilen.':
-    '⚠ The file contains credentials (printer access code, Home Assistant token, smart plug login). Keep it safe and do not share it.',
+  'als JSON: Geräte, Drucker-/Kamera-/HA-Einstellungen, Drucker-Geometrie, Profile, Sequenzen, Farm-Einstellungen, Regal, Projekte, AMS-Zuordnungen, Filamente & Sprachpakete.':
+    'as JSON: devices, printer/camera/HA settings, printer geometry, profiles, sequences, farm settings, rack, projects, AMS assignments, filaments & language packs.',
+  'Zugangsdaten (Drucker-Access-Code, Home-Assistant-Token, Steckdosen-Passwort) sind standardmäßig NICHT enthalten. Beim Einspielen bleiben die vorhandenen erhalten.':
+    'Credentials (printer access code, Home Assistant token, smart plug password) are NOT included by default. Restoring keeps the existing ones.',
+  'Zugangsdaten mitsichern (für einen Umzug auf ein neues Gerät)': 'Include credentials (for moving to a new device)',
+  'Passwort (mind. 8 Zeichen, empfohlen)': 'Password (min. 8 characters, recommended)',
+  'Die Zugangsdaten werden mit diesem Passwort verschlüsselt. Ohne das Passwort lässt sich das Backup nur ohne Zugangsdaten einspielen.':
+    'The credentials are encrypted with this password. Without the password the backup can only be restored without credentials.',
+  '⚠ Ohne Passwort stehen die Zugangsdaten im Klartext in der Datei. Sicher aufbewahren und nicht teilen.':
+    '⚠ Without a password the credentials are stored in plain text in the file. Keep it safe and do not share it.',
+  'Die Zugangsdaten in diesem Backup sind verschlüsselt. Passwort eingeben — oder ohne Zugangsdaten einspielen.':
+    'The credentials in this backup are encrypted. Enter the password — or restore without credentials.',
+  'Backup-Passwort': 'Backup password',
+  'Einspielen': 'Restore',
+  'Ohne Zugangsdaten einspielen': 'Restore without credentials',
+  'Zugangsdaten eingespielt.': 'Credentials restored.',
+  'Zugangsdaten NICHT eingespielt (kein Passwort) — die vorhandenen bleiben.':
+    'Credentials NOT restored (no password) — the existing ones remain.',
+  'Das Backup enthält keine Zugangsdaten — die vorhandenen bleiben.':
+    'The backup contains no credentials — the existing ones remain.',
+  'Passwort falsch — nichts eingespielt.': 'Wrong password — nothing was restored.',
   '↑ Backup importieren': '↑ Import backup',
 
   /* ── Datei-Browser: Multi-Plate-Dropdown ── */
@@ -1301,8 +1320,6 @@ const EN_STRINGS = {
   'Datei nicht mehr verfügbar': 'File no longer available',
   '+ Warteschlange': '+ Queue',
   'Dieses Modell erneut in die Warteschlange legen': 'Add this model to the queue again',
-  'als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Drucker-/Kamera-/HA-Einstellungen, Drucker-Geometrie (X-Positionen & G-code-Overrides), Profile, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.':
-    'as JSON: devices (printer & OTTOeject incl. credentials), printer/camera/HA settings, printer geometry (X positions & G-code overrides), profiles, calibration, sequences, farm settings, rack layout, filaments, schedules & language packs — export or restore.',
   '🌀 Bauraumlüftung dauerhaft aus': '🌀 Keep chamber fan off',
   'Bauraumlüftung dauerhaft ausgeschaltet halten': 'Keep the chamber ventilation permanently off',
   'Prüft laufend über die MQTT-Verbindung und schaltet den Bauraumlüfter (P3) aus, sobald er anläuft.':

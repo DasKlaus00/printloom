@@ -183,6 +183,12 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
 
   const [backupFeedback, setBackupFeedback] = useState(null)
   const importRef = useRef(null)
+  // Zugangsdaten nur auf ausdrücklichen Wunsch ins Backup (seit v1.1.39).
+  const [withSecrets, setWithSecrets] = useState(false)
+  const [backupPw, setBackupPw]       = useState('')
+  // Backup mit verschlüsselten Zugangsdaten wartet aufs Passwort.
+  const [pendingImport, setPendingImport] = useState(null)
+  const [importPw, setImportPw]       = useState('')
 
   // `force` = ausdrückliche Prüfung per Knopf. Ohne force respektiert das Backend
   // den Opt-in-Schalter „Update-Prüfung im Internet" und geht NICHT ins Netz.
@@ -227,8 +233,8 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
         // Backend answered with an error → the update did NOT start. Show the real
         // reason (e.g. private ghcr package, no Docker socket) instead of waiting.
         const detail = e.response.data?.detail || tr('Fehler {0}', e.response.status)
-        if (/watchtower|service not known/i.test(detail)) {
-          setPhase('no-watchtower')
+        if (e.response.status === 501) {
+          setPhase('manual')   // kein Docker-Socket → Befehl für die Kommandozeile zeigen
         } else {
           setPhase(null)
           setError(detail)
@@ -246,15 +252,17 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
     }
   }
 
-  const exportBackup = async () => {
+  // secrets=true nur aus der Backup-Karte; das Backup vor dem Update bleibt ohne.
+  const exportBackup = async (secrets = false) => {
     setBackupFeedback(null)
     try {
-      const r = await systemService.exportBackup()
+      const r = await systemService.exportBackup(
+        secrets ? { include_secrets: true, password: backupPw || null } : null)
       const blob = new Blob([JSON.stringify(r.data, null, 2)], { type: 'application/json' })
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
       a.href     = url
-      a.download = `printloom-backup-${new Date().toISOString().split('T')[0]}.json`
+      a.download = `printloom-backup-${new Date().toISOString().split('T')[0]}${secrets ? '-zugangsdaten' : ''}.json`
       a.click()
       URL.revokeObjectURL(url)
       setBackupFeedback({ ok: true, msg: tr('Backup exportiert') })
@@ -266,20 +274,47 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
     }
   }
 
+  const SECRETS_STATE = {
+    restored: tr('Zugangsdaten eingespielt.'),
+    skipped:  tr('Zugangsdaten NICHT eingespielt (kein Passwort) — die vorhandenen bleiben.'),
+    none:     tr('Das Backup enthält keine Zugangsdaten — die vorhandenen bleiben.'),
+  }
+
+  const restoreBackup = async (data, password) => {
+    setBackupFeedback(null)
+    try {
+      const r = await systemService.importBackup(data, password)
+      setPendingImport(null)
+      setImportPw('')
+      setBackupFeedback({ ok: true, msg: tr('Backup wiederhergestellt (v{0}, exportiert: {1})', data.current_version ?? '?', data.exported_at?.split('T')[0] ?? '?')
+        + ' ' + (SECRETS_STATE[r.data?.secrets] ?? '') })
+      setTimeout(() => setBackupFeedback(null), 8000)
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      if (detail === 'BACKUP_PASSWORT_FALSCH') {
+        setBackupFeedback({ ok: false, msg: tr('Passwort falsch — nichts eingespielt.') })
+        return   // Eingabe offen lassen, damit man es nochmal versuchen kann
+      }
+      setPendingImport(null)
+      setBackupFeedback({ ok: false, msg: tr('Import fehlgeschlagen: {0}', detail || err.message || err) })
+    }
+  }
+
   const handleImport = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
     setBackupFeedback(null)
     try {
-      const text = await file.text()
-      const data = JSON.parse(text)
-      await systemService.importBackup(data)
-      setBackupFeedback({ ok: true, msg: tr('Backup wiederhergestellt (v{0}, exportiert: {1})', data.current_version ?? '?', data.exported_at?.split('T')[0] ?? '?') })
+      const data = JSON.parse(await file.text())
+      if (data?.secrets?.encrypted) {
+        setPendingImport(data)   // erst Passwort abfragen
+      } else {
+        await restoreBackup(data)
+      }
     } catch (err) {
       setBackupFeedback({ ok: false, msg: tr('Import fehlgeschlagen: {0}', err.message ?? err) })
     } finally {
       e.target.value = ''
-      setTimeout(() => setBackupFeedback(null), 6000)
     }
   }
 
@@ -287,6 +322,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
   const isBeta = channel === 'beta'
   const isNative = info?.runtime === 'native'   // native Desktop-App (Windows/macOS) statt Docker
   const isNativeLinux = info?.runtime === 'native-linux'   // nativer Linux-Dienst (systemd, ohne Docker)
+  const latestVersion = isBeta ? info?.latest_version : info?.latest
 
   const switchChannel = (ch) => {
     setChannel(ch)
@@ -366,11 +402,13 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
             <p className="text-xs text-surface-500 mb-1">{tr('Installiert')}</p>
             <p className="text-3xl font-mono font-bold text-surface-100">v{VERSION}</p>
           </div>
-          {info?.latest && !isBeta && (
+          {/* Beta: Version aus dem Image-Label (seit v1.1.39) — ältere Images haben
+              keines, dann bleibt nur „beta". */}
+          {latestVersion && (
             <div>
               <p className="text-xs text-surface-500 mb-1">{tr('Neueste')}</p>
               <p className={`text-3xl font-mono font-bold ${info.update_available ? 'text-amber-400' : 'text-emerald-400'}`}>
-                v{info.latest}
+                v{latestVersion}
               </p>
             </div>
           )}
@@ -395,7 +433,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
               <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
                 <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
                 <span className="text-amber-300 text-sm font-medium">
-                  {isBeta ? tr('Beta-Update verfügbar') : tr('Update verfügbar — v{0}', info.latest)}
+                  {isBeta && !latestVersion ? tr('Beta-Update verfügbar') : tr('Update verfügbar — v{0}', latestVersion)}
                 </span>
               </div>
             )
@@ -408,6 +446,14 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
             </div>
           )
         })()}
+
+        {/* GitHub hat schon eine neuere Version, das Image dazu ist noch im Bau.
+            Vorher hieß es in dieser Zeit „App ist aktuell" — und man wartete. */}
+        {info?.building && !info.error && !['done', 'running'].includes(phase) && (
+          <p className="text-[11px] text-blue-300 bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-2">
+            {tr('v{0} wird gerade gebaut (dauert 3–8 Minuten) — danach erneut prüfen.', info.building)}
+          </p>
+        )}
 
         {phase === 'running' && (
           <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
@@ -431,11 +477,11 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
             </p>
           </div>
         )}
-        {phase === 'no-watchtower' && (
+        {phase === 'manual' && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-4 space-y-3">
-            <p className="text-amber-300 text-sm font-medium">{tr('Weder Docker-Socket noch Watchtower verfügbar — manuell:')}</p>
+            <p className="text-amber-300 text-sm font-medium">{tr('Kein Docker-Socket — Update auf dem Server ausführen:')}</p>
             <pre className="bg-surface-900 rounded-lg px-3 py-2 text-xs font-mono text-emerald-300 select-all overflow-x-auto">
-{`docker pull ghcr.io/dasklaus00/printloom:${isBeta ? 'beta' : 'latest'}
+{`docker compose pull
 docker compose up -d`}
             </pre>
             <button onClick={() => setPhase(null)} className="text-xs text-surface-500 hover:text-surface-300">{tr('Schließen')}</button>
@@ -455,7 +501,7 @@ docker compose up -d`}
             <p className="text-amber-300 text-xs">
               {tr('Kein Docker-Socket erkannt — Ein-Klick-Update ist nicht möglich. In der Compose-Datei')}
               {' '}<span className="font-mono bg-amber-950/40 px-1 rounded">/var/run/docker.sock</span>{' '}
-              {tr('in den App-Container mounten (siehe')} <span className="font-mono">docker-compose.prod.yml.example</span>).
+              {tr('in den App-Container mounten (siehe')} <span className="font-mono">docker-compose.yml</span>).
             </p>
           </div>
         )}
@@ -520,7 +566,7 @@ docker compose up -d`}
               {tr('Ein Update kann Einstellungen verändern. Exportiere zur Sicherheit zuerst ein Backup deiner Konfiguration (Geräte, Rack, Sequenzen, Zeitpläne) — dann erst aktualisieren.')}
             </p>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={exportBackup} className="btn-secondary text-sm">{tr('↓ Backup exportieren')}</button>
+              <button onClick={() => exportBackup()} className="btn-secondary text-sm">{tr('↓ Backup exportieren')}</button>
               <button
                 onClick={() => { setConfirmUpdate(false); triggerUpdate() }}
                 disabled={!canUpdate}
@@ -582,11 +628,30 @@ docker compose up -d`}
       <div className="card p-6 space-y-4">
         <h2 className="text-[15px] font-semibold text-surface-100">{tr('Backup & Restore')}</h2>
         <p className="text-xs text-surface-500">
-          {tr('Sichert die')} <span className="text-surface-300">{tr('komplette Konfiguration')}</span> {tr('als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Drucker-/Kamera-/HA-Einstellungen, Drucker-Geometrie (X-Positionen & G-code-Overrides), Profile, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.')}
+          {tr('Sichert die')} <span className="text-surface-300">{tr('komplette Konfiguration')}</span> {tr('als JSON: Geräte, Drucker-/Kamera-/HA-Einstellungen, Drucker-Geometrie, Profile, Sequenzen, Farm-Einstellungen, Regal, Projekte, AMS-Zuordnungen, Filamente & Sprachpakete.')}
         </p>
-        <p className="text-[11px] text-amber-500/90">
-          {tr('⚠ Die Datei enthält Zugangsdaten (Drucker-Access-Code, Home-Assistant-Token, Zugang zur Smart-Steckdose). Sicher aufbewahren und nicht teilen.')}
+        <p className="text-[11px] text-surface-500">
+          {tr('Zugangsdaten (Drucker-Access-Code, Home-Assistant-Token, Steckdosen-Passwort) sind standardmäßig NICHT enthalten. Beim Einspielen bleiben die vorhandenen erhalten.')}
         </p>
+
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-xs text-surface-300 cursor-pointer">
+            <input type="checkbox" checked={withSecrets} onChange={e => setWithSecrets(e.target.checked)} />
+            {tr('Zugangsdaten mitsichern (für einen Umzug auf ein neues Gerät)')}
+          </label>
+          {withSecrets && (
+            <div className="pl-6 space-y-1.5">
+              <input type="password" value={backupPw} onChange={e => setBackupPw(e.target.value)}
+                autoComplete="new-password" placeholder={tr('Passwort (mind. 8 Zeichen, empfohlen)')}
+                className="text-sm w-full max-w-xs" />
+              <p className={`text-[11px] ${backupPw ? 'text-surface-500' : 'text-amber-500/90'}`}>
+                {backupPw
+                  ? tr('Die Zugangsdaten werden mit diesem Passwort verschlüsselt. Ohne das Passwort lässt sich das Backup nur ohne Zugangsdaten einspielen.')
+                  : tr('⚠ Ohne Passwort stehen die Zugangsdaten im Klartext in der Datei. Sicher aufbewahren und nicht teilen.')}
+              </p>
+            </div>
+          )}
+        </div>
 
         {backupFeedback && (
           <div className={`px-3 py-2 rounded-lg text-xs border ${backupFeedback.ok ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-red-950/40 border-red-800 text-red-300'}`}>
@@ -595,7 +660,8 @@ docker compose up -d`}
         )}
 
         <div className="flex gap-3 flex-wrap">
-          <button onClick={exportBackup} className="btn-secondary text-sm">
+          <button onClick={() => exportBackup(withSecrets)} className="btn-secondary text-sm"
+            disabled={withSecrets && backupPw.length > 0 && backupPw.length < 8}>
             {tr('↓ Backup exportieren')}
           </button>
           <div>
@@ -611,6 +677,27 @@ docker compose up -d`}
             </button>
           </div>
         </div>
+
+        {pendingImport && (
+          <form className="bg-surface-900/60 border border-surface-700 rounded-lg px-4 py-3 space-y-2"
+            onSubmit={e => { e.preventDefault(); restoreBackup(pendingImport, importPw) }}>
+            <p className="text-xs text-surface-300">
+              {tr('Die Zugangsdaten in diesem Backup sind verschlüsselt. Passwort eingeben — oder ohne Zugangsdaten einspielen.')}
+            </p>
+            <input type="password" value={importPw} onChange={e => setImportPw(e.target.value)}
+              autoComplete="off" autoFocus placeholder={tr('Backup-Passwort')}
+              className="text-sm w-full max-w-xs" />
+            <div className="flex gap-2 flex-wrap">
+              <button type="submit" disabled={!importPw} className="btn-primary text-sm">{tr('Einspielen')}</button>
+              <button type="button" onClick={() => restoreBackup(pendingImport)} className="btn-secondary text-sm">
+                {tr('Ohne Zugangsdaten einspielen')}
+              </button>
+              <button type="button" onClick={() => { setPendingImport(null); setImportPw('') }} className="btn-ghost text-sm">
+                {tr('Abbrechen')}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Push notifications */}

@@ -13,8 +13,7 @@ dist/
 build/
 .env
 .env.local
-# Server-specific deployment file (repo name, Watchtower token) — keep local only,
-# must not land in the public repo.
+# Alte serverspezifische Compose-Datei (bis v1.1.38 mit Watchtower-Token) — bleibt lokal.
 docker-compose.prod.yml
 .DS_Store
 *.log
@@ -22,11 +21,9 @@ logs/
 *.db
 *.sqlite
 backend/uploads/*
-# Ignore ALL runtime state & secrets under backend/db — notifications.json holds
-# the Telegram bot token, printloom.db holds printer access codes. Keep only the
-# intentionally tracked seed calibration file.
+# Ignore ALL runtime state & secrets under backend/db — printloom.db holds printer
+# access codes and tokens.
 backend/db/*
-!backend/db/macro_configs.json
 frontend/.vite
 .vscode/
 .idea/
@@ -46,3 +43,6 @@ mk01/
 desktop/vendor/
 desktop/Output/
 desktop/build/
+
+# Persönlicher Arbeitsstand für Claude Code (nicht ins Repo)
+CLAUDE.local.md

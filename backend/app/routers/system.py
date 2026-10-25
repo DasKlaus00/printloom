@@ -15,15 +15,13 @@ from typing import Optional
 from app.services import storage
 from app.db.database import SessionLocal
 from app.models.models import Device, PrinterType, SystemConfig
-from app.services import bambu_manager, device_settings
+from app.services import bambu_manager, credentials, device_settings
 from app import paths
 
 router = APIRouter(tags=["System"])
 logger = logging.getLogger(__name__)
 
-WATCHTOWER_URL   = os.getenv("WATCHTOWER_URL", "http://watchtower:8080")
-WATCHTOWER_TOKEN = os.getenv("WATCHTOWER_TOKEN", "printloom-update-token")
-GITHUB_TOKEN     = os.getenv("GITHUB_TOKEN", "")
+GITHUB_TOKEN    = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO      = os.getenv("GITHUB_REPO", "DasKlaus00/printloom")
 IMAGE_BASE       = os.getenv("PRINTLOOM_IMAGE", "ghcr.io/dasklaus00/printloom")
 CONTAINER_NAME   = os.getenv("PRINTLOOM_CONTAINER", "printloom-app")
@@ -70,35 +68,83 @@ def _same_release_line(candidate: str, current: str) -> bool:
 
 # ─── Version endpoints ───────────────────────────────────────────────────────
 
-async def _ghcr_digest(tag: str) -> Optional[str]:
-    """Manifest digest of ghcr.io/<repo>:<tag>. Works anonymously for public repos
-    (ghcr hands out a pull token even without credentials)."""
+VERSION_LABEL = "org.opencontainers.image.version"
+_MANIFEST_ACCEPT = ", ".join([
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+    "application/vnd.docker.distribution.manifest.v2+json",
+])
+
+
+async def _ghcr_image(tag: str) -> Optional[dict]:
+    """{"digest", "version"} von ghcr.io/<repo>:<tag>; None, wenn nicht abrufbar.
+    Geht ohne Anmeldung (ghcr gibt für öffentliche Pakete auch so ein Pull-Token).
+
+    Die Version steht als OCI-Label im Image (seit v1.1.39, gesetzt in
+    docker-publish.yml). Vorher zeigte der Beta-Kanal nur einen Digest
+    („sha256:3f9a…") — daran sieht niemand, ob sich ein Update lohnt. Ältere
+    Images haben kein Label: dann ist version None."""
     owner, _, repo = GITHUB_REPO.partition("/")
     if not owner or not repo:
         return None
     path = f"{owner.lower()}/{repo.lower()}"
-    accept = ", ".join([
-        "application/vnd.oci.image.index.v1+json",
-        "application/vnd.oci.image.manifest.v1+json",
-        "application/vnd.docker.distribution.manifest.list.v2+json",
-        "application/vnd.docker.distribution.manifest.v2+json",
-    ])
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             tr = await client.get(
                 f"https://ghcr.io/token?scope=repository:{path}:pull&service=ghcr.io")
             token = tr.json().get("token") if tr.status_code == 200 else None
-            headers = {"Accept": accept}
+            headers = {"Accept": _MANIFEST_ACCEPT}
             if token:
                 headers["Authorization"] = f"Bearer {token}"
-            man_url = f"https://ghcr.io/v2/{path}/manifests/{tag}"
-            r = await client.head(man_url, headers=headers)
+            r = await client.get(f"https://ghcr.io/v2/{path}/manifests/{tag}", headers=headers)
             if r.status_code != 200:
-                r = await client.get(man_url, headers=headers)
-            if r.status_code == 200:
-                return r.headers.get("Docker-Content-Digest")
-    except Exception:
-        pass
+                return None
+            info = {"digest": r.headers.get("Docker-Content-Digest"), "version": None}
+            try:
+                info["version"] = await _image_version(client, path, headers, r.json())
+            except Exception as e:
+                logger.info(f"Versions-Label von :{tag} nicht lesbar: {e}")
+            return info
+    except Exception as e:
+        logger.info(f"ghcr nicht erreichbar ({tag}): {e}")
+        return None
+
+
+async def _image_version(client, path: str, headers: dict, manifest: dict) -> Optional[str]:
+    """Versions-Label aus der Image-Konfiguration. Ein Multi-Arch-Index verweist auf
+    ein Manifest je Plattform (plus Attestierungen mit Plattform „unknown"); das
+    Label ist in allen gleich, also reicht das erste echte."""
+    if "manifests" in manifest:
+        real = [m for m in manifest["manifests"]
+                if (m.get("platform") or {}).get("architecture") not in (None, "unknown")]
+        if not real:
+            return None
+        r = await client.get(f"https://ghcr.io/v2/{path}/manifests/{real[0]['digest']}",
+                             headers=headers)
+        r.raise_for_status()
+        manifest = r.json()
+    cfg = (manifest.get("config") or {}).get("digest")
+    if not cfg:
+        return None
+    r = await client.get(f"https://ghcr.io/v2/{path}/blobs/{cfg}", headers=headers)
+    r.raise_for_status()
+    labels = (r.json().get("config") or {}).get("Labels") or {}
+    version = (labels.get(VERSION_LABEL) or "").lstrip("v")
+    # metadata-action setzte hier früher den Branch-Namen („beta") ein.
+    return version if re.fullmatch(r"\d+\.\d+\.\d+", version) else None
+
+
+async def _branch_version(branch: str) -> Optional[str]:
+    """version.txt im Branch — ist sie neuer als das Image, läuft der Build noch."""
+    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{branch}/backend/version.txt"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(url)
+        if r.status_code == 200:
+            return r.text.strip()
+    except Exception as e:
+        logger.info(f"version.txt in {branch} nicht lesbar: {e}")
     return None
 
 
@@ -111,25 +157,38 @@ def _running_beta_digest() -> Optional[str]:
 
 
 async def _check_beta(current: str) -> dict:
-    """Beta channel: compare the running image digest with the remote :beta digest."""
+    """Beta-Kanal: Digest des laufenden Images gegen den von :beta. Der Digest
+    entscheidet (ein Neubau derselben Version ist auch ein Update), angezeigt wird
+    die Version aus dem Image-Label."""
     result = {
-        "current": current, "channel": "beta", "latest": None,
+        "current": current, "channel": "beta", "latest": None, "latest_version": None,
         "update_available": False, "token_configured": bool(GITHUB_TOKEN), "error": None,
     }
-    remote = await _ghcr_digest("beta")
-    if not remote:
+    remote, branch = await asyncio.gather(_ghcr_image("beta"), _branch_version("beta"))
+    if not remote or not remote.get("digest"):
         result["error"] = "Beta-Image nicht abrufbar (ghcr nicht erreichbar oder Package privat?)"
         return result
-    result["latest"] = remote[:19]
+    result["latest_version"] = remote["version"]
+    result["latest"] = remote["version"] or remote["digest"][:19]
     local = _running_beta_digest()
     if local:
-        result["update_available"] = (local != remote)
+        result["update_available"] = (local != remote["digest"])
         result["installed_digest"] = local[:19]
+    elif remote["version"]:
+        result["update_available"] = _is_newer(remote["version"], current)
     else:
-        # No local digest (no socket / not started from the registry) → offer update.
+        # Weder lokaler Digest (kein Socket) noch Version im Image → anbieten.
         result["update_available"] = True
         result["note"] = "Installierter Beta-Stand unbekannt — Update zieht den neuesten Beta-Build."
+    result["building"] = _building(branch, remote["version"])
     return result
+
+
+def _building(branch_version: Optional[str], image_version: Optional[str]) -> Optional[str]:
+    """Version, die gerade gebaut wird — oder None. Nur mit Label vergleichbar."""
+    if branch_version and image_version and _is_newer(branch_version, image_version):
+        return branch_version
+    return None
 
 
 @router.get("/running-version")
@@ -158,18 +217,12 @@ async def _check_native_linux(current: str, channel: str) -> dict:
         "update_available": False, "runtime": "native-linux",
         "token_configured": bool(GITHUB_TOKEN), "error": None,
     }
-    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{branch}/backend/version.txt"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(url)
-        if r.status_code == 200:
-            latest = r.text.strip()
-            result["latest"] = latest
-            result["update_available"] = _is_newer(latest, current)
-        else:
-            result["error"] = f"GitHub raw HTTP {r.status_code}"
-    except Exception as e:
-        result["error"] = f"GitHub nicht erreichbar: {str(e)[:120]}"
+    latest = await _branch_version(branch)
+    if latest:
+        result["latest"] = latest
+        result["update_available"] = _is_newer(latest, current)
+    else:
+        result["error"] = "GitHub nicht erreichbar"
     return result
 
 
@@ -279,6 +332,12 @@ async def _check_stable(current: str) -> dict:
         if latest:
             result["latest"] = latest
             result["update_available"] = _is_newer(latest, current)
+            # Ein Update zieht :latest, nicht den Tag. Ist das Image noch älter als
+            # der Tag (Build läuft), gäbe es nach dem Klick nichts Neues.
+            image = await _ghcr_image("latest")
+            result["building"] = _building(latest, image and image["version"])
+            if result["building"]:
+                result["update_available"] = _is_newer(image["version"], current)
         else:
             result["error"] = "Keine passenden Versions-Tags im Repo gefunden"
     except Exception as e:
@@ -324,51 +383,37 @@ async def trigger_update(body: UpdateIn = UpdateIn()):
     return await _trigger_update_docker(body)
 
 
-async def _trigger_update_docker(body: "UpdateIn"):
-    """Docker/Watchtower-Update (unverändert) — nur im Container-Betrieb.
+NO_DOCKER_SOCKET = ("Kein Docker-Socket gemountet — Update aus der Oberfläche nicht "
+                    "möglich. Auf dem Server: docker compose pull && docker compose up -d")
 
-    Preferred path uses the Docker socket: it pulls ghcr.io/.../printloom:<tag> and
-    recreates the app container — this handles BOTH 'update within channel' and
-    'switch channel' in one click. Falls back to Watchtower (which can only update
-    the container's CURRENT tag) when no Docker socket is mounted."""
+
+async def _trigger_update_docker(body: "UpdateIn"):
+    """Update/Kanalwechsel im Container-Betrieb über den Docker-Socket: neues Image
+    ziehen, dann baut ein Helfer-Container die App mit gleicher Konfiguration neu auf.
+
+    Bis v1.1.38 gab es ohne Socket einen Rückfall auf Watchtower. Den richtet seit
+    dem Wechsel auf das Socket-Update niemand mehr ein; er brauchte aber einen
+    eigenen Token mit öffentlich bekanntem Standardwert und konnte keinen
+    Kanalwechsel. Ohne Socket bleibt der Weg über die Kommandozeile."""
     channel = (body.channel or "latest").lower()
     tag = "beta" if channel == "beta" else "latest"
     target_image = f"{IMAGE_BASE}:{tag}"
 
-    # Preferred: Docker-socket recreate (update + channel switch).
+    from app.services import updater
+    if not updater.docker_available():
+        raise HTTPException(501, NO_DOCKER_SOCKET)
+    # Erst HIER ziehen: ein Fehler (privates Package, falscher Tag, kein Netz) kommt
+    # so als echte Meldung zurück, statt dass ein abgekoppelter Helfer still stirbt
+    # („Update läuft ewig, passiert nichts").
+    ok, detail = await asyncio.to_thread(updater.pull_image, target_image)
+    if not ok:
+        raise HTTPException(502, detail)
     try:
-        from app.services import updater
-        if updater.docker_available():
-            # Pull FIRST, in this container, so a failure (private package, wrong
-            # tag, no network) returns a real error now instead of a detached
-            # helper dying silently → "Update läuft ewig, passiert nichts".
-            ok, detail = updater.pull_image(target_image)
-            if not ok:
-                raise HTTPException(502, detail)
-            updater.spawn_helper(target_image, CONTAINER_NAME)
-            return {"success": True, "method": "docker", "switching": True, "image": target_image}
-    except HTTPException:
-        raise
+        updater.spawn_helper(target_image, CONTAINER_NAME)
     except Exception as e:
-        logger.warning(f"Docker-Socket-Update nicht möglich, versuche Watchtower: {e}")
-
-    # Fallback: Watchtower — only updates the container's CURRENT channel/tag.
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.post(
-                f"{WATCHTOWER_URL}/v1/update",
-                headers={"Authorization": f"Bearer {WATCHTOWER_TOKEN}"},
-            )
-        if r.status_code != 200:
-            raise HTTPException(502, f"Watchtower: {r.text}")
-        return {"success": True, "method": "watchtower"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            502,
-            "Kein Docker-Socket gemountet und Watchtower nicht erreichbar — "
-            f"Kanalwechsel/Update nicht möglich: {e}")
+        logger.exception("Update-Helfer nicht gestartet")
+        raise HTTPException(502, f"Update-Helfer nicht gestartet: {e}")
+    return {"success": True, "method": "docker", "switching": True, "image": target_image}
 
 
 # ─── Kamera (global an/aus — Energiesparmodus für schwache Geräte) ──────────
@@ -404,14 +449,20 @@ async def save_camera_settings(body: CameraSettingsIn):
 # wiederhergestellt werden kann: Geräte (mit Zugangsdaten), Einstellungen je Gerät
 # (Kamera/HA-Token/Steckdose), Sequenzen, Farm-Einstellungen, Regal + Fächer,
 # Geometrie, Projekte, AMS-Zuordnungen je Datei, Filamente, Profile, Sprachpakete,
-# Dashboard-Anordnung. Weil Zugangsdaten drinstehen, warnt die Oberfläche davor.
+# Dashboard-Anordnung.
+#
+# Zugangsdaten (Access-Code, HA-Token, Steckdosen-Passwort, URLs mit Passwort) stehen
+# seit v1.1.39 NUR auf ausdrücklichen Wunsch drin — dann im Abschnitt "secrets",
+# auf Wunsch mit Passwort verschlüsselt. Bis dahin lagen sie in jedem Backup im
+# Klartext, auch in dem, das man vor einem Update „nur zur Sicherheit" zieht.
+# Ohne Zugangsdaten eingespielt, bleiben die vorhandenen erhalten.
 #
 # Bis v1.1.34 fehlten Projekte, die manuellen AMS-Zuordnungen je Datei und das
 # Drucker-Modell der Geräte — Arbeit des Nutzers, die nach einer Wiederherstellung
 # weg war. Ältere Backups mit "calibration", "racks", "schedules" oder
 # "notifications" lassen sich weiter einspielen; diese Teile gibt es nicht mehr.
 
-BACKUP_SCHEMA = "printloom-backup/2"
+BACKUP_SCHEMA = "printloom-backup/3"
 
 # (path, backup-key) for the flat JSON config files in the db dir.
 def _backup_files() -> list:
@@ -442,9 +493,8 @@ def _backup_files() -> list:
 # Anders als das Backup enthält das Diagnose-Paket ABSICHTLICH KEINE Zugangsdaten:
 # es ist zum Verschicken gedacht. Alles, was nach Geheimnis aussieht, wird anhand des
 # SCHLÜSSELNAMENS rekursiv ersetzt (nicht anhand einer Whitelist von Dateien) — so
-# rutscht auch bei künftig neuen Feldern kein Token mit raus.
-_SECRET_KEY_HINTS = ("access_code", "password", "passwd", "token", "secret",
-                     "api_key", "apikey", "auth", "credential", "private_key")
+# rutscht auch bei künftig neuen Feldern kein Token mit raus. Was als Geheimnis gilt,
+# entscheidet `credentials` — dieselbe Regel wie beim Backup.
 _REDACTED = "***entfernt***"
 
 # Adressen: Das NETZ bleibt erkennbar (192.168.1.x oder Docker-Netz 172.17.0.x — genau
@@ -472,8 +522,7 @@ def _redact(value, _depth: int = 0):
     if isinstance(value, dict):
         out = {}
         for k, v in value.items():
-            kl = str(k).lower()
-            if any(h in kl for h in _SECRET_KEY_HINTS):
+            if credentials.is_secret_key(k):
                 out[k] = _REDACTED if v not in (None, "", [], {}) else v
             else:
                 out[k] = _redact(v, _depth + 1)
@@ -596,9 +645,13 @@ def _safe_write_json(path: str, data):
 
 
 def _export_devices(db) -> tuple:
-    """Alle Geräte (mit Zugangsdaten) + ihre Einstellungen, über den NAMEN
-    zugeordnet — auf einer frischen Datenbank haben die Geräte andere IDs."""
+    """(Geräte, Einstellungen je Gerät, Zugangsdaten) — alles über den NAMEN
+    zugeordnet, auf einer frischen Datenbank haben die Geräte andere IDs.
+
+    Die Zugangsdaten kommen getrennt zurück; ob sie ins Backup gehen, entscheidet
+    der Aufrufer."""
     devices, settings = [], {}
+    secrets = {"devices": {}, "device_settings": {}}
     for d in db.query(Device).all():
         devices.append({
             "name":          d.name,
@@ -607,46 +660,102 @@ def _export_devices(db) -> tuple:
             "ip_address":    d.ip_address,
             "port":          d.port,
             "serial_number": d.serial_number,
-            "access_code":   d.access_code,
             "mqtt_port":     d.mqtt_port,
             "use_tls":       d.use_tls,
         })
-        s = device_settings.get(db, d.id)
-        if s:
-            settings[d.name] = s
-    return devices, settings
+        if d.access_code:
+            secrets["devices"][d.name] = {"access_code": d.access_code}
+        public, secret = credentials.split(device_settings.get(db, d.id))
+        if public:
+            settings[d.name] = public
+        if secret:
+            secrets["device_settings"][d.name] = secret
+    return devices, settings, secrets
+
+
+class BackupExportIn(BaseModel):
+    include_secrets: bool = False
+    password: Optional[str] = None
+
+
+def _build_backup(include_secrets: bool, password: Optional[str]) -> dict:
+    if include_secrets and password is not None and len(password) < 8:
+        raise HTTPException(400, "Backup-Passwort zu kurz (mindestens 8 Zeichen)")
+    db = SessionLocal()
+    try:
+        devices, settings, secrets = _export_devices(db)
+    finally:
+        db.close()
+
+    out = {
+        "schema":          BACKUP_SCHEMA,
+        "current_version": _get_current_version(),
+        "exported_at":     datetime.now().isoformat(),
+        "devices":         devices,
+        "device_settings": settings,
+    }
+    if include_secrets:
+        out["secrets"] = (credentials.encrypt(secrets, password) if password
+                          else {"encrypted": False, **secrets})
+    for path, key in _backup_files():
+        data = storage.read_json(path, None)
+        if data is not None:
+            out[key] = data
+    return out
 
 
 @router.get("/backup")
 async def export_backup():
-    """Vollständiges Konfigurations-Backup als JSON (enthält Zugangsdaten)."""
+    """Konfigurations-Backup als JSON — OHNE Zugangsdaten."""
     try:
-        db = SessionLocal()
-        try:
-            devices, settings = _export_devices(db)
-        finally:
-            db.close()
-
-        out = {
-            "schema":          BACKUP_SCHEMA,
-            "current_version": _get_current_version(),
-            "exported_at":     datetime.now().isoformat(),
-            "devices":         devices,
-            "device_settings": settings,
-        }
-        for path, key in _backup_files():
-            data = storage.read_json(path, None)
-            if data is not None:
-                out[key] = data
-        return out
+        return _build_backup(False, None)
     except Exception as e:
         logger.exception("Backup-Export fehlgeschlagen")
         raise HTTPException(500, f"Backup-Export fehlgeschlagen: {e}")
 
 
+@router.post("/backup")
+async def export_backup_with_options(body: BackupExportIn):
+    """Backup auf ausdrücklichen Wunsch MIT Zugangsdaten, mit Passwort verschlüsselt.
+    POST, damit das Passwort nicht in der Adresse (und damit in Proxy-Logs) steht."""
+    try:
+        return await asyncio.to_thread(_build_backup, body.include_secrets, body.password or None)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Backup-Export fehlgeschlagen")
+        raise HTTPException(500, f"Backup-Export fehlgeschlagen: {e}")
+
+
+def _merge_secrets(backup: dict, password: Optional[str]) -> tuple:
+    """Geräte und Einstellungen aus dem Backup, Zugangsdaten wieder eingesetzt.
+    Liefert (devices, device_settings, Zustand der Zugangsdaten)."""
+    devices = [dict(d) for d in (backup.get("devices") or []) if isinstance(d, dict)]
+    settings = {k: dict(v) for k, v in (backup.get("device_settings") or {}).items()
+                if isinstance(v, dict)}
+    blob = backup.get("secrets")
+    if not isinstance(blob, dict):
+        # Backups bis v1.1.38 tragen die Zugangsdaten direkt in devices/device_settings.
+        legacy = any(d.get("access_code") for d in devices)
+        return devices, settings, ("restored" if legacy else "none")
+    if blob.get("encrypted"):
+        if not password:
+            return devices, settings, "skipped"
+        try:
+            blob = credentials.decrypt(blob, password)
+        except credentials.WrongPassword:
+            raise HTTPException(400, "BACKUP_PASSWORT_FALSCH")
+    for d in devices:
+        d.update((blob.get("devices") or {}).get(d.get("name"), {}))
+    for name, secret in (blob.get("device_settings") or {}).items():
+        settings.setdefault(name, {}).update(secret)
+    return devices, settings, "restored"
+
+
 def _restore_devices(db, devices: list, settings: dict) -> int:
     """Geräte über den Namen anlegen/aktualisieren, dann ihre Einstellungen unter der
-    (evtl. neuen) ID ablegen."""
+    (evtl. neuen) ID ablegen. Zugangsdaten, die das Backup nicht mitbringt, bleiben
+    wie sie sind — ein Backup ohne Zugangsdaten darf keine löschen."""
     from app.services import printer_models
     n = 0
     name_to_id = {}
@@ -667,7 +776,8 @@ def _restore_devices(db, devices: list, settings: dict) -> int:
         row.ip_address     = d.get("ip_address")
         row.port           = d.get("port")
         row.serial_number  = d.get("serial_number")
-        row.access_code    = d.get("access_code")
+        if d.get("access_code"):
+            row.access_code = d["access_code"]
         row.mqtt_port      = d.get("mqtt_port", 8883)
         row.use_tls        = d.get("use_tls", True)
         # Immer freigegeben: Ein Backup aus einem Notaus-Zustand (ältere Backups
@@ -681,22 +791,33 @@ def _restore_devices(db, devices: list, settings: dict) -> int:
     for name, s in (settings or {}).items():
         did = name_to_id.get(name)
         if did and isinstance(s, dict):
-            device_settings.put(db, did, s)
+            _, kept = credentials.split(device_settings.get(db, did))
+            device_settings.put(db, did, {**kept, **s})
     return n
 
 
 @router.post("/backup/restore")
-async def import_backup(backup: dict):
-    """Stellt die komplette Konfiguration aus einem Backup wieder her."""
-    if not isinstance(backup, dict):
+async def import_backup(body: dict):
+    """Stellt die komplette Konfiguration aus einem Backup wieder her.
+
+    Body: das Backup selbst, oder {"backup": …, "password": …} für eines mit
+    verschlüsselten Zugangsdaten. Fehlt das Passwort, wird alles außer den
+    Zugangsdaten eingespielt (secrets = "skipped")."""
+    if not isinstance(body, dict):
         raise HTTPException(400, "Ungültiges Backup")
+    password = None
+    backup = body
+    if isinstance(body.get("backup"), dict) and "schema" not in body:
+        backup, password = body["backup"], body.get("password")
+
+    # Zuerst entschlüsseln: ein falsches Passwort soll NICHTS halb einspielen.
+    devices, settings, secrets_state = _merge_secrets(backup, password)
     restored = []
 
-    if backup.get("devices"):
+    if devices:
         db = SessionLocal()
         try:
-            count = _restore_devices(db, backup.get("devices"),
-                                     backup.get("device_settings") or {})
+            count = _restore_devices(db, devices, settings)
             restored.append(f"devices ({count})")
         finally:
             db.close()
@@ -707,7 +828,7 @@ async def import_backup(backup: dict):
             _safe_write_json(path, backup[key])
             restored.append(key)
 
-    return {"success": True, "restored": restored}
+    return {"success": True, "restored": restored, "secrets": secrets_state}
 
 
 # ─── Multi-target health (printer · klipper) ─────────────────────────────────

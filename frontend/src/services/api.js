@@ -11,7 +11,7 @@ const NO_TIMEOUT = 0            // axios: 0 = unbegrenzt
 
 const api = axios.create({ baseURL: '/api', timeout: DEFAULT_TIMEOUT_MS })
 
-// Nach einem Auto-Reload (Watchtower-Update → Container gerade neu gestartet) kann
+// Nach einem Auto-Reload (Update → Container gerade neu gestartet) kann
 // die erste Geräteabfrage ins noch nicht bereite Backend laufen — vorher blieb die
 // Geräteliste dann leer, bis der Nutzer F5 drückte. Deshalb kurz nachfassen bei
 // FEHLER oder bei LEERER Antwort OBWOHL das Setup schon durch ist (dann ist „leer"
@@ -176,8 +176,13 @@ export const systemService = {
   // Kein Timeout: Image ziehen + Container neu starten dauert Minuten.
   triggerUpdate:    (channel) => api.post('/system/update', channel ? { channel } : {},
                                           { timeout: NO_TIMEOUT }),
-  exportBackup:     () => api.get('/system/backup'),
-  importBackup:     (data) => api.post('/system/backup/restore', data),
+  // Ohne Optionen: Backup OHNE Zugangsdaten. Mit Zugangsdaten per POST, damit das
+  // Passwort nicht in der Adresse steht.
+  exportBackup:     (opts) => opts?.include_secrets
+                      ? api.post('/system/backup', opts)
+                      : api.get('/system/backup'),
+  importBackup:     (data, password) => api.post('/system/backup/restore',
+                      password ? { backup: data, password } : data),
   getLangInstalled: () => api.get('/system/lang/installed'),
   importLang:       (pack) => api.post('/system/lang/import', pack),
   deleteLang:       (code) => api.delete(`/system/lang/${code}`),

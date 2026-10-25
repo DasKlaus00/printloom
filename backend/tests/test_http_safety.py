@@ -46,3 +46,37 @@ def test_eigener_snapshot_wird_ausgeliefert(tmp_path, monkeypatch):
     r = client.get("/api/printer/snapshots/snap_3_20261011_120000.jpg")
     assert r.status_code == 200
     assert r.content == b"\xff\xd8\xff"
+
+
+# ── Schreiben von fremder Herkunft (seit v1.1.39) ───────────────────────────────
+# Ein Formular auf einer fremden Seite braucht keine CORS-Freigabe. Ohne diese
+# Sperre löste ein leeres POST auf /api/system/update ein Update samt Neustart aus.
+
+@pytest.mark.parametrize("site", ["cross-site", "same-site"])
+def test_fremde_seite_darf_nicht_schreiben(site):
+    r = client.post("/api/system/update", headers={"Sec-Fetch-Site": site})
+    assert r.status_code == 403
+    assert r.json()["detail"] == "FREMDE_HERKUNFT"
+
+
+def test_fremde_seite_darf_weiter_lesen_was_ohnehin_oeffentlich_ist():
+    # Lesen schützt die fehlende CORS-Freigabe; die Sperre gilt nur fürs Schreiben.
+    assert client.get("/api/health", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 200
+
+
+@pytest.mark.parametrize("headers", [{"Sec-Fetch-Site": "same-origin"}, {}])
+def test_eigene_oberflaeche_und_skripte_duerfen_schreiben(headers, tmp_path, monkeypatch):
+    """Die eigene Oberfläche schickt same-origin, Home Assistant/curl gar nichts."""
+    from app.routers import system
+    monkeypatch.setattr(system, "_db_dir", lambda: tmp_path)
+    r = client.put("/api/system/dashboard-layout?view=farm", json={"layout": []},
+                   headers=headers)
+    assert r.status_code == 200, r.text
+
+
+def test_websocket_von_fremder_seite_wird_abgelehnt():
+    from starlette.websockets import WebSocketDisconnect
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/api/autofarm/ws",
+                                      headers={"Sec-Fetch-Site": "cross-site"}):
+            pass

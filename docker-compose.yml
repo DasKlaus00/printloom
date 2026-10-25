@@ -1,35 +1,53 @@
+# ── Printloom — fertiges Image aus ghcr, Update aus der Oberfläche ──────────────
+#
+# Installation (frischer Host):
+#
+#     git clone https://github.com/DasKlaus00/printloom.git
+#     cd printloom
+#     docker compose up -d
+#
+# Danach im Browser: http://<host>:8000
+#
+# Kein Token, keine .env nötig. Update: System → „Update installieren" (oder auf
+# dem Server  docker compose pull && docker compose up -d).
+#
+# Kanal: in der Oberfläche umschalten, oder hier vorgeben:
+#     PRINTLOOM_CHANNEL=beta docker compose up -d
+#
+# Selbst bauen statt ziehen (Entwicklung):  docker build -t printloom:dev .
+# und unten  image: printloom:dev  eintragen.
+#
+# Sicherheit:
+#  • Der Docker-Socket ist eingehängt, damit das Update aus der Oberfläche geht.
+#    Das gibt Printloom Kontrolle über Docker auf diesem Host. Wer das nicht will,
+#    entfernt die Zeile — dann nur noch per  docker compose pull  aktualisieren.
+#  • Printloom hat keine eigene Anmeldung. Im Heimnetz ist das üblich; wer es von
+#    außen erreichbar macht, gehört hinter einen Reverse-Proxy mit Anmeldung
+#    (z. B. authentik) — und veröffentlicht den Port dann NUR lokal, sonst geht
+#    man über :8000 am Proxy vorbei:   - "127.0.0.1:8000:8000"
+
 services:
   printloom:
-    build: .
+    image: ghcr.io/dasklaus00/printloom:${PRINTLOOM_CHANNEL:-latest}
     container_name: printloom-app
     ports:
-      # Hinter einem Reverse-Proxy mit Anmeldung (z. B. authentik) nur lokal
-      # veröffentlichen — sonst ist Printloom über Port 8000 am Proxy vorbei
-      # erreichbar:   - "127.0.0.1:8000:8000"
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     environment:
       - PYTHONUNBUFFERED=1
       - APP_ENV=production
-      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_REPO=DasKlaus00/printloom
+      # Damit das Update aus der Oberfläche das richtige Image und den Container findet:
       - PRINTLOOM_IMAGE=ghcr.io/dasklaus00/printloom
       - PRINTLOOM_CONTAINER=printloom-app
-      - WATCHTOWER_TOKEN=printloom-update-token
     volumes:
+      # Daten (Geräte, Regal, Sequenzen, Warteschlange, Druckdateien) bleiben erhalten.
       - ./backend/uploads:/app/uploads
       - ./backend/db:/app/db
-      # Docker-Socket → In-App-Update / Kanalwechsel (System-Seite):
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
-    networks:
-      - printloom-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 5s
-
-networks:
-  printloom-network:
-    driver: bridge
+      start_period: 10s

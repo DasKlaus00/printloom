@@ -6,6 +6,14 @@ on:
     tags: [ 'v*.*.*' ]
   pull_request:
     branches: [ main ]
+  # Promote (promote.yml) stößt hierüber das Native-Paket für main an: Pushes mit
+  # dem Actions-Token starten keine Workflows, ein workflow_dispatch schon.
+  workflow_dispatch:
+    inputs:
+      native_only:
+        description: "Nur das Native-Paket bauen (kein Image)"
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -19,6 +27,7 @@ jobs:
 
   build-and-push:
     needs: tests
+    if: ${{ !inputs.native_only }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,6 +52,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Die App zeigt im Update-Dialog „v1.1.39 verfügbar" statt eines Digests —
+      # dafür steht die Version als Label im Image. metadata-action setzt dasselbe
+      # Label auf den Branch-Namen („beta"); das eigene steht deshalb unten ZULETZT.
+      - name: Read version
+        id: version
+        run: echo "version=$(tr -d '[:space:]' < backend/version.txt)" >> "$GITHUB_OUTPUT"
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -64,7 +80,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

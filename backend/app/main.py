@@ -53,6 +53,42 @@ async def _lifespan(_app: FastAPI):
 # dürfen, das Backup mit allen Zugangsdaten eingeschlossen.
 app = FastAPI(title="Printloom - 3D Print Farm Controller", lifespan=_lifespan)
 
+
+# Ohne CORS kann eine fremde Seite nichts LESEN — schreiben aber schon: ein
+# Formular, das sich selbst abschickt, braucht keine Freigabe. Bis v1.1.38 hätte
+# so jede Webseite, die man im Heimnetz (oder angemeldet hinter authentik) öffnet,
+# ein Update samt Neustart auslösen, ein Backup einspielen oder den Arm bewegen
+# können. Browser sagen per `Sec-Fetch-Site`, woher eine Anfrage kommt; Aufrufe
+# ohne Browser (Home Assistant, curl, Skripte) schicken den Kopf nicht und bleiben
+# erlaubt. „same-site" zählt mit: ein anderer Dienst unter derselben Domain ist
+# genauso fremd. Reines ASGI statt @app.middleware: BaseHTTPMiddleware hat bei
+# langlaufenden Streams (Kamera) bekannte Macken beim Verbindungsende.
+FOREIGN_ORIGIN = "FREMDE_HERKUNFT"
+_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_FOREIGN_SITES = {b"cross-site", b"same-site"}
+
+
+class _NoForeignWrites:
+    def __init__(self, app):
+        self.inner = app
+
+    async def __call__(self, scope, receive, send):
+        kind = scope["type"]
+        if kind in ("http", "websocket"):
+            site = dict(scope.get("headers") or []).get(b"sec-fetch-site")
+            if site in _FOREIGN_SITES and (kind == "websocket" or scope["method"] in _WRITE_METHODS):
+                if kind == "websocket":
+                    await receive()   # websocket.connect, dann ablehnen (HTTP 403)
+                    await send({"type": "websocket.close", "code": 1008})
+                else:
+                    await JSONResponse(status_code=403,
+                                       content={"detail": FOREIGN_ORIGIN})(scope, receive, send)
+                return
+        await self.inner(scope, receive, send)
+
+
+app.add_middleware(_NoForeignWrites)
+
 # Include routers
 app.include_router(devices.router,       prefix="/api/devices",       tags=["Devices"])
 app.include_router(files.router,         prefix="/api/files",         tags=["File Management"])

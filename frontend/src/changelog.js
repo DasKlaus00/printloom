@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.39',
+    de: [
+      'BACKUP OHNE ZUGANGSDATEN. Ein Backup enthält jetzt standardmäßig weder den Drucker-Access-Code noch Home-Assistant-Token, Steckdosen-Passwort oder Kamera-Adressen mit Passwort. Bisher stand das alles im Klartext in jeder Backup-Datei — auch in der, die man vor einem Update „nur zur Sicherheit" zieht. Beim Einspielen bleiben die vorhandenen Zugangsdaten erhalten.',
+      'Für einen Umzug auf ein neues Gerät gibt es unter System → Backup den Haken „Zugangsdaten mitsichern". Mit einem Passwort (mind. 8 Zeichen) werden sie verschlüsselt; beim Einspielen fragt Printloom danach. Ohne Passwort lässt sich so ein Backup trotzdem einspielen, nur ohne Zugangsdaten. Alte Backups funktionieren weiter.',
+      'Fremde Webseiten können in Printloom nichts mehr auslösen. Bisher hätte eine Seite, die man im selben Browser öffnet, unbemerkt ein Update samt Neustart starten, ein Backup einspielen oder den Arm bewegen können. Home Assistant, Skripte und curl sind davon nicht betroffen.',
+      'UPDATE-ANZEIGE: Auch im Beta-Kanal steht jetzt „v1.1.x verfügbar" statt einer langen Prüfsumme. Ist auf GitHub schon eine neuere Version da, das Image aber noch im Bau, sagt Printloom „wird gerade gebaut" statt „aktuell". Das gilt ab dem nächsten Image; ältere Images zeigen weiter die Prüfsumme.',
+      'Watchtower wird nicht mehr unterstützt. Das Update aus der Oberfläche läuft über den Docker-Socket. Ohne Socket nennt Printloom den Befehl für die Kommandozeile. Wer noch die alte docker-compose.prod.yml mit Watchtower nutzt: auf die neue docker-compose.yml wechseln (Daten-Ordner bleiben gleich).',
+      'Aufgeräumt: veraltete Anleitungen und Skripte aus der Anfangszeit sind raus, docker-compose.yml ist jetzt die einfache Variante mit fertigem Image, README, Entwickler-Leitfaden und Roadmap sind auf dem Stand.',
+    ],
+    en: [
+      'BACKUP WITHOUT CREDENTIALS. A backup now leaves out the printer access code, Home Assistant token, smart plug password and camera addresses with a password by default. Until now all of this was in plain text in every backup file — including the one you take "just to be safe" before an update. Restoring keeps the existing credentials.',
+      'For moving to a new device, System → Backup has a new "Include credentials" checkbox. With a password (at least 8 characters) they are encrypted, and Printloom asks for it when restoring. Such a backup can still be restored without the password, just without the credentials. Old backups keep working.',
+      'Other websites can no longer trigger anything in Printloom. Until now a page opened in the same browser could silently start an update with restart, restore a backup or move the arm. Home Assistant, scripts and curl are not affected.',
+      'UPDATE DISPLAY: the beta channel now also shows "v1.1.x available" instead of a long checksum. If GitHub already has a newer version while the image is still building, Printloom says "being built" instead of "up to date". This applies from the next image on; older images still show the checksum.',
+      'Watchtower is no longer supported. Updating from the UI uses the Docker socket. Without the socket Printloom shows the command line to run. If you still use the old docker-compose.prod.yml with Watchtower: switch to the new docker-compose.yml (data folders stay the same).',
+      'Cleaned up: outdated guides and scripts from the early days are gone, docker-compose.yml is now the simple variant with the prebuilt image, and the README, developer guide and roadmap are up to date.',
+    ],
+  },
+  {
     version: '1.1.38',
     de: [
       'DARSTELLUNG FOLGT JETZT DEM SYSTEM. Wer nie selbst Hell oder Dunkel gewählt hat, bekommt das Farbschema des Betriebssystems — auch, wenn es abends umschaltet. Eine Wahl oben rechts oder unter System → Darstellung gilt weiter und wird gemerkt. Wer bis v1.1.35 ein dunkles Thema hatte, bleibt dunkel.',

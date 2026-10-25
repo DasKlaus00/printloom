@@ -40,7 +40,8 @@ one unattended, with live status, cameras and ETA in a clean web UI.
 - **Notifications** — Web Push to the browsers you subscribe (job done, errors, pauses).
 - **In-app updates** — switch between **Latest** and **Beta** channels and update with
   one click from the System page (see [Updates](#updates)).
-- **Backup / restore**, multi-language UI, downloadable language packs.
+- **Backup / restore** — credentials (access codes, tokens) only on request and
+  optionally password-encrypted; multi-language UI, downloadable language packs.
 
 ## Hardware
 
@@ -58,7 +59,6 @@ web UI — no local build, no `git pull`, no token and no extra config needed.
 ```bash
 git clone https://github.com/DasKlaus00/printloom.git
 cd printloom
-cp docker-compose.simple.yml.example docker-compose.yml
 docker compose up -d
 ```
 
@@ -102,6 +102,14 @@ OTTOeject, rack, cameras) and stored in the runtime `db/` volume — so
 Optional deployment settings are plain environment variables (no `.env` required):
 `PRINTLOOM_CHANNEL` (`latest`/`beta`) and `PORT` (default `8000`). The update channel
 can also be switched live in the web UI.
+
+### Security
+
+Printloom has **no login of its own** — it is meant for your LAN. If you make it
+reachable from outside, put it behind a reverse proxy with authentication (e.g.
+authentik) and publish the port only locally (`"127.0.0.1:8000:8000"` in
+`docker-compose.yml`), otherwise port 8000 bypasses the proxy. Requests from other
+websites in your browser cannot change anything (checked via `Sec-Fetch-Site`).
 
 ### Cameras
 
