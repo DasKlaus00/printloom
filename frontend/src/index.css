@@ -2,210 +2,217 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Themes ──────────────────────────────────────────────────────────────
-   The whole UI uses the `surface` scale (50 = lightest, 950 = darkest in the
-   default dark theme). Each theme just remaps these 11 steps via CSS vars, so
-   no component needs touching. Values are space-separated RGB channels. */
-:root {                          /* Dunkel (Default) */
-  --s-50:  245 245 245;
-  --s-100: 232 232 232;
-  --s-200: 200 200 200;
-  --s-300: 160 160 160;
-  --s-400: 112 112 112;
-  --s-500:  80  80  80;
-  --s-600:  51  51  51;
-  --s-700:  34  34  34;
-  --s-800:  22  22  22;
-  --s-900:  12  12  12;
-  --s-950:   8   8   8;
+/* ── Darstellung ──────────────────────────────────────────────────────────
+   Gestaltet wie die Prüfplanung: graue Seite, weiße Blöcke mit 1-px-Linie,
+   ein Akzent (Marineblau), gedeckte Status-Farben, kleine Radien, kaum Schatten.
+
+   Die Seiten benutzen die Tailwind-Paletten surface/blue/red/emerald/amber …
+   tailwind.config.js lenkt sie auf die Skalen unten um. Hell und Dunkel tauschen
+   NUR diese Variablen — keine Komponente muss etwas über das Thema wissen.
+
+   surface: 950 Seite · 900 Mulde/Kopfzeile · 800 Block · 700 Linie · 600 kräftige
+            Linie · 500 Beschriftung · 400 „still" · 300–100 Text
+   Status (akzent/rot/gruen/gelb/lila): 950–700 Tönung für Hintergründe und
+            Rahmen, 600 Vollton (Knopf mit weißer Schrift), 500 Hover, 400–100 Schrift.
+   Werte sind RGB-Kanäle, damit Tailwinds /alpha-Modifier weiter funktionieren.
+   Generiert — nicht von Hand ändern, sondern in scripts/theme_vars.py
+   (Hex-Listen) und dann `python scripts/theme_vars.py`. */
+/* @@VARS-BEGIN@@ */
+:root,
+[data-theme="light"] {
+  --s-50:  17  20  23;  --s-100:  29  33  37;  --s-200:  43  50  56;  --s-300:  59  67  75;  --s-400:  94 104 114;  --s-500: 111 120 130;
+  --s-600: 185 191 197;  --s-700: 213 217 221;  --s-800: 255 255 255;  --s-900: 246 247 248;  --s-950: 242 243 244;
+  --akzent-50:  16  40  61;  --akzent-100:  22  54  82;  --akzent-200:  27  64 100;  --akzent-300:  35  80 122;  --akzent-400:  42  91 136;  --akzent-500:  27  64 100;
+  --akzent-600:  35  80 122;  --akzent-700: 169 194 218;  --akzent-800: 201 216 230;  --akzent-900: 230 238 245;  --akzent-950: 240 245 249;
+  --rot-50:  79  18  13;  --rot-100: 110  25  18;  --rot-200: 138  31  22;  --rot-300: 166  38  27;  --rot-400: 180  54  43;  --rot-500: 142  32  23;
+  --rot-600: 166  38  27;  --rot-700: 230 166 159;  --rot-800: 242 201 196;  --rot-900: 251 233 231;  --rot-950: 253 243 242;
+  --gruen-50:  21  51  27;  --gruen-100:  30  70  38;  --gruen-200:  38  88  48;  --gruen-300:  47 107  58;  --gruen-400:  54 122  67;  --gruen-500:  40  92  50;
+  --gruen-600:  47 107  58;  --gruen-700: 163 204 169;  --gruen-800: 198 224 202;  --gruen-900: 231 242 232;  --gruen-950: 241 248 242;
+  --gelb-50:  61  42   0;  --gelb-100:  82  56   0;  --gelb-200: 102  69   0;  --gelb-300: 122  83   0;  --gelb-400: 138  95   0;  --gelb-500: 105  71   0;
+  --gelb-600: 122  83   0;  --gelb-700: 232 201 122;  --gelb-800: 243 222 166;  --gelb-900: 252 241 212;  --gelb-950: 253 248 234;
+  --lila-50:  42  24  70;  --lila-100:  58  34  96;  --lila-200:  74  44 122;  --lila-300:  90  54 144;  --lila-400: 106  68 163;  --lila-500:  79  48 134;
+  --lila-600:  90  54 144;  --lila-700: 196 178 226;  --lila-800: 221 209 240;  --lila-900: 239 233 248;  --lila-950: 246 243 251;
+  --t-50:  17  20  23;  --t-100:  29  33  37;  --t-200:  43  50  56;  --t-300:  59  67  75;  --t-400:  94 104 114;  --t-500: 111 120 130;
+  --t-600: 133 142 151;  --t-700: 154 162 169;  --t-800: 255 255 255;  --t-900: 246 247 248;  --t-950: 242 243 244;
+  color-scheme: light;
 }
 
-[data-theme="slate"] {           /* Slate — helleres Dunkel, bessere Lesbarkeit */
-  --s-50:  248 250 252;
-  --s-100: 241 245 249;
-  --s-200: 226 232 240;
-  --s-300: 203 213 225;
-  --s-400: 148 163 184;
-  --s-500: 100 116 139;
-  --s-600:  71  85 105;
-  --s-700:  51  65  85;
-  --s-800:  30  41  59;
-  --s-900:  19  28  45;
-  --s-950:  15  23  42;
+[data-theme="dark"] {
+  --s-50: 243 245 247;  --s-100: 226 230 234;  --s-200: 210 216 222;  --s-300: 201 208 214;  --s-400: 154 165 176;  --s-500: 135 146 157;
+  --s-600:  74  84  94;  --s-700:  58  67  76;  --s-800:  29  34  40;  --s-900:  24  29  34;  --s-950:  20  24  28;
+  --akzent-50: 238 245 252;  --akzent-100: 219 233 247;  --akzent-200: 185 212 238;  --akzent-300: 156 195 234;  --akzent-400: 130 180 230;  --akzent-500:  79 143 207;
+  --akzent-600:  47 106 163;  --akzent-700:  39  90 138;  --akzent-800:  34  68 106;  --akzent-900:  29  53  80;  --akzent-950:  23  38  54;
+  --rot-50: 255 241 240;  --rot-100: 255 224 221;  --rot-200: 255 193 187;  --rot-300: 255 165 157;  --rot-400: 255 143 133;  --rot-500: 229 103  93;
+  --rot-600: 184  67  58;  --rot-700: 154  54  47;  --rot-800: 110  42  37;  --rot-900:  74  36  32;  --rot-950:  47  26  24;
+  --gruen-50: 238 250 240;  --gruen-100: 216 241 220;  --gruen-200: 182 227 191;  --gruen-300: 162 219 175;  --gruen-400: 143 209 158;  --gruen-500:  95 174 114;
+  --gruen-600:  63 138  81;  --gruen-700:  51 113  68;  --gruen-800:  42  85  54;  --gruen-900:  31  58  39;  --gruen-950:  22  40  28;
+  --gelb-50: 253 247 232;  --gelb-100: 250 236 200;  --gelb-200: 246 220 154;  --gelb-300: 243 208 131;  --gelb-400: 240 196 107;  --gelb-500: 217 164  65;
+  --gelb-600: 168 122  31;  --gelb-700: 138 100  26;  --gelb-800:  97  71  22;  --gelb-900:  63  49  24;  --gelb-950:  42  33  18;
+  --lila-50: 244 239 252;  --lila-100: 230 220 248;  --lila-200: 208 191 240;  --lila-300: 187 163 232;  --lila-400: 167 139 223;  --lila-500: 138 107 200;
+  --lila-600: 107  79 166;  --lila-700:  88  65 138;  --lila-800:  63  49 100;  --lila-900:  44  36  70;  --lila-950:  31  26  49;
+  --t-50: 243 245 247;  --t-100: 226 230 234;  --t-200: 210 216 222;  --t-300: 201 208 214;  --t-400: 154 165 176;  --t-500: 135 146 157;
+  --t-600: 111 122 133;  --t-700:  95 106 116;  --t-800:  29  34  40;  --t-900:  24  29  34;  --t-950:  20  24  28;
+  color-scheme: dark;
 }
-
-[data-theme="midnight"] {        /* Mitternacht — blau getöntes Dunkel */
-  --s-50:  245 248 252;
-  --s-100: 230 236 245;
-  --s-200: 205 215 230;
-  --s-300: 165 180 205;
-  --s-400: 120 136 168;
-  --s-500:  80  96 130;
-  --s-600:  51  66  99;
-  --s-700:  33  44  71;
-  --s-800:  20  28  48;
-  --s-900:  13  18  33;
-  --s-950:  10  14  26;
-}
-
-[data-theme="light"] {           /* Hell */
-  --s-50:    9   9  11;
-  --s-100:  24  24  27;
-  --s-200:  39  39  42;
-  --s-300:  63  63  70;
-  --s-400: 113 113 122;
-  --s-500: 130 130 140;
-  --s-600: 161 161 170;
-  --s-700: 212 212 216;
-  --s-800: 232 232 235;
-  --s-900: 244 244 246;
-  --s-950: 252 252 253;
-}
+/* @@VARS-END@@ */
 
 @layer base {
   * { @apply box-border; }
 
+  html { font-size: 14px; }
+
   body {
-    @apply bg-surface-950 text-surface-100 font-sans antialiased;
+    @apply bg-surface-950 text-surface-100 font-sans;
     font-size: 14px;
+    line-height: 1.45;
   }
 
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { @apply bg-surface-950; }
-  ::-webkit-scrollbar-thumb { @apply bg-surface-600 rounded-full; }
+  /* Zahlen stehen untereinander (Zeiten, Temperaturen, Fächer). */
+  .tabular-nums, .font-mono { font-variant-numeric: tabular-nums; }
+
+  :focus-visible { outline: 2px solid rgb(var(--akzent-600)); outline-offset: 1px; }
+
+  ::selection { background: rgb(var(--akzent-800)); }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-600 rounded-full; border: 3px solid transparent; background-clip: content-box; }
   ::-webkit-scrollbar-thumb:hover { @apply bg-surface-500; }
 }
 
 @layer components {
 
-  /* ── Cards ─────────────────────────────── */
+  /* ── Blöcke ───────────────────────────────
+     Prüfplanung: .block — weiße Fläche, 1-px-Linie, 4 px Radius, kein Schatten. */
   .card {
-    @apply bg-surface-800/70 border border-surface-700/60 rounded-2xl p-5
-           backdrop-blur-sm shadow-lg shadow-black/20;
+    @apply bg-surface-800 border border-surface-700 rounded-lg p-4;
   }
   .card-sm {
-    @apply bg-surface-800/70 border border-surface-700/60 rounded-xl p-4;
+    @apply bg-surface-800 border border-surface-700 rounded p-3;
   }
 
-  /* ── Section label ──────────────────────── */
+  /* ── Block-Überschrift ──────────────────────
+     Prüfplanung: h2 im Block — normal geschrieben, halbfett, Textfarbe. */
   .section-label {
-    @apply text-[11px] font-semibold tracking-widest uppercase text-surface-500 mb-3;
+    @apply text-[15px] font-semibold text-surface-100 mb-3 leading-snug;
   }
 
-  /* ── Buttons ────────────────────────────── */
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
-           font-medium text-sm transition-all duration-150 select-none
-           disabled:opacity-40 disabled:cursor-not-allowed;
+  /* ── Knöpfe ──────────────────────────────── */
+  /* Grundform steckt in JEDER Variante: Etliche Stellen schreiben nur
+     „btn-primary" ohne „btn" — die bekamen früher Farbe, aber keine Polsterung. */
+  .btn, .btn-primary, .btn-ghost, .btn-secondary, .btn-danger, .btn-success, .btn-warning, .btn-cyan {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded
+           border border-transparent text-[13px] leading-tight font-normal
+           transition-colors duration-100 select-none cursor-pointer
+           disabled:opacity-50 disabled:cursor-default;
   }
   .btn-primary {
-    @apply bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white
-           shadow-md shadow-blue-900/40 hover:shadow-blue-800/50;
+    @apply bg-blue-600 border-blue-600 text-white hover:bg-blue-500 hover:border-blue-500;
   }
-  .btn-ghost {
-    @apply bg-transparent hover:bg-surface-700/60 text-surface-300 hover:text-surface-100
-           border border-surface-700 hover:border-surface-600;
+  /* Standard-Knopf der Prüfplanung: Fläche, Linie, Text — beim Überfahren Kopfzeilen-Grau. */
+  .btn-ghost, .btn-secondary {
+    @apply bg-surface-800 border-surface-700 text-surface-100
+           hover:bg-surface-900 hover:border-surface-600;
   }
-  .btn-danger {
-    @apply bg-red-700 hover:bg-red-600 active:bg-red-800 text-white shadow-md shadow-red-900/30;
-  }
-  .btn-success {
-    @apply bg-emerald-700 hover:bg-emerald-600 text-white shadow-md shadow-emerald-900/30;
-  }
-  .btn-warning {
-    @apply bg-amber-600 hover:bg-amber-500 text-white shadow-md shadow-amber-900/30;
-  }
-  .btn-cyan {
-    @apply bg-cyan-700 hover:bg-cyan-600 text-white shadow-md shadow-cyan-900/30;
-  }
+  .btn-danger  { @apply bg-red-600 border-red-600 text-white hover:bg-red-500 hover:border-red-500; }
+  .btn-success { @apply bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-500 hover:border-emerald-500; }
+  .btn-warning { @apply bg-amber-600 border-amber-600 text-white hover:bg-amber-500 hover:border-amber-500; }
+  .btn-cyan    { @apply bg-blue-600 border-blue-600 text-white hover:bg-blue-500 hover:border-blue-500; }
   .btn-icon {
-    @apply p-2 rounded-lg bg-surface-700/60 hover:bg-surface-600
-           text-surface-300 hover:text-surface-100 transition-colors;
+    @apply p-1.5 rounded border border-transparent bg-transparent
+           text-surface-400 hover:text-surface-100 hover:bg-surface-900 hover:border-surface-700 transition-colors;
   }
-  .btn-lg { @apply px-5 py-3 text-base; }
-  .btn-sm { @apply px-3 py-1.5 text-xs; }
+  .btn-lg { @apply px-4 py-2 text-sm; }
+  .btn-sm { @apply px-2 py-1 text-xs; }
 
-  /* ── Inputs ──────────────────────────────── */
+  /* ── Eingaben ────────────────────────────── */
   /* Haken und Radioknoepfe sind KEINE Textfelder. Ohne die Ausnahme erbten sie
      w-full samt Polsterung und Rahmen: aus dem Haken wurde ein bildschirmbreiter
      Kasten, und der Text daneben wurde zu einer Spalte aus Einzelwoertern
      gequetscht. Einzelne Stellen hatten sich das mit w-auto/w-4 selbst
      zurechtgebogen — hier ist es an der Quelle geregelt. */
-  input:not([type="checkbox"]):not([type="radio"]), textarea, select {
-    @apply w-full bg-surface-900/80 text-surface-100 border border-surface-600/70 rounded-xl
-           px-3 py-2 text-sm
-           focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30
-           placeholder:text-surface-600;
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), textarea, select {
+    @apply w-full bg-surface-800 text-surface-100 border border-surface-700 rounded
+           px-2 py-1.5 text-[13px]
+           focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/30
+           placeholder:text-surface-500;
   }
   input[type="checkbox"], input[type="radio"] {
-    @apply w-4 h-4 shrink-0 cursor-pointer accent-blue-500;
+    @apply w-4 h-4 shrink-0 cursor-pointer accent-blue-600;
   }
+  input[type="range"] { @apply accent-blue-600; }
 
-  /* ── Status dot ─────────────────────────── */
+  /* ── Status-Punkt ─────────────────────────── */
   .dot {
     @apply inline-block w-2 h-2 rounded-full flex-shrink-0;
   }
-  .dot-green  { @apply bg-emerald-400; }
-  .dot-red    { @apply bg-red-400; }
-  .dot-amber  { @apply bg-amber-400; }
-  .dot-blue   { @apply bg-blue-400; }
+  .dot-green  { @apply bg-emerald-500; }
+  .dot-red    { @apply bg-red-500; }
+  .dot-amber  { @apply bg-amber-500; }
+  .dot-blue   { @apply bg-blue-500; }
   .dot-gray   { @apply bg-surface-500; }
 
-  /* ── Badge ───────────────────────────────── */
+  /* ── Marke (Prüfplanung: .tag) ───────────── */
   .badge {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium;
+    @apply inline-flex items-center gap-1 px-1.5 rounded-sm text-xs font-normal whitespace-nowrap;
   }
-  .badge-green  { @apply bg-emerald-900/50 text-emerald-300 border border-emerald-800/60; }
-  .badge-red    { @apply bg-red-900/50    text-red-300    border border-red-800/60; }
-  .badge-amber  { @apply bg-amber-900/50  text-amber-300  border border-amber-800/60; }
-  .badge-blue   { @apply bg-blue-900/50   text-blue-300   border border-blue-800/60; }
-  .badge-gray   { @apply bg-surface-700   text-surface-400 border border-surface-600; }
+  .badge-green  { @apply bg-emerald-900 text-emerald-300; }
+  .badge-red    { @apply bg-red-900     text-red-300; }
+  .badge-amber  { @apply bg-amber-900   text-amber-300; }
+  .badge-blue   { @apply bg-blue-900    text-blue-300; }
+  .badge-gray   { @apply bg-surface-900 text-surface-400; }
 
-  /* ── Nav item ────────────────────────────── */
-  .nav-item {
-    @apply flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium
-           text-surface-500 hover:text-surface-200 hover:bg-surface-700/40 transition-all cursor-pointer;
-  }
-  .nav-item.active {
-    @apply bg-blue-600/15 text-blue-300 border border-blue-500/20
-           hover:bg-blue-600/20 hover:text-blue-200;
+  /* ── Pille in der Kopfzeile (Prüfplanung: „nur lokal") ── */
+  .pill {
+    @apply inline-flex items-center gap-1.5 h-[24px] px-2.5 rounded-full border border-surface-700
+           bg-surface-800 text-surface-400 text-xs whitespace-nowrap;
   }
 
-  /* ── Rack slot ───────────────────────────── */
+  /* ── Umschalter (Prüfplanung: .umschalter / .themen) ── */
+  .segmented {
+    @apply inline-flex items-stretch border border-surface-700 rounded-full overflow-hidden bg-surface-800;
+  }
+  .segmented > button {
+    @apply px-2 text-xs leading-[22px] text-surface-400 border-0 border-l border-surface-700 hover:text-surface-100;
+  }
+  .segmented > button:first-child { border-left: 0; }
+  .segmented > button.active { @apply bg-blue-900 text-blue-300 font-semibold; }
+
+  /* ── Regal-Fach ───────────────────────────── */
   .rack-slot {
-    @apply flex items-center justify-between px-4 py-3 rounded-xl border transition-all;
+    @apply flex items-center justify-between px-3 py-2 rounded border transition-colors;
   }
-  .rack-slot-free     { @apply bg-emerald-950/30 border-emerald-800/50 text-emerald-400; }
-  .rack-slot-occupied { @apply bg-amber-950/30   border-amber-800/50   text-amber-400; }
-  .rack-slot-printing { @apply bg-blue-950/30    border-blue-800/50    text-blue-400;
+  .rack-slot-free     { @apply bg-emerald-950 border-emerald-800 text-emerald-300; }
+  .rack-slot-occupied { @apply bg-amber-950   border-amber-800   text-amber-300; }
+  .rack-slot-printing { @apply bg-blue-950    border-blue-700    text-blue-300;
                         animation: pulse-border 2s infinite; }
-  .rack-slot-empty    { @apply bg-surface-900    border-surface-700    text-surface-500; }
+  .rack-slot-empty    { @apply bg-surface-900 border-surface-700 text-surface-500; }
 
-  /* ── Divider ─────────────────────────────── */
-  .divider { @apply border-t border-surface-700/60 my-4; }
+  /* ── Trennlinie ───────────────────────────── */
+  .divider { @apply border-t border-surface-700 my-4; }
 
-  /* ── Control key ─────────────────────────── */
+  /* ── Steuer-Taste ─────────────────────────── */
   .control-key        { @apply flex flex-col items-center gap-1; }
   .control-key span   { @apply text-xs text-surface-500; }
 
-  /* ── Stat card ───────────────────────────── */
+  /* ── Kennzahl (Prüfplanung: .kennzahlen) ──── */
   .stat-card {
-    @apply rounded-2xl border p-5 space-y-1.5;
+    @apply rounded-lg border p-4 space-y-1 bg-surface-800 border-surface-700;
   }
-  .stat-card-blue   { @apply bg-blue-950/30 border-blue-800/40; }
-  .stat-card-green  { @apply bg-emerald-950/30 border-emerald-800/40; }
-  .stat-card-amber  { @apply bg-amber-950/30 border-amber-800/40; }
-  .stat-card-purple { @apply bg-purple-950/30 border-purple-800/40; }
+  .stat-card-blue   { @apply border-l-[3px] border-l-blue-600; }
+  .stat-card-green  { @apply border-l-[3px] border-l-emerald-600; }
+  .stat-card-amber  { @apply border-l-[3px] border-l-amber-600; }
+  .stat-card-purple { @apply border-l-[3px] border-l-violet-600; }
 }
 
 @keyframes pulse-border {
-  0%, 100% { border-color: rgb(37 99 235 / 0.5); }
-  50%       { border-color: rgb(59 130 246 / 0.9); }
+  0%, 100% { border-color: rgb(var(--akzent-700)); }
+  50%       { border-color: rgb(var(--akzent-600)); }
 }
 
 @keyframes glow-blue {
-  0%, 100% { box-shadow: 0 0 4px rgb(59 130 246 / 0.4); }
-  50%       { box-shadow: 0 0 12px rgb(59 130 246 / 0.7); }
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--akzent-600) / 0); }
+  50%       { box-shadow: 0 0 0 3px rgb(var(--akzent-600) / 0.18); }
 }
 
 .progress-active {
@@ -227,15 +234,15 @@
 }
 /* Platzhalter (Zielposition beim Ziehen) */
 .dashboard-grid .react-grid-placeholder {
-  background: rgb(59 130 246 / 0.25);
-  border: 1px dashed rgb(59 130 246 / 0.7);
-  border-radius: 1rem;
+  background: rgb(var(--akzent-900));
+  border: 1px dashed rgb(var(--akzent-600));
+  border-radius: 4px;
 }
 /* Im Bearbeiten-Modus: Panels umranden + Greif-Cursor, Resize-Griff sichtbar. */
 .dashboard-grid.is-editing .react-grid-item {
-  outline: 1px dashed rgb(59 130 246 / 0.5);
+  outline: 1px dashed rgb(var(--akzent-600) / 0.6);
   outline-offset: -1px;
-  border-radius: 1rem;
+  border-radius: 4px;
   cursor: move;
 }
 .dashboard-grid.is-editing .react-resizable-handle {
@@ -250,13 +257,13 @@
   opacity: 0;
 }
 .dashboard-grid.is-editing .react-resizable-handle::after {
-  border-right-color: rgb(96 165 250 / 0.9);
-  border-bottom-color: rgb(96 165 250 / 0.9);
+  border-right-color: rgb(var(--akzent-600));
+  border-bottom-color: rgb(var(--akzent-600));
   width: 8px;
   height: 8px;
 }
 /* Beim aktiven Ziehen leicht hervorheben. */
 .dashboard-grid .react-grid-item.react-draggable-dragging {
   z-index: 30;
-  outline-color: rgb(59 130 246 / 0.9);
+  outline-color: rgb(var(--akzent-600));
 }

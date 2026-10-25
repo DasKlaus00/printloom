@@ -1820,7 +1820,7 @@ function AutoFarm({ setCurrentPage } = {}) {
         {/* Title */}
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div>
-            <h2 className="text-base font-semibold text-surface-100 leading-tight">Auto Farm</h2>
+            <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">Auto Farm</h2>
             {running && (
               <p className="text-[11px] text-surface-600 font-mono mt-0.5">
                 {paused

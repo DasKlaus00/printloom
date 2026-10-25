@@ -42,7 +42,7 @@ function Section({ title, children, defaultOpen = true }) {
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center justify-between px-4 py-2.5 bg-surface-900 hover:bg-surface-800/60 transition-colors text-left"
       >
-        <span className="text-xs font-semibold text-surface-300 uppercase tracking-wide">{title}</span>
+        <span className="text-[15px] font-semibold text-surface-100">{title}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
           className={`text-surface-600 transition-transform ${open ? 'rotate-180' : ''}`}>
           <polyline points="6 9 12 15 18 9"/>
@@ -304,7 +304,7 @@ function FileAnalyzer() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('Datei-Analyse')}</h2>
+        <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Datei-Analyse')}</h2>
         <p className="text-sm text-surface-500">
           {tr('Slicing-Metadaten, Temperaturen, Filamente und AMS-Mapping aus .3mf / .gcode extrahieren. Zwei Dateien gleichzeitig wählen für Side-by-Side-Vergleich — Unterschiede werden orange hervorgehoben.')}
         </p>

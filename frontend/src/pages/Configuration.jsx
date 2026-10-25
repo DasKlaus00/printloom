@@ -91,7 +91,7 @@ function LanguagePacks() {
         {langs.map(l => (
           <button key={l.code} onClick={() => setLanguage(l.code)} title={l.name}
             className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
-              lang === l.code ? 'bg-blue-700 border-blue-600 text-white'
+              lang === l.code ? 'bg-blue-600 border-blue-600 text-white'
                               : 'bg-surface-800 border-surface-700 text-surface-400 hover:text-surface-200'}`}>
             {l.code.toUpperCase()} {!l.builtin && '·'}
           </button>

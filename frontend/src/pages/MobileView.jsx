@@ -39,7 +39,7 @@ function SlotCard({ id, slot, onClear }) {
       {isDone && (
         <button
           onClick={() => onClear(id)}
-          className="mt-1 w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white text-base font-semibold transition-colors"
+          className="mt-1 w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-500 text-white text-base font-semibold transition-colors"
         >
           {tr('Entnommen')}
         </button>
@@ -103,12 +103,12 @@ export default function MobileView() {
   const totalCount = slotArr.length
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-gray-950 text-surface-100">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-gray-950/95 backdrop-blur border-b border-gray-800 px-4 py-3">
         <div className="flex items-center justify-between max-w-2xl mx-auto">
           <div>
-            <h1 className="text-lg font-bold text-white">Printloom</h1>
+            <h1 className="text-lg font-bold text-surface-100">Printloom</h1>
             <p className="text-xs text-gray-500">{tr('Rack-Übersicht · Mobile')}</p>
           </div>
           <div className="flex flex-col items-end gap-1">

@@ -115,7 +115,7 @@ function AmsDiagnostics() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('AMS-Diagnose')}</h2>
+          <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('AMS-Diagnose')}</h2>
           <p className="text-sm text-surface-500">
             {tr('Zeigt für jeden Sende-Vorgang genau, woher das AMS-Mapping stammt und welcher Slot gewählt wurde. Seite aktualisiert sich alle 5 Sekunden automatisch.')}
           </p>

@@ -807,7 +807,7 @@ function SequenceEditor() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('Sequenz-Editor')}</h2>
+          <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Sequenz-Editor')}</h2>
           <p className="text-sm text-surface-500">
             {tr('Ablauf des Auto Farms anpassen — Reihenfolge, Zeiten und Parallelausführung. Änderungen werden sofort gespeichert und beim nächsten Lauf verwendet.')}
           </p>

@@ -91,7 +91,7 @@ export default function OnlineServices({ setCurrentPage }) {
   if (!cfg) {
     return (
       <div className="card p-4">
-        <h2 className="text-xs font-semibold text-surface-300 uppercase tracking-wider">{tr('Online-Dienste')}</h2>
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Online-Dienste')}</h2>
         <p className="text-[11px] text-surface-600 mt-2">{tr('Lade …')}</p>
       </div>
     )
@@ -103,7 +103,7 @@ export default function OnlineServices({ setCurrentPage }) {
     <div className="card p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-xs font-semibold text-surface-300 uppercase tracking-wider">{tr('Online-Dienste')}</h2>
+          <h2 className="text-[15px] font-semibold text-surface-100">{tr('Online-Dienste')}</h2>
           <p className="text-[11px] text-surface-500 mt-1">
             {tr('Alles freiwillig. Ist hier nichts eingeschaltet, verbindet sich Printloom mit KEINEM Server außerhalb deines Netzwerks — die App funktioniert vollständig offline.')}
           </p>

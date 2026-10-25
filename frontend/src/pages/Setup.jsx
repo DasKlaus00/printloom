@@ -27,7 +27,7 @@ function StepDots({ step }) {
             }`}>{i < step ? '✓' : i + 1}</div>
             <span className={`text-[9px] ${i === step ? 'text-blue-300' : 'text-surface-600'}`}>{tr(label)}</span>
           </div>
-          {i < STEPS.length - 1 && <div className={`flex-1 h-px ${i < step ? 'bg-emerald-700' : 'bg-surface-800'}`} />}
+          {i < STEPS.length - 1 && <div className={`flex-1 h-px ${i < step ? 'bg-emerald-600' : 'bg-surface-700'}`} />}
         </React.Fragment>
       ))}
     </div>
@@ -437,7 +437,7 @@ export default function Setup({ setCurrentPage }) {
     <div className="max-w-xl mx-auto">
       <div className="card p-6">
         <div className="flex items-center justify-between mb-1">
-          <h1 className="text-lg font-semibold text-surface-100">{tr('Setup-Assistent')}</h1>
+          <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Setup-Assistent')}</h1>
           <button onClick={skip} className="text-[11px] text-surface-600 hover:text-surface-300">{tr('Überspringen →')}</button>
         </div>
         <p className="text-xs text-surface-500 mb-5">{tr('Komponenten · Drucker · OTTOeject · Regal · Kalibrierung · Einmessen in einem Durchlauf.')}</p>

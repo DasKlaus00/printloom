@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.36',
+    de: [
+      'NEUES AUSSEHEN, gestaltet wie die Prüfplanung: ruhige graue Seite, weiße Blöcke mit feiner Linie, EIN Akzent in Marineblau und gedeckte Statusfarben (Rot, Gelb, Grün). Kleine Radien, kaum Schatten, Segoe UI — weniger Effekt, mehr Lesbarkeit. Die Funktionen sind unverändert.',
+      'HELL ist jetzt Standard. Dazu Dunkel (ebenfalls im Stil der Prüfplanung) und „System", das dem Betriebssystem folgt — auch, wenn es abends umschaltet. Umschalten oben rechts (Sonne · Mond · halber Kreis) oder unter System → Darstellung. Wer bisher Dunkel, Slate oder Mitternacht gewählt hatte, bleibt im Dunkeln.',
+      'NAVIGATION NEU: feste Leiste links mit Gruppen — Alltag oben (Dashboard, Auto Farm, Steuerung, Historie), darunter „Aufträge" und „Einrichtung". Die aktive Seite trägt einen Akzentstrich. Der Knopf oben links klappt die Leiste auf reine Symbole ein; auf dem Handy schiebt sie sich über den Inhalt und schließt nach der Auswahl.',
+      'Kopfzeile aufgeräumt: Name und Version links, rechts Steckdose, Drucker- und Klipper-Zustand als ruhige Pillen (farbig nur bei einem Problem), Uhrzeit und der Hell/Dunkel-Umschalter. Jede Seite hat ihre Überschrift jetzt im Inhalt; der Browser-Tab nennt die Seite.',
+      'Inhalt nutzt die volle Breite. Knöpfe, die nur als „btn-primary"/„btn-secondary" ohne Grundform geschrieben waren, haben jetzt überall dieselbe Polsterung.',
+    ],
+    en: [
+      'NEW LOOK, styled after the inspection planner: calm grey page, white blocks with a thin line, ONE navy accent and muted status colours (red, yellow, green). Small radii, hardly any shadows, Segoe UI — less effect, more legibility. Functionality is unchanged.',
+      'LIGHT is now the default. There is also Dark (in the same style) and "System", which follows the operating system — even when it switches in the evening. Switch at the top right (sun · moon · half circle) or under System → Appearance. Anyone who had chosen Dark, Slate or Midnight stays dark.',
+      'NEW NAVIGATION: a fixed sidebar with groups — everyday pages at the top (Dashboard, Auto Farm, Controls, History), below them "Orders" and "Setup". The active page carries an accent bar. The button at the top left collapses the sidebar to icons; on a phone it slides over the content and closes after a choice.',
+      'Cleaner header: name and version on the left; on the right the smart plug, printer and Klipper status as quiet pills (coloured only when something is wrong), the clock and the light/dark switch. Every page now has its heading in the content; the browser tab names the page.',
+      'Content uses the full width. Buttons written only as "btn-primary"/"btn-secondary" without the base class now get the same padding everywhere.',
+    ],
+  },
+  {
     version: '1.1.35',
     de: [
       'NOTAUS SPERRT JETZT ALLES. Seit 1.1.34 hält der Notaus den Arm wirklich an — danach ließ sich aber noch alles neu starten: Joggen, G-code, Bewegungen aus dem Drucker-Tab, die Farm, der Stresstest, der Direktdruck. Nach M112 scheiterte das zwar an Klipper, aber mit dessen Fehlermeldung; und hatte Klipper den Notaus gar nicht bestätigt (nicht erreichbar), wäre die Bewegung durchgegangen. Jetzt lehnt Printloom selbst ab, bis „Betrieb fortsetzen" gedrückt wurde. Ansehen (Position, Geometrie prüfen) geht weiter.',

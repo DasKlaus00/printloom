@@ -1314,7 +1314,7 @@ export default function Drucker() {
   return (
     <div className="space-y-4 max-w-5xl">
       <div>
-        <h1 className="text-2xl font-bold text-surface-100">{tr('Drucker & Regale')}</h1>
+        <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Drucker & Regale')}</h1>
         <p className="text-sm text-surface-500 mt-0.5">
           {tr('Der ganze Aufbau auf einer Seite: was steht wo auf der Schiene, und welche Position fährt der Arm dort an.')}
         </p>

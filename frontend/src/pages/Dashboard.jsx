@@ -312,7 +312,8 @@ export default function Dashboard() {
     <div className="w-full pb-6">
 
       {/* ── Kopfzeile: Raster anpassen ── */}
-      <div className="flex items-center justify-end gap-2 mb-3">
+      <div className="flex items-end justify-between gap-2 mb-4">
+        <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight">{tr('Dashboard')}</h1>
         <button
           onClick={() => setEditing(e => !e)}
           className={`btn btn-sm ${editing ? 'btn-primary' : 'btn-ghost'}`}

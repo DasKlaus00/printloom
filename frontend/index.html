@@ -8,13 +8,25 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Printloom" />
     <title>Printloom — 3D Print Farm Controller</title>
+    <script>
+      /* Thema VOR dem ersten Bild setzen — sonst blitzt kurz die falsche Farbe auf.
+         Gleiche Logik wie services/theme.js (getTheme/resolveTheme). */
+      (function () {
+        var t = null
+        try { t = localStorage.getItem('printloom_theme') } catch (e) {}
+        if (t === 'slate' || t === 'midnight') t = 'dark'
+        if (t === 'auto') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        if (t !== 'dark') t = 'light'
+        document.documentElement.setAttribute('data-theme', t)
+      })()
+    </script>
   </head>
-  <body class="bg-dark-900 text-dark-50">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

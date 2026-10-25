@@ -133,7 +133,7 @@ export default function Library({ setCurrentPage }) {
     return (
       <div className="max-w-2xl space-y-4">
         <div>
-          <h1 className="text-xl font-semibold text-surface-100">{tr('Bibliothek')}</h1>
+          <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Bibliothek')}</h1>
           <p className="text-sm text-surface-500 mt-1">{tr('Sprachpakete, Drucker-Profile und Sequenzen')}</p>
         </div>
         <div className="card p-5 space-y-3">
@@ -155,7 +155,7 @@ export default function Library({ setCurrentPage }) {
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold text-surface-100">{tr('Bibliothek')}</h1>
+          <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Bibliothek')}</h1>
           <p className="text-sm text-surface-500 mt-1">{tr('Sprachpakete, Drucker-Profile und Sequenzen')}</p>
         </div>
         <div className="flex items-center gap-2">

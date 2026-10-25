@@ -264,7 +264,7 @@ function Profiles() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('Profile')}</h2>
+        <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Profile')}</h2>
         <p className="text-sm text-surface-500">
           {tr('Bündele Kalibrierung, Sequenzen, Regal-Konfiguration, Einstellungen und Bauteil-Anleitungen zu einer Datei — exportieren, importieren oder lokal speichern. Das Importieren führt keinen G-Code aus; Sequenzen laufen erst beim nächsten Auto-Farm-Start.')}
         </p>

@@ -96,10 +96,10 @@ export default function PowerToggle({ farmRunning = false }) {
     const unbekannt = plug.on == null
     const watt = typeof plug.watts === 'number' ? Math.round(plug.watts) : null
     const stil = unbekannt
-      ? 'bg-amber-950/60 text-amber-400 border-amber-800/50 hover:border-amber-600'
+      ? 'text-amber-300 border-amber-700 hover:border-amber-600'
       : an
-        ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/50 hover:border-emerald-600'
-        : 'bg-surface-800 text-surface-500 border-surface-700/50 hover:border-surface-500'
+        ? 'text-emerald-300 border-emerald-700 hover:border-emerald-600'
+        : 'hover:border-surface-600 hover:text-surface-100'
     const zustand = unbekannt ? tr('Steckdose nicht erreichbar')
       : an ? tr('An — klicken zum Ausschalten')
            : tr('Aus — klicken zum Einschalten')
@@ -109,8 +109,7 @@ export default function PowerToggle({ farmRunning = false }) {
         onClick={() => toggle(plug)}
         disabled={busy === plug.device_id}
         title={`${plug.name} · ${zustand}${watt != null ? ` · ${watt} W` : ''}`}
-        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono border
-                    transition-colors disabled:opacity-50 disabled:cursor-wait ${stil}`}
+        className={`pill tabular-nums transition-colors disabled:opacity-50 disabled:cursor-wait ${stil}`}
       >
         <span aria-hidden="true">⏻</span>
         <span className="hidden sm:inline">

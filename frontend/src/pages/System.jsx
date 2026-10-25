@@ -5,6 +5,7 @@ import OnlineServices from '../components/OnlineServices'
 import { pushSupported, pushUnsupportedReason, isSubscribed, syncSubscription, subscribe as pushSubscribe, unsubscribe as pushUnsubscribe } from '../services/push'
 import { VERSION } from '../version'
 import { THEMES, getTheme, applyTheme } from '../services/theme'
+import { ThemeIcon } from '../components/ThemeToggle'
 import { useLanguage } from '../services/i18n'
 import { CHANGELOG } from '../changelog'
 
@@ -12,25 +13,49 @@ function ThemePicker() {
   const { tr } = useLanguage()
   const [theme, setTheme] = useState(getTheme())
   const pick = (id) => { applyTheme(id); setTheme(id) }
+  // Der Umschalter oben rechts stellt dasselbe ein — mitziehen.
+  useEffect(() => {
+    const sync = () => setTheme(getTheme())
+    window.addEventListener('printloom:themeChanged', sync)
+    return () => window.removeEventListener('printloom:themeChanged', sync)
+  }, [])
+  // Vorschau je Thema: Seite · Block · Akzent (feste Farben, damit man sieht,
+  // wie es aussieht, BEVOR man umschaltet).
+  const PREVIEW = {
+    light: ['#f2f3f4', '#ffffff', '#23507a'],
+    dark:  ['#14181c', '#1d2228', '#82b4e6'],
+  }
   return (
-    <div className="card p-6 space-y-4">
-      <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Darstellung')}</h2>
-      <p className="text-xs text-surface-500 -mt-2">{tr('Farbschema der Oberfläche. Wird auf diesem Gerät gespeichert.')}</p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {THEMES.map(t => (
-          <button
-            key={t.id}
-            onClick={() => pick(t.id)}
-            className={`flex flex-col items-center gap-2 px-3 py-3 rounded-xl border text-sm transition-colors ${
-              theme === t.id
-                ? 'border-blue-600 bg-blue-600/10 text-blue-300'
-                : 'border-surface-700 bg-surface-900 text-surface-400 hover:border-surface-600'
-            }`}
-          >
-            <span className="w-full h-8 rounded-lg border border-white/10" style={{ backgroundColor: t.swatch }} />
-            <span className="font-medium">{tr(t.label)}</span>
-          </button>
-        ))}
+    <div className="card space-y-3">
+      <h2 className="section-label mb-0">{tr('Darstellung')}</h2>
+      <p className="text-xs text-surface-400">{tr('Farbschema der Oberfläche. Wird auf diesem Gerät gespeichert.')}</p>
+      <div className="grid grid-cols-3 gap-3 max-w-md">
+        {THEMES.map(t => {
+          const [page, block, accent] = PREVIEW[t.id] ?? PREVIEW.light
+          return (
+            <button
+              key={t.id}
+              onClick={() => pick(t.id)}
+              className={`flex flex-col gap-2 p-2 rounded border text-sm transition-colors ${
+                theme === t.id
+                  ? 'border-blue-600 bg-blue-900 text-blue-300 font-semibold'
+                  : 'border-surface-700 bg-surface-800 text-surface-300 hover:border-surface-600'
+              }`}
+            >
+              {t.id === 'auto' ? (
+                <span className="flex h-10 rounded-sm overflow-hidden border border-surface-700">
+                  <span className="flex-1" style={{ background: PREVIEW.light[0] }} />
+                  <span className="flex-1" style={{ background: PREVIEW.dark[0] }} />
+                </span>
+              ) : (
+                <span className="h-10 rounded-sm border border-surface-700 p-1.5 flex items-start" style={{ background: page }}>
+                  <span className="flex-1 h-full rounded-sm border-l-[3px]" style={{ background: block, borderLeftColor: accent }} />
+                </span>
+              )}
+              <span className="inline-flex items-center justify-center gap-1.5"><ThemeIcon id={t.id} /> {tr(t.label)}</span>
+            </button>
+          )
+        })}
       </div>
     </div>
   )
@@ -94,7 +119,7 @@ function PushNotifications() {
 
   return (
     <div className="card p-6 space-y-4">
-      <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Push-Benachrichtigungen')}</h2>
+      <h2 className="text-[15px] font-semibold text-surface-100">{tr('Push-Benachrichtigungen')}</h2>
       <p className="text-xs text-surface-500">
         {tr('Erhalte auf diesem Gerät Push-Meldungen bei „fertig / Fehler / Eingriff nötig" — auch als Home-Screen-App (iOS 16.4+).')}
       </p>
@@ -275,7 +300,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-surface-100">{tr('System')}</h1>
+        <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('System')}</h1>
         <p className="text-sm text-surface-500 mt-1">{tr('Darstellung, Versionsverwaltung & Updates')}</p>
       </div>
 
@@ -283,7 +308,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
 
       {/* Setup-Assistent — sitzt hier statt in der Seitenleiste (einmalige Einrichtung) */}
       <div className="card p-4 space-y-2">
-        <h2 className="text-xs font-semibold text-surface-300 uppercase tracking-wider">{tr('Einrichtung')}</h2>
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Einrichtung')}</h2>
         <div className="flex items-center justify-between gap-3">
           <p className="text-[11px] text-surface-500 min-w-0">
             {tr('Verbaute Komponenten, Drucker, OTTOeject, Regal und Kalibrierung in einem Durchlauf — daraus entsteht die Grundkonfiguration.')}
@@ -298,7 +323,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
 
       {/* Release channel — kompakter Toggle Latest ↔ Beta */}
       <div className="card p-4 space-y-3">
-        <h2 className="text-xs font-semibold text-surface-300 uppercase tracking-wider">{tr('Release-Kanal')}</h2>
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Release-Kanal')}</h2>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <span className={`text-sm font-medium ${!isBeta ? 'text-emerald-300' : 'text-surface-500'}`}>🏷️ Latest</span>
@@ -309,7 +334,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
             onClick={() => switchChannel(isBeta ? 'latest' : 'beta')}
             aria-pressed={isBeta}
             title={tr('Zwischen Latest (stabil) und Beta umschalten')}
-            className={`relative w-14 h-7 rounded-full transition-colors shrink-0 ${isBeta ? 'bg-blue-600' : 'bg-emerald-700'}`}
+            className={`relative w-14 h-7 rounded-full transition-colors shrink-0 ${isBeta ? 'bg-blue-600' : 'bg-emerald-600'}`}
           >
             <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-all ${isBeta ? 'left-[30px]' : 'left-0.5'}`} />
           </button>
@@ -334,7 +359,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
 
       {/* Version card */}
       <div className="card p-6 space-y-5">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Version')}</h2>
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Version')}</h2>
 
         <div className="flex items-end gap-8">
           <div>
@@ -549,13 +574,13 @@ docker compose up -d`}
 
       {/* 2.9 — Einrichtungs-Status / Health-Checkliste */}
       <div className="card p-6 space-y-3">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Einrichtungs-Status')}</h2>
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Einrichtungs-Status')}</h2>
         <SetupHealth />
       </div>
 
       {/* Backup & Restore */}
       <div className="card p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Backup & Restore')}</h2>
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Backup & Restore')}</h2>
         <p className="text-xs text-surface-500">
           {tr('Sichert die')} <span className="text-surface-300">{tr('komplette Konfiguration')}</span> {tr('als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Drucker-/Kamera-/HA-Einstellungen, Drucker-Geometrie (X-Positionen & G-code-Overrides), Profile, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.')}
         </p>

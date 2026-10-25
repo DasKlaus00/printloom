@@ -88,7 +88,7 @@ export default function History() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-surface-100">{tr('Historie')}</h1>
+          <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Historie')}</h1>
           <p className="text-xs text-surface-500 mt-0.5">{tr('Alle abgeschlossenen Druck-Jobs mit Datum, Anfangs- und End-Uhrzeit.')}</p>
         </div>
         <div className="flex items-center gap-2">

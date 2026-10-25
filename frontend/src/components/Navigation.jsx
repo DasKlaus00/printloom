@@ -1,5 +1,4 @@
 import React, { useState, useRef } from 'react'
-import { VERSION } from '../version'
 import { useLanguage, setLanguage, availableLanguages } from '../services/i18n'
 import { fileService } from '../services/api'
 
@@ -130,26 +129,32 @@ const icons = {
   ),
 }
 
-function buildPages(t, tr) {
+/* Gruppen wie in der Prüfplanung: der Alltag oben ohne Überschrift, darunter
+   Aufträge und die Einrichtung. Setup-Assistent bewusst NICHT hier — er sitzt in
+   System (einmalige Einrichtung, kein Alltags-Tab). Direktaufruf über /setup bleibt.
+   „Farm-Layout" war bis v1.1.7 ein eigener Tab mit einer ZWEITEN Stelle für
+   dieselben X-Positionen; die Schienen-Ansicht steckt jetzt im Drucker-Tab. */
+function buildGroups(t, tr) {
   return [
-    { id: 'dashboard',     label: t('nav.dashboard'),     icon: 'dashboard'   },
-    { id: 'files',         label: t('nav.files'),         icon: 'files'       },
-    { id: 'steuerung',     label: tr('Steuerung'),        icon: 'controls'    },
-    { id: 'autofarm',      label: t('nav.autofarm'),      icon: 'autofarm'    },
-    { id: 'history',       label: tr('Historie'),         icon: 'history'     },
-    { id: 'projekt',       label: tr('Projekt'),          icon: 'projekt'     },
-    { id: 'sequence',      label: t('nav.sequence'),      icon: 'sequence'    },
-    { id: 'profiles',      label: t('nav.profiles'),      icon: 'profiles'    },
-    { id: 'filamente',     label: tr('Filamente'),        icon: 'filamente'   },
-    { id: 'library',       label: tr('Bibliothek'),       icon: 'library'     },
-    // „Farm-Layout" war bis v1.1.7 ein eigener Tab mit einer ZWEITEN Stelle für
-    // dieselben X-Positionen. Jetzt steckt die Schienen-Ansicht im Drucker-Tab,
-    // direkt bei den Feldern, aus denen sie entsteht.
-    { id: 'drucker',       label: tr('Drucker'),          icon: 'drucker'     },
-    { id: 'configuration', label: t('nav.configuration'), icon: 'config'      },
-    // Setup-Assistent bewusst NICHT hier — er sitzt in System (einmalige Einrichtung,
-    // kein Alltags-Tab). Direktaufruf über /setup bleibt möglich.
-    { id: 'system',        label: t('nav.system'),        icon: 'system'      },
+    { label: null, pages: [
+      { id: 'dashboard',     label: t('nav.dashboard'),     icon: 'dashboard'   },
+      { id: 'autofarm',      label: t('nav.autofarm'),      icon: 'autofarm'    },
+      { id: 'steuerung',     label: tr('Steuerung'),        icon: 'controls'    },
+      { id: 'history',       label: tr('Historie'),         icon: 'history'     },
+    ]},
+    { label: tr('Aufträge'), pages: [
+      { id: 'files',         label: t('nav.files'),         icon: 'files'       },
+      { id: 'projekt',       label: tr('Projekt'),          icon: 'projekt'     },
+      { id: 'library',       label: tr('Bibliothek'),       icon: 'library'     },
+    ]},
+    { label: tr('Einrichtung'), pages: [
+      { id: 'drucker',       label: tr('Drucker'),          icon: 'drucker'     },
+      { id: 'sequence',      label: t('nav.sequence'),      icon: 'sequence'    },
+      { id: 'profiles',      label: t('nav.profiles'),      icon: 'profiles'    },
+      { id: 'filamente',     label: tr('Filamente'),        icon: 'filamente'   },
+      { id: 'configuration', label: t('nav.configuration'), icon: 'config'      },
+      { id: 'system',        label: t('nav.system'),        icon: 'system'      },
+    ]},
   ]
 }
 
@@ -182,8 +187,15 @@ function QuickUpload() {
     setUploading(false)
   }
 
+  // Prüfplanung: .ablage — gestrichelte Fläche, beim Darüberziehen Akzent.
+  const zustand = uploading ? 'border-blue-600 bg-blue-950 text-blue-300'
+    : err      ? 'border-red-600 bg-red-950 text-red-300'
+    : lastFile ? 'border-emerald-600 bg-emerald-950 text-emerald-300'
+    : dragging ? 'border-blue-600 bg-blue-900 text-blue-300'
+    :            'border-surface-700 bg-surface-900 text-surface-400 hover:border-surface-600 hover:text-surface-200'
+
   return (
-    <div className="px-3 py-2 border-t border-surface-800/60">
+    <div className="px-3 pb-3">
       <input ref={inputRef} type="file" accept=".gcode,.3mf" multiple className="hidden"
         onChange={e => { doUpload(e.target.files); e.target.value = '' }} />
       <div
@@ -191,78 +203,39 @@ function QuickUpload() {
         onDragOver={e => { e.preventDefault(); setDragging(true) }}
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
         onDrop={e => { e.preventDefault(); setDragging(false); doUpload(e.dataTransfer.files) }}
-        className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed cursor-pointer select-none transition-all duration-200 py-5 ${
-          uploading
-            ? 'border-blue-600/50 bg-blue-950/20'
-            : err
-              ? 'border-red-700/50 bg-red-950/15'
-              : lastFile
-                ? 'border-emerald-700/50 bg-emerald-950/15'
-                : dragging
-                  ? 'border-blue-500/80 bg-blue-900/25 shadow-[0_0_18px_rgba(59,130,246,0.12)] scale-[1.02]'
-                  : 'border-surface-700/40 bg-surface-800/10 hover:border-surface-600/60 hover:bg-surface-800/25'
-        }`}
+        title={tr('Schnell-Upload')}
+        className={`flex items-center gap-2.5 rounded border-2 border-dashed cursor-pointer select-none transition-colors px-3 py-2.5 ${zustand}`}
       >
-        {uploading ? (
-          <>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-blue-400 animate-spin">
-              <circle cx="12" cy="12" r="10" strokeDasharray="60" strokeDashoffset="20"/>
-            </svg>
-            <span className="text-[11px] font-medium text-blue-400">{tr('Hochladen…')}</span>
-          </>
-        ) : err ? (
-          <>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-400">
-              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            <span className="text-[10px] text-red-400 text-center px-1">{err}</span>
-          </>
-        ) : lastFile ? (
-          <>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="text-emerald-400">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            <span className="text-[11px] font-medium text-emerald-400 truncate max-w-[140px] text-center">{lastFile}</span>
-            <span className="text-[9px] text-emerald-600">{tr('Hochgeladen')}</span>
-          </>
-        ) : (
-          <>
-            <div className={`transition-transform duration-150 ${dragging ? 'scale-110 -translate-y-0.5' : ''}`}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
-                className={`transition-colors duration-200 ${dragging ? 'text-blue-400' : 'text-surface-600'}`}>
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-              </svg>
-            </div>
-            <span className={`text-[11px] font-medium transition-colors duration-200 ${dragging ? 'text-blue-300' : 'text-surface-500'}`}>
-              {dragging ? tr('Hier ablegen') : tr('Schnell-Upload')}
-            </span>
-            <span className="text-[9px] text-surface-700 font-mono">.gcode · .3mf</span>
-          </>
-        )}
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+          className={`flex-none ${uploading ? 'animate-pulse' : ''}`}>
+          {lastFile ? <polyline points="20 6 9 17 4 12"/> : err ? (
+            <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>
+          ) : (
+            <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>
+          )}
+        </svg>
+        <span className="min-w-0 leading-tight">
+          <span className="block text-[13px] truncate">
+            {uploading ? tr('Hochladen…') : err ? err : lastFile ? lastFile : dragging ? tr('Hier ablegen') : tr('Schnell-Upload')}
+          </span>
+          <span className="block text-[11px] opacity-75">
+            {lastFile ? tr('Hochgeladen') : '.gcode · .3mf'}
+          </span>
+        </span>
       </div>
     </div>
   )
 }
 
-/* ─── Language Toggle ─────────────────────────────────────────────── */
+/* ─── Sprache ─────────────────────────────────────────────────────── */
 function LanguageToggle() {
   const { lang } = useLanguage()
   const langs = availableLanguages()
   return (
-    <div className="px-3 py-2 border-t border-surface-800 flex items-center gap-1.5 flex-wrap">
-      <span className="text-[10px] text-surface-700 uppercase tracking-wide mr-1">Lang</span>
+    <div className="segmented" role="group" aria-label="Language">
       {langs.map(l => (
-        <button
-          key={l.code}
-          onClick={() => setLanguage(l.code)}
-          title={l.name}
-          className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
-            lang === l.code
-              ? 'bg-blue-700 border-blue-600 text-white'
-              : 'bg-surface-800 border-surface-700 text-surface-500 hover:text-surface-300 hover:border-surface-600'
-          }`}
-        >
+        <button key={l.code} type="button" onClick={() => setLanguage(l.code)} title={l.name}
+          className={lang === l.code ? 'active' : ''}>
           {l.code.toUpperCase()}
         </button>
       ))}
@@ -270,101 +243,87 @@ function LanguageToggle() {
   )
 }
 
-/* ─── Navigation ─────────────────────────────────────────────────── */
-function Navigation({ currentPage, setCurrentPage, updateAvailable }) {
+/* ─── Seitenleiste ─────────────────────────────────────────────────
+   Wie die Prüfplanung: feste Leiste links, Gruppen mit kleiner Überschrift,
+   aktive Seite mit Akzentstrich links. Einklappbar auf reine Symbole (der
+   Zustand bleibt je Gerät). Auf schmalen Bildschirmen schiebt sie sich über
+   den Inhalt und schließt nach der Auswahl wieder. */
+function Navigation({ currentPage, setCurrentPage, updateAvailable, collapsed, onToggleCollapsed, mobileOpen, onCloseMobile }) {
   const { t, tr } = useLanguage()
-  const pages = buildPages(t, tr)
-  const [compact, setCompact] = useState(() => localStorage.getItem('ottomat3d_nav_compact') === '1')
-
-  const toggleCompact = () => setCompact(v => {
-    const next = !v
-    localStorage.setItem('ottomat3d_nav_compact', next ? '1' : '0')
-    return next
-  })
-
-  if (compact) {
-    return (
-      <nav className="w-12 flex-shrink-0 bg-surface-900/60 border-r border-surface-800/50 flex flex-col backdrop-blur-sm">
-        <div className="flex-1 overflow-y-auto py-2">
-          {pages.map(page => (
-            <button
-              key={page.id}
-              onClick={() => setCurrentPage(page.id)}
-              title={page.label}
-              className={`w-full flex items-center justify-center py-2.5 transition-colors relative ${
-                currentPage === page.id ? 'text-blue-400' : 'text-surface-600 hover:text-surface-300'
-              }`}
-            >
-              {icons[page.icon]}
-              {page.id === 'system' && updateAvailable && (
-                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              )}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={toggleCompact}
-          title={tr('Seitenleiste erweitern')}
-          className="w-full py-3 flex items-center justify-center text-surface-700 hover:text-surface-400 border-t border-surface-800/50 transition-colors"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/>
-          </svg>
-        </button>
-        <div className="py-2.5 flex items-center justify-center border-t border-surface-800/50">
-          <div className="w-4 h-4 rounded bg-gradient-to-br from-blue-500 to-blue-700" />
-        </div>
-      </nav>
-    )
-  }
+  const groups = buildGroups(t, tr)
+  const go = (id) => { setCurrentPage(id); onCloseMobile?.() }
 
   return (
-    <nav className="w-56 flex-shrink-0 bg-surface-900/60 border-r border-surface-800/50 flex flex-col backdrop-blur-sm">
-      <div className="p-3 flex-1 overflow-y-auto">
-        <div className="flex items-center justify-between px-3 mb-3">
-          <p className="section-label">{tr('Navigation')}</p>
-          <button
-            onClick={toggleCompact}
-            title={tr('Seitenleiste minimieren')}
-            className="text-surface-700 hover:text-surface-400 transition-colors"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/>
-            </svg>
-          </button>
-        </div>
-        <div className="space-y-0.5">
-          {pages.map(page => (
-            <button
-              key={page.id}
-              onClick={() => setCurrentPage(page.id)}
-              className={`nav-item w-full ${currentPage === page.id ? 'active' : ''}`}
-            >
-              <span className={currentPage === page.id ? 'text-blue-400' : 'text-surface-600'}>
-                {icons[page.icon]}
-              </span>
-              <span className="flex-1 text-left">{page.label}</span>
-              {page.id === 'system' && updateAvailable && (
-                <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0 animate-pulse" title={tr('Update verfügbar')} />
+    <>
+      {mobileOpen && (
+        <div className="fixed inset-0 top-[47px] z-30 bg-surface-50/30 md:hidden" onClick={onCloseMobile} aria-hidden="true" />
+      )}
+      <nav
+        className={`flex-shrink-0 bg-surface-800 border-r border-surface-700 flex flex-col overflow-hidden
+          transition-[width,transform] duration-150 ease-out
+          fixed md:static top-[47px] bottom-0 left-0 z-40 md:z-auto
+          ${collapsed ? 'md:w-[54px]' : 'md:w-[210px]'} w-[240px]
+          ${mobileOpen ? 'translate-x-0 shadow-lg' : '-translate-x-full md:translate-x-0'}`}
+        aria-label={tr('Navigation')}
+      >
+        <div className="flex-1 overflow-y-auto overflow-x-hidden py-2">
+          {groups.map((g, gi) => (
+            <div key={gi}>
+              {g.label && (collapsed
+                ? <div className="hidden md:block border-t border-surface-700 mx-2.5 my-1.5" />
+                : null)}
+              {g.label && (
+                <div className={`text-[10px] uppercase tracking-[.06em] text-surface-400 opacity-80 px-[19px] pt-3 pb-1 whitespace-nowrap ${collapsed ? 'md:hidden' : ''}`}>
+                  {g.label}
+                </div>
               )}
-            </button>
+              {g.pages.map(page => {
+                const active = currentPage === page.id
+                return (
+                  <button
+                    key={page.id}
+                    onClick={() => go(page.id)}
+                    title={collapsed ? page.label : undefined}
+                    aria-current={active ? 'page' : undefined}
+                    className={`relative w-full flex items-center gap-3 min-h-[38px] border-l-[3px] whitespace-nowrap text-left transition-colors
+                      ${collapsed ? 'md:pl-[15px] pl-4 pr-4' : 'pl-4 pr-4'}
+                      ${active
+                        ? 'border-blue-600 bg-blue-900 text-surface-100 font-semibold'
+                        : 'border-transparent text-surface-400 hover:bg-surface-900 hover:text-surface-100'}`}
+                  >
+                    <span className="flex-none">{icons[page.icon]}</span>
+                    <span className={`flex-1 truncate ${collapsed ? 'md:hidden' : ''}`}>{page.label}</span>
+                    {page.id === 'system' && updateAvailable && (
+                      <span className={`w-2 h-2 rounded-full bg-amber-500 flex-shrink-0 ${collapsed ? 'md:absolute md:top-2 md:left-8' : ''}`} title={tr('Update verfügbar')} />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
           ))}
         </div>
-      </div>
 
-      <QuickUpload />
-      <LanguageToggle />
-
-      <div className="px-4 py-3 border-t border-surface-800/50">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-gradient-to-br from-blue-500 to-blue-700 flex-shrink-0" />
-          <div>
-            <p className="text-[10px] text-surface-600 font-mono leading-none">Printloom</p>
-            <p className="text-[10px] text-surface-700 font-mono mt-0.5">v{VERSION}</p>
+        <div className={collapsed ? 'md:hidden' : ''}>
+          <QuickUpload />
+          <div className="px-4 pb-3 flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-[.06em] text-surface-400">{tr('Sprache')}</span>
+            <LanguageToggle />
           </div>
         </div>
-      </div>
-    </nav>
+
+        <button
+          onClick={onToggleCollapsed}
+          className="hidden md:flex items-center gap-3 border-t border-surface-700 text-surface-400 hover:bg-surface-900 hover:text-surface-100 px-4 py-2.5 whitespace-nowrap text-left"
+          title={collapsed ? tr('Seitenleiste erweitern') : tr('Seitenleiste minimieren')}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+            className={`flex-none transition-transform ${collapsed ? 'rotate-180' : ''}`}>
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          <span className={collapsed ? 'hidden' : ''}>{tr('Einklappen')}</span>
+        </button>
+      </nav>
+    </>
   )
 }
 
