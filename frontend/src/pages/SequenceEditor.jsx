@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { DEFAULT_SEQ_NEW, DEFAULT_SEQ_NEXT } from '../services/sequenceData'
 import { autofarmService, controlService } from '../services/api'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, tr as translate, currentLang } from '../services/i18n'
 
 // Printloom-eigene Operationen (Drucker-Tab-Geometrie → G-code) — frei in Sequenzen
 // nutzbar wie Makros. Fallback, falls das /app-ops-Backend (noch) nicht da ist.
@@ -26,7 +26,14 @@ function useAppOps() {
   }, [])
   return ops
 }
-const appOpLabel = (ops, key) => (ops.find(o => o.key === key) || {}).label_de || key
+/* Das Backend liefert zu jeder Operation label_de UND label_en mit — bisher wurde
+   immer label_de genommen, die englische Bezeichnung lag ungenutzt herum. Für
+   andere Sprachen greift tr() auf den deutschen Quelltext als Schlüssel. */
+const opLabel = (o) => {
+  if (!o) return ''
+  return (currentLang() === 'en' && o.label_en) ? o.label_en : translate(o.label_de || '')
+}
+const appOpLabel = (ops, key) => opLabel(ops.find(o => o.key === key)) || key
 
 // FastAPI-Fehler robust in Text wandeln: `detail` kann ein String, eine Pydantic-
 // Validierungsliste [{type,loc,msg,…}] oder ein Objekt sein. NIE direkt rendern —
@@ -36,7 +43,7 @@ function errText(e) {
   if (typeof d === 'string') return d
   if (Array.isArray(d)) return d.map(x => x?.msg || (typeof x === 'string' ? x : JSON.stringify(x))).join('; ')
   if (d && typeof d === 'object') return d.msg || JSON.stringify(d)
-  return e?.message || 'Fehler'
+  return e?.message || translate('Fehler')
 }
 
 const TYPE_META = {
@@ -49,6 +56,7 @@ const TYPE_META = {
   wait_homing:    { label: 'Auf Z200 warten',  icon: '⌂⏳',  color: 'text-indigo-400',  bg: 'bg-indigo-950/20',  border: 'border-indigo-900/40'  },
   send_file:      { label: 'Druckdatei senden',icon: '↑',    color: 'text-emerald-400', bg: 'bg-emerald-950/20', border: 'border-emerald-900/50' },
   wait_print:     { label: 'Auf Druckende warten', icon: '⏳', color: 'text-sky-400',   bg: 'bg-sky-950/20',    border: 'border-sky-900/50'   },
+  wait_cool:      { label: 'Auf Abkühlung warten', icon: '❄', color: 'text-sky-300',  bg: 'bg-sky-950/20',    border: 'border-sky-900/40'   },
   delay:          { label: 'Wartezeit',        icon: '⏱',   color: 'text-amber-400',   bg: 'bg-amber-950/20',   border: 'border-amber-900/40'  },
   // ── Legacy types (still rendered for old sequences, but not offered in the add menu) ──
   wait_bambu_idle:{ label: 'Bambu IDLE (alt)', icon: '◎',    color: 'text-cyan-400',    bg: 'bg-cyan-950/20',    border: 'border-cyan-900/40'   },
@@ -61,9 +69,9 @@ const TYPE_META = {
 // Curated building blocks offered in the "+ add step" menu (legacy types omitted).
 // First Start: kein send_file/wait_print (das ist Sache des Zyklus), dafür Homing + Z200-Warten.
 // Zyklus: kein Homing-Paar (gehört in den First Start) — hält beide Menüs klar und kurz.
-const ADD_TYPES = ['macro', 'app_op', 'klipper_gcode', 'gcode', 'bambu_move', 'send_homing_file', 'wait_homing', 'send_file', 'wait_print', 'delay']
+const ADD_TYPES = ['macro', 'app_op', 'klipper_gcode', 'gcode', 'bambu_move', 'send_homing_file', 'wait_homing', 'send_file', 'wait_print', 'wait_cool', 'delay']
 const FIRST_ADD_TYPES = ['macro', 'app_op', 'klipper_gcode', 'gcode', 'bambu_move', 'send_homing_file', 'wait_homing', 'delay']
-const CYCLE_ADD_TYPES = ['macro', 'app_op', 'klipper_gcode', 'gcode', 'bambu_move', 'send_file', 'wait_print', 'delay']
+const CYCLE_ADD_TYPES = ['macro', 'app_op', 'klipper_gcode', 'gcode', 'bambu_move', 'send_file', 'wait_print', 'wait_cool', 'delay']
 
 // Griff-Schritt (Platte aus Regal/Magazin holen) — für den Übergabe-Marker:
 // holt der First Start bereits eine Platte, überspringt der Zyklus GENAU diesen Schritt beim 1. Job.
@@ -114,8 +122,11 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
           </span>
 
           {/* Label */}
+          {/* Die Bezeichnung ist gespeicherte Sequenz-Daten (deutsch angelegt) und
+              bleibt es auch — übersetzt wird nur die ANZEIGE. Das Eingabefeld unten
+              zeigt weiter den echten gespeicherten Text. */}
           <span className={`text-xs font-mono flex-1 min-w-0 truncate ${isDisabled ? 'text-surface-700 line-through' : meta.color}`}>
-            {step.label}
+            {tr(step.label)}
           </span>
 
           {/* Disabled badge */}
@@ -268,6 +279,35 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
               </div>
             )}
 
+            {step.type === 'wait_cool' && (
+              <div className="space-y-2">
+                <p className="text-[10px] text-sky-600/90 leading-relaxed">
+                  {tr('Wartet, bis die Druckplatte abgekühlt ist. Der Magnet-Greifer hält eine warme Platte nicht — der Arm führe los, die Platte bliebe im Drucker liegen und er käme leer zurück, ohne dass es auffällt. Gehört VOR den Auswurf.')}
+                </p>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div>
+                    <label className="text-[10px] text-surface-600 block mb-0.5">{tr('Zieltemperatur (°C)')}</label>
+                    <input
+                      type="number" min="0" max="120" value={step.value ?? ''}
+                      onChange={e => onChange(step.id, { value: e.target.value })}
+                      placeholder="30" className="w-24 text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-surface-600 block mb-0.5">{tr('Zeitlimit (s)')}</label>
+                    <input
+                      type="number" min="0" value={step.seconds ?? ''}
+                      onChange={e => onChange(step.id, { seconds: e.target.value })}
+                      placeholder="1800" className="w-24 text-xs font-mono"
+                    />
+                  </div>
+                  <p className="text-[10px] text-surface-700 flex-1 min-w-[12rem] leading-relaxed">
+                    {tr('Leer = Vorgabe (30 °C / 30 min). Läuft das Zeitlimit ab, geht es TROTZDEM weiter — ein Zyklus, der ewig steht, wäre schlimmer. Im Verlauf steht dann, mit welcher Temperatur.')}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {step.type === 'wait_homing' && (
               <p className="text-[10px] text-indigo-600 font-mono py-1">
                 {tr('Wartet, bis der im Hintergrund gestartete Homing-Druck fertig ist (Bett wirklich auf Z200) — gehört ans Ende des First Start, wenn beim Homing-Schritt „Nicht warten" aktiv ist.')}
@@ -331,7 +371,7 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
                   className="w-full text-xs font-mono"
                 >
                   {appOps.map(o => (
-                    <option key={o.key} value={o.key}>{tr(o.label_de)} — {o.key}</option>
+                    <option key={o.key} value={o.key}>{opLabel(o)} — {o.key}</option>
                   ))}
                 </select>
                 <p className="text-[10px] text-fuchsia-700 font-mono mt-1">
@@ -450,6 +490,7 @@ const TYPE_DEFAULTS = {
   macro:          { label: 'Makro',                value: '',                 seconds: 0   },
   app_op:         { label: 'Printloom-Op',         value: 'eject',            seconds: 0   },
   wait_bambu_idle:{ label: 'Warte Z200',            value: '',                 seconds: 50  },
+  wait_cool:      { label: 'Auf Abkühlung warten', value: '30',        seconds: 1800 },
   delay:          { label: 'Wartezeit',            value: '',                 seconds: 5   },
   send_homing_file:{ label: 'Homing senden',       value: '',                 seconds: 180 },
   wait_homing:    { label: 'Auf Z200 warten (Homing-Ende)', value: '',        seconds: 180 },
@@ -525,7 +566,7 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true,
       // Das Backend kehrt zurück, sobald die Bewegung GESTARTET ist (blockiert nicht bis
       // zum Ende der langen Fahrt) — running=true heißt „läuft noch auf der Maschine".
       const running = !!r?.data?.running
-      setRunFeedback({ ok: true, msg: running ? `▶ ${step.value} — läuft…` : `✓ ${step.value}` })
+      setRunFeedback({ ok: true, msg: running ? translate('▶ {0} — läuft…', step.value) : `✓ ${step.value}` })
     } catch (e) {
       setRunFeedback({ ok: false, msg: errText(e) })
     }
@@ -646,8 +687,18 @@ function SequenceEditor() {
   const [nextSteps, setNextSteps] = useState(DEFAULT_SEQ_NEXT)
   const [importErr, setImportErr] = useState(null)
   const [loaded,    setLoaded]    = useState(false)
+  const [isMagnet,  setIsMagnet]  = useState(false)
   const importRef = React.useRef()
   const saveRef   = React.useRef(null)
+
+  // Welcher Greifer ist verbaut? Nur der Magnet braucht den Abkühl-Schritt —
+  // beim Klemm-Greifer wäre der Hinweis unten reiner Lärm.
+  useEffect(() => {
+    controlService.getGeometry()
+      .then(r => setIsMagnet(
+        (r?.data?.geometry?.gripper_motion || r?.data?.geometry?.gripper || '') === 'magnet'))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     // Migration: strip the prep flag from steps where it's nonsensical (wait_print/
@@ -722,6 +773,16 @@ function SequenceEditor() {
   const cycleGrabs = nextSteps.some(isGrabStep)
   const handoverId = firstStartGrabs ? (nextSteps.find(isGrabStep)?.id ?? null) : null
 
+  /* Steht der Abkühl-Schritt vor dem Auswurf? Der Magnet hält eine warme Platte
+     nicht — fehlt der Schritt, kommt der Arm leer zurück, ohne dass es auffällt.
+     Bestandsanlagen haben ihre eigenen Sequenzen; ein neuer Standard-Schritt
+     erreicht sie nicht von allein. Deshalb hier ein Hinweis statt stiller Hoffnung. */
+  const ejectIdx = nextSteps.findIndex(x => !x.disabled &&
+    ((x.type === 'app_op' && x.value === 'eject') ||
+     (x.type === 'macro' && /EJECT_FROM_PRINTER/i.test(x.value || ''))))
+  const coolIdx = nextSteps.findIndex(x => !x.disabled && x.type === 'wait_cool')
+  const coolMissing = isMagnet && ejectIdx >= 0 && (coolIdx < 0 || coolIdx > ejectIdx)
+
   const importConfig = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -746,7 +807,7 @@ function SequenceEditor() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('Sequenz-Editor')}</h2>
+          <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Sequenz-Editor')}</h2>
           <p className="text-sm text-surface-500">
             {tr('Ablauf des Auto Farms anpassen — Reihenfolge, Zeiten und Parallelausführung. Änderungen werden sofort gespeichert und beim nächsten Lauf verwendet.')}
           </p>
@@ -795,7 +856,11 @@ function SequenceEditor() {
           addTypes={CYCLE_ADD_TYPES}
           allowPrep
           handoverId={handoverId}
-          footer={!cycleGrabs ? (
+          footer={coolMissing ? (
+            <p className="text-[10px] font-mono text-sky-300 bg-sky-950/20 border border-sky-900/40 rounded px-2 py-1.5 -mt-1">
+              ❄ {tr('Magnet-Greifer verbaut, aber vor dem Auswerfen wird nicht abgekühlt. Die Magnete halten eine warme Druckplatte nicht — der Arm fährt los, die Platte bleibt im Drucker liegen und er kommt leer zurück, ohne dass es auffällt. Bitte „Auf Abkühlung warten" vor den Auswurf setzen.')}
+            </p>
+          ) : !cycleGrabs ? (
             <p className="text-[10px] font-mono text-amber-400 bg-amber-950/20 border border-amber-900/40 rounded px-2 py-1.5 -mt-1">
               ⚠ {tr('Kein aktiver Griff-Schritt im Zyklus — ab Job 2 wird KEINE neue Platte geholt! Der Zyklus-Griff ist keine Dopplung zum First Start: Job 1 überspringt ihn automatisch, ab Job 2 holt er die Platte. Bitte „Platte holen" wieder einfügen (Makro GRAB_FROM_RACK oder Printloom-Op „Aus Magazin holen").')}
             </p>

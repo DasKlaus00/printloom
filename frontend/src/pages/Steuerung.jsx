@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { controlService, printerService, deviceService, deviceSettingsService, klipperConfigService } from '../services/api'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, locale } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { usePageActive, useAutoRefresh } from '../services/useAutoRefresh'
@@ -295,6 +295,9 @@ export default function Steuerung() {
   /* OTTOeject / Makros */
   const [executing,    setExecuting]    = useState(null)
   const [emergencyOn,  setEmergencyOn]  = useState(false)
+  // Konnte der Notaus den Arm NICHT anhalten, bleibt das stehen, bis jemand es
+  // wegklickt — eine Meldung, die nach 5 s verschwindet, ist hier die falsche.
+  const [armNotStopped, setArmNotStopped] = useState('')
   const [activePrId,   setActivePrId]   = useState(
     () => localStorage.getItem('activePrinter') ?? 'bambu_x1c'
   )
@@ -462,19 +465,44 @@ export default function Steuerung() {
     sendKlipperGcode(`G90\nG1 Z${v} F1000`, `Z → ${v} mm`)
   }
 
+  // Notaus-Zustand steht in der Datenbank — nach dem Neuladen der Seite wäre
+  // „Fortsetzen" sonst ausgegraut, obwohl die Geräte noch gesperrt sind.
+  useEffect(() => {
+    controlService.emergencyState()
+      .then(r => setEmergencyOn(!!r.data?.active))
+      .catch(() => {})
+  }, [])
+
+  // KEINE Rückfrage: ein Notaus, der erst „Sind Sie sicher?" fragt, kostet genau die
+  // Sekunde, um die es geht. Die Vorsicht gehört an „Fortsetzen".
   const emergencyStop = async () => {
-    if (!(await confirmDialog({ title: tr('NOTAUS'), message: tr('NOTAUS — alle Geräte deaktivieren?'), confirmLabel: tr('Deaktivieren') }))) return
+    setEmergencyOn(true)
     try {
-      await controlService.emergencyStop()
-      setEmergencyOn(true)
-      showFeedback(tr('Notaus aktiviert'), true)
-    } catch (e) { showFeedback(e.message, false) }
+      const r = await controlService.emergencyStop()
+      const d = r.data || {}
+      if (d.arms?.length && !d.arm_stopped) {
+        setArmNotStopped(tr('ARM NICHT ANGEHALTEN — Klipper hat den Notaus nicht bestätigt. Strom des OTTOeject trennen!'))
+      } else {
+        showFeedback(d.arms?.length ? tr('Notaus: Arm angehalten, Abläufe gestoppt, Drucker pausiert')
+                                    : tr('Notaus: kein OTTOeject eingerichtet — Abläufe gestoppt, Drucker pausiert'), true)
+      }
+    } catch (e) {
+      // Printloom selbst nicht erreichbar → wir wissen NICHTS über den Arm.
+      setArmNotStopped(tr('Notaus konnte nicht gesendet werden ({0}). Strom des OTTOeject trennen!', e.message))
+    }
   }
   const resumeOps = async () => {
+    if (!(await confirmDialog({
+      title: tr('Betrieb fortsetzen?'),
+      message: tr('Klipper wird neu gestartet und die Geräte werden freigegeben. Die Farm startet NICHT von selbst; die erste Bewegung fährt eine Referenzfahrt. Ist der Arbeitsbereich frei?'),
+      confirmLabel: tr('Freigeben'),
+    }))) return
     try {
-      await controlService.resume()
+      const r = await controlService.resume()
       setEmergencyOn(false)
-      showFeedback(tr('Betrieb fortgesetzt'), true)
+      setArmNotStopped('')
+      showFeedback(r.data?.success === false ? (r.data?.message || tr('Fehler'))
+                                             : tr('Betrieb freigegeben'), r.data?.success !== false)
     } catch (e) { showFeedback(e.message, false) }
   }
 
@@ -517,6 +545,15 @@ export default function Steuerung() {
         }`}>
           <span className={`dot ${feedback.ok ? 'dot-green' : 'dot-red'}`} />
           {feedback.msg}
+        </div>
+      )}
+
+      {armNotStopped && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-lg border-2 border-red-600 bg-red-950/60 text-red-200 text-sm font-semibold">
+          <span className="flex-1">⚠ {armNotStopped}</span>
+          <button onClick={() => setArmNotStopped('')} className="text-red-400 hover:text-red-200 text-xs font-normal">
+            {tr('Verstanden')}
+          </button>
         </div>
       )}
 
@@ -565,7 +602,7 @@ export default function Steuerung() {
                     className="w-12 font-mono text-xs" />
                   <span className="text-[10px] text-surface-600">°C</span>
                 </div>
-                {lastUpdated && <p className="text-[10px] text-surface-600 font-mono">{lastUpdated.toLocaleTimeString()}</p>}
+                {lastUpdated && <p className="text-[10px] text-surface-600 font-mono">{lastUpdated.toLocaleTimeString(locale())}</p>}
                 <button onClick={() => setAutoRefresh(v => !v)}
                   title={farmRunning ? tr('Live über die Verbindung der laufenden Farm') : tr('Auto-Aktualisierung alle 15 s')}
                   className={`btn btn-sm ${autoRefresh ? 'btn-primary' : 'btn-ghost'}`}>

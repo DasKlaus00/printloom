@@ -73,105 +73,21 @@ function SlotCard({ id, slotLabel, slot, slotH, onReset, onLock }) {
   )
 }
 
-/* ── New Rack Dialog ──────────────────────────────────────────────── */
-function NewRackDialog({ onSave, onClose }) {
-  const { tr } = useLanguage()
-  const [name,    setName]    = useState('')
-  const [rows,    setRows]    = useState(1)
-  const [cols,    setCols]    = useState(6)
-  const [slotH,   setSlotH]   = useState(50)
-  const [color,   setColor]   = useState('#6366f1')
-  const [saving,  setSaving]  = useState(false)
-
-  const handleSave = async () => {
-    if (!name.trim()) return
-    setSaving(true)
-    try {
-      await rackManagerService.createRack({ name, rows: +rows, cols: +cols, slot_height_mm: +slotH, color })
-      onSave()
-    } catch {
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-surface-900 border border-surface-700 rounded-2xl w-full max-w-sm shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-surface-800">
-          <h3 className="text-sm font-semibold text-surface-100">{tr('Neues Rack anlegen')}</h3>
-          <button onClick={onClose} className="text-surface-500 hover:text-surface-300 text-lg leading-none">✕</button>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          <div>
-            <label className="text-xs text-surface-500 block mb-1">{tr('Name')}</label>
-            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder={tr('z.B. Rack B')} className="w-full" autoFocus />
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-xs text-surface-500 block mb-1">{tr('Reihen')}</label>
-              <input type="number" min="1" max="10" value={rows} onChange={e => setRows(e.target.value)} className="w-full font-mono" />
-            </div>
-            <div>
-              <label className="text-xs text-surface-500 block mb-1">{tr('Spalten')}</label>
-              <input type="number" min="1" max="12" value={cols} onChange={e => setCols(e.target.value)} className="w-full font-mono" />
-            </div>
-            <div>
-              <label className="text-xs text-surface-500 block mb-1">{tr('Höhe (mm)')}</label>
-              <input type="number" min="10" max="500" value={slotH} onChange={e => setSlotH(e.target.value)} className="w-full font-mono" />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-surface-500 block mb-1">{tr('Farbe')}</label>
-            <div className="flex items-center gap-2">
-              <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0" />
-              <span className="text-xs font-mono text-surface-500">{color}</span>
-            </div>
-          </div>
-        </div>
-        <div className="flex justify-end gap-3 px-5 py-4 border-t border-surface-800">
-          <button onClick={onClose} className="btn-ghost text-sm">{tr('Abbrechen')}</button>
-          <button onClick={handleSave} disabled={saving || !name.trim()} className="btn-primary text-sm">
-            {saving ? tr('Erstellt…') : tr('Erstellen')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /* ── Main Component ───────────────────────────────────────────────── */
 function RackManager() {
   const { tr } = useLanguage()
   const [data, setData]             = useState(null)
-  const [racks, setRacks]           = useState([])
-  const [selectedRackId, setSelectedRackId] = useState('default')
   const [numRacks,    setNumRacks]    = useState(3)
   const [slotsPerRack, setSlotsPerRack] = useState(6)
   const [slotH, setSlotH]           = useState(50)
   const [slotTol, setSlotTol]       = useState(20)   // Fächer-Toleranz (mm)
   const [saving, setSaving]         = useState(false)
   const [feedback, setFeedback]     = useState(null)
-  const [showNewRack, setShowNewRack] = useState(false)
 
   const showFeedback = (msg, ok = true) => {
     setFeedback({ msg, ok })
     setTimeout(() => setFeedback(null), 3500)
   }
-
-  const loadRacks = useCallback(async () => {
-    try {
-      const r = await rackManagerService.getRacks()
-      const list = r.data
-      setRacks(list)
-      // Ensure selectedRackId is valid
-      if (!list.find(r => r.id === selectedRackId) && list.length > 0) {
-        setSelectedRackId(list[0].id)
-      }
-    } catch {
-      // Silently fail — multi-rack is an enhancement
-    }
-  }, [selectedRackId])
 
   const load = useCallback(async () => {
     try {
@@ -186,7 +102,7 @@ function RackManager() {
     }
   }, [])
 
-  useEffect(() => { load(); loadRacks() }, [load, loadRacks])
+  useEffect(() => { load() }, [load])
 
   /* Keep the rack visualization current without clobbering the config
      input fields (num racks / slots / height) that `load` also seeds.
@@ -198,8 +114,6 @@ function RackManager() {
     } catch {}
   }, [])
   useAutoRefresh(refreshData, 12000)
-
-  const selectedRack = racks.find(r => r.id === selectedRackId)
 
   const handleResetSlot = async (slotId) => {
     try {
@@ -270,23 +184,6 @@ function RackManager() {
     }
   }
 
-  const handleDeleteRack = async (rackId) => {
-    if (!(await confirmDialog({ title: tr('Rack löschen'), message: tr('Rack wirklich löschen?'), confirmLabel: tr('Löschen') }))) return
-    try {
-      await rackManagerService.deleteRack(rackId)
-      await loadRacks()
-      showFeedback(tr('Rack gelöscht'))
-    } catch (e) {
-      showFeedback(e.response?.data?.detail ?? tr('Löschen fehlgeschlagen'), false)
-    }
-  }
-
-  const handleNewRackSaved = async () => {
-    setShowNewRack(false)
-    await loadRacks()
-    showFeedback(tr('Rack erstellt'))
-  }
-
   const slots = data?.slots ?? {}
   const nr    = data?.num_racks      ?? 3
   const spr   = data?.slots_per_rack  ?? 6
@@ -312,54 +209,6 @@ function RackManager() {
         }`}>
           <span className={`dot ${feedback.ok ? 'dot-green' : 'dot-red'}`} />
           {feedback.msg}
-        </div>
-      )}
-
-      {/* ── Rack Selector ────────────────────────────────── */}
-      {racks.length > 0 && (
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <p className="section-label">{tr('Regal auswählen')}</p>
-            <button onClick={() => setShowNewRack(true)} className="btn-ghost text-xs py-1 px-2">{tr('+ Neues Rack')}</button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {racks.map(rack => (
-              <button
-                key={rack.id}
-                onClick={() => setSelectedRackId(rack.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-                  selectedRackId === rack.id
-                    ? 'border-blue-600 bg-blue-950/40 text-blue-300'
-                    : 'border-surface-700 bg-surface-800 text-surface-400 hover:border-surface-600 hover:text-surface-200'
-                }`}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: rack.color ?? '#6366f1' }}
-                />
-                {rack.name}
-                <span className="text-[10px] text-surface-600 font-mono">
-                  {rack.rows}×{rack.cols}
-                </span>
-                {rack.id !== 'default' && selectedRackId === rack.id && (
-                  <button
-                    onClick={e => { e.stopPropagation(); handleDeleteRack(rack.id) }}
-                    className="ml-1 text-surface-600 hover:text-red-400 leading-none"
-                    title={tr('Rack löschen')}
-                  >
-                    ✕
-                  </button>
-                )}
-              </button>
-            ))}
-          </div>
-          {selectedRack && (
-            <p className="text-[10px] text-surface-600 mt-2">
-              {tr('Aktiv:')} <span className="text-surface-500 font-medium">{selectedRack.name}</span>
-              {' · '}{selectedRack.rows}×{selectedRack.cols} = {tr('{0} Fächer', selectedRack.rows * selectedRack.cols)}
-              {' · '}{tr('{0} mm Fachhöhe', selectedRack.slot_height_mm)}
-            </p>
-          )}
         </div>
       )}
 
@@ -505,12 +354,6 @@ function RackManager() {
         </div>
       </div>
 
-      {showNewRack && (
-        <NewRackDialog
-          onSave={handleNewRackSaved}
-          onClose={() => setShowNewRack(false)}
-        />
-      )}
     </div>
   )
 }

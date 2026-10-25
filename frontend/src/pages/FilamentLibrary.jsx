@@ -232,7 +232,7 @@ export default function FilamentLibrary() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-surface-100">{tr('Filamente')}</h1>
+        <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Filamente')}</h1>
         <p className="text-sm text-surface-500 mt-0.5">
           {tr('Automatisch aus dem aktiven AMS gelernt + manuell · {0} Filament(e)', custom.length)}
         </p>

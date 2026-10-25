@@ -92,37 +92,30 @@ cd printloom
 
 ## 4. Konfigurieren
 
-```bash
-cp .env.example .env
-cp docker-compose.prod.yml.example docker-compose.prod.yml
-nano .env
-```
+Nichts nötig — `docker-compose.yml` funktioniert ohne `.env`. Optional, als
+Variablen vor dem Startbefehl oder in einer `.env` neben der Compose-Datei:
 
-In der `.env` mindestens setzen:
-
-- `WATCHTOWER_TOKEN=` → **einen eigenen geheimen Wert** (frei wählbar, z. B. mit
-  `openssl rand -hex 16` erzeugen). Muss in beiden Compose-Diensten gleich sein —
-  das erledigt die Vorlage automatisch über die Variable.
 - `PRINTLOOM_CHANNEL=latest` (stabil) **oder** `beta`. Lässt sich später auch im
   WebUI umschalten.
 - `PORT=8000` (Standard; nur ändern, wenn 8000 belegt ist).
-- `GITHUB_TOKEN=` leer lassen (nur nötig, falls das ghcr-Package privat ist).
 
-Speichern: `Strg+O`, `Enter`, `Strg+X`.
+Läuft Printloom hinter einem Reverse-Proxy mit Anmeldung (z. B. authentik), in
+`docker-compose.yml` den Port nur lokal veröffentlichen (`"127.0.0.1:8000:8000"`) —
+sonst führt :8000 am Proxy vorbei.
 
 ---
 
 ## 5. Starten
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 ```
 
 Beim ersten Start lädt Docker das Image aus ghcr (kann 1–2 Min dauern). Status:
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f printloom   # Strg+C zum Beenden
+docker compose ps
+docker compose logs -f printloom   # Strg+C zum Beenden
 ```
 
 Sobald der Container `healthy` ist:
@@ -168,8 +161,8 @@ nie im Image oder in git.
 
   ```bash
   cd ~/printloom
-  docker compose -f docker-compose.prod.yml pull
-  docker compose -f docker-compose.prod.yml up -d
+  docker compose pull
+  docker compose up -d
   ```
 
 ---
@@ -178,11 +171,11 @@ nie im Image oder in git.
 
 ```bash
 # Logs
-docker compose -f docker-compose.prod.yml logs -f printloom
+docker compose logs -f printloom
 
 # Neustart / Stop
-docker compose -f docker-compose.prod.yml restart
-docker compose -f docker-compose.prod.yml down
+docker compose restart
+docker compose down
 
 # Backup der Daten (Geräte, Rack, Sequenzen, Queue, Uploads)
 tar czf ~/printloom-backup-$(date +%F).tar.gz -C ~/printloom backend/db backend/uploads

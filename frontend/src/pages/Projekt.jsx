@@ -172,7 +172,7 @@ function Projekt() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-surface-100 mb-1">{tr('Projekte')}</h2>
+        <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Projekte')}</h2>
         <p className="text-sm text-surface-500">
           {tr('Dateien mit Stückzahl sammeln, drucken lassen und fertige Objekte automatisch abhaken.')}
         </p>

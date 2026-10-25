@@ -1,137 +1,126 @@
 # Printloom — Roadmap
 
-10 Phasen × 10 Features. Grob nach Wert/Reihenfolge sortiert: Phase 1 ist der
-aktuelle Schmerz (Filament/AMS-Zuverlässigkeit), danach Onboarding, dann Ausbau
-Richtung Druckfarm-Plattform. „(teils da)" = existiert in Grundzügen und wird
-ausgebaut.
+**Stand: v1.1.39** (25.10.2026). Die vorige Fassung stand auf v1.1.20; ihre
+Phase 1 ist bis auf zwei Messungen erledigt (Tür, Magnet-Greifer, Versionsnummer im
+Image, Zugangsdaten im Backup), Teile von Phase 2 ebenso.
 
-> **Zwei sofort gemeldete Probleme** (in Phase 1/2 oben eingeordnet):
-> - AMS nahm beim Druck ein **falsches Filament** („Latte Brown"), obwohl mit
->   *PLA Dark Red* gesliced wurde **und** Slot 3 *PLA Dark Red* (`#BB3D43`) geladen
->   war → **exakter Treffer muss immer gewinnen** (Phase 1.1–1.3).
-> - **Zeitzone im Setup-Wizard** verpflichtend abfragen (Phase 2.1).
+Maßstab bleibt: **Was sagt printloom.alexsz.de zu, und hält die Software das?** Eine
+Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 
-> **~~Durchgestrichen~~ = umgesetzt** (Kern vorhanden & nutzbar; einige mit „teils da"
-> markierte werden laut Roadmap noch ausgebaut). Stand: **v1.0.98** (2026-07).
+**Legende**
+`⚡` klein, passt in ein Release · `🏗` strukturell, mehrere Releases ·
+`🔒` blockiert (braucht eine Messung oder Entscheidung) · `📣` betrifft die Website
 
 ---
 
-## Phase 1 — Filament & AMS-Zuverlässigkeit *(höchste Priorität)*
-1. **Pro-Datei Filament „festnageln"** beim Upload (Material + Farbe je Extruder verbindlich, wie Printago „Configure") — kein Auto-Raten mehr.
-2. ~~**Exakter-Treffer-Vorrang:** ist die exakte Farbe/Material-Kombi im AMS, wird IMMER dieser Slot genommen, nie eine farbähnliche Alternative.~~
-3. **AMS-Mapping-Vorschau vor dem Druck:** je Slicer-Filament → gewählter AMS-Slot mit Ampel (exakt / ähnlich / fehlt), bestätigbar.
-4. ~~**„Nur exakt"-Modus** pro Datei/Projekt: lieber pausieren als Ersatzfarbe drucken.~~
-5. ~~**Manuelles AMS-Override persistent** pro Datei (Server statt localStorage) — übersteht Reload/Gerätewechsel.~~
-6. ~~**Farbnamen-Auflösung:** AMS-Farbcodes ↔ Klartext (Firebrick, Charcoal, Dark Red …) inkl. Bambu-Katalog.~~
-7. **Rest­mengen-Tracking** je AMS-Slot + Warnung „reicht nicht für den Job" (Gramm-Abgleich).
-8. **Slot-Belegung manuell pflegen**, wenn das AMS nichts meldet (Generic-Spulen ohne RFID).
-9. ~~**Auswahl-Protokoll:** bei jedem Start loggen, welches Filament warum gewählt wurde (Audit gegen genau diesen Bug).~~
-10. **Material-Profile** (Marke/Typ/Düsentemp/Trockenstatus) zentral verwalten und an Dateien hängen.
+## Fundament — was steht (v1.1.39)
 
-## Phase 2 — Onboarding & Setup-Wizard
-1. ~~**Zeitzone im Wizard** (Pflichtschritt, aus Browser vorbelegt, speicherbar).~~
-2. ~~**Geführtes Erst-Setup:** Drucker → OTTOeject → Regal kalibrieren → Testlauf, Schritt für Schritt.~~
-3. ~~**Verbindungs-Selbsttest** (X1C MQTT/FTP, Klipper/Moonraker) mit Klartext-Fehlern + Lösungsvorschlägen.~~
-4. **Regal-Kalibrier-Assistent** mit Live-Vorschau (Fachhöhe, Toleranz, Magazin). *(Live-Vorschau + Fachhöhe da; Toleranz/Magazin fehlen noch)*
-5. **AMS-Erkennungs-Check** im Wizard (geladene Slots zur Kontrolle anzeigen).
-6. ~~**Demo-/Beispieldaten** laden (Beispiel-Teil + Sequenz) zum Ausprobieren ohne echten Druck.~~
-7. ~~**Backup/Restore** der gesamten Konfiguration als eine Datei.~~
-8. **Sprachwahl** ganz am Anfang (DE/EN). *(Sprachen DE/EN da, aber nicht als Wizard-Schritt)*
-9. ~~**Health-Check nach Setup:** Checkliste, was konfiguriert ist / was fehlt.~~
-10. **„Was ist neu"** beim ersten Start nach Update + Update-Hinweis. *(Update-Hinweis + Changelog da; „was ist neu"-Popup beim ersten Start fehlt)*
+| Bereich | Stand |
+|---|---|
+| **Drucker** | EIN Bambu Lab pro Zyklus. Persistente MQTT-Verbindung, FTP-Upload, Modelle X1/X1C/X1E, P1P/P1S, A1/A1 mini, H2D; Drucker-Einstellungen + Kalibrierung aus Printloom |
+| **OTTOeject** | Printloom erzeugt den G-code selbst; Achsprüfung vor dem Senden; Sequenz-Editor mit Einzelschritt-Test; Stresstest mit und ohne Drucker; Notaus sperrt jede Bewegung bis zur Freigabe |
+| **Greifer** | Standard (seitlich klemmend) und Magnet-Greifer (seit v1.1.21, eigene Wege, Abkühlen als Sequenz-Schritt) |
+| **Regal** | 1–10 Regale × 1–20 Fächer; alle Fächer = Lager oder oberstes Fach = Magazin |
+| **Einrichten** | Setup-Assistent inkl. geführter Erstkalibrierung, jederzeit wieder aufrufbar (System) |
+| **Farm** | Dauerbetrieb, höhenbasierte Fachwahl, Fehlerklassen mit eigener Strategie, Bergung nach Druckfehler, Zustand übersteht Neustart, Betriebszeiten, Einstellungen wirken live |
+| **Kosten** | Strom (Smart-Plug) + Maschinenstunde + Material aus dem G-code-Header |
+| **Oberfläche** | Startseite und Auto-Farm frei konfigurierbar; Hell/Dunkel/System |
+| **Online** | Alles Opt-in: Update-Prüfung, Hinweise, Bibliothek. Diagnose-ZIP ohne Geheimnisse und Adressen |
+| **Sicherheit** | Keine eigene Anmeldung (Reverse-Proxy davor). Kein CORS, schreibende Anfragen fremder Seiten gesperrt, Backup ohne Zugangsdaten (auf Wunsch verschlüsselt mit) |
+| **Auslieferung** | Docker (amd64/arm64), native Windows-App, native Linux. Version im Image, Update aus der Oberfläche über den Docker-Socket, Promote-Workflow Beta → Stabil |
+| **Qualität** | 677 Backend-Tests + 53 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
 
-## Phase 3 — Warteschlange & Planung
-1. Drag-&-Drop stabiler + **Mehrfachauswahl** verschieben.
-2. **„Als nächstes drucken" / Pinnen** ohne komplettes Umsortieren.
-3. **Wiederkehrende Jobs / geplante Läufe** (z. B. jeden Abend X).
-4. ~~**Endzeit-Prognose** je Job inkl. Betriebszeiten~~ *(da; weiter ausbaubar)*.
-5. **„Was-wäre-wenn"-Planer:** Reihenfolge testen, bevor man speichert.
-6. **Smart-Sort ausbauen:** Filament-Gruppierung → weniger Spulenwechsel.
-7. **Wartungsfenster** einplanen (z. B. Düsenreinigung nach N Stunden).
-8. **Queue-Richtlinien** als Vorabprüfung (max. Höhe, nur passende Materialien).
-9. **Job-Abhängigkeiten / Sets** (erst A, dann B; zusammen drucken).
-10. **Warteschlange exportieren/importieren** + teilen.
+---
 
-## Phase 4 — Teile-Bibliothek, SKUs & Organisation
-1. **Mehrere Plates/Varianten je Teil** verwalten (Printago „Plates").
-2. **SKUs = Stückliste:** ein Produkt aus mehreren Teilen, ein Klick reiht alle ein.
-3. **Tags / Print-Tags** + gespeicherte Filter / Smart-Ordner.
-4. **Datei-Versionierung** (Replace mit Historie, Rückrollen).
-5. **„Reprocess Metadata"**: Slicer-Daten neu auslesen (Zeit, Gramm, Farben, Kompatibilität).
-6. **Kompatibilität anzeigen** (Druckermodell, Düse, Platte) + Warnung bei Inkompatibilität.
-7. **Bulk-Aktionen** ausbauen (verschieben, taggen, löschen).
-8. **Thumbnails je Plate** + 3D-Vorschau.
-9. **Duplikate-Erkennung** beim Upload (Hash).
-10. **Such-Index** über Name/SKU/Tag/Material/Farbe mit Schnellfiltern.
+## Als Nächstes — Farm-Ablauf
 
-## Phase 5 — Drucker-, OTTOeject- & Hardware-Steuerung
-1. **Mehrere Sequenz-Profile** je Drucker/Workflow.
-2. ~~**Sequenz-Editor mit Einzel-Schritt-Test** (Makro testen)~~ *(da; inkl. Printloom-Op-Schritt seit v1.0.98)*.
-3. **Kalibrier-Routinen** (Bett, Flow, Platten-Offset) per Knopf.
-4. **OTTOeject-Jog-Steuerung** (manuelles Verfahren) mit Sicherheits-Limits.
-5. **Druckplatten-/Magazin-Verwaltung** (welche Platte liegt wo, Typ je Platte).
-6. **Multi-Schrank-Vorbereitung** (mehrere Regale, X1C-Position links/rechts).
-7. **Notaus / sicheres Parken** zentral.
-8. **Klipper-/Firmware-Status** + Neustart-Buttons.
-9. ~~**Steckdosen-/Energiesteuerung** (Smart-Plug, Auto-Aus nach Leerlauf)~~ *(da)*.
-10. **Hardware-Profil je Drucker** (Düse, max. Höhe, Bauraum) für die Kompatibilitätsprüfung.
+1. ⚡ **Fehlerstrategie „zurückstellen"** für `ams_unmatched`: Job ans Ende der
+   Warteschlange, Farm läuft mit dem nächsten weiter. Heute nur pausieren,
+   überspringen oder stoppen — nachts steht die Farm wegen einer falschen Farbe.
+2. ⚡ **Reicht die Spule?** Gramm aus dem Slicer gegen die AMS-Restmenge VOR dem
+   Start. Beide Zahlen liegen vor. `remain = -1` heißt unbekannt, nicht leer.
+3. ⚡ **Überwachter Ordner (Hotfolder).** Datei landet im Ordner → in der Bibliothek.
+   Der kürzeste Weg von OrcaSlicer zu Printloom.
+4. 🏗 **Shop-Anbindung** nach `odoo-connector-plan.md` (Odoo zuerst, dann Shopify).
 
-## Phase 6 — Überwachung, Kamera & Fehlererkennung
-1. **Mehrere Kameras** (X1C intern + extern) + Aufnahme/Zeitraffer je Job.
-2. **Fehlschlag-/Spaghetti-Erkennung** → Auto-Pause.
-3. **HMS-Historie** mit Lösungen (aufbauend auf v1.0.63). *(HMS live erkannt/gemeldet; durchsuchbare Historie fehlt)*
-4. **Live-Overlay** im Bild (Schicht, %, Restzeit, Temperaturen).
-5. **Benachrichtigungen ausbauen** (Telegram/Push/E-Mail bei Start/Ende/Fehler/Filament leer). *(Web-Push da; Telegram/E-Mail fehlen)*
-6. ~~**Verbindungs-Watchdog** + Alarm bei Abriss~~ *(da)*.
-7. ~~**Stillstands-Erkennung** (kein Fortschritt) → Pause/Alarm~~ *(da)*.
-8. ~~**Schnappschuss-Galerie** je Job (vorher/nachher)~~ *(da)*.
-9. **Handy-Fernsteuerung** (PWA) inkl. Pause/Stop/Fortsetzen.
-10. **Ereignis-Zeitleiste** je Drucker mit Filter.
+## Offene Messungen
 
-## Phase 7 — Multi-Drucker & Skalierung
-1. **Mehrere Drucker** verwalten (echte Druckfarm).
-2. **Job-Verteilung** auf passenden Drucker (Material/Größe/Auslastung).
-3. **Pro-Drucker-Queue** + globale Übersicht.
-4. **Lastausgleich** / „nächster freier Drucker".
-5. **Drucker-Gruppen / Standorte.**
-6. **Gemeinsamer Spulen-/Material-Pool** über Drucker hinweg.
-7. **Mehrbenutzer & Rollen** (wer darf was).
-8. **Pro-Drucker-Sequenzen & -Kalibrierung.**
-9. **Reservierung/Sperren** eines Druckers (Wartung).
-10. **Skalierung absichern** (viele Jobs/Dateien performant).
+1. 🔒 **Y-Tiefe der Kompakt-Halterung.** `y_engage` erbt den Standardwert; erst nach
+   der Messung fällt das `soon`-Flag in `frontend/src/services/hardware.js`.
+2. 📣 **Website: „Profile für Creality K1C, Elegoo Centauri Carbon …".** Für diese
+   Drucker gibt es Geometrie-Vorlagen, aber keinen Treiber — Printloom steuert nur
+   Bambu Lab. Textvorschlag: „Geometrie-Vorlagen für Creality K1C, Elegoo Centauri
+   Carbon und weitere: Der Arm weiß, wo er greifen muss. Steuern und überwachen kann
+   Printloom derzeit nur Bambu-Lab-Drucker."
 
-## Phase 8 — Analytics, Kosten & Reporting
-1. **Kosten je Job/Teil** (Material + Strom + Maschinenstunde — teils da → ausbauen).
-2. **Material-Verbrauch** je Farbe/Marke über Zeit.
-3. **Auslastung/Erfolgsquote/Fehlerstatistik** je Drucker.
-4. **Durchsatz-Report** (Teile/Tag, Druckstunden).
-5. **Energie-Report** (kWh, Kosten — teils da).
-6. **Export** als CSV/PDF.
-7. **Preis-/Angebotskalkulation** je Teil (Marge).
-8. **Verbrauchsprognose** + Nachbestell-Hinweis für Filament.
-9. ~~**Echte-Druckzeiten-Historie** → bessere Schätzungen~~ *(da)*.
-10. **Frei anordbare Dashboards/Widgets** (teils da → ausbauen).
+## Ein Fremder kommt allein durch
 
-## Phase 9 — Aufträge, SKUs & Fulfillment
-1. **Orders:** Kunde + Positionen (SKUs/Mengen) → automatisch in die Queue.
-2. **Auftragsstatus** (offen/druckt/fertig/versendet) + Fortschritt.
-3. **Shop-Anbindung** (Etsy/Shopify/WooCommerce) → Bestellung = Druckauftrag.
-4. **Label-/Lieferschein-Druck.**
-5. **Lagerbestand fertiger Teile** (auf Lager/verkauft).
-6. ~~**Chargen-/Serien-Druck** (N Stück eines SKU) mit Abhaken (Projekt-Tab)~~ *(da; weiter ausbaubar)*.
-7. **Kunden-/Projekt-Zuordnung** je Druck.
-8. **Priorisierung nach Liefertermin.**
-9. **Wiederholbestellung** mit einem Klick.
-10. **Rechnungs-/Kostenübersicht** je Auftrag.
+1. ⚡ **Nach dem Einmessen ein echter Probelauf**: ein Wechsel, halbe Geschwindigkeit,
+   Bestätigung nach jedem Schritt.
+2. ⚡ **Fehlermeldungen mit Handlungsanweisung** — je Fehlerklasse ein Satz „so
+   behebst du das".
+3. ⚡ **Geometrie-Schreiben zentralisieren.** „Holen → ein Feld ändern →
+   zurückschreiben" steht in Setup, Drucker-Tab und Erstkalibrierung; `putGeometry`
+   ersetzt die ganze Datei. Ein Helfer, bevor eine Stelle sie leerschreibt.
 
-## Phase 10 — Integration, API & Erweiterbarkeit
-1. **Öffentliche REST-API** + API-Keys.
-2. **Webhooks** (Job-Start/-Ende/-Fehler) für eigene Automatisierungen.
-3. **Home Assistant / MQTT**-Integration (Status, Steuerung). *(HA-Kamera-Proxy da; Status/Steuerung fehlen)*
-4. **Slicer-Hotfolder/-Plugin:** direkt aus OrcaSlicer/Bambu Studio nach Printloom.
-5. **Drag-&-Drop-Upload aus dem Slicer** („Hot Drop"-Stil).
-6. **PWA/Mobile** verbessern (Offline, Push, Home-Screen). *(PWA/Push/Home-Screen da; Offline-Ausbau offen)*
-7. **Plugin-/Addon-System** (eigene Schritte/Integrationen).
-8. **Weitere Sprachen** ausbauen.
-9. **SSO / Reverse-Proxy / HTTPS-Anleitung** + Auth.
-10. **Sicherer Remote-Zugriff / Cloud-Sync** für unterwegs.
+## Mehr als ein Drucker, mehr als eine Marke
+
+Größtes offenes Versprechen und größter Umbau — mit eigenem Design-Schritt davor.
+
+1. 🏗 **Zyklus je Drucker.** `_farm` ist ein globaler Zustand mit EINEM Job.
+2. 🏗 **Zweite Druckermarke** über Klipper/Moonraker — damit würden K1C und Centauri
+   Carbon echte Ziele. Druckertreiber-Schnittstelle hinter `printer_models`.
+3. ⚡ **Sequenz und Live-Status je Drucker**, „nimm den ersten Drucker"-Stellen umstellen.
+
+## Material, Auswertung, Werkstatt
+
+- ⚡ Verbrauch je Farbe und Marke; Spulen ohne RFID pflegen; AMS-Vorschau mit Ampel.
+- ⚡ CSV-Export von Historie und Kosten; Kosten je Job im Backend statt nur im Browser.
+- ⚡ Erfolgsquote je Drucker / Material / Fach; Durchsatz-Report.
+- ⚡ Benachrichtigungen je Ereignis wählbar; Zeitraffer aus den Kamera-Schnappschüssen.
+- ⚡ Webhooks, Home Assistant / MQTT.
+
+---
+
+## Laufend — beim Anfassen mitnehmen
+
+- **52 stille `except Exception: pass`** loggen und neue per Test verbieten.
+- **Start-Bundle 828 kB**: `changelog.js` (228 kB) und das englische Wörterbuch erst
+  bei Bedarf nachladen.
+- **Status über den WebSocket** statt 13 einzelner Timer.
+- **16 React-Warnungen** (`exhaustive-deps`) beheben.
+- **4–5 Playwright-Smoke-Tests** in die CI.
+- **Große Dateien teilen**: `autofarm.py` (~4 150 Zeilen), `AutoFarm.jsx`,
+  `Drucker.jsx`, `Configuration.jsx` — beim nächsten Feature im Bereich das Passende
+  herausziehen, nicht auf einmal.
+
+---
+
+## Regeln, die in jeder Phase gelten
+
+- **Jedes Feature bringt seine Tests mit** — mit der echten Datenform.
+- **Keine neuen stillen `except`.** Behandeln oder loggen.
+- **Kommentare erklären das WARUM.**
+- **Version + zweisprachiger Changelog bei jedem Release.**
+- **Eine Quelle je Zahl.** Zwei Speicher für dieselbe Größe laufen auseinander.
+- **Die BEWEGUNG bemessen, nicht den Ruhezustand.** *(Lehrgeld v1.1.11)* Die Platte
+  fährt ~25 mm höher ins Fach ein und wird abgesenkt — wer Platz plant, rechnet den
+  Weg dorthin ein.
+- **Unbekannt ist nicht Null.** *(Lehrgeld v1.1.19)* Was fehlt, wird benannt, nicht
+  ersetzt.
+
+## Bewusst nicht auf der Roadmap
+
+- **Kein Zwang nach außen.** Jede Verbindung nach draußen bleibt Opt-in mit Hinweis.
+  Keine Telemetrie, keine Funktion, die ohne Internet nicht mehr geht.
+- **Keine eigene Benutzerverwaltung.** Anmeldung gehört an den Reverse-Proxy (z. B.
+  authentik); Printloom sorgt dafür, dass man nicht an ihm vorbeikommt.
+- **Keine Gimmicks.** Nur Funktionen, die einen Handgriff sparen oder einen Fehler
+  verhindern.
+- **Kein Auto-Anwenden heruntergeladener Inhalte.** Sequenzen und Profile bewegen
+  Hardware: erst Vorschau, dann bewusste Übernahme.
+
+---
+
+Was fertig ist, wandert nicht in eine Erledigt-Liste, sondern in die Fundament-Tabelle
+oben — so bleibt dieses Dokument kurz und beschreibt immer den nächsten Schritt.

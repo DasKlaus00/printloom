@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { deviceService, configService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
+import { deviceService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
 import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 
@@ -91,7 +91,7 @@ function LanguagePacks() {
         {langs.map(l => (
           <button key={l.code} onClick={() => setLanguage(l.code)} title={l.name}
             className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
-              lang === l.code ? 'bg-blue-700 border-blue-600 text-white'
+              lang === l.code ? 'bg-blue-600 border-blue-600 text-white'
                               : 'bg-surface-800 border-surface-700 text-surface-400 hover:text-surface-200'}`}>
             {l.code.toUpperCase()} {!l.builtin && '·'}
           </button>
@@ -362,6 +362,7 @@ function RegalKonfiguration() {
   const [spr,            setSpr]            = useState(6)
   const [h,              setH]              = useState(50)
   const [margin,         setMargin]         = useState(15)
+  const [stackedPct,     setStackedPct]     = useState(50)
   const [magazineSlot,   setMagazineSlot]   = useState(7)
   const [magazineCounts, setMagazineCounts] = useState([6, 6, 6])
   const [saving,         setSaving]         = useState(false)
@@ -375,9 +376,11 @@ function RegalKonfiguration() {
       setSpr(d.slots_per_rack ?? 6)
       setH(d.slot_height_mm ?? 50)
       setMargin(d.height_margin_pct ?? 15)
+      setStackedPct(d.slot_stacked_pct ?? 50)
       setMagazineSlot(d.magazine_slot ?? 7)
-      const counts = d.magazine_counts ?? []
-      setMagazineCounts(counts.length ? counts : Array(d.num_racks ?? 3).fill(6))
+      // Fest konfigurierte Sollzahl je Magazin (nicht der schwankende Live-Bestand).
+      const defs = d.magazine_defaults ?? d.magazine_counts ?? []
+      setMagazineCounts(defs.length ? defs : Array(d.num_racks ?? 3).fill(4))
     } catch {}
   }
   useEffect(() => { load() }, [])
@@ -401,8 +404,9 @@ function RegalKonfiguration() {
         slots_per_rack:   +spr,
         slot_height_mm:   +h,
         height_margin_pct: +margin,
+        slot_stacked_pct: +stackedPct,
         magazine_slot:    +magazineSlot,
-        magazine_counts:  magazineCounts.map(Number),
+        magazine_defaults: magazineCounts.map(Number),
       })
       await load()
       setStatus({ ok: true, msg: tr('Regal gespeichert.') })
@@ -442,6 +446,24 @@ function RegalKonfiguration() {
           {h > 0 && <span className="text-[9px] text-surface-700 font-mono">{tr('z.B. 100 mm → {0} mm effektiv', Math.round(100 * (1 + margin/100)))}</span>}
         </div>
       </div>
+      {/* Liegt oben schon eine Platte, braucht die einfahrende Platte mehr Luft,
+          als das Objekt im Ruhezustand hoch ist (sie kommt erhöht herein). */}
+      <div>
+        <label className="text-[10px] text-surface-500 block mb-1">
+          {tr('Nutzhöhe unter belegtem Fach (%)')} <span className="text-surface-700">{tr('— z. B. unter dem Magazin')}</span>
+        </label>
+        <div className="flex items-center gap-2">
+          <input type="number" min="0" max="100" step="5" value={stackedPct}
+            onChange={e => setStackedPct(e.target.value)} className="w-20 font-mono text-xs" />
+          <span className="text-[10px] text-surface-500">%</span>
+          {h > 0 && <span className="text-[9px] text-surface-700 font-mono">
+            {tr('→ max. {0} mm unter einer Platte', Math.round(h * stackedPct / 100))}
+          </span>}
+        </div>
+        <p className="text-[9px] text-surface-600 mt-1">
+          {tr('Die Platte fährt nicht waagerecht auf ihre Endhöhe ein, sondern kommt etwa 25 mm höher herein und wird abgesenkt — beim Holen wird sie genauso angehoben. Solange von unten nach oben gefüllt wird, ist das Fach darüber in dem Moment noch leer. Über dem Magazin (immer belegt) und unter einem schon belegten Fach fehlt diese Luft, deshalb zählt dort nur ein Teil der Fachhöhe.')}
+        </p>
+      </div>
       <div className="border-t border-surface-800/40 pt-2 space-y-2">
         <div className="flex items-center gap-2">
           <p className="text-[10px] text-surface-500 flex-1">{tr('Magazin-Fach')}</p>
@@ -454,8 +476,8 @@ function RegalKonfiguration() {
         </div>
       </div>
       <div className="border-t border-surface-800/40 pt-2 space-y-2">
-        <p className="text-[10px] text-surface-500">{tr('Platten pro Magazin')} <span className="text-surface-700">{tr('— aktueller Bestand')}</span></p>
-        <p className="text-[9px] text-surface-700">{tr('Farm leert Rack 1 zuerst, dann 2, dann 3 usw.')}</p>
+        <p className="text-[10px] text-surface-500">{tr('Platten pro Magazin')} <span className="text-surface-700">{tr('— feste Sollzahl')}</span></p>
+        <p className="text-[9px] text-surface-700">{tr('Fest je Magazin. „↺ Reset" (Regal-Ansicht) und Auffüllen stellen genau diese Zahl wieder her; sie bildet auch die Obergrenze im Magazin-Badge. Farm leert Rack 1 zuerst, dann 2, dann 3 usw.')}</p>
         <div className="flex items-center gap-2 flex-wrap">
           {magazineCounts.map((cnt, ri) => (
             <div key={ri} className="flex items-center gap-1.5">
@@ -481,7 +503,7 @@ function RegalKonfiguration() {
 }
 
 const INITIAL_FORM = {
-  name: '', device_type: 'bambu_lab', ip_address: '',
+  name: '', device_type: 'bambu_lab', model: '', ip_address: '',
   port: 8883, serial_number: '', access_code: '',
   mqtt_port: 8883, use_tls: true,
 }
@@ -573,6 +595,9 @@ function PowerSettings() {
         idle_off_min:          Math.max(0, Math.round(Number(cost.idle_off_min) || 0)),
       })
       setStatus({ ok: true, msg: tr('Gespeichert.') })
+      // Der Schalter in der Kopfleiste holt daraufhin sofort seinen Zustand —
+      // sonst erschiene eine frisch eingerichtete Steckdose erst Minuten später.
+      window.dispatchEvent(new CustomEvent('printloom:powerChanged'))
     } catch (e) {
       setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
     } finally { setSaving(false) }
@@ -707,14 +732,17 @@ const ERROR_CATALOG = [
   { key: 'progress_stall',  label: 'Stillstand / kein Fortschritt', desc: 'Watchdog: kein Druckfortschritt (mögliche Verstopfung)',      actions: ['pause', 'skip', 'stop'] },
   { key: 'no_slot',         label: 'Kein freies Regalfach',        desc: 'Regal voll — kein Platz für die fertige Platte',              actions: ['pause', 'stop'] },
   { key: 'ams_unmatched',   label: 'AMS-Festlegung nötig',         desc: 'Kein passendes Filament im AMS gefunden',                     actions: ['pause', 'skip'] },
+  { key: 'move_timeout',    label: 'Bewegung hängt',               desc: 'OTTOeject meldet die Bewegung nicht als beendet — Arm steht an unbekannter Stelle', actions: ['pause', 'skip', 'stop'] },
 ]
-const ERROR_DEFAULTS = { hms: 'pause', print_failed: 'eject', connection_lost: 'skip', progress_stall: 'pause', no_slot: 'pause', ams_unmatched: 'pause' }
+const ERROR_DEFAULTS = { hms: 'pause', print_failed: 'eject', connection_lost: 'skip', progress_stall: 'pause', no_slot: 'pause', ams_unmatched: 'pause', move_timeout: 'pause' }
 const ACTION_LABEL = { pause: 'Pausieren', skip: 'Job überspringen', stop: 'Farm stoppen', ignore: 'Ignorieren', eject: 'Platte auswerfen & weiter' }
 
 function ErrorStrategy() {
   const { tr } = useLanguage()
   const [strategy, setStrategy] = useState({})
   const [retries, setRetries]   = useState(1)
+  // Zeitlimit EINER OTTOeject-Bewegung — danach gilt sie als hängend (Phase 3.3).
+  const [moveTimeout, setMoveTimeout] = useState(180)
   const [saving, setSaving]     = useState(false)
   const [status, setStatus]     = useState(null)
 
@@ -722,13 +750,18 @@ function ErrorStrategy() {
     autofarmService.getSettings().then(r => {
       setStrategy({ ...ERROR_DEFAULTS, ...(r.data.error_strategy || {}) })
       setRetries(r.data.failed_retries ?? 1)
+      setMoveTimeout(r.data.move_timeout_s ?? 180)
     }).catch(() => setStrategy({ ...ERROR_DEFAULTS }))
   }, [])
 
   const save = async () => {
     setSaving(true); setStatus(null)
     try {
-      await autofarmService.saveSettings({ error_strategy: strategy, failed_retries: Math.max(0, Math.round(Number(retries) || 0)) })
+      await autofarmService.saveSettings({
+        error_strategy: strategy,
+        failed_retries: Math.max(0, Math.round(Number(retries) || 0)),
+        move_timeout_s: Math.max(30, Math.min(900, Math.round(Number(moveTimeout) || 180))),
+      })
       setStatus({ ok: true, msg: tr('Gespeichert.') })
     } catch (e) {
       setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
@@ -760,6 +793,19 @@ function ErrorStrategy() {
                   </p>
                 </>
               )}
+              {err.key === 'move_timeout' && (
+                <>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-[10px] text-surface-500">{tr('Zeitlimit je Bewegung (s):')}</span>
+                    <input type="number" min="30" max="900" step="10" value={moveTimeout}
+                      onChange={e => setMoveTimeout(Number(e.target.value))}
+                      className="w-16 font-mono text-xs h-6 py-0" />
+                  </div>
+                  <p className="text-[10px] text-surface-600 mt-1 leading-snug">
+                    {tr('Ein Griff über mehrere Regale darf dauern — großzügig einstellen. Nach dem Zeitlimit gilt die Position des Arms als unbekannt: die nächste Bewegung referenziert automatisch zuerst.')}
+                  </p>
+                </>
+              )}
             </div>
             <select value={strategy[err.key] ?? ERROR_DEFAULTS[err.key]}
               onChange={e => setStrategy(s => ({ ...s, [err.key]: e.target.value }))}
@@ -787,6 +833,25 @@ function Configuration() {
   const [testResults, setTestResults] = useState({})
   const [webcamUrls, setWebcamUrls]   = useState({})       // untere (hochkant) Kamera
   const [webcamTopUrls, setWebcamTopUrls] = useState({})   // obere (Bambu / quer) Kamera
+  const [camTypes, setCamTypes]       = useState({})       // { [id]: 'auto'|'rtsp'|'bambu'|'none' } eingebaute Kamera
+
+  // Kamera global aus (Energiesparmodus, z. B. Raspberry Pi) — null = lädt noch.
+  // Bei Neuinstallationen ist die Kamera standardmäßig deaktiviert (seit v1.0.150).
+  const [camDisabled, setCamDisabled] = useState(null)
+  useEffect(() => {
+    systemService.getCameraSettings()
+      .then(r => setCamDisabled(!!r.data?.disabled))
+      .catch(() => setCamDisabled(false))
+  }, [])
+  const toggleCamera = async () => {
+    const next = !camDisabled
+    setCamDisabled(next)
+    try {
+      await systemService.saveCameraSettings({ disabled: next })
+    } catch {
+      setCamDisabled(!next)   // Speichern fehlgeschlagen → zurückrollen
+    }
+  }
   const [haCams, setHaCams]           = useState({})       // { [id]: { url, token, entity, tokenSet } }
   const [haTest, setHaTest]           = useState({})       // { [id]: { ok, detail } | 'loading' }
   const [savingWebcam, setSavingWebcam] = useState(null)
@@ -794,24 +859,101 @@ function Configuration() {
   const [error, setError]         = useState(null)
   const [tab, setTab]             = useState('devices')
 
+  // Netzwerk-Suche + Bauraumlüfter-Option je Bambu-Gerät.
+  const [discovering, setDiscovering] = useState(false)
+  const [discovered, setDiscovered]   = useState(null)   // { bambu:[], klipper:[], docker_bridge } | null
+  const [scanSubnet, setScanSubnet]   = useState('')     // optionales /24 für Docker-Bridge
+  const [fanOff, setFanOff]           = useState({})     // { [deviceId]: bool }
+
   const bambu = devices.find(d => d.device_type === 'bambu_lab')
+
+  // Bekannte Drucker-Modelle aus dem Backend (printer_models) — davon hängen
+  // Kamera-Protokoll und Fähigkeiten ab, deshalb keine zweite Liste im Frontend.
+  const [models, setModels] = useState([])
+  useEffect(() => {
+    deviceService.listModels().then(r => setModels(r.data?.models || [])).catch(() => setModels([]))
+  }, [])
+  const modelLabel = (id) => models.find(m => m.id === id)?.label || id
 
   const load = async () => {
     const d = await deviceService.listDevices()
     setDevices(d.data)
     // load webcam urls for each device (untere + obere Kamera + Home-Assistant-Kamera)
-    const urls = {}, tops = {}, ha = {}
+    const urls = {}, tops = {}, ha = {}, fans = {}, cams = {}
     for (const dev of d.data) {
       try {
         const s = await deviceSettingsService.getSettings(dev.id)
         urls[dev.id] = s.data.webcam_url ?? ''
         tops[dev.id] = s.data.webcam_url_top ?? ''
         ha[dev.id]   = { url: s.data.ha_url ?? '', token: '', entity: s.data.ha_camera ?? '', tokenSet: !!s.data.ha_token_set }
-      } catch { urls[dev.id] = ''; tops[dev.id] = ''; ha[dev.id] = { url: '', token: '', entity: '', tokenSet: false } }
+        fans[dev.id] = !!s.data.chamber_fan_off
+        cams[dev.id] = s.data.camera_type || 'auto'
+      } catch { urls[dev.id] = ''; tops[dev.id] = ''; ha[dev.id] = { url: '', token: '', entity: '', tokenSet: false }; fans[dev.id] = false; cams[dev.id] = 'auto' }
     }
     setWebcamUrls(urls)
     setWebcamTopUrls(tops)
     setHaCams(ha)
+    setFanOff(fans)
+    setCamTypes(cams)
+  }
+
+  // Bauraumlüftung dauerhaft aus (pro Bambu-Gerät). Optimistisch, bei Fehler zurück.
+  const toggleFanOff = async (deviceId) => {
+    const next = !fanOff[deviceId]
+    setFanOff(p => ({ ...p, [deviceId]: next }))
+    try {
+      await deviceSettingsService.updateSettings(deviceId, { chamber_fan_off: next })
+    } catch {
+      setFanOff(p => ({ ...p, [deviceId]: !next }))
+    }
+  }
+
+  // Kamera-Typ der eingebauten Kamera (pro Bambu). Optimistisch, bei Fehler zurück.
+  const setCamType = async (deviceId, value) => {
+    const prev = camTypes[deviceId] ?? 'auto'
+    setCamTypes(p => ({ ...p, [deviceId]: value }))
+    try {
+      await deviceSettingsService.updateSettings(deviceId, { camera_type: value })
+      window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved'))
+    } catch {
+      setCamTypes(p => ({ ...p, [deviceId]: prev }))
+    }
+  }
+
+  // Netzwerk nach Druckern durchsuchen (SSDP-Bambu + Moonraker-Scan).
+  // subnet kann ein String ODER (bei onClick) ein Event sein → robust normalisieren.
+  const runDiscover = async (subnet) => {
+    const s = (typeof subnet === 'string' ? subnet : '').trim()
+    setDiscovering(true); setDiscovered(null)
+    try {
+      const r = await deviceService.discover(s || undefined)
+      setDiscovered(r.data ?? { bambu: [], klipper: [] })
+    } catch (e) {
+      setDiscovered({ bambu: [], klipper: [], error: e.response?.data?.detail ?? e.message })
+    } finally { setDiscovering(false) }
+  }
+
+  // Einen Fund ins Formular übernehmen (Access-Code trägt der Nutzer selbst nach).
+  const applyDiscovered = (item, type) => {
+    setEditId(null)
+    if (type === 'bambu_lab') {
+      setForm({
+        ...INITIAL_FORM, device_type: 'bambu_lab',
+        name: item.name || 'Bambu Lab X1C', ip_address: item.ip || '',
+        // Modell aus der Netzwerk-Suche vorbelegen (Modellcode/Seriennummer) —
+        // der Nutzer kann es im Formular korrigieren.
+        model: item.model_id || '',
+        serial_number: item.serial || '', port: 8883, mqtt_port: 8883, use_tls: true,
+      })
+    } else {
+      setForm({
+        ...INITIAL_FORM, device_type: 'klipper',
+        name: item.hostname || 'OTTOeject', ip_address: item.ip || '',
+        port: item.port || 7125,
+      })
+    }
+    setShowForm(true)
+    setError(null)
   }
 
   useEffect(() => { load() }, [])
@@ -845,6 +987,7 @@ function Configuration() {
     setEditId(device.id)
     setForm({
       name: device.name ?? '', device_type: device.device_type ?? 'bambu_lab',
+      model: device.model ?? '',
       ip_address: device.ip_address ?? '', port: device.port ?? 8883,
       serial_number: device.serial_number ?? '', access_code: '',
       mqtt_port: device.mqtt_port ?? 8883, use_tls: device.use_tls ?? true,
@@ -866,6 +1009,7 @@ function Configuration() {
           name: form.name, device_type: form.device_type, ip_address: form.ip_address,
           port: +form.port, mqtt_port: +form.mqtt_port, use_tls: form.use_tls,
           serial_number: form.serial_number,
+          model: form.device_type === 'bambu_lab' ? (form.model || '') : '',
         }
         if (form.access_code) payload.access_code = form.access_code
         await deviceService.updateDevice(editId, payload)
@@ -874,6 +1018,9 @@ function Configuration() {
       }
       closeForm()
       await load()
+      // Andere Seiten hängen an der Geräteliste — der Drucker-Tab zeigt einen
+      // Abschnitt JE angelegtem Drucker und muss das sofort mitbekommen.
+      window.dispatchEvent(new CustomEvent('printloom:devicesChanged'))
     } catch (e) {
       setError(e.response?.data?.detail ?? (editId != null ? 'Failed to update device' : 'Failed to add device'))
     } finally {
@@ -885,6 +1032,7 @@ function Configuration() {
     if (!(await confirmDialog({ title: tr('Gerät löschen'), message: tr('Dieses Gerät wirklich löschen?'), confirmLabel: tr('Löschen') }))) return
     await deviceService.deleteDevice(id)
     await load()
+    window.dispatchEvent(new CustomEvent('printloom:devicesChanged'))
   }
 
   const handleTest = async (id) => {
@@ -925,11 +1073,69 @@ function Configuration() {
       {tab === 'devices' && (
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <p className="section-label mb-0">Devices</p>
-          <button onClick={() => (showForm ? closeForm() : setShowForm(true))} className="btn btn-primary btn-sm">
-            {showForm ? tr('Abbrechen') : '+ Add Device'}
-          </button>
+          <p className="section-label mb-0">{tr('Geräte')}</p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => runDiscover()} disabled={discovering} className="btn btn-ghost btn-sm disabled:opacity-50"
+              title={tr('Netzwerk nach Bambu-Druckern (SSDP) und Klipper/Moonraker durchsuchen')}>
+              {discovering ? tr('Suche…') : tr('🔍 Netzwerk durchsuchen')}
+            </button>
+            <button onClick={() => (showForm ? closeForm() : setShowForm(true))} className="btn btn-primary btn-sm">
+              {showForm ? tr('Abbrechen') : tr('+ Gerät hinzufügen')}
+            </button>
+          </div>
         </div>
+
+        {/* Netzwerk-Suche: Ergebnisse ─────────────────────────────── */}
+        {discovered && (
+          <div className="bg-surface-900 rounded-xl border border-surface-700 p-4 mb-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-surface-200">{tr('Gefundene Geräte')}</p>
+              <button onClick={() => setDiscovered(null)} className="text-[11px] text-surface-500 hover:text-surface-300">{tr('ausblenden')}</button>
+            </div>
+            {discovered.error && <p className="text-xs text-amber-400">{tr('Suche fehlgeschlagen')}: {discovered.error}</p>}
+            {/* Docker-Bridge erkannt: eigenes Subnetz angeben, Container sieht das LAN sonst nicht */}
+            {discovered.docker_bridge && (
+              <div className="rounded-lg border border-amber-800/60 bg-amber-950/20 px-3 py-2 space-y-2">
+                <p className="text-[11px] text-amber-300">
+                  {tr('Printloom läuft in einem Docker-Bridge-Netz und sieht dein LAN nicht automatisch (die erkannte IP ist die Container-Adresse 172.x). Gib dein LAN-Subnetz ein und suche erneut — oder nutze „network_mode: host".')}
+                </p>
+                <div className="flex items-center gap-2">
+                  <input type="text" value={scanSubnet} onChange={e => setScanSubnet(e.target.value)}
+                    placeholder="192.168.1" className="text-xs font-mono py-1 w-32" />
+                  <span className="text-[10px] text-surface-600">{tr('(erste drei Zahlen deiner LAN-IP)')}</span>
+                  <button onClick={() => runDiscover(scanSubnet)} disabled={discovering || !scanSubnet.trim()}
+                    className="btn btn-secondary btn-sm disabled:opacity-50">{tr('Erneut suchen')}</button>
+                </div>
+              </div>
+            )}
+            {!discovered.error && !discovered.docker_bridge && !discovered.bambu?.length && !discovered.klipper?.length && (
+              <p className="text-xs text-surface-500">
+                {tr('Nichts gefunden. In Docker (Bridge-Netz) kommen SSDP-Broadcasts nicht am Container an — nutze „network_mode: host" oder trage den Drucker manuell ein.')}
+              </p>
+            )}
+            {discovered.bambu?.map((b, i) => (
+              <div key={`b${i}`} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface-950 border border-surface-800">
+                <div className="min-w-0">
+                  <p className="text-sm text-surface-200 truncate">🖨 {b.name || 'Bambu Lab'} <span className="text-surface-500 font-mono text-xs">· {b.ip}</span></p>
+                  <p className="text-[11px] text-surface-600 font-mono">
+                    {b.serial ? `S/N: ${b.serial}` : tr('Seriennummer nicht ermittelt (Port-Scan) — bitte manuell')}
+                    {b.model ? ` · ${b.model}` : ''}
+                  </p>
+                </div>
+                <button onClick={() => applyDiscovered(b, 'bambu_lab')} className="btn btn-secondary btn-sm shrink-0">{tr('Übernehmen')}</button>
+              </div>
+            ))}
+            {discovered.klipper?.map((k, i) => (
+              <div key={`k${i}`} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface-950 border border-surface-800">
+                <div className="min-w-0">
+                  <p className="text-sm text-surface-200 truncate">🦾 {k.hostname || 'Klipper / OTTOeject'} <span className="text-surface-500 font-mono text-xs">· {k.ip}:{k.port}</span></p>
+                  <p className="text-[11px] text-surface-600 font-mono">Moonraker</p>
+                </div>
+                <button onClick={() => applyDiscovered(k, 'klipper')} className="btn btn-secondary btn-sm shrink-0">{tr('Übernehmen')}</button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Add form */}
         {showForm && (
@@ -941,11 +1147,11 @@ function Configuration() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-surface-500 block mb-1">Device Name</label>
-                <input name="name" value={form.name} onChange={handleChange} placeholder="e.g. Bambu Lab X1C" required />
+                <label className="text-xs text-surface-500 block mb-1">{tr('Gerätename')}</label>
+                <input name="name" value={form.name} onChange={handleChange} placeholder={tr('z. B. Bambu Lab X1C')} required />
               </div>
               <div>
-                <label className="text-xs text-surface-500 block mb-1">Device Type{editId != null ? ` (${tr('nicht änderbar')})` : ''}</label>
+                <label className="text-xs text-surface-500 block mb-1">{tr('Gerätetyp')}{editId != null ? ` (${tr('nicht änderbar')})` : ''}</label>
                 <select name="device_type" value={form.device_type} onChange={handleChange} disabled={editId != null}
                   className={editId != null ? 'opacity-60 cursor-not-allowed' : ''}>
                   <option value="bambu_lab">Bambu Lab X1C</option>
@@ -953,7 +1159,7 @@ function Configuration() {
                 </select>
               </div>
               <div>
-                <label className="text-xs text-surface-500 block mb-1">IP Address</label>
+                <label className="text-xs text-surface-500 block mb-1">{tr('IP-Adresse')}</label>
                 <input name="ip_address" value={form.ip_address} onChange={handleChange} placeholder="192.168.1.100" required />
               </div>
               <div>
@@ -964,26 +1170,48 @@ function Configuration() {
 
             {form.device_type === 'bambu_lab' && (
               <div className="grid grid-cols-2 gap-3">
+                {/* Modell bestimmt das Kamera-Protokoll (X1-Serie: RTSP, P1/A1: Port 6000)
+                    und die Fähigkeiten. Ohne Angabe erkennt Printloom die Kamera wie
+                    bisher selbst — mit Angabe ohne Umweg und ohne Netz-Probe. */}
+                <div className="col-span-2">
+                  <label className="text-xs text-surface-500 block mb-1">{tr('Modell')}</label>
+                  <select name="model" value={form.model} onChange={handleChange}>
+                    <option value="">{tr('Nicht angegeben (automatisch erkennen)')}</option>
+                    {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                  {form.model && (
+                    <p className="text-[11px] text-surface-600 mt-1">
+                      {(() => {
+                        const m = models.find(x => x.id === form.model)
+                        if (!m) return null
+                        const cam = m.camera === 'rtsp' ? tr('Kamera über RTSP (Port 322)')
+                          : m.camera === 'bambu' ? tr('Kamera über Bambu-Protokoll (Port 6000)')
+                          : tr('Kamera wird automatisch erkannt')
+                        return `${cam} · ${m.enclosed ? tr('geschlossen (Tür)') : tr('offen (keine Tür)')}`
+                      })()}
+                    </p>
+                  )}
+                </div>
                 <div>
-                  <label className="text-xs text-surface-500 block mb-1">Serial Number</label>
+                  <label className="text-xs text-surface-500 block mb-1">{tr('Seriennummer')}</label>
                   <input name="serial_number" value={form.serial_number} onChange={handleChange} placeholder={tr('z. B. 00M…')} required />
                 </div>
                 <div>
-                  <label className="text-xs text-surface-500 block mb-1">Access Code</label>
+                  <label className="text-xs text-surface-500 block mb-1">{tr('Zugangscode')}</label>
                   <input name="access_code" type="password" value={form.access_code} onChange={handleChange}
                     required={editId == null}
                     placeholder={editId != null ? tr('leer lassen = unverändert') : ''} />
                 </div>
                 <div className="col-span-2 flex items-center gap-2">
-                  <input type="checkbox" name="use_tls" id="use_tls" checked={form.use_tls} onChange={handleChange} className="w-auto" />
-                  <label htmlFor="use_tls" className="text-sm text-surface-400 cursor-pointer">Use TLS (recommended)</label>
+                  <input type="checkbox" name="use_tls" id="use_tls" checked={form.use_tls} onChange={handleChange} />
+                  <label htmlFor="use_tls" className="text-sm text-surface-400 cursor-pointer">{tr('TLS verwenden (empfohlen)')}</label>
                 </div>
               </div>
             )}
 
             <div className="flex justify-end">
               <button type="submit" disabled={saving} className="btn btn-primary">
-                {saving ? tr('Speichert…') : (editId != null ? tr('Änderungen speichern') : 'Add Device')}
+                {saving ? tr('Speichert…') : (editId != null ? tr('Änderungen speichern') : tr('Gerät hinzufügen'))}
               </button>
             </div>
           </form>
@@ -991,7 +1219,7 @@ function Configuration() {
 
         {/* Device list */}
         {devices.length === 0 ? (
-          <p className="text-sm text-surface-500 py-6 text-center">No devices configured</p>
+          <p className="text-sm text-surface-500 py-6 text-center">{tr('Noch kein Gerät angelegt')}</p>
         ) : (
           <div className="space-y-3">
             {devices.map(device => (
@@ -1001,7 +1229,8 @@ function Configuration() {
                     <div>
                       <p className="text-sm font-medium text-surface-200">{device.name}</p>
                       <p className="text-xs text-surface-500 font-mono mt-0.5">
-                        {typeLabel[device.device_type] ?? device.device_type} · {device.ip_address}:{device.port}
+                        {device.model ? modelLabel(device.model) : (typeLabel[device.device_type] ?? device.device_type)}
+                        {' · '}{device.ip_address}:{device.port}
                       </p>
                       {device.serial_number && (
                         <p className="text-xs text-surface-600 font-mono">S/N: {device.serial_number}</p>
@@ -1032,12 +1261,59 @@ function Configuration() {
                     </button>
                   </div>
                 </div>
+                {/* Bauraumlüfter dauerhaft aus — nur für Bambu-Drucker (X1C mit Bauraumlüftung).
+                    Prüft im 5-s-Takt über die MQTT-Verbindung, ob der Lüfter läuft, und schaltet ihn aus. */}
+                {device.device_type === 'bambu_lab' && (
+                  <div className="flex items-center gap-3 px-4 py-2.5 mt-1 rounded-lg bg-surface-900/60 border border-surface-800">
+                    <button
+                      onClick={() => toggleFanOff(device.id)}
+                      aria-pressed={!!fanOff[device.id]}
+                      title={tr('Bauraumlüftung dauerhaft ausgeschaltet halten')}
+                      className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ${fanOff[device.id] ? 'bg-blue-600' : 'bg-surface-700'}`}
+                    >
+                      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${fanOff[device.id] ? 'left-[18px]' : 'left-0.5'}`} />
+                    </button>
+                    <div className="min-w-0">
+                      <p className={`text-sm ${fanOff[device.id] ? 'text-blue-300' : 'text-surface-300'}`}>{tr('🌀 Bauraumlüftung dauerhaft aus')}</p>
+                      <p className="text-[11px] text-surface-600">{tr('Prüft laufend über die MQTT-Verbindung und schaltet den Bauraumlüfter (P3) aus, sobald er anläuft.')}</p>
+                    </div>
+                  </div>
+                )}
                 {testResults[device.id] && <TestResultBar result={testResults[device.id]} />}
               </div>
             ))}
           </div>
         )}
       </div>
+      )}
+
+      {/* ── Kamera global aus (Energiesparmodus) — gilt für ALLE Drucker-Kameras ── */}
+      {tab === 'cameras' && (
+        <div className="card space-y-3">
+          <p className="section-label">{tr('Kamera')}</p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={toggleCamera}
+              disabled={camDisabled === null}
+              aria-pressed={!!camDisabled}
+              title={tr('Kamera komplett deaktivieren (Energiesparmodus)')}
+              className={`w-10 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${camDisabled ? 'bg-red-600' : 'bg-surface-700'}`}
+            >
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${camDisabled ? 'left-[18px]' : 'left-0.5'}`} />
+            </button>
+            <span className={`text-sm ${camDisabled ? 'text-red-300' : 'text-surface-300'}`}>
+              {camDisabled ? tr('Kamera ist komplett deaktiviert (Energiesparmodus)') : tr('Kamera komplett deaktivieren (Energiesparmodus)')}
+            </span>
+          </div>
+          <p className="text-xs text-surface-500">
+            {tr('Schaltet den Kamera-Transcoder (ffmpeg) vollständig ab — Live-Bild und Drucker-Snapshots sind dann aus. Empfohlen für schwache Geräte wie Raspberry Pi: der Live-Stream kostet sonst mehrere CPU-Kerne. Externe Webcams (HTTP-URL) funktionieren weiter. Bei Neuinstallationen ist die Kamera standardmäßig deaktiviert.')}
+          </p>
+          {camDisabled && (
+            <p className="text-[11px] text-amber-500/90">
+              {tr('Ein bereits laufender Kamera-Stream wird sofort beendet. Das Kamera-Panel im Auto-Farm-Dashboard zeigt einen Hinweis statt des Livebilds.')}
+            </p>
+          )}
+        </div>
       )}
 
       {/* ── Kameras (eigener Tab; gilt für den Bambu-Drucker) ─────── */}
@@ -1048,6 +1324,25 @@ function Configuration() {
             <p className="text-sm text-surface-500">{tr('Erst unter „Geräte" einen Bambu-Drucker anlegen — dann hier die Kameras konfigurieren.')}</p>
           ) : (
             <>
+              {/* Eingebaute Drucker-Kamera: Protokoll je Modell.
+                  X1-Serie = RTSPS (flüssig), P1S/A1 = Port-6000-JPEG (langsame Standbilder). */}
+              <div className="mb-1 pb-2 border-b border-surface-800 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-surface-600 w-32 shrink-0">{tr('Eingebaute Kamera')}</span>
+                  <select
+                    value={camTypes[bambu.id] ?? 'auto'}
+                    onChange={e => setCamType(bambu.id, e.target.value)}
+                    className="flex-1 text-xs py-1">
+                    <option value="auto">{tr('Automatisch erkennen (empfohlen)')}</option>
+                    <option value="rtsp">{tr('X1 / X1C / X1E — RTSPS (flüssig)')}</option>
+                    <option value="bambu">{tr('P1P / P1S / A1 — Port 6000 (Standbilder, langsam)')}</option>
+                    <option value="none">{tr('Aus (keine eingebaute Kamera)')}</option>
+                  </select>
+                </div>
+                <p className="text-[10px] text-surface-600">
+                  {tr('Der P1S/A1 liefert nur ~1–wenige Bilder/s (Hardware-Limit), kein flüssiges Video. „Automatisch" prüft den Drucker selbst — nur ändern, wenn die Erkennung danebenliegt.')}
+                </p>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-surface-600 w-32 shrink-0">{tr('Oben (Bambu / quer)')}</span>
                 <input type="text" placeholder="http://192.168.1.50:8889/bambu  (WebRTC/HLS/MJPEG)"

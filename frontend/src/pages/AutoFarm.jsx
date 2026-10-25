@@ -8,7 +8,9 @@ import { useQueueEta, fmtDur, jobPrintSec, ensureMeta, getCachedMeta, CHANGEOVER
 import { gateStart } from '../services/operatingHours'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { usePageActive, useAutoRefresh } from '../services/useAutoRefresh'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, tr as translate, locale } from '../services/i18n'
+import RecoveryBanner from '../components/RecoveryBanner'
+import PrinterOverview from '../components/PrinterOverview'
 
 /* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
    Webcam am Drucker → 404), statt ein kaputtes Bild-Icon zu zeigen. */
@@ -194,7 +196,7 @@ function CurrentStep({ farmStatus, idle }) {
       <p className="section-label mb-1">{tr('Aktueller Schritt')}</p>
       <div className="flex items-center gap-1.5">
         <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0" />
-        <p className="text-[9px] font-mono text-blue-300 truncate">{farmStatus.seq_step_label}</p>
+        <p className="text-[9px] font-mono text-blue-300 truncate">{tr(farmStatus.seq_step_label)}</p>
       </div>
     </div>
   )
@@ -266,7 +268,7 @@ function HlsVideo({ src, onError, className }) {
     }
     import('hls.js').then(({ default: Hls }) => {
       if (cancelled || !ref.current) return
-      if (!Hls.isSupported()) { onError?.('Browser kann HLS nicht abspielen'); return }
+      if (!Hls.isSupported()) { onError?.(translate('Browser kann HLS nicht abspielen')); return }
       // Aggressive Low-Latency-Konfig: nah an der Live-Kante bleiben statt zu puffern.
       hls = new Hls({
         liveDurationInfinity: true,
@@ -288,7 +290,7 @@ function HlsVideo({ src, onError, className }) {
       }
       hls.on(Hls.Events.FRAG_CHANGED, jumpLive)
       ref.current.play?.().catch(() => {})
-    }).catch(() => onError?.('HLS-Player konnte nicht geladen werden'))
+    }).catch(() => onError?.(translate('HLS-Player konnte nicht geladen werden')))
 
     // Wenn das Video ausgeblendet ist (andere Seite offen → display:none, der
     // Container hat keine Box → nicht „intersecting"), Wiedergabe & Download
@@ -485,7 +487,7 @@ function X1CView({ bambuId }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-surface-500">{tr('Oben · X1C (RTSPS · direkt)')}</span>
+        <span className="text-[10px] text-surface-500">{tr('Oben · Drucker-Kamera (direkt)')}</span>
         <button onClick={() => live ? stop() : connect()} disabled={!bambuId}
           className={`btn btn-sm px-2 ${live ? 'btn-primary' : 'btn-ghost'}`}
           title={tr('LAN-Liveview muss am Drucker aktiv sein')}>
@@ -496,13 +498,13 @@ function X1CView({ bambuId }) {
         {live ? (
           err ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1.5 px-3 text-center">
-              <p className="text-[10px]">{tr('X1C nicht erreichbar')}</p>
+              <p className="text-[10px]">{tr('Drucker-Kamera nicht erreichbar')}</p>
               {err && <p className="text-[9px] font-mono text-red-400/80 break-all">{err}</p>}
               <button onClick={connect} className="btn btn-ghost btn-sm mt-0.5">{tr('Neu verbinden')}</button>
             </div>
           ) : ready ? (
             visible ? (
-              <img key={key} src={`${printerService.cameraStreamUrl(bambuId)}?t=${key}`} alt="X1C Live"
+              <img key={key} src={`${printerService.cameraStreamUrl(bambuId)}?t=${key}`} alt="Drucker-Kamera Live"
                 onError={() => setErr(e => e || tr('Stream-Verbindung abgebrochen'))}
                 className="w-full h-full object-contain" />
             ) : (
@@ -664,7 +666,7 @@ function QueuePlanner({ jobs, tr }) {
   const totalSec  = Math.round(workMs / 1000)            // reine Arbeitszeit (ohne Wartelücken)
   const finishAt  = rows.length ? rows[rows.length - 1].end : new Date(now)
   const waiting   = ophOn && finishAt.getTime() > now + workMs + 1000   // Fenster-Wartezeit dabei?
-  const clk = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const clk = (d) => d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })
   // Kalendertage-Abstand zum Jetzt — für „heute / morgen / +N Tage", weil ein
   // Job durch Betriebszeiten erst an einem späteren Tag fertig werden kann.
   const dayOffset = (d) => {
@@ -694,7 +696,7 @@ function QueuePlanner({ jobs, tr }) {
               <span className="text-surface-300 flex-1 min-w-0 truncate">{j.fileName?.replace(/\.[^.]+$/, '')}</span>
               {j.plate != null && (
                 <span className="shrink-0 font-mono text-[9px] px-1 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300/90"
-                  title={tr('Platte {0} von {1}', j.plate, j.plateTotal ?? '?')}>
+                  title={tr('Platte {0} von {1}', j.plate, j.plateTotal ?? '?') + (j.plateName ? ` — ${j.plateName}` : '')}>
                   {j.plateTotal > 1 ? tr('P{0}/{1}', j.plate, j.plateTotal) : tr('P{0}', j.plate)}
                 </span>
               )}
@@ -721,7 +723,7 @@ function QueuePlanner({ jobs, tr }) {
   )
 }
 
-function AutoFarm() {
+function AutoFarm({ setCurrentPage } = {}) {
   const { tr } = useLanguage()
   const [gcodeFiles,      setGcodeFiles]      = useState([])
   const [rackData,        setRackData]        = useState(null)
@@ -752,6 +754,7 @@ function AutoFarm() {
   const [tplOpen,         setTplOpen]         = useState(false)
   const [tplName,         setTplName]         = useState('')
   const [plannerOpen,     setPlannerOpen]     = useState(false)
+  const [showDone,        setShowDone]        = useState(false)   // fertige Jobs ausgeblendet (→ Historie)
   const [filePlates,      setFilePlates]      = useState([])     // plate numbers in selected file (multi-plate .3mf) → ALL get added as jobs
   const [amsSlots,        setAmsSlots]        = useState([])
   const [amsLoading,      setAmsLoading]      = useState(false)
@@ -1493,6 +1496,23 @@ function AutoFarm() {
     }
   }
 
+  // Ohne Magazin: „hier liegt eine leere Platte" markieren/aufheben. Die Farm greift
+  // ihren Nachschub aus diesen Fächern (oberstes zuerst) und legt fertige Drucke
+  // NIE dorthin ab — sonst käme der Druck auf eine liegende Platte.
+  const toggleEmptyPlate = async (slotId) => {
+    const has = plateSlots.has(slotId)
+    try {
+      await rackManagerService.updateSlot(slotId, { empty_plate: !has })
+      const r = await rackManagerService.getAll()
+      setRackData(r.data)
+      window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
+      showFeedback(has ? tr('Fach {0}: keine Leerplatte mehr', slotId)
+                       : tr('Fach {0}: Leerplatte liegt drin', slotId))
+    } catch (e) {
+      showFeedback(e?.response?.data?.detail || tr('Markierung konnte nicht geändert werden'), false)
+    }
+  }
+
   const assignJobToSlot = async (slotKey) => {
     try {
       await rackManagerService.updateSlot(slotKey, { status: 'free', file_id: null, file_name: null })
@@ -1613,7 +1633,7 @@ function AutoFarm() {
           status: 'pending', amsMap: j.amsMap ?? '',
           layerHeightMm: j.layerHeightMm ?? 0,
           object_height_mm: j.computedHeight ?? j.objectHeight ?? null,
-          plate: j.plate ?? null, plateTotal: j.plateTotal ?? null,
+          plate: j.plate ?? null, plateTotal: j.plateTotal ?? null, plateName: j.plateName ?? null,
         })),
       })
       await fetchStatus()
@@ -1686,6 +1706,11 @@ function AutoFarm() {
   const slotTol    = slotTolerance(rackData)
   const numRacks   = rackData?.num_racks        ?? 3
   const slotsPerRack = rackData?.slots_per_rack ?? 6
+  // Aufbau ohne Magazin („alle Fächer = Lagerfächer"): die leeren Platten liegen
+  // einzeln in den Fächern. Dann markiert der Nutzer je Fach, ob eine drin liegt —
+  // und der Magazin-Zähler je Regal entfällt, weil es kein Magazin gibt.
+  const noMagazine = (rackData?.magazine_slot ?? 7) <= 0
+  const plateSlots = new Set(rackData?.empty_plates ?? [])
   const slots      = rackData
     ? Object.entries(rackData.slots ?? {}).sort(([a], [b]) => {
         const [ar, as] = parseSlotKey(a)
@@ -1698,6 +1723,9 @@ function AutoFarm() {
   const pendingJobs   = jobs.filter(j => j.status === 'pending')
   const errorJobs     = jobs.filter(j => j.status === 'error')
   const activeJobs    = jobs.filter(j => ['pending', 'printing'].includes(j.status))
+  // Fertige Jobs werden in der Queue ausgeblendet (stehen in der Historie); optional einblendbar.
+  const doneJobsCount = jobs.filter(j => j.status === 'done').length
+  const visibleJobs   = showDone ? jobs : jobs.filter(j => j.status !== 'done')
   const eta = useQueueEta()   // echte Rest-Druckzeit der Warteschlange (Dashboard nutzt denselben Hook)
 
   // Slot → Job-Map für die Regal-Anzeige. NUR aktiv laufende Jobs (Server hat ihr
@@ -1780,12 +1808,19 @@ function AutoFarm() {
         </div>
       )}
 
+      {/* Unterbrochener Lauf (Neustart/Update mitten im Zyklus) — ganz oben, weil
+          es beantwortet werden muss, bevor irgendetwas wieder losfährt. */}
+      <RecoveryBanner onDismissed={() => load()} />
+
+      {/* Mehrere Drucker + Arm-Status — nur mit eingerichtetem Farm-Layout */}
+      <PrinterOverview />
+
       {/* ── Top bar ────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 flex-wrap">
         {/* Title */}
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div>
-            <h2 className="text-base font-semibold text-surface-100 leading-tight">Auto Farm</h2>
+            <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">Auto Farm</h2>
             {running && (
               <p className="text-[11px] text-surface-600 font-mono mt-0.5">
                 {paused
@@ -1820,7 +1855,7 @@ function AutoFarm() {
                 style={{ width: `${Math.round(((seqProgress.idx + 1) / seqProgress.total) * 100)}%` }}
               />
             </div>
-            <span className="text-[10px] font-mono text-blue-300 truncate">{seqProgress.label}</span>
+            <span className="text-[10px] font-mono text-blue-300 truncate">{tr(seqProgress.label)}</span>
           </div>
         )}
 
@@ -1918,7 +1953,7 @@ function AutoFarm() {
               {eta.ready && eta.jobs > 0 && (
                 <p className="text-[11px] text-surface-500 font-mono mt-0.5">
                   {fmtDur(eta.totalSec)
-                    ? <>{tr('~{0} gesamt', fmtDur(eta.totalSec))}{eta.finishAt && <span className="text-surface-600">{tr(' · fertig ~{0} Uhr', eta.finishAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</span>}</>
+                    ? <>{tr('~{0} gesamt', fmtDur(eta.totalSec))}{eta.finishAt && <span className="text-surface-600">{tr(' · fertig ~{0} Uhr', eta.finishAt.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }))}</span>}</>
                     : tr('Gesamtzeit unbekannt')}
                   {eta.known < eta.jobs && <span className="text-surface-600"> {tr('({0}/{1} mit Zeit)', eta.known, eta.jobs)}</span>}
                   {eta.histCount > 0 && <span className="text-emerald-500/80" title={tr('Basierend auf echten früheren Druckzeiten')}> {tr('· 📊 {0} aus Historie', eta.histCount)}</span>}
@@ -2001,7 +2036,20 @@ function AutoFarm() {
             </div>
           )}
 
-          {!jobs.length ? (
+          {/* Fertige Jobs sind ausgeblendet (→ Historie); Zähler + Einblenden-Umschalter. */}
+          {doneJobsCount > 0 && (
+            <div className="flex items-center gap-2 mb-3 text-[11px]">
+              <span className="text-surface-600">{tr('{0} fertig — ausgeblendet', doneJobsCount)}</span>
+              <button onClick={() => setShowDone(s => !s)} className="text-blue-400 hover:text-blue-300">
+                {showDone ? tr('ausblenden') : tr('anzeigen')}
+              </button>
+              <span className="text-surface-700">·</span>
+              <button onClick={() => setCurrentPage?.('history')} className="text-surface-500 hover:text-surface-300">
+                {tr('Historie öffnen →')}
+              </button>
+            </div>
+          )}
+          {!visibleJobs.length ? (
             <div className="flex flex-col items-center justify-center py-12 text-surface-600 text-center">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" className="mb-3 opacity-40">
                 <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -2015,7 +2063,7 @@ function AutoFarm() {
             </div>
           ) : (
             <div className="space-y-3">
-              {jobs.map((job, idx) => {
+              {visibleJobs.map((job, idx) => {
                 const sm      = S[job.status] ?? S.pending
                 const busy    = running && job.id === curJobId
                 const displayH = job.computedHeight ?? job.objectHeight
@@ -2067,9 +2115,11 @@ function AutoFarm() {
                       <div className="flex-1" />
                       {/* oben rechts: Höhe + Fächer-Bedarf */}
                       {job.plate != null && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300 shrink-0"
-                          title={tr('Platte {0} aus Multi-Plate-.3mf', job.plate)}>
-                          {job.plateTotal > 1 ? tr('Platte {0}/{1}', job.plate, job.plateTotal) : tr('Platte {0}', job.plate)}
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300 shrink-0 max-w-[13rem] truncate"
+                          title={tr('Platte {0} aus Multi-Plate-.3mf', job.plate) + (job.plateName ? ` — ${job.plateName}` : '')}>
+                          {job.plateName
+                            ? `${job.plateName} · ${job.plate}${job.plateTotal ? `/${job.plateTotal}` : ''}`
+                            : (job.plateTotal > 1 ? tr('Platte {0}/{1}', job.plate, job.plateTotal) : tr('Platte {0}', job.plate))}
                         </span>
                       )}
                       {job.heightLoading ? (
@@ -2091,7 +2141,7 @@ function AutoFarm() {
                         <>
                           <button onClick={() => moveJobUp(job.id)} disabled={idx === 0}
                             className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▲</button>
-                          <button onClick={() => moveJobDown(job.id)} disabled={idx === jobs.length - 1}
+                          <button onClick={() => moveJobDown(job.id)} disabled={idx === visibleJobs.length - 1}
                             className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▼</button>
                           <span
                             draggable
@@ -2129,7 +2179,7 @@ function AutoFarm() {
                       <div className="space-y-1">
                         <span
                           className="inline-block text-[9px] font-mono px-1 rounded border border-red-800/60 bg-red-950/30 text-red-400"
-                          title={jobAmsMissing(job).map(m => `${m.type ?? '?'} ${m.color ?? ''} (${m.reason})`).join(', ')}
+                          title={jobAmsMissing(job).map(m => `${m.type ?? '?'} ${m.color ?? ''} (${tr(m.reason)})`).join(', ')}
                         >{tr('⚠ Manuelle AMS-Festlegung')}</span>
                         <AmsMapper
                           filaments={job.filaments ?? []}
@@ -2188,8 +2238,11 @@ function AutoFarm() {
                     rackData.magazine_count === 0 ? 'border-red-800/60 bg-red-950/30 text-red-400' :
                     rackData.magazine_count <= 1  ? 'border-amber-800/50 bg-amber-950/20 text-amber-400' :
                     'border-surface-700/50 bg-surface-800/30 text-surface-500'
-                  }`}>
-                    📦 {rackData.magazine_count}/{numRacks * slotsPerRack}
+                  }`}
+                    title={noMagazine
+                      ? tr('Leere Platten in den Fächern (mit ▭ markiert) — Nachschub der Farm')
+                      : tr('Platten im Magazin')}>
+                    {noMagazine ? '▭' : '📦'} {rackData.magazine_count}/{rackData.magazine_total ?? (numRacks * slotsPerRack)}
                   </span>
                 )}
               </div>
@@ -2216,23 +2269,38 @@ function AutoFarm() {
                     <p className="text-[9px] text-center font-mono text-surface-600 mb-1 tracking-wide">
                       R{ri+1}
                     </p>
-                    {/* Magazin dieses Regals: Bestand anzeigen + direkt setzen (Enter/Blur) */}
-                    <div
-                      className="flex items-center justify-center gap-1 mb-1.5"
-                      title={tr('Magazin R{0} — Bestand nach dem Auffüllen hier setzen', ri + 1)}
-                    >
-                      <span className={`text-[10px] ${(rackData?.magazine_counts?.[ri] ?? 0) === 0 ? 'opacity-100' : 'opacity-60'}`}>📦</span>
-                      <input
-                        type="number" min="0"
-                        value={magEdit[ri] ?? (rackData?.magazine_counts?.[ri] ?? 0)}
-                        onChange={e => setMagEdit(m => ({ ...m, [ri]: e.target.value }))}
-                        onBlur={e => { if (magEdit[ri] != null) saveMagCount(ri, e.target.value) }}
-                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                        className={`w-11 h-5 text-[10px] font-mono text-center py-0 px-0.5 ${
-                          (magEdit[ri] ?? (rackData?.magazine_counts?.[ri] ?? 0)) == 0 ? 'text-red-400 border-red-900/60' : ''
-                        }`}
-                      />
-                    </div>
+                    {/* Magazin dieses Regals: Bestand anzeigen + direkt setzen (Enter/Blur).
+                        Ohne Magazin gibt es keinen Zähler — dort markiert der Nutzer die
+                        einzelnen Fächer (▭), und hier steht nur, wie viele es sind. */}
+                    {noMagazine ? (
+                      <div className="flex items-center justify-center gap-1 mb-1.5"
+                        title={tr('Leere Platten in R{0} — je Fach mit ▭ markieren', ri + 1)}>
+                        <span className="text-[10px] opacity-60">▭</span>
+                        <span className={`text-[10px] font-mono ${
+                          [...plateSlots].filter(k => k.startsWith(`${ri + 1}-`)).length === 0
+                            ? 'text-red-400' : 'text-surface-500'
+                        }`}>
+                          {[...plateSlots].filter(k => k.startsWith(`${ri + 1}-`)).length}
+                        </span>
+                      </div>
+                    ) : (
+                      <div
+                        className="flex items-center justify-center gap-1 mb-1.5"
+                        title={tr('Magazin R{0} — Bestand nach dem Auffüllen hier setzen', ri + 1)}
+                      >
+                        <span className={`text-[10px] ${(rackData?.magazine_counts?.[ri] ?? 0) === 0 ? 'opacity-100' : 'opacity-60'}`}>📦</span>
+                        <input
+                          type="number" min="0"
+                          value={magEdit[ri] ?? (rackData?.magazine_counts?.[ri] ?? 0)}
+                          onChange={e => setMagEdit(m => ({ ...m, [ri]: e.target.value }))}
+                          onBlur={e => { if (magEdit[ri] != null) saveMagCount(ri, e.target.value) }}
+                          onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                          className={`w-11 h-5 text-[10px] font-mono text-center py-0 px-0.5 ${
+                            (magEdit[ri] ?? (rackData?.magazine_counts?.[ri] ?? 0)) == 0 ? 'text-red-400 border-red-900/60' : ''
+                          }`}
+                        />
+                      </div>
+                    )}
                     <div className="space-y-1">
                       {Array.from({length: slotsPerRack}, (_, si) => {
                         const si2          = slotsPerRack - 1 - si  // visual: 6→1 top to bottom
@@ -2263,6 +2331,11 @@ function AutoFarm() {
                         const canClear     = !isActive && slot.status !== 'free' && !isLocked
                         // 🔒 nur auf wirklich freien, nicht reservierten Fächern anbieten.
                         const canBlock     = !occupied && !isGhost && !isOther && slot.status === 'free'
+                        // ▭ Leerplatte: nur im Aufbau OHNE Magazin. Ein markiertes Fach ist
+                        // physisch belegt (Nachschub-Platte) — die Farm greift daraus und
+                        // legt dort nie einen fertigen Druck ab.
+                        const hasPlate     = noMagazine && plateSlots.has(key)
+                        const canMarkPlate = noMagazine && !occupied && !isGhost && !isOther && slot.status === 'free'
 
                         return (
                           <div
@@ -2272,6 +2345,7 @@ function AutoFarm() {
                               isActive ? 'border-blue-800/40 bg-blue-950/10' :
                               isLocked ? 'border-surface-600/50 bg-surface-800/50 opacity-70' :
                               topJob   ? 'border-surface-700/50 bg-surface-900' :
+                              hasPlate ? 'border-emerald-800/40 bg-emerald-950/10' :
                               isGhost  ? 'border-dashed border-surface-700/40 bg-surface-800/15' :
                               'border-surface-800/20 bg-transparent'
                             }`}
@@ -2282,6 +2356,7 @@ function AutoFarm() {
                               isActive ? 'dot-blue animate-pulse' :
                               isLocked ? 'dot-gray opacity-60' :
                               topJob   ? (S[topJob.status]?.dot ?? 'dot-gray') :
+                              hasPlate ? 'dot-green opacity-70' :
                               isGhost  ? 'dot-gray opacity-50' :
                               isOther  ? 'dot-amber opacity-70' :
                               'dot-gray opacity-30'
@@ -2295,6 +2370,9 @@ function AutoFarm() {
                                 <p className="text-[9px] text-surface-600 italic truncate leading-tight" title={tr('Belegt durch „{0}" (ragt aus Fach {1})', ghostName.replace(/\.[^.]+$/, ''), ghostBase)}>↑ {ghostName.replace(/\.[^.]+$/, '')}</p>
                               ) : isOther ? (
                                 <p className="text-[9px] text-amber-600/80 truncate leading-tight" title={tr('Hängendes Fach (Status: {0}) — ✓ zum Leeren', slot.status)}>{slot.file_name?.replace(/\.[^.]+$/, '') || tr('belegt')}</p>
+                              ) : hasPlate ? (
+                                <p className="text-[9px] text-emerald-500/90 truncate leading-tight"
+                                   title={tr('Leere Platte liegt hier — die Farm holt sich von hier Nachschub')}>{tr('▭ Leerplatte')}</p>
                               ) : (
                                 <p className={`text-[9px] ${isLocked ? 'text-surface-400' : 'text-surface-800'}`}>{isLocked ? tr('🔒 Belegt') : ''}</p>
                               )}
@@ -2315,7 +2393,18 @@ function AutoFarm() {
                                 )}
                               </div>
                             )}
-                            {canBlock && (
+                            {/* ▭ Leerplatte — nur ohne Magazin (mit Magazin kommt der
+                                Nachschub aus dem obersten Fach, nicht aus den Lagerfächern) */}
+                            {canMarkPlate && (
+                              <button onClick={() => toggleEmptyPlate(key)}
+                                title={hasPlate
+                                  ? tr('Hier liegt KEINE leere Platte mehr')
+                                  : tr('Hier liegt eine leere Platte — die Farm holt sie von hier und legt nichts darauf ab')}
+                                className={`text-[9px] shrink-0 ml-0.5 ${hasPlate
+                                  ? 'text-emerald-500 hover:text-emerald-300'
+                                  : 'text-surface-700 hover:text-emerald-400'}`}>▭</button>
+                            )}
+                            {canBlock && !hasPlate && (
                               <button onClick={() => toggleSlotBlocked(key)} title={tr('Fach als belegt markieren — der Roboter legt hier nichts ab')}
                                 className="text-[9px] text-surface-700 hover:text-surface-300 shrink-0 ml-0.5">🔒</button>
                             )}
@@ -2330,6 +2419,15 @@ function AutoFarm() {
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* Ohne Magazin kann man sich zubauen: liegt in JEDEM freien Fach eine
+                leere Platte, bleibt kein Ziel für den fertigen Druck übrig. */}
+            {noMagazine && slots.length > 0 &&
+              !slots.some(([k, s]) => s.status === 'free' && !plateSlots.has(k)) && (
+              <p className="mt-2 px-2 py-1.5 rounded-lg bg-amber-950/30 border border-amber-800/60 text-[10px] text-amber-300">
+                {tr('⚠ In jedem freien Fach liegt eine leere Platte — es bleibt kein Fach für den fertigen Druck. Mindestens ein Fach freilassen (▭ abwählen).')}
+              </p>
             )}
 
             {/* Rack legend */}
@@ -2347,6 +2445,11 @@ function AutoFarm() {
                 <span className="text-[9px] text-surface-700 flex items-center gap-1">
                   🔒 {tr('Belegt')}
                 </span>
+                {noMagazine && (
+                  <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                    <span className="dot dot-green w-1.5 h-1.5 opacity-70" /> {tr('▭ Leerplatte')}
+                  </span>
+                )}
                 <span className="flex-1 text-right text-[9px] text-surface-700 font-mono">
                   {tr('{0} mm/Fach', slotH)}
                 </span>
@@ -2364,7 +2467,7 @@ function AutoFarm() {
                 <p className="section-label shrink-0">{tr('Aktivität')}</p>
                 {seqProgress && (
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-900/40 border border-blue-700/60 text-blue-300 animate-pulse truncate">
-                    {seqProgress.label}
+                    {tr(seqProgress.label)}
                   </span>
                 )}
               </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { deviceService, rackManagerService, autofarmService, healthService } from '../services/api'
+import { deviceService, rackManagerService, autofarmService, healthService,
+         controlService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 
 /* 2.9 — Health-Check / Einrichtungs-Checkliste: zeigt auf einen Blick, was
@@ -12,16 +13,23 @@ export default function SetupHealth({ compact = false }) {
 
   const run = useCallback(async () => {
     setBusy(true)
-    const [dev, rack, homing, settings, targets] = await Promise.all([
+    const [dev, rack, homing, settings, targets, geo, seq] = await Promise.all([
       deviceService.listDevices().then(r => r.data ?? []).catch(() => []),
       rackManagerService.getAll().then(r => r.data ?? {}).catch(() => ({})),
       autofarmService.getHomingFileInfo().then(r => r.data ?? {}).catch(() => ({})),
       autofarmService.getSettings().then(r => r.data ?? {}).catch(() => ({})),
       healthService.targets().then(r => r.data ?? {}).catch(() => ({})),
+      // Geometrie-Prüfung (Achsgrenzen) + Sequenz — beides entscheidet, ob ein
+      // Lauf überhaupt sauber durchgehen kann.
+      controlService.checkGeometry().then(r => r.data?.check ?? null).catch(() => null),
+      autofarmService.getSequences().then(r => r.data ?? {}).catch(() => ({})),
     ])
     const bambu   = dev.find(d => d.device_type === 'bambu_lab')
     const klipper = dev.find(d => d.device_type === 'klipper')
     const onState = (t) => t?.status === 'online' ? 'ok' : (t?.status === 'unconfigured' ? 'fail' : 'warn')
+    const noMag   = (rack.magazine_slot ?? 7) <= 0
+    const plates  = rack.magazine_count ?? 0
+    const seqLen  = (seq.seq_next ?? []).length
 
     setChecks([
       { key: 'tz', label: tr('Zeitzone gesetzt'),
@@ -39,6 +47,26 @@ export default function SetupHealth({ compact = false }) {
       { key: 'homing', label: tr('Homing-Datei erstellt'),
         state: homing.configured ? 'ok' : 'warn',
         detail: homing.configured ? (homing.filename || '✓') : tr('nicht erstellt — für den Auswurf nötig') },
+      // Geometrie: würde eine Bewegung aus der Achse fahren?
+      { key: 'geometry', label: tr('Geometrie plausibel'),
+        state: !geo ? 'warn' : (geo.errors?.length ? 'fail' : 'ok'),
+        detail: !geo ? tr('nicht prüfbar')
+          : geo.errors?.length ? tr('{0} Bewegung(en) außerhalb der Achse', geo.errors.length)
+          : tr('alle Bewegungen innerhalb der Achsen') },
+      { key: 'limits', label: tr('Achsgrenzen bekannt'),
+        state: geo?.limits_known ? 'ok' : 'warn',
+        detail: geo?.limits_known
+          ? `X ${geo.limits.x} · Y ${geo.limits.y} · Z ${geo.limits.z}`
+          : tr('nicht gesetzt — „vom Gerät holen", dann wird auch nach oben geprüft') },
+      { key: 'sequence', label: tr('Sequenz vorhanden'),
+        state: seqLen ? 'ok' : 'warn',
+        detail: seqLen ? tr('{0} Schritte im Zyklus', seqLen) : tr('leer — im Sequenz-Editor anlegen') },
+      // Nachschub: ohne leere Platten läuft die Farm in die Magazin-Pause.
+      { key: 'plates', label: tr('Leere Platten bereit'),
+        state: plates > 0 ? 'ok' : 'warn',
+        detail: plates > 0
+          ? (noMag ? tr('{0} Fächer als bestückt markiert', plates) : tr('{0} Platten im Magazin', plates))
+          : (noMag ? tr('keine markiert — in der Farm-Ansicht mit ▭ setzen') : tr('Magazin leer')) },
     ])
     setBusy(false)
   }, [tr])

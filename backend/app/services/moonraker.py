@@ -1,110 +1,44 @@
-import httpx
+"""Moonraker (Klipper) — die beiden Befehle des Notaus.
+
+Alle übrigen Zugriffe auf den OTTOeject laufen über routers/control.py bzw. den
+Sequenz-Runner der Farm; hier steht nur, was der Notaus braucht und was ihn
+deshalb nicht mit dem restlichen Ablauf verknoten soll.
+"""
 import logging
-from typing import Optional, List
+
+import httpx
+
 from app.models.models import Device
 
 logger = logging.getLogger(__name__)
+
 
 class MoonrakerAPI:
     def __init__(self, device: Device):
         self.device = device
         self.base_url = f"http://{device.ip_address}:{device.port}"
-        self.session = None
-    
-    async def execute_macro(self, macro_name: str) -> bool:
-        """Execute a Klipper macro"""
+
+    async def _post(self, path: str, timeout: float, what: str) -> bool:
         try:
-            url = f"{self.base_url}/printer/gcode/script"
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    url,
-                    json={"script": macro_name}
-                )
-            
-            if response.status_code == 200:
-                logger.info(f"Executed macro: {macro_name}")
-                return True
-            else:
-                logger.error(f"Macro execution failed: {response.text}")
-                return False
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(f"{self.base_url}{path}")
         except Exception as e:
-            logger.error(f"Error executing macro {macro_name}: {str(e)}")
+            logger.error(f"{what}: {e}")
             return False
-    
-    async def get_printer_info(self) -> Optional[dict]:
-        """Get printer information and status"""
-        try:
-            url = f"{self.base_url}/printer/info"
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(url)
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"Failed to get printer info: {response.text}")
-                return None
-        except Exception as e:
-            logger.error(f"Error getting printer info: {str(e)}")
-            return None
-    
-    async def get_object_status(self, objects: List[str]) -> Optional[dict]:
-        """Get status of specific objects"""
-        try:
-            url = f"{self.base_url}/printer/objects/query"
-            params = {"objects": ",".join(objects)}
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(url, params=params)
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"Failed to get object status: {response.text}")
-                return None
-        except Exception as e:
-            logger.error(f"Error getting object status: {str(e)}")
-            return None
-    
-    async def list_available_macros(self) -> Optional[List[str]]:
-        """List all available macros in Klipper"""
-        try:
-            url = f"{self.base_url}/printer/gcode/help"
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(url)
-            
-            if response.status_code == 200:
-                data = response.json()
-                return list(data.get("gcode", {}).keys())
-            else:
-                logger.error(f"Failed to get macros list: {response.text}")
-                return None
-        except Exception as e:
-            logger.error(f"Error getting macros list: {str(e)}")
-            return None
-    
+        if response.status_code == 200:
+            logger.info(f"{what}: ok")
+            return True
+        logger.error(f"{what} failed: {response.text}")
+        return False
+
     async def emergency_stop(self) -> bool:
-        """Trigger emergency stop"""
-        try:
-            url = f"{self.base_url}/printer/emergency_stop"
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(url)
-            
-            if response.status_code == 200:
-                logger.info("Emergency stop triggered")
-                return True
-            else:
-                logger.error(f"Emergency stop failed: {response.text}")
-                return False
-        except Exception as e:
-            logger.error(f"Error triggering emergency stop: {str(e)}")
-            return False
-    
-    async def is_connected(self) -> bool:
-        """Check if Moonraker API is accessible"""
-        try:
-            url = f"{self.base_url}/printer/info"
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(url)
-            return response.status_code == 200
-        except Exception:
-            return False
+        """M112 — Klipper schaltet die Motoren sofort ab."""
+        return await self._post("/printer/emergency_stop", 5.0, "Emergency stop")
+
+    async def firmware_restart(self) -> bool:
+        """Klipper nach einem Notaus (M112) wieder hochfahren.
+
+        Nach M112 steht Klipper im Zustand „shutdown" und nimmt keinen Befehl mehr an,
+        bis die Firmware neu startet. Ohne diesen Schritt wäre „Betrieb fortsetzen"
+        ein Knopf, nach dem trotzdem nichts fährt."""
+        return await self._post("/printer/firmware_restart", 10.0, "Firmware restart")

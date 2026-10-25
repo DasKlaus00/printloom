@@ -1,37 +1,82 @@
 import asyncio
 import logging
+from typing import List
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
 from app.db.database import get_db
 from app.models.models import Device, PrinterType
 from app.schemas.schemas import DeviceCreate, DeviceUpdate, DeviceResponse
-from app.services import bambu_manager
+from app.services import bambu_manager, device_settings
 from app.services.bambu_ftp import BambuFTP
-from typing import List
-import httpx
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Webcam + per-device settings stored in SystemConfig as JSON
-from app.models.models import SystemConfig
-import json as _json
 
-def _get_device_settings(db: Session, device_id: int) -> dict:
-    row = db.query(SystemConfig).filter(SystemConfig.key == f"device_settings_{device_id}").first()
-    if row:
-        try: return _json.loads(row.value)
-        except: pass
-    return {"webcam_url": ""}
+@router.get("/discover")
+async def discover_devices(subnet: str = None, db: Session = Depends(get_db)):
+    """Netzwerk nach Druckern durchsuchen: Bambu (SSDP, inkl. Seriennummer) +
+    Klipper/Moonraker (Subnetz-Scan). Bereits angelegte Geräte werden markiert
+    (`configured`), damit die UI keine Dubletten anbietet.
 
-def _set_device_settings(db: Session, device_id: int, settings: dict):
-    row = db.query(SystemConfig).filter(SystemConfig.key == f"device_settings_{device_id}").first()
-    if row:
-        row.value = _json.dumps(settings)
-    else:
-        row = SystemConfig(key=f"device_settings_{device_id}", value=_json.dumps(settings))
-    db.add(row)
-    db.commit()
+    `subnet`: optionales /24 (z. B. „192.168.1"). In Docker-Bridge-Netzen ist die
+    automatisch erkannte IP die Container-IP (172.x) — dann wird NICHT gescannt
+    (`docker_bridge=True`), und der Nutzer kann sein echtes LAN-Subnetz angeben,
+    das per Docker-Routing erreichbar ist. Nativ / `network_mode: host` erkennt alles
+    automatisch (SSDP inkl. Seriennummer)."""
+    from app.services import discovery
+    result = await discovery.discover(subnet=subnet)
+    # Bereits angelegte Geräte werden gar nicht erst als Fund angeboten (per IP ODER
+    # Seriennummer — so taucht ein umgezogener Drucker mit neuer IP nicht doppelt auf).
+    devices = db.query(Device).all()
+    known_ips     = {d.ip_address for d in devices if d.ip_address}
+    known_serials = {d.serial_number for d in devices if d.serial_number}
+    result["bambu"] = [
+        b for b in result.get("bambu", [])
+        if b.get("ip") not in known_ips and (not b.get("serial") or b["serial"] not in known_serials)
+    ]
+    result["klipper"] = [
+        k for k in result.get("klipper", [])
+        if k.get("ip") not in known_ips
+    ]
+    return result
+
+
+@router.get("/models")
+async def list_printer_models():
+    """Bekannte Drucker-Modelle für die Auswahl im Geräte-Formular. EINE Liste im
+    Backend (printer_models) — Kamera-Protokoll und Fähigkeiten hängen daran."""
+    from app.services import printer_models
+    return {"models": printer_models.public_list()}
+
+
+# WICHTIG: vor „/{device_id}" stehen, sonst versucht FastAPI „power" als ID zu lesen.
+@router.get("/power")
+async def list_power(db: Session = Depends(get_db)):
+    """Alle Geräte mit eingerichteter Steckdose — Zustand, Leistung, Zähler.
+
+    Warum gesammelt statt je Gerät: Die Kopfleiste zeigt den Schalter dauerhaft an
+    und fragt ihn regelmäßig ab. Ein Aufruf je Gerät wären N Requests im Takt; so
+    ist es einer, und die Steckdosen werden nebenläufig gelesen."""
+    from app.services import power
+    geraete = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB).all()
+    mit_dose = [(d, device_settings.get(db, d.id)) for d in geraete]
+    mit_dose = [(d, s) for d, s in mit_dose if power.plug_configured(s)]
+    if not mit_dose:
+        return {"plugs": []}
+
+    werte = await asyncio.gather(*(power.read_power(s) for _, s in mit_dose),
+                                 return_exceptions=True)
+    plugs = []
+    for (d, _), w in zip(mit_dose, werte):
+        # Steckdose nicht erreichbar → `on: null`. Die UI zeigt dann „?" statt zu
+        # behaupten, sie sei aus — sonst schaltet jemand blind auf gut Glück.
+        w = w if isinstance(w, dict) else {"watts": None, "energy_kwh": None, "on": None}
+        plugs.append({"device_id": d.id, "name": d.name, **w})
+    return {"plugs": plugs}
 
 
 @router.get("/", response_model=List[DeviceResponse])
@@ -47,12 +92,21 @@ async def get_device(device_id: int, db: Session = Depends(get_db)):
     return device
 
 
+def _clean_model(raw, serial=None) -> str:
+    """Modell-Angabe auf eine bekannte ID bringen. Nicht erkannt → aus der
+    Seriennummer erraten → sonst leer (dann probt die Kamera wie bisher)."""
+    from app.services import printer_models
+    return printer_models.normalize(raw) or printer_models.from_serial(serial)
+
+
 @router.post("/", response_model=DeviceResponse)
 async def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
     existing = db.query(Device).filter(Device.name == device.name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Device name already exists")
-    db_device = Device(**device.dict())
+    data = device.model_dump()
+    data["model"] = _clean_model(data.get("model"), data.get("serial_number")) or None
+    db_device = Device(**data)
     db.add(db_device)
     db.commit()
     db.refresh(db_device)
@@ -64,7 +118,15 @@ async def update_device(device_id: int, device: DeviceUpdate, db: Session = Depe
     db_device = db.query(Device).filter(Device.id == device_id).first()
     if not db_device:
         raise HTTPException(status_code=404, detail="Device not found")
-    for field, value in device.dict(exclude_unset=True).items():
+    fields = device.model_dump(exclude_unset=True)
+    if "model" in fields:
+        # Beim Ändern zählt die AUSDRÜCKLICHE Wahl: hat der Nutzer „nicht angegeben"
+        # gewählt, wird das Modell geleert (dann probt die Kamera wieder) und NICHT
+        # aus der Seriennummer wieder aufgefüllt — sonst käme der eben gelöschte Wert
+        # sofort zurück. Vorbelegen aus der Seriennummer passiert nur beim Anlegen.
+        from app.services import printer_models
+        fields["model"] = printer_models.normalize(fields["model"]) or None
+    for field, value in fields.items():
         setattr(db_device, field, value)
     db.add(db_device)
     db.commit()
@@ -101,13 +163,13 @@ def _mask_secrets(settings: dict) -> dict:
 async def get_device_settings(device_id: int, db: Session = Depends(get_db)):
     if not db.query(Device).filter(Device.id == device_id).first():
         raise HTTPException(404, "Device not found")
-    return _mask_secrets(_get_device_settings(db, device_id))
+    return _mask_secrets(device_settings.get(db, device_id))
 
 @router.put("/{device_id}/settings")
 async def update_device_settings(device_id: int, body: dict, db: Session = Depends(get_db)):
     if not db.query(Device).filter(Device.id == device_id).first():
         raise HTTPException(404, "Device not found")
-    settings = _get_device_settings(db, device_id)
+    settings = device_settings.get(db, device_id)
     body = dict(body)
     for f in _SECRET_FIELDS:
         body.pop(f"{f}_set", None)  # rein informativ, nie speichern
@@ -120,7 +182,7 @@ async def update_device_settings(device_id: int, body: dict, db: Session = Depen
             elif not body[f] and settings.get(f):
                 body.pop(f)
     settings.update(body)
-    _set_device_settings(db, device_id, settings)
+    device_settings.put(db, device_id, settings)
     return _mask_secrets(settings)
 
 
@@ -131,7 +193,7 @@ async def device_power(device_id: int, db: Session = Depends(get_db)):
     if not db.query(Device).filter(Device.id == device_id).first():
         raise HTTPException(404, "Device not found")
     from app.services import power
-    settings = _get_device_settings(db, device_id)
+    settings = device_settings.get(db, device_id)
     if not power.plug_configured(settings):
         return {"configured": False, "watts": None, "energy_kwh": None, "on": None}
     data = await power.read_power(settings)
@@ -143,7 +205,7 @@ async def device_power_switch(device_id: int, body: dict, db: Session = Depends(
     if not db.query(Device).filter(Device.id == device_id).first():
         raise HTTPException(404, "Device not found")
     from app.services import power
-    settings = _get_device_settings(db, device_id)
+    settings = device_settings.get(db, device_id)
     if not power.plug_configured(settings):
         raise HTTPException(400, "Keine Steckdose konfiguriert")
     ok = await power.set_plug(settings, bool(body.get("on")))
@@ -158,7 +220,7 @@ async def test_device(device_id: int, db: Session = Depends(get_db)):
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     if device.device_type == PrinterType.BAMBU_LAB:
         # MQTT-Test über die persistente Verbindung (bambu_manager) — kein konkurrierender

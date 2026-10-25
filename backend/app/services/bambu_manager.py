@@ -176,6 +176,31 @@ def fetch_status(device, want_ams: bool = True, max_wait: float = 4.0) -> Option
     return c.get_last_message()
 
 
+async def fresh_ams(device, attempts: int = 2, wait_s: float = 3.0) -> dict:
+    """AMS-Block nach einem frisch angeforderten Vollreport — {} wenn nicht lesbar.
+
+    Bis v1.1.34 stand das dreimal da, jedes Mal etwas anders (Direktdruck: 8 × 0,5 s
+    warten, Farm: zweimal fest 3 s). Jetzt: Vollreport anfordern, mindestens eine
+    Sekunde auf die Antwort warten, danach zurück, sobald ein AMS im Cache steht."""
+    import asyncio
+    loop = asyncio.get_running_loop()
+    if not await loop.run_in_executor(executor, ensure, device):
+        return {}
+    ams: dict = {}
+    for _ in range(max(1, attempts)):
+        await loop.run_in_executor(executor, request_pushall, device)
+        start = loop.time()
+        while True:
+            await asyncio.sleep(0.5)
+            ams = (((last_status(device) or {}).get("print") or {}).get("ams") or {})
+            waited = loop.time() - start
+            if ams.get("ams") and waited >= 1.0:
+                return ams
+            if waited >= wait_s:
+                break
+    return ams
+
+
 def set_chamber_light(device, on: bool = True) -> bool:
     if not ensure(device):
         return False

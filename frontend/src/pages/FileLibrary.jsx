@@ -1,10 +1,29 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { fileService, folderService, printerService, deviceService, filamentService, autofarmService } from '../services/api'
 import { useAutoRefresh, usePageActive } from '../services/useAutoRefresh'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, locale } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 import { colorLabel } from '../services/colorNames'
 import { amsAutoMap } from '../services/amsUtils'
+
+/* Hochgeladen-am: Datum + Uhrzeit in der Zeitzone des Betrachters.
+   Der Server schickt UTC mit Kennzeichnung (…Z) — new Date() rechnet damit
+   selbst um; ohne die Kennzeichnung läse der Browser es als Ortszeit und läge
+   um den UTC-Abstand daneben (siehe schemas._as_utc). */
+function UploadedAt({ iso }) {
+  const { tr } = useLanguage()
+  if (!iso) return null
+  const d = new Date(iso)
+  if (isNaN(d)) return null
+  const datum = d.toLocaleDateString(locale(), { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const zeit  = d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })
+  return (
+    <span className="text-[10px] text-surface-600 font-mono whitespace-nowrap"
+          title={tr('Hochgeladen am {0} um {1} Uhr', datum, zeit)}>
+      🕒 {datum} {zeit}
+    </span>
+  )
+}
 
 function ColorDot({ hex }) {
   if (!hex) return <span className="w-3 h-3 rounded-full bg-surface-700 inline-block" />
@@ -335,14 +354,17 @@ function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sendin
     <div className="mt-1.5 space-y-1 border-t border-surface-800/50 pt-1.5">
       {plates.map(p => (
         <div key={p.plate} className="flex items-center gap-2 text-[11px]">
-          <span className="font-mono text-blue-300 w-16 shrink-0">{tr('Platte {0}', p.plate)}</span>
+          {/* Slicer-Plattenname (plater_name) falls vergeben, sonst „Platte N" */}
+          <span className="text-blue-300 w-36 shrink-0 truncate" title={tr('Platte {0}', p.plate) + (p.name ? ` — ${p.name}` : '')}>
+            {p.name || tr('Platte {0}', p.plate)}
+          </span>
           <span className="font-mono text-surface-400 w-16 shrink-0" title={tr('Druckzeit dieser Platte')}>⏱ {fmt(p.time_seconds)}</span>
           <span className="font-mono text-surface-400 w-20 shrink-0" title={tr('Objekthöhe dieser Platte')}>↕ {p.max_z_mm ? `${p.max_z_mm} mm` : '—'}</span>
           {p.filament_g != null && p.filament_g !== '' && (
             <span className="font-mono text-surface-600 w-16 shrink-0 hidden sm:inline">{p.filament_g} g</span>
           )}
           <span className="flex-1" />
-          <button onClick={() => onQueuePlate(file, p.plate, plates.length)} disabled={enqueuing}
+          <button onClick={() => onQueuePlate(file, p.plate, plates.length, p.name || null)} disabled={enqueuing}
             className="btn btn-ghost btn-sm text-[10px] disabled:opacity-50"
             title={tr('Nur diese Platte in die Auto-Farm-Queue legen')}>{tr('+ Queue')}</button>
           <button onClick={() => onSendPlate(file, p.plate)} disabled={!bambuId || sending === file.id}
@@ -351,6 +373,51 @@ function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sendin
         </div>
       ))}
     </div>
+  )
+}
+
+// Klickbares „!" wenn der G-code den OTTOeject-Arm rammen könnte: Objekt >30 mm hoch
+// UND ragt in den seitlichen 10-mm-Randstreifen (auch Verfahrwege). Lazy geladen.
+function CrashWarning({ fileId, plate = null }) {
+  const { tr } = useLanguage()
+  const [info, setInfo] = useState(null)   // null = lädt
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    let alive = true
+    fileService.crashCheck(fileId, plate)
+      .then(r => { if (alive) setInfo(r.data ?? {}) })
+      .catch(() => { if (alive) setInfo({}) })
+    return () => { alive = false }
+  }, [fileId, plate])
+  if (!info?.crash_risk) return null
+  const xmax = info.x_max_mm ?? 256, margin = info.x_margin_mm ?? 10, zlim = info.z_limit_mm ?? 30
+  return (
+    <>
+      <button onClick={() => setOpen(true)}
+        className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-600 text-white text-xs font-bold hover:bg-red-500 shrink-0 animate-pulse"
+        title={tr('Mögliche Kollision mit dem OTTOeject-Arm — klicken für Details')}>!</button>
+      {open && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={() => setOpen(false)}>
+          <div className="max-w-lg w-full bg-surface-900 border border-red-800/70 rounded-xl p-5 space-y-3 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-600 text-white text-sm font-bold">!</span>
+              <p className="text-sm font-semibold text-red-300">{tr('Wahrscheinliche Kollision mit dem OTTOeject-Arm')}</p>
+            </div>
+            <p className="text-xs text-surface-300 leading-relaxed">
+              {tr('Oberhalb von {0} mm Höhe ragt der Druck bei Z={1} mm auf X={2} mm in die seitliche Randzone (0–{3} mm bzw. {4}–{5} mm). Dort fährt der OTTOeject-Arm beim Auswerfen und Einlagern entlang — beim Druck dieser Datei kommt es sehr wahrscheinlich zu einem Crash.',
+                zlim, info.hit_z_mm, info.hit_x_mm, margin, Math.round(xmax - margin), Math.round(xmax))}
+            </p>
+            <p className="text-[11px] text-surface-500 leading-relaxed">
+              {tr('Geprüft wird der gesamte G-code (inkl. Verfahrwege): oberhalb von {0} mm Höhe darf kein X-Wert unter {1} mm oder über {2} mm liegen. Verschiebe das Objekt zur Bettmitte oder halte in der Randzone unter {0} mm Höhe.',
+                zlim, margin, Math.round(xmax - margin))}
+            </p>
+            <div className="flex justify-end">
+              <button onClick={() => setOpen(false)} className="btn btn-secondary btn-sm">{tr('Verstanden')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -416,7 +483,9 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
 
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] text-surface-600 font-mono">{(file.file_size / 1024).toFixed(1)} KB · ID {file.id}</span>
+            <UploadedAt iso={file.uploaded_at} />
             {isPrintable && <MetaChips meta={meta} />}
+            {isPrintable && <CrashWarning fileId={file.id} />}
             {/* Multi-Plate-Badge: aufklappen → Platten einzeln (Zeit/Höhe/Druck/Queue) */}
             {isPrintable && (meta?.plate_count ?? 0) > 1 && (
               <button onClick={() => setShowPlates(s => !s)}
@@ -800,7 +869,7 @@ function FileLibrary() {
   }
 
   // Genau EINE Platte einer Multi-Plate-.3mf in die Queue (aus dem Platten-Dropdown).
-  const enqueuePlate = async (file, plate, plateTotal) => {
+  const enqueuePlate = async (file, plate, plateTotal, plateName = null) => {
     setEnqueuing(true)
     try {
       const [statusRes, queueRes] = await Promise.all([
@@ -812,19 +881,19 @@ function FileLibrary() {
       const id = cur.length ? Math.max(...cur.map(j => j.id ?? 0)) + 1 : 1
       const j = {
         id, fileId: file.id, fileName: file.original_filename,
-        slot: null, amsMap: '', status: 'pending', plate, plateTotal,
+        slot: null, amsMap: '', status: 'pending', plate, plateTotal, plateName,
         objectHeight: null, progress: 0, remaining: 0,
       }
       if (running) {
         await autofarmService.enqueue({
           id: j.id, fileId: j.fileId, fileName: j.fileName,
-          slot: '1-0', amsMap: '', plate, plateTotal,
+          slot: '1-0', amsMap: '', plate, plateTotal, plateName,
         })
       } else {
         await autofarmService.saveQueue([...cur, j])
       }
       window.dispatchEvent(new CustomEvent('printloom:queueChanged'))
-      showFeedback(tr('Platte {0} in die Queue gelegt', plate))
+      showFeedback(tr('Platte {0} in die Queue gelegt', plateName || plate))
     } catch {
       showFeedback(tr('In die Queue legen fehlgeschlagen'), false)
     } finally { setEnqueuing(false) }
@@ -844,12 +913,18 @@ function FileLibrary() {
   const expandToPlateUnits = async (printable) => {
     const units = []
     for (const f of printable) {
-      let plates = []
+      let plates = [], names = {}
       if (f.file_type === '.3mf') {
-        try { plates = (await printerService.getPlates(f.id)).data?.plates ?? [] } catch { plates = [] }
+        try {
+          const r = (await printerService.getPlates(f.id)).data
+          plates = r?.plates ?? []
+          names  = r?.names ?? {}
+        } catch { plates = [] }
       }
-      if (plates.length > 1) plates.forEach(p => units.push({ file: f, plate: p, plateTotal: plates.length }))
-      else units.push({ file: f, plate: null, plateTotal: null })
+      if (plates.length > 1) plates.forEach(p => units.push({
+        file: f, plate: p, plateTotal: plates.length, plateName: names[String(p)] || null,
+      }))
+      else units.push({ file: f, plate: null, plateTotal: null, plateName: null })
     }
     return units
   }
@@ -872,7 +947,8 @@ function FileLibrary() {
         for (const u of units) {
           additions.push({
             id: nextId++, fileId: u.file.id, fileName: u.file.original_filename,
-            slot: null, amsMap: '', status: 'pending', plate: u.plate, plateTotal: u.plateTotal,
+            slot: null, amsMap: '', status: 'pending',
+            plate: u.plate, plateTotal: u.plateTotal, plateName: u.plateName,
             objectHeight: null, progress: 0, remaining: 0,
           })
         }
@@ -882,7 +958,7 @@ function FileLibrary() {
         for (const j of additions) {
           await autofarmService.enqueue({
             id: j.id, fileId: j.fileId, fileName: j.fileName,
-            slot: '1-0', amsMap: '', plate: j.plate, plateTotal: j.plateTotal,
+            slot: '1-0', amsMap: '', plate: j.plate, plateTotal: j.plateTotal, plateName: j.plateName,
           })
         }
       } else {

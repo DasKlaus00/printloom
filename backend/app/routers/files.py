@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import UploadedFile
 from app.schemas.schemas import FileUploadResponse, FileListResponse, FileMetaUpdate
+from app.services import print_file
+from app.services.print_file import parse_header as _parse_header
 from typing import Optional
 from pathlib import Path
 import base64
@@ -11,6 +14,7 @@ import io
 import json
 import os
 import re
+import threading
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
@@ -20,11 +24,38 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Die Datei-Bibliothek feuert beim Öffnen PRO Zeile mehrere Analysen los (Thumbnail,
+# quick-meta, Crash-Check). Ein Crash-Check liest den KOMPLETTEN G-code einer Platte —
+# bei einer 40-MB-.3mf sind das Millionen Zeilen reine Python-Arbeit. Laufen davon
+# mehrere gleichzeitig, streiten sie um den GIL und hungern den Event-Loop aus: dann
+# beantwortet der Server auch /api/health und die JS-Chunks nicht mehr rechtzeitig —
+# die Seite „lädt nicht". Zwei gleichzeitig halten die Bibliothek flott, ohne den
+# Rest der App lahmzulegen; der Rest wartet kurz und trifft danach meist den Cache.
+_HEAVY_SCAN = threading.BoundedSemaphore(2)
+
 # Create uploads directory if it doesn't exist (zentral über app.paths aufgelöst)
 from app.paths import UPLOADS_DIR as UPLOAD_DIR
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".3mf", ".stl", ".gcode"}
+
+_UPLOAD_CHUNK = 1024 * 1024      # 1 MB
+
+
+def _save_upload(src, dest: Path) -> int:
+    """Hochgeladenen Strom stückweise nach `dest` schreiben und die Größe liefern.
+    Läuft im Threadpool (siehe upload_file) — hier darf blockiert werden."""
+    total = 0
+    src.seek(0)
+    with open(dest, "wb") as out:
+        while True:
+            chunk = src.read(_UPLOAD_CHUNK)
+            if not chunk:
+                break
+            out.write(chunk)
+            total += len(chunk)
+    return total
+
 
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(file: UploadFile = File(...), folder_id: Optional[int] = None, db: Session = Depends(get_db)):
@@ -42,19 +73,20 @@ async def upload_file(file: UploadFile = File(...), folder_id: Optional[int] = N
         # Generate unique filename
         unique_filename = f"{uuid.uuid4()}{file_ext}"
         file_path = UPLOAD_DIR / unique_filename
-        
-        # Save file
-        contents = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(contents)
-        
+
+        # In Stücken auf die Platte — und zwar im Threadpool. Vorher wurde die GANZE
+        # Datei in den RAM gelesen und dann synchron geschrieben: eine 40-MB-.3mf
+        # blockierte damit den Event-Loop für die Dauer des Schreibens (die ganze App
+        # stand still) und belegte den Speicher doppelt.
+        size = await run_in_threadpool(_save_upload, file.file, file_path)
+
         # Store in database
         db_file = UploadedFile(
             filename=unique_filename,
             original_filename=file.filename,
             file_type=file_ext,
             file_path=str(file_path),
-            file_size=len(contents),
+            file_size=size,
             folder_id=folder_id,
         )
         db.add(db_file)
@@ -181,8 +213,9 @@ async def get_file(file_id: int, db: Session = Depends(get_db)):
     return file
 
 @router.get("/{file_id}/ams-info")
-async def get_file_ams_info(file_id: int, db: Session = Depends(get_db)):
-    """Analyse AMS-Mapping, Filamenttypen und -farben aus der Datei."""
+def get_file_ams_info(file_id: int, db: Session = Depends(get_db)):
+    """Analyse AMS-Mapping, Filamenttypen und -farben aus der Datei.
+    Synchron (def) → Threadpool: liest das ZIP-Archiv, gehört nicht in den Event-Loop."""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
@@ -190,15 +223,9 @@ async def get_file_ams_info(file_id: int, db: Session = Depends(get_db)):
         return {"filament_count": 0, "filaments": [], "ams_mapping": [], "ams_mapping_str": ""}
 
     try:
-        from app.routers.printer import _read_filament_info, _extract_ams_mapping
-
-        types, colors = _read_filament_info(file.file_path, file.file_type)
-
-        if file.file_type == '.3mf':
-            ams_mapping = _extract_ams_mapping(file.file_path)
-        else:
-            from app.routers.printer import _read_ams_mapping_from_gcode_header
-            ams_mapping = _read_ams_mapping_from_gcode_header(file.file_path)
+        types, colors = print_file.read_filament_info(file.file_path, file.file_type)
+        ams_mapping = (print_file.ams_mapping_from_3mf(file.file_path) if file.file_type == '.3mf'
+                       else print_file.ams_mapping_from_gcode(file.file_path))
 
         # Pad mapping to match filament count
         n = len(types)
@@ -230,9 +257,17 @@ async def get_file_ams_info(file_id: int, db: Session = Depends(get_db)):
         return {"filament_count": 0, "filaments": [], "ams_mapping": [], "ams_mapping_str": "", "error": str(e)}
 
 
+_THUMB_CACHE: dict = {}          # file_id → (sig, png_bytes)
+_THUMB_CACHE_MAX = 200           # ~200 × wenige KB — vernachlässigbar
+
+
 @router.get("/{file_id}/thumbnail")
-async def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
-    """Schnell das Vorschaubild aus einer .3mf Datei extrahieren."""
+def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
+    """Schnell das Vorschaubild aus einer .3mf Datei extrahieren.
+
+    Bewusst SYNCHRON (def) → FastAPI führt es im Threadpool aus. Als `async def`
+    lief das Öffnen des ZIP-Archivs direkt im Event-Loop, und die Bibliothek
+    schickt beim Öffnen ein Thumbnail-Request PRO Datei."""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
@@ -240,44 +275,49 @@ async def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Nur .3mf Dateien haben Thumbnails")
     if not os.path.exists(file.file_path):
         raise HTTPException(status_code=404, detail="Datei nicht auf Disk")
+    # Das Bild ändert sich für eine hochgeladene Datei nie (Dateiname = UUID), die
+    # Signatur (Pfad/Größe/mtime) fängt einen Austausch trotzdem ab.
+    try:
+        sig = _qmeta_sig(file.file_path)
+        cached = _THUMB_CACHE.get(file_id)
+        if cached and cached[0] == sig:
+            return _png(cached[1])
+    except OSError:
+        sig = None
     try:
         with zipfile.ZipFile(file.file_path, 'r') as zf:
             names = zf.namelist()
-            plate_gcodes = sorted(
-                [n for n in names if re.match(r'Metadata/plate_\d+\.gcode$', n, re.IGNORECASE)],
-                key=lambda n: int(re.search(r'plate_(\d+)', n).group(1))
-            )
-            plate_num = 1
-            if plate_gcodes:
-                m = re.search(r'plate_(\d+)', plate_gcodes[0])
-                if m: plate_num = int(m.group(1))
-            candidates = [
-                f"Metadata/plate_{plate_num}.png",
-                f"Metadata/plate_{plate_num}_mini.png",
-                "Metadata/thumbnail.png",
-                "Metadata/thumbnail_mini.png",
-            ]
-            thumb_path = next(
-                (n for c in candidates for n in names if n.lower() == c.lower()), None
-            )
-            if not thumb_path:
-                thumb_path = next(
-                    (n for n in names if n.lower().startswith('metadata/') and n.lower().endswith('.png')), None
-                )
+            plates = print_file.plate_gcodes(names)
+            plate_num = print_file.plate_number(plates[0]) if plates else 1
+            thumb_path = print_file.thumbnail_name(names, plate_num)
             if not thumb_path:
                 raise HTTPException(status_code=404, detail="Kein Thumbnail in dieser .3mf Datei")
             png_bytes = zf.read(thumb_path)
-        return StreamingResponse(io.BytesIO(png_bytes), media_type="image/png")
+        if sig:
+            if len(_THUMB_CACHE) >= _THUMB_CACHE_MAX:
+                _THUMB_CACHE.clear()       # simpel und ausreichend: nie unbegrenzt wachsen
+            _THUMB_CACHE[file_id] = (sig, png_bytes)
+        return _png(png_bytes)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Thumbnail-Extraktion fehlgeschlagen: {e}")
 
 
+def _png(data: bytes) -> Response:
+    """Vorschaubild mit Browser-Cache ausliefern. Ohne den Header holte der Browser
+    bei JEDEM Öffnen der Bibliothek alle Bilder neu — jedes Mal ein ZIP-Zugriff."""
+    return Response(content=data, media_type="image/png",
+                    headers={"Cache-Control": "private, max-age=86400"})
+
+
 # P5: geparste quick-meta cachen — Datei-Header werden sonst bei jedem Aufruf neu
 # gelesen (zip öffnen / 64 KB lesen). Schlüssel = file_id, Signatur = (Pfad, Größe,
 # mtime) → ändert sich die Datei, wird automatisch neu geparst.
 _QMETA_CACHE: dict = {}
+_QMETA_EMPTY = {"estimated_time": None, "time_seconds": None, "filament_g": None,
+                "filament_m": None, "max_z_mm": None, "layer_count": None,
+                "plate_times": {}, "plate_count": 0}
 
 
 def _qmeta_sig(path: str):
@@ -285,42 +325,15 @@ def _qmeta_sig(path: str):
     return (path, st.st_size, int(st.st_mtime))
 
 
-def _plate_predictions(zf) -> dict:
-    """{Platten-Nr (str): Sekunden} aus slice_info.config (<metadata key="prediction">).
-    Multi-Plate-Dateien haben PRO Platte eine eigene Slicer-Zeit — der Header der
-    ersten Platte gilt sonst fälschlich für alle Jobs (Planer/ETA)."""
-    try:
-        name = next((n for n in zf.namelist() if n.lower().endswith('slice_info.config')), None)
-        if not name:
-            return {}
-        import xml.etree.ElementTree as ET
-        root = ET.fromstring(zf.read(name).decode('utf-8', errors='ignore'))
-        out = {}
-        for pl in root.iter('plate'):
-            idx = pred = None
-            for m in pl.findall('metadata'):
-                if m.get('key') == 'index':
-                    idx = m.get('value')
-                elif m.get('key') == 'prediction':
-                    pred = m.get('value')
-            try:
-                if idx is not None and pred is not None and int(float(pred)) > 0:
-                    out[str(int(idx))] = int(float(pred))
-            except (TypeError, ValueError):
-                pass
-        return out
-    except Exception:
-        return {}
-
-
 @router.get("/{file_id}/quick-meta")
-async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
-    """Druckzeit und Filamentverbrauch schnell aus Datei-Header lesen."""
+def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
+    """Druckzeit und Filamentverbrauch schnell aus Datei-Header lesen.
+    Synchron (def) → Threadpool: öffnet das ZIP-Archiv."""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     if file.file_type not in ('.3mf', '.gcode'):
-        return {"estimated_time": None, "filament_g": None, "filament_m": None, "max_z_mm": None}
+        return _QMETA_EMPTY
     if not os.path.exists(file.file_path):
         raise HTTPException(status_code=404, detail="Datei nicht auf Disk")
     try:
@@ -335,23 +348,11 @@ async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
         plate_count = 0
         if file.file_type == '.3mf':
             with zipfile.ZipFile(file.file_path, 'r') as zf:
-                names = zf.namelist()
-                plate_times = _plate_predictions(zf)
-                plate_gcodes = sorted(
-                    [n for n in names if re.match(r'Metadata/plate_\d+\.gcode$', n, re.IGNORECASE)],
-                    key=lambda n: int(re.search(r'plate_(\d+)', n).group(1))
-                )
-                plate_count = len(plate_gcodes)
-                gcode_path = plate_gcodes[0] if plate_gcodes else next(
-                    (n for n in names if n.lower().endswith('.gcode')), None
-                )
-                if not gcode_path:
-                    return {"estimated_time": None, "filament_g": None, "filament_m": None, "max_z_mm": None}
-                with zf.open(gcode_path) as gf:
-                    raw = gf.read(65536).decode('utf-8', errors='ignore')
-        else:
-            with open(file.file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                raw = f.read(65536)
+                plate_times = print_file.plate_predictions(zf)
+                plate_count = len(print_file.plate_gcodes(zf.namelist()))
+        raw = print_file.read_header(file.file_path, file.file_type)
+        if raw is None:
+            return _QMETA_EMPTY
         parsed = _parse_header(raw)
         result = {
             "estimated_time": parsed.get("estimated_time"),
@@ -371,15 +372,16 @@ async def get_quick_meta(file_id: int, db: Session = Depends(get_db)):
         return result
     except Exception as e:
         logger.warning(f"quick-meta failed for {file_id}: {e}")
-        return {"estimated_time": None, "time_seconds": None, "filament_g": None, "filament_m": None, "max_z_mm": None}
+        return _QMETA_EMPTY
 
 
 _PLATES_META_CACHE: dict = {}   # file_id → (sig, result)
 
 
 @router.get("/{file_id}/plates-meta")
-async def get_plates_meta(file_id: int, db: Session = Depends(get_db)):
+def get_plates_meta(file_id: int, db: Session = Depends(get_db)):
     """Metadaten JE PLATTE einer Multi-Plate-.3mf: Zeit, Höhe, Filament, Schichten.
+    Synchron (def) → Threadpool: liest je Platte einen Header aus dem ZIP-Archiv.
 
     Liest pro Platte den plate_N.gcode-Header (64 KB) — Höhe/Zeit sind damit
     plattengenau statt (wie früher) die Werte der ersten Platte für alle.
@@ -400,18 +402,16 @@ async def get_plates_meta(file_id: int, db: Session = Depends(get_db)):
     try:
         with zipfile.ZipFile(file.file_path, 'r') as zf:
             names = zf.namelist()
-            predictions = _plate_predictions(zf)
-            plate_gcodes = sorted(
-                [n for n in names if re.match(r'Metadata/plate_\d+\.gcode$', n, re.IGNORECASE)],
-                key=lambda n: int(re.search(r'plate_(\d+)', n).group(1))
-            )
-            for gname in plate_gcodes:
-                num = int(re.search(r'plate_(\d+)', gname).group(1))
-                entry = {"plate": num, "time_seconds": None, "estimated_time": None,
+            predictions = print_file.plate_predictions(zf)
+            plate_names = print_file.plate_names(zf)
+            for gname in print_file.plate_gcodes(names):
+                num = print_file.plate_number(gname)
+                entry = {"plate": num, "name": plate_names.get(str(num)),
+                         "time_seconds": None, "estimated_time": None,
                          "max_z_mm": None, "filament_g": None, "layer_count": None}
                 try:
                     with zf.open(gname) as gf:
-                        parsed = _parse_header(gf.read(65536).decode('utf-8', errors='ignore'))
+                        parsed = _parse_header(gf.read(print_file.HEADER_BYTES).decode('utf-8', errors='ignore'))
                     entry.update({
                         "time_seconds":   parsed.get("time_seconds"),
                         "estimated_time": parsed.get("estimated_time"),
@@ -434,9 +434,202 @@ async def get_plates_meta(file_id: int, db: Session = Depends(get_db)):
     return result
 
 
+# ── Crash-Check: OTTOeject-Kollisionszone ────────────────────────────────────
+# Beim Auswerfen/Einlagern fährt der OTTOeject-Arm seitlich am Bett vorbei. Ragt ein
+# hohes Objekt in die seitlichen Randstreifen (links 0–X_MARGIN, rechts X_MAX−X_MARGIN),
+# kollidiert der Arm. Wir scannen den G-code der Platte: sobald OBERHALB von Z_LIMIT
+# ein X-Wert in die Randzone fällt (auch reine Verfahrwege!), gilt der Druck als riskant.
+CRASH_Z_LIMIT   = 30.0     # mm — ab hier ist die Randzone kritisch
+CRASH_X_MARGIN  = 10.0     # mm — Streifen links/rechts, in dem der Arm fährt
+CRASH_X_MAX     = 256.0    # mm — Bettbreite X (X1C); per Query überschreibbar
+
+_CRASH_CACHE: dict = {}    # (file_id, plate, x_max) → (sig, result)
+_CRASH_CACHE_LOCK = threading.Lock()
+
+
+def _crash_cache_file() -> Path:
+    from app.paths import DB_DIR
+    return DB_DIR / "crash_cache.json"
+
+
+def _crash_key_str(key) -> str:
+    return "|".join("" if k is None else str(k) for k in key)
+
+
+def _load_crash_cache() -> None:
+    """Gespeicherte Crash-Ergebnisse übernehmen. Ohne das scannte Printloom nach
+    JEDEM Neustart (auch nach jedem Update) beim ersten Öffnen der Bibliothek wieder
+    jede Datei komplett durch — genau die Last, die die App ausbremst. Die Signatur
+    (Pfad/Größe/mtime) bleibt maßgeblich: passt sie nicht, wird neu gescannt."""
+    try:
+        from app.services import storage
+        raw = storage.read_json(str(_crash_cache_file()), {})
+        if not isinstance(raw, dict):
+            return
+    except Exception:
+        return
+    for k, entry in raw.items():
+        try:
+            fid, plate, x_max = k.split("|")
+            key = (int(fid), int(plate) if plate else None, float(x_max))
+            sig = tuple(entry["sig"])
+            if not os.path.exists(sig[0]):
+                continue                      # Datei gelöscht → Eintrag verfällt
+            _CRASH_CACHE[key] = ((sig[0], int(sig[1]), int(sig[2])), entry["result"])
+        except Exception:
+            continue
+
+
+def _save_crash_cache() -> None:
+    try:
+        from app.services import storage
+        data = {_crash_key_str(k): {"sig": list(v[0]), "result": v[1]}
+                for k, v in list(_CRASH_CACHE.items())}
+        storage.write_json(str(_crash_cache_file()), data)
+    except Exception as e:
+        logger.debug(f"crash cache not persisted: {e}")
+
+
+_load_crash_cache()
+
+_NUM = r'[-+]?\d*\.?\d+'
+_RE_Z = re.compile(r'[Zz](' + _NUM + r')')
+_RE_X = re.compile(r'[Xx](' + _NUM + r')')
+_RE_MOVE = re.compile(r'^G[0-3]\b')
+
+
+def _scan_gcode_for_crash(line_iter, x_max: float,
+                          x_margin: float = CRASH_X_MARGIN,
+                          z_limit: float = CRASH_Z_LIMIT) -> dict:
+    """G-code zeilenweise durchgehen, aktuelle Z-Höhe mitführen und melden, sobald
+    oberhalb `z_limit` ein X-Wert in die Randzone (< x_margin oder > x_max − x_margin)
+    fällt. Bricht beim ersten Treffer ab. Nur absolute Positionierung (G90) wird geprüft."""
+    z = 0.0
+    absolute = True
+    max_z = 0.0
+    lo, hi = x_margin, x_max - x_margin
+    for raw in line_iter:
+        line = raw.split(';', 1)[0].strip()
+        if not line:
+            continue
+        u = line.upper()
+        if u.startswith('G90'):
+            absolute = True
+            continue
+        if u.startswith('G91'):
+            absolute = False
+            continue
+        if not _RE_MOVE.match(u):
+            continue
+        mz = _RE_Z.search(line)
+        if mz and absolute:
+            try:
+                z = float(mz.group(1))
+                if z > max_z:
+                    max_z = z
+            except ValueError:
+                pass
+        if not absolute or z <= z_limit:
+            continue
+        mx = _RE_X.search(line)
+        if mx:
+            try:
+                x = float(mx.group(1))
+            except ValueError:
+                continue
+            if x < lo or x > hi:
+                return {"crash_risk": True, "max_z_mm": round(max_z, 1),
+                        "hit_z_mm": round(z, 1), "hit_x_mm": round(x, 1)}
+    return {"crash_risk": False, "max_z_mm": round(max_z, 1)}
+
+
+def _scan_file_for_crash(path: str, file_type: str, plate, x_max: float) -> Optional[dict]:
+    """Den eigentlichen G-code-Scan ausführen (ohne Cache/DB). None = nichts zu prüfen."""
+    if file_type != '.3mf':
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            return _scan_gcode_for_crash(f, x_max)
+    with zipfile.ZipFile(path, 'r') as zf:
+        names = zf.namelist()
+        if plate:
+            targets = [n for n in names
+                       if re.match(rf'Metadata/plate_{plate}\.gcode$', n, re.IGNORECASE)]
+        else:
+            # Ohne Plattenangabe ALLE Platten prüfen (bei Multi-Plate reicht eine
+            # gefährliche Platte, damit die Datei als riskant gilt).
+            targets = print_file.plate_gcodes(names)
+            if not targets:
+                single = next((n for n in names if n.lower().endswith('.gcode')), None)
+                targets = [single] if single else []
+        if not targets:
+            return None
+        result = {"crash_risk": False, "max_z_mm": 0.0}
+        for gname in targets:
+            with zf.open(gname) as gf:
+                r = _scan_gcode_for_crash(
+                    io.TextIOWrapper(gf, encoding='utf-8', errors='ignore'), x_max)
+            max_z = max(result.get("max_z_mm") or 0.0, r.get("max_z_mm") or 0.0)
+            if r.get("crash_risk"):
+                m = re.search(r'plate_(\d+)', gname)
+                r["plate"] = int(m.group(1)) if m else None
+                # Höchste Z-Höhe über ALLE bisher geprüften Platten behalten — die
+                # Fundplatte allein wäre die falsche Zahl in der Warnung.
+                r["max_z_mm"] = max_z
+                return r
+            result["max_z_mm"] = max_z
+        return result
+
+
+@router.get("/{file_id}/crash-check")
+def crash_check(file_id: int, plate: int = None, x_max: float = CRASH_X_MAX,
+                db: Session = Depends(get_db)):
+    """Prüft, ob der Druck den OTTOeject-Arm rammt: Objekt höher als 30 mm UND ragt
+    links/rechts in den 10-mm-Randstreifen (auch Verfahrwege). Ergebnis wird gecacht.
+    Bewusst SYNCHRON (def): der volle G-code-Scan blockiert sonst den Event-Loop —
+    so führt FastAPI ihn im Threadpool aus."""
+    file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    if file.file_type not in ('.3mf', '.gcode') or not os.path.exists(file.file_path):
+        return {"crash_risk": False, "max_z_mm": None}
+    path, file_type = file.file_path, file.file_type
+    cache_key = (file_id, plate, x_max)
+    try:
+        sig = _qmeta_sig(path)
+        cached = _CRASH_CACHE.get(cache_key)
+        if cached and cached[0] == sig:
+            return cached[1]
+    except OSError:
+        sig = None
+    try:
+        # Höchstens _HEAVY_SCAN Scans gleichzeitig — sonst hungern N parallele
+        # Bibliothekszeilen den Event-Loop aus (siehe Kommentar bei _HEAVY_SCAN).
+        with _HEAVY_SCAN:
+            # Nach dem Warten nochmal in den Cache schauen: sehr wahrscheinlich hat ihn
+            # inzwischen ein anderer Request für dieselbe Datei gefüllt.
+            cached = _CRASH_CACHE.get(cache_key) if sig else None
+            if cached and cached[0] == sig:
+                return cached[1]
+            result = _scan_file_for_crash(path, file_type, plate, x_max)
+        if result is None:
+            return {"crash_risk": False, "max_z_mm": None}
+    except Exception as e:
+        logger.warning(f"crash-check failed for {file_id}: {e}")
+        return {"crash_risk": False, "max_z_mm": None, "error": str(e)}
+    result["z_limit_mm"] = CRASH_Z_LIMIT
+    result["x_margin_mm"] = CRASH_X_MARGIN
+    result["x_max_mm"] = x_max
+    if sig:
+        with _CRASH_CACHE_LOCK:
+            _CRASH_CACHE[cache_key] = (sig, result)
+            _save_crash_cache()
+    return result
+
+
 @router.get("/{file_id}/deep-analyze")
-async def deep_analyze_file(file_id: int, db: Session = Depends(get_db)):
-    """Vollständige Analyse einer .3mf / .gcode Datei — alle Slicer-Metadaten."""
+def deep_analyze_file(file_id: int, db: Session = Depends(get_db)):
+    """Vollständige Analyse einer .3mf / .gcode Datei — alle Slicer-Metadaten.
+    Synchron (def) → Threadpool, und wie der Crash-Check durch _HEAVY_SCAN begrenzt:
+    die Analyse liest die Datei komplett."""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
@@ -453,170 +646,16 @@ async def deep_analyze_file(file_id: int, db: Session = Depends(get_db)):
     }
 
     try:
-        if file.file_type == '.3mf':
-            result.update(_analyze_3mf(file.file_path))
-        else:
-            result.update(_analyze_gcode_file(file.file_path))
+        with _HEAVY_SCAN:
+            if file.file_type == '.3mf':
+                result.update(_analyze_3mf(file.file_path))
+            else:
+                result.update(_analyze_gcode_file(file.file_path))
     except Exception as e:
         logger.warning(f"deep-analyze failed for {file_id}: {e}")
         result["error"] = str(e)
 
     return result
-
-
-def _time_to_seconds(s):
-    """'9m 44s' / '1h 2m 3s' / '2d 3h' / '1:23:45' → Sekunden (int) oder None."""
-    if not s:
-        return None
-    s = s.strip()
-    m = re.fullmatch(r'(\d+):(\d{1,2}):(\d{1,2})', s)
-    if m:
-        h, mi, se = map(int, m.groups())
-        return h * 3600 + mi * 60 + se
-    units = {'d': 86400, 'h': 3600, 'm': 60, 's': 1}
-    total, found = 0.0, False
-    for val, unit in re.findall(r'(\d+(?:\.\d+)?)\s*([dhms])', s, re.IGNORECASE):
-        found = True
-        total += float(val) * units[unit.lower()]
-    return int(total) if found else None
-
-
-def _parse_header(header: str) -> dict:
-    """Parse Bambu/PrusaSlicer gcode header comments into structured data."""
-
-    def _val(pattern, default=None, cast=str):
-        m = re.search(pattern, header, re.IGNORECASE)
-        if not m:
-            return default
-        try:
-            return cast(m.group(1).strip())
-        except Exception:
-            return default
-
-    def _list(pattern, cast=str):
-        m = re.search(pattern, header, re.IGNORECASE)
-        if not m:
-            return []
-        return [cast(x.strip()) for x in m.group(1).split(';') if x.strip()]
-
-    slicer_raw   = _val(r';\s*generated by\s+(.+)')
-    machine_raw  = _val(r';\s*target_machine\s*=\s*(.+)')
-    # Zeit: Bambu/Orca "; total estimated time: 9m 44s" (Doppelpunkt), PrusaSlicer
-    # "; estimated printing time (normal mode) = 1h 5m 23s" (=). Reihenfolge = Priorität.
-    time_raw     = (
-        _val(r';?\s*total estimated time\s*:\s*([^\n;]+)')
-        or _val(r';\s*estimated printing time[^=:\n]*[=:]\s*([^\n;]+)')
-        or _val(r';\s*model printing time\s*:\s*([^\n;]+)')
-        or _val(r';\s*(?:estimated_print_time|print_time)\s*=\s*([^\n;]+)')
-    )
-
-    layer_h      = _val(r';\s*layer_height\s*[=:]\s*([\d.]+)',              cast=float)
-    first_layer  = _val(r';\s*(?:initial_layer_height|first_layer_height)\s*[=:]\s*([\d.]+)', cast=float)
-    # Bambu uses "total layer number: N"; PrusaSlicer uses "total_layer_num = N"
-    layer_count  = _val(r';\s*(?:total_layer_num|total layer number)\s*[=:]\s*(\d+)', cast=int)
-    # Bambu uses "max_z_height: X" with colon; PrusaSlicer uses "max_layer_z = X"
-    max_z        = _val(r';\s*(?:max_layer_z|max_z_height)\s*[=:]\s*([\d.]+)',        cast=float)
-    nozzle_d     = _val(r';\s*nozzle_diameter\s*[=:]\s*([\d.]+)',           cast=float)
-
-    fil_types    = _list(r';\s*filament_type\s*=\s*(.+)')
-    fil_colors   = _list(r';\s*filament_colour\s*=\s*(.+)')
-    nozzle_temps = _list(r';\s*nozzle_temperature\s*=\s*(.+)', cast=lambda x: int(x) if x.isdigit() else 0)
-    bed_temps    = _list(r';\s*bed_temperature\s*=\s*(.+)',    cast=lambda x: int(x) if x.isdigit() else 0)
-
-    # Per-filament used weight (semicolon-separated, e.g. "1.23;4.56")
-    fil_used     = _list(r';\s*(?:filament_used|filament_weight)\s*=\s*(.+)')
-
-    # Total consumption — Bambu/OrcaSlicer: "; filament used [m] = 6.54" / "; filament used [g] = 19.82"
-    # Fallback: semicolon-separated multi-color: sum up
-    def _sum_semicolon(raw: str) -> float:
-        if not raw:
-            return 0.0
-        try:
-            return round(sum(float(x.strip()) for x in raw.split(';') if x.strip()), 3)
-        except Exception:
-            return 0.0
-
-    # Gramm: Orca/Prusa "; filament used [g] = .." (=)  ODER  Bambu "; total filament weight [g] : .." (:)
-    total_fil_g_raw = (_val(r';\s*filament\s+used\s*\[g\]\s*=\s*([0-9.;]+)')
-                       or _val(r';\s*total filament weight\s*\[g\]\s*:\s*([0-9.;]+)'))
-    # Länge: Orca "[m] =" ODER Bambu "total filament length [mm] :" (→ in Meter)
-    total_fil_m_raw  = _val(r';\s*filament\s+used\s*\[m\]\s*=\s*([0-9.;]+)')
-    total_fil_mm_raw = _val(r';\s*total filament length\s*\[mm\]\s*:\s*([0-9.;]+)')
-    total_fil_g = _sum_semicolon(total_fil_g_raw) if total_fil_g_raw else None
-    total_fil_m = (_sum_semicolon(total_fil_m_raw) if total_fil_m_raw
-                   else round(_sum_semicolon(total_fil_mm_raw) / 1000.0, 3) if total_fil_mm_raw else None)
-
-    # AMS mapping — "0 1 2" or "0, 1, 2"
-    ams_raw      = _val(r';\s*ams_mapping\s*=\s*(.+)')
-    ams_mapping  = []
-    if ams_raw:
-        try:
-            ams_mapping = [int(x) for x in re.split(r'[\s,]+', ams_raw.strip()) if x.strip().lstrip('-').isdigit()]
-        except Exception:
-            pass
-
-    support      = _val(r';\s*support_material\s*=\s*(\d+)', cast=int)
-    brim         = _val(r';\s*brim_width\s*=\s*([\d.]+)',    cast=float)
-    ironing      = _val(r';\s*ironing\s*=\s*(\d+)',           cast=int)
-    speed        = _val(r';\s*(?:print_speed|outer_wall_speed)\s*=\s*([\d.]+)', cast=float)
-    infill       = _val(r';\s*sparse_infill_density\s*=\s*([\d.]+)', cast=float)
-
-    # Slicer-embedded warnings
-    bed_too_high = _val(r';\s*bed_temperature_too_high_than_filament\s*=\s*(\d+)', cast=int)
-    nozzle_too_low = _val(r';\s*nozzle_temperature_too_low_than_filament\s*=\s*(\d+)', cast=int)
-    nozzle_too_high = _val(r';\s*nozzle_temperature_too_high_than_filament\s*=\s*(\d+)', cast=int)
-    close_fan_1st = _val(r';\s*close_fan_the_first_x_layers\s*=\s*(\d+)', cast=int)
-
-    n = max(len(fil_types), len(fil_colors), 1)
-    filaments = []
-    for i in range(n):
-        slot = ams_mapping[i] if i < len(ams_mapping) else i
-        filaments.append({
-            "index":      i,
-            "type":       fil_types[i]    if i < len(fil_types)    else "",
-            "color":      fil_colors[i]   if i < len(fil_colors)   else "",
-            "nozzle_temp": nozzle_temps[i] if i < len(nozzle_temps) else 0,
-            "bed_temp":   bed_temps[i]    if i < len(bed_temps)    else 0,
-            "used":       fil_used[i]     if i < len(fil_used)     else "",
-            "ams_slot":   slot,
-            "ams_label":  f"A{slot + 1}",
-        })
-
-    warnings = []
-    if bed_too_high:
-        warnings.append("Betttemperatur höher als für das Filament empfohlen — Haftungsproblem möglich")
-    if nozzle_too_low:
-        warnings.append("Düsentemperatur zu niedrig für das Filament — Verstopfungsgefahr")
-    if nozzle_too_high:
-        warnings.append("Düsentemperatur zu hoch für das Filament")
-    if ams_mapping and len(set(ams_mapping)) == 1 and len(ams_mapping) > 1:
-        warnings.append(f"Alle {len(ams_mapping)} Filamente auf Slot {ams_mapping[0]+1} — AMS-Mapping prüfen")
-    if any(f["type"] == "PETG" and f["bed_temp"] < 70 for f in filaments):
-        warnings.append("PETG mit Betttemperatur < 70 °C — evtl. Haftungsproblem")
-    if nozzle_d and nozzle_d < 0.3:
-        warnings.append(f"Kleine Düse ({nozzle_d} mm) — Druckzeit erhöht sich")
-
-    return {
-        "slicer":             slicer_raw,
-        "machine":            machine_raw,
-        "estimated_time":     time_raw,
-        "time_seconds":       _time_to_seconds(time_raw),
-        "nozzle_diameter":    nozzle_d,
-        "layer_height":       layer_h,
-        "initial_layer_height": first_layer,
-        "layer_count":        layer_count,
-        "max_z_mm":           max_z,
-        "total_filament_m":   total_fil_m,
-        "total_filament_g":   total_fil_g,
-        "ams_mapping":        ams_mapping,
-        "filaments":          filaments,
-        "support":            bool(support),
-        "brim_width":         brim,
-        "ironing":            bool(ironing),
-        "print_speed":        speed,
-        "infill_percent":     infill,
-        "warnings":           warnings,
-    }
 
 
 def _parse_project_settings(zf: zipfile.ZipFile, names: list) -> dict:
@@ -697,16 +736,8 @@ def _analyze_3mf(file_path: str) -> dict:
         names = zf.namelist()
         zip_files = sorted(names)
 
-        # Detect correct plate — sort by plate number, take lowest
-        import re as _re
-        plate_gcodes = sorted(
-            [n for n in names if _re.match(r'Metadata/plate_\d+\.gcode$', n, _re.IGNORECASE)],
-            key=lambda n: int(_re.search(r'plate_(\d+)', n).group(1))
-        )
-        gcode_path = plate_gcodes[0] if plate_gcodes else next(
-            (n for n in names if n.lower().endswith('.gcode')), None
-        )
-        plate_num = int(_re.search(r'plate_(\d+)', gcode_path).group(1)) if gcode_path and _re.search(r'plate_(\d+)', gcode_path or '') else 1
+        gcode_path = print_file.first_gcode(names)
+        plate_num = print_file.plate_number(gcode_path) or 1
 
         raw_header = ""
         parsed = {}
@@ -755,25 +786,9 @@ def _analyze_3mf(file_path: str) -> dict:
         for sw in si_data.get("slice_warnings", []):
             parsed.setdefault('warnings', []).append(sw["msg"])
 
-        slice_info_raw = ""
-
         # Thumbnail PNG for active plate
         thumb_b64 = ""
-        thumb_candidates = [
-            f"Metadata/plate_{plate_num}.png",
-            f"Metadata/plate_{plate_num}_mini.png",
-            "Metadata/thumbnail.png",
-            "Metadata/thumbnail_mini.png",
-        ]
-        thumb_path = next(
-            (n for c in thumb_candidates for n in names if n.lower() == c.lower()),
-            None
-        )
-        if not thumb_path:
-            thumb_path = next(
-                (n for n in names if n.lower().startswith('metadata/') and n.lower().endswith('.png')),
-                None
-            )
+        thumb_path = print_file.thumbnail_name(names, plate_num)
         if thumb_path:
             try:
                 raw_png = zf.read(thumb_path)
@@ -789,7 +804,7 @@ def _analyze_3mf(file_path: str) -> dict:
         "curr_bed_type":   ps_data.get("curr_bed_type", ""),
         "zip_files":       zip_files,
         "raw_header":      raw_header,
-        "slice_info":      slice_info_raw[:4000] if slice_info_raw else "",
+        "slice_info":      "",
         "has_gcode":       gcode_path is not None,
         "plate_num":       plate_num,
         "plate_gcode":     gcode_path,
@@ -830,22 +845,11 @@ async def delete_file(file_id: int, db: Session = Depends(get_db)):
     # Delete file from disk
     try:
         Path(file.file_path).unlink()
-    except Exception as e:
-        pass  # File might already be deleted
+    except OSError:
+        pass  # schon weg
     
     # Delete from database
     db.delete(file)
     db.commit()
     
     return {"message": "File deleted successfully"}
-
-@router.get("/search/{filename}")
-async def search_files(filename: str, db: Session = Depends(get_db)):
-    """Search files by name"""
-    files = db.query(UploadedFile).filter(
-        UploadedFile.original_filename.ilike(f"%{filename}%")
-    ).all()
-    return FileListResponse(
-        files=files,
-        total=len(files)
-    )

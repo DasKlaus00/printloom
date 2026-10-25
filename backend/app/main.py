@@ -1,13 +1,14 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from pathlib import Path
 
-from app.routers import config, files, devices, control, printer, calibration, rack_manager, system, autofarm, project, profiles, filaments, push, folders
+from app.routers import (files, devices, control, printer, rack_manager, system, autofarm,
+                         project, profiles, filaments, push, folders, online)
 from app.db.database import init_db
 from app import paths
-import logging
 
 # Datenordner (db/, uploads/) früh sicherstellen — nativ liegen sie im
 # Nutzerverzeichnis, in Docker unter /app (siehe app.paths).
@@ -22,28 +23,77 @@ logging.getLogger("app").setLevel(logging.INFO)
 for _noisy in ("uvicorn.access", "httpx", "httpcore", "paho", "paho.mqtt", "watchfiles"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
+# Kamera-Default festlegen BEVOR init_db() die Datenbank anlegt: nur eine echte
+# Neuinstallation (keine printloom.db) bekommt den neuen Default „Kamera aus";
+# bestehende Installationen werden auf „aktiv" eingefroren (kein Funktionsverlust).
+from app.services import appsettings as _appsettings
+_appsettings.init_camera_default()
+
 # Initialize database
 init_db()
 
 
-app = FastAPI(title="Printloom - 3D Print Farm Controller", version="4.1.1")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # Bauraumlüfter-Guard: hält bei aktivierter Geräte-Option die Bauraumlüftung aus
+    # (nutzt die persistente MQTT-Verbindung, ~5-s-Takt). Idempotent.
+    try:
+        from app.services import chamber_fan_guard
+        chamber_fan_guard.start()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"chamber_fan_guard start failed: {e}")
+    yield
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+# Kein CORS-Middleware: Die Oberfläche kommt vom selben Server (im Dev über den
+# Vite-Proxy), braucht also keine Freigabe für fremde Herkunft. Bis v1.1.34 stand
+# hier allow_origins=["*"] MIT allow_credentials — Starlette spiegelt dann bei
+# Anfragen mit Cookie die Herkunft zurück. Hinter einer Anmeldung (authentik) hätte
+# damit jede fremde Webseite im Browser des angemeldeten Nutzers die API lesen
+# dürfen, das Backup mit allen Zugangsdaten eingeschlossen.
+app = FastAPI(title="Printloom - 3D Print Farm Controller", lifespan=_lifespan)
+
+
+# Ohne CORS kann eine fremde Seite nichts LESEN — schreiben aber schon: ein
+# Formular, das sich selbst abschickt, braucht keine Freigabe. Bis v1.1.38 hätte
+# so jede Webseite, die man im Heimnetz (oder angemeldet hinter authentik) öffnet,
+# ein Update samt Neustart auslösen, ein Backup einspielen oder den Arm bewegen
+# können. Browser sagen per `Sec-Fetch-Site`, woher eine Anfrage kommt; Aufrufe
+# ohne Browser (Home Assistant, curl, Skripte) schicken den Kopf nicht und bleiben
+# erlaubt. „same-site" zählt mit: ein anderer Dienst unter derselben Domain ist
+# genauso fremd. Reines ASGI statt @app.middleware: BaseHTTPMiddleware hat bei
+# langlaufenden Streams (Kamera) bekannte Macken beim Verbindungsende.
+FOREIGN_ORIGIN = "FREMDE_HERKUNFT"
+_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_FOREIGN_SITES = {b"cross-site", b"same-site"}
+
+
+class _NoForeignWrites:
+    def __init__(self, app):
+        self.inner = app
+
+    async def __call__(self, scope, receive, send):
+        kind = scope["type"]
+        if kind in ("http", "websocket"):
+            site = dict(scope.get("headers") or []).get(b"sec-fetch-site")
+            if site in _FOREIGN_SITES and (kind == "websocket" or scope["method"] in _WRITE_METHODS):
+                if kind == "websocket":
+                    await receive()   # websocket.connect, dann ablehnen (HTTP 403)
+                    await send({"type": "websocket.close", "code": 1008})
+                else:
+                    await JSONResponse(status_code=403,
+                                       content={"detail": FOREIGN_ORIGIN})(scope, receive, send)
+                return
+        await self.inner(scope, receive, send)
+
+
+app.add_middleware(_NoForeignWrites)
 
 # Include routers
-app.include_router(config.router,        prefix="/api/config",       tags=["Configuration"])
 app.include_router(devices.router,       prefix="/api/devices",       tags=["Devices"])
 app.include_router(files.router,         prefix="/api/files",         tags=["File Management"])
 app.include_router(control.router,       prefix="/api/control",       tags=["Control"])
 app.include_router(printer.router,       prefix="/api/printer",       tags=["Printer"])
-app.include_router(calibration.router,   prefix="/api/calibration",   tags=["Calibration"])
 app.include_router(rack_manager.router,  prefix="/api/rack-manager",  tags=["Rack Manager"])
 app.include_router(system.router,        prefix="/api/system",        tags=["System"])
 app.include_router(autofarm.router,      prefix="/api/autofarm",      tags=["AutoFarm"])
@@ -52,6 +102,7 @@ app.include_router(profiles.router,      prefix="/api/profiles",       tags=["Pr
 app.include_router(filaments.router,     prefix="/api/filaments",       tags=["Filaments"])
 app.include_router(push.router,          prefix="/api/push",            tags=["Web-Push"])
 app.include_router(folders.router,       prefix="/api/folders",         tags=["Folders"])
+app.include_router(online.router,        prefix="/api/online",          tags=["Online-Dienste"])
 
 
 @app.get("/api/health")
@@ -63,13 +114,34 @@ async def health_check():
 frontend_path = paths.frontend_dir()
 
 if frontend_path.exists():
-    # Mount static assets (JS, CSS, images)
-    app.mount("/assets", StaticFiles(directory=frontend_path / "assets"), name="assets")
+    # Vite hängt an jeden Asset-Namen einen Hash über den INHALT (index-a1b2c3.js).
+    # Ändert sich der Inhalt, ändert sich der Name — dieselbe Datei kann sich also
+    # nie ändern und darf beliebig lange im Browser liegen bleiben. Spart bei jedem
+    # Seitenaufruf einen Schwung Anfragen.
+    class _ImmutableAssets(StaticFiles):
+        async def get_response(self, path, scope):
+            resp = await super().get_response(path, scope)
+            if resp.status_code == 200:
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return resp
+
+    app.mount("/assets", _ImmutableAssets(directory=frontend_path / "assets"), name="assets")
+
+    # Die index.html dagegen NIE zwischenspeichern: In ihr stehen die gehashten
+    # Asset-Namen. Liefert der Browser nach einem Update eine alte index.html aus
+    # dem Cache, lädt er weiter das ALTE Frontend, während der Server schon die
+    # neue Version meldet — die App lädt dann in einer Schleife immer wieder neu
+    # („Update-Loop"). Der Verzicht auf den Cache kostet einen kleinen Request,
+    # verhindert aber genau das.
+    _NO_STORE = {"Cache-Control": "no-store, must-revalidate"}
+
+    def _index() -> FileResponse:
+        return FileResponse(frontend_path / "index.html", headers=_NO_STORE)
 
     # Serve index.html for root
     @app.get("/", response_class=HTMLResponse)
     async def serve_root():
-        return FileResponse(frontend_path / "index.html")
+        return _index()
 
     # Root-level static files (sw.js, manifest.webmanifest, icons, favicons) that
     # Vite emits into dist/ but outside /assets. These MUST be served with their
@@ -102,8 +174,9 @@ if frontend_path.exists():
         served = _serve_root_file(request.url.path)
         if served is not None:
             return served
-        # …otherwise serve the SPA for client-side routing.
-        return FileResponse(frontend_path / "index.html")
+        # …otherwise serve the SPA for client-side routing (ebenfalls ohne Cache,
+        # es ist dieselbe index.html wie oben).
+        return _index()
 else:
     @app.get("/")
     async def root():

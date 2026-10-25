@@ -6,7 +6,7 @@ Works on any apt-based 64-bit Linux with systemd (Raspberry Pi OS, Debian,
 Ubuntu — arm64 **and** amd64).
 
 > **Prefer Docker when you can** — it is the primary, most-tested way to run
-> Printloom (`docker-compose.simple.yml.example`). Use the native install for
+> Printloom (`docker-compose.yml`). Use the native install for
 > low-memory devices.
 
 ## Install (one-liner)

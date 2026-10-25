@@ -1,8 +1,17 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api' })
+// Ohne Default-Timeout wartet axios UNBEGRENZT. Steht das Backend kurz (Update,
+// überlastet, Netz weg), blieb die Oberfläche für immer im Ladezustand hängen —
+// selbst wenn der Server längst wieder antwortet, denn der alte Request kam nie
+// zurück und kein Poll setzte nach. 45 s liegt weit über jedem gesunden Request
+// und weit unter der Geduld eines Menschen. Einzelne Aufrufe, die legitim länger
+// dauern (Upload, Update, Makro-Fahrt), setzen ihren eigenen Wert — siehe unten.
+const DEFAULT_TIMEOUT_MS = 45000
+const NO_TIMEOUT = 0            // axios: 0 = unbegrenzt
 
-// Nach einem Auto-Reload (Watchtower-Update → Container gerade neu gestartet) kann
+const api = axios.create({ baseURL: '/api', timeout: DEFAULT_TIMEOUT_MS })
+
+// Nach einem Auto-Reload (Update → Container gerade neu gestartet) kann
 // die erste Geräteabfrage ins noch nicht bereite Backend laufen — vorher blieb die
 // Geräteliste dann leer, bis der Nutzer F5 drückte. Deshalb kurz nachfassen bei
 // FEHLER oder bei LEERER Antwort OBWOHL das Setup schon durch ist (dann ist „leer"
@@ -31,18 +40,20 @@ export const deviceService = {
   updateDevice: (id, data) => api.put(`/devices/${id}`, data),
   deleteDevice: (id)       => api.delete(`/devices/${id}`),
   testDevice:   (id)       => api.post(`/devices/${id}/test`),
-}
-
-export const configService = {
-  getRackConfig:    ()       => api.get('/config/rack'),
-  updateRackConfig: (data)   => api.put('/config/rack', data),
-  getSlotStatus:    (slotId) => api.get(`/config/slot/${slotId}`),
-  updateSlotStatus: (slotId, data) => api.put(`/config/slot/${slotId}/status`, data),
+  // Bekannte Drucker-Modelle (Kamera-Protokoll + Fähigkeiten) — EINE Liste im Backend.
+  listModels:   ()         => api.get('/devices/models'),
+  // Netzwerk-Suche (SSDP-Bambu + Moonraker-Scan) dauert ~5 s → großzügiger Timeout.
+  // subnet: optionales /24 (z. B. „192.168.1"), nötig in Docker-Bridge-Netzen.
+  discover:     (subnet)   => api.get('/devices/discover', {
+    params: subnet ? { subnet } : {}, timeout: 25000,
+  }),
 }
 
 export const fileService = {
+  // Kein Timeout: eine 40-MB-.3mf über WLAN darf so lange dauern, wie sie dauert.
   uploadFile:   (formData, folderId = null) => api.post('/files/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: NO_TIMEOUT,
     ...(folderId != null ? { params: { folder_id: folderId } } : {}),
   }),
   listFiles:    (skip = 0, limit = 100) => api.get('/files/', { params: { skip, limit } }),
@@ -54,6 +65,10 @@ export const fileService = {
   deepAnalyze:  (id)       => api.get(`/files/${id}/deep-analyze`),
   getQuickMeta: (id)       => api.get(`/files/${id}/quick-meta`),
   getPlatesMeta:(id)       => api.get(`/files/${id}/plates-meta`),
+  // Crash-Check: Objekt >30 mm hoch UND ragt in den 10-mm-Randstreifen (OTTOeject-Arm)?
+  crashCheck:   (id, plate = null) => api.get(`/files/${id}/crash-check`, {
+    params: plate != null ? { plate } : {}, timeout: 20000,
+  }),
   thumbnailUrl: (id)       => `/api/files/${id}/thumbnail`,
 }
 
@@ -65,14 +80,14 @@ export const folderService = {
 }
 
 export const controlService = {
-  executeMacro:        (data)  => api.post('/control/macro', data),
-  listMacros:          ()      => api.get('/control/macros'),
+  // Moonraker antwortet erst, wenn die Fahrt DURCH ist (Backend wartet bis 120 s) —
+  // dieser Aufruf darf den Default-Timeout also nicht erben.
+  executeMacro:        (data)  => api.post('/control/macro', data, { timeout: 150000 }),
   listAppOps:          ()      => api.get('/control/app-ops'),
   emergencyStop:       ()      => api.post('/control/emergency-stop'),
   resume:              ()      => api.post('/control/resume'),
+  emergencyState:      ()      => api.get('/control/emergency-state'),
   getStatus:           ()      => api.get('/control/status'),
-  getOttoejectVars:    ()      => api.get('/control/ottoeject/variables'),
-  setOttoejectVars:    (vars)  => api.post('/control/ottoeject/variables', vars),
   sendKlipperGcode:    (gcode) => api.post('/control/klipper/gcode', { gcode }),
   getKlipperPosition:  ()      => api.get('/control/klipper/position'),
   getKlipperInfo:      ()      => api.get('/control/klipper/info'),
@@ -81,6 +96,11 @@ export const controlService = {
   putGeometry:         (g)     => api.put('/control/ottoeject/geometry', g),
   runOp:               (body)  => api.post('/control/ottoeject/op', body),
   previewOp:           (body)  => api.post('/control/ottoeject/preview', body),
+  // Plausibilitätsprüfung der Geometrie (Achsgrenzen) — prüft ohne zu speichern
+  checkGeometry:       (g)     => api.post('/control/ottoeject/geometry/check', { geometry: g }),
+  getAxisLimits:       ()      => api.get('/control/ottoeject/limits'),
+  // Einmessen: eine Achse um `delta` mm verfahren (gegen die Achsgrenzen geprüft)
+  jog:                 (axis, delta, feed) => api.post('/control/ottoeject/jog', { axis, delta, feed }),
 }
 
 // Printer-Status koaleszieren: viele gleichzeitig gemountete Seiten (Dashboard,
@@ -104,7 +124,9 @@ function _getPrinterStatus(deviceId) {
 }
 
 export const printerService = {
-  sendFile:             (deviceId, fileId, useAms = true, amsSlot = null, plate = null) => api.post(`/printer/send/${deviceId}/${fileId}`, null, { params: { use_ams: useAms, ...(amsSlot !== null && amsSlot !== undefined && { ams_slot: amsSlot }), ...(plate !== null && plate !== undefined && { plate }) } }),
+  // Kein Timeout: der Request wartet auf den FTP-Upload zum Drucker (bei einer
+  // großen .3mf über WLAN gern mehrere Minuten).
+  sendFile:             (deviceId, fileId, useAms = true, amsSlot = null, plate = null) => api.post(`/printer/send/${deviceId}/${fileId}`, null, { timeout: NO_TIMEOUT, params: { use_ams: useAms, ...(amsSlot !== null && amsSlot !== undefined && { ams_slot: amsSlot }), ...(plate !== null && plate !== undefined && { plate }) } }),
   sendGcode:            (deviceId, gcode)  => api.post(`/printer/gcode/${deviceId}`, null, { params: { gcode } }),
   getStatus:            (deviceId)         => _getPrinterStatus(deviceId),
   cameraStreamUrl:      (deviceId)         => `/api/printer/camera/${deviceId}`,
@@ -112,9 +134,12 @@ export const printerService = {
   haCameraStreamUrl:    (deviceId)         => `/api/printer/ha-camera/${deviceId}`,
   haCameraTest:         (deviceId)         => api.get(`/printer/ha-camera/${deviceId}/test`),
   getPlates:            (fileId)           => api.get(`/printer/plates/${fileId}`),
+  // Drucker-Einstellungen (KI-Erkennung, Geschwindigkeit, Auto-Recovery, Licht)
+  getSettings:          (deviceId)         => api.get(`/printer/settings/${deviceId}`),
+  setSettings:          (deviceId, body)   => api.post(`/printer/settings/${deviceId}`, body),
+  calibrate:            (deviceId, options) => api.post(`/printer/calibrate/${deviceId}`, { options }),
   getHistory:           ()                 => api.get('/printer/history'),
   takeSnapshot:         (deviceId)         => api.post(`/printer/snapshot/${deviceId}`),
-  getSnapshots:         ()                 => api.get('/printer/snapshots'),
   getSendDiagnostics:   ()                 => api.get('/printer/send-diagnostics'),
   clearSendDiagnostics: ()                 => api.delete('/printer/send-diagnostics'),
   amsLoad:              (deviceId, tray)          => api.post(`/printer/ams/${deviceId}/load`, { tray }),
@@ -127,6 +152,9 @@ export const deviceSettingsService = {
   updateSettings: (deviceId, data)  => api.put(`/devices/${deviceId}/settings`, data),
   getPower:       (deviceId)        => api.get(`/devices/${deviceId}/power`),
   switchPower:    (deviceId, on)    => api.post(`/devices/${deviceId}/power/switch`, { on }),
+  // Alle eingerichteten Steckdosen auf einmal — die Kopfleiste fragt im Takt ab
+  // und soll dafür EINEN Request machen, nicht einen je Drucker.
+  listPower:      ()                => api.get('/devices/power'),
 }
 
 export const rackManagerService = {
@@ -137,36 +165,46 @@ export const rackManagerService = {
   updateSlot:    (slotId, data)        => api.put(`/rack-manager/slots/${slotId}`, data),
   clearSlots:    (body)                => api.post('/rack-manager/slots/clear', body ?? {}),
   analyzeFile:   (fileId, plate = null) => api.post(`/rack-manager/analyze/${fileId}`, null, { params: (plate !== null && plate !== undefined) ? { plate } : {} }),
-  getRacks:      ()                    => api.get('/rack-manager/racks'),
-  createRack:    (data)                => api.post('/rack-manager/racks', data),
-  deleteRack:    (rackId)              => api.delete(`/rack-manager/racks/${rackId}`),
-}
-
-export const calibrationService = {
-  getConfigs:      ()                      => api.get('/calibration/configs'),
-  updateConfig:    (key, values)           => api.put(`/calibration/configs/${key}`, values),
-  runConfig:       (key)                   => api.post(`/calibration/run/${key}`),
-  runWithValues:   (key, values)           => api.post(`/calibration/run/${key}/with-values`, values),
 }
 
 export const systemService = {
-  getVersion:       (channel) => api.get('/system/version', { params: channel ? { channel } : {} }),
+  // force=true = einmalige Prüfung auf ausdrücklichen Knopfdruck, auch wenn die
+  // automatische „Update-Prüfung im Internet" ausgeschaltet ist.
+  getVersion:       (channel, force) => api.get('/system/version', {
+                      params: { ...(channel && { channel }), ...(force && { force: 1 }) } }),
   getRunningVersion:() => api.get('/system/running-version'),
-  triggerUpdate:    (channel) => api.post('/system/update', channel ? { channel } : {}),
-  getNotifications: () => api.get('/system/notifications'),
-  saveNotifications:(data) => api.post('/system/notifications', data),
-  sendNotification: (data) => api.post('/system/notify', data),
-  testNotification: () => api.post('/system/notify/test'),
-  exportBackup:     () => api.get('/system/backup'),
-  importBackup:     (data) => api.post('/system/backup/restore', data),
+  // Kein Timeout: Image ziehen + Container neu starten dauert Minuten.
+  triggerUpdate:    (channel) => api.post('/system/update', channel ? { channel } : {},
+                                          { timeout: NO_TIMEOUT }),
+  // Ohne Optionen: Backup OHNE Zugangsdaten. Mit Zugangsdaten per POST, damit das
+  // Passwort nicht in der Adresse steht.
+  exportBackup:     (opts) => opts?.include_secrets
+                      ? api.post('/system/backup', opts)
+                      : api.get('/system/backup'),
+  importBackup:     (data, password) => api.post('/system/backup/restore',
+                      password ? { backup: data, password } : data),
   getLangInstalled: () => api.get('/system/lang/installed'),
   importLang:       (pack) => api.post('/system/lang/import', pack),
   deleteLang:       (code) => api.delete(`/system/lang/${code}`),
-  getDashboardLayout:  () => api.get('/system/dashboard-layout'),
-  saveDashboardLayout: (data) => api.put('/system/dashboard-layout', data),
-  resetDashboardLayout:() => api.delete('/system/dashboard-layout'),
+  // view: 'farm' (Auto-Farm) | 'home' (Startseite) — getrennte Layouts
+  getDashboardLayout:  (view = 'farm') => api.get('/system/dashboard-layout', { params: { view } }),
+  saveDashboardLayout: (data, view = 'farm') => api.put('/system/dashboard-layout', data, { params: { view } }),
   getCameraSettings:   () => api.get('/system/camera'),
   saveCameraSettings:  (data) => api.post('/system/camera', data),
+  // Diagnose-Paket (ZIP, ohne Zugangsdaten) — direkter Download-Link
+  diagnosticsUrl:      () => '/api/system/diagnostics',
+}
+
+/* Online-Dienste — ALLE opt-in. Ohne Zustimmung + Schalter macht das Backend
+   keinen einzigen externen Request (siehe backend/app/services/online.py). */
+export const onlineService = {
+  getSettings:  ()          => api.get('/online/settings'),
+  saveSettings: (data)      => api.post('/online/settings', data),
+  getNotices:   (refresh)   => api.get('/online/notices', refresh ? { params: { refresh: 1 } } : undefined),
+  getLibrary:   (kind, refresh) => api.get('/online/library', {
+                                 params: { ...(kind && { kind }), ...(refresh && { refresh: 1 }) } }),
+  getItem:      (id)        => api.get('/online/library/item', { params: { id } }),
+  clearCache:   ()          => api.post('/online/cache/clear'),
 }
 
 export const autofarmService = {
@@ -181,6 +219,16 @@ export const autofarmService = {
   setJobAms:     (jobId, amsMap) => api.put(`/autofarm/job/${jobId}/ams`, { amsMap }),
   getSequences:  ()      => api.get('/autofarm/sequences'),
   saveSequences: (data)  => api.put('/autofarm/sequences', data),
+  // Trockenlauf: Sequenz durchspielen, ohne etwas zu senden
+  dryRun:        (body)  => api.post('/autofarm/dry-run', body || {}),
+  // Unterbrochener Lauf (Neustart/Update mitten im Zyklus) + Drucker-Fehler-Historie
+  getRecovery:      ()     => api.get('/autofarm/recovery'),
+  dismissRecovery:  (body) => api.post('/autofarm/recovery/dismiss', body || {}),
+  getHmsHistory:    (limit) => api.get('/autofarm/hms-history', { params: { limit: limit || 100 } }),
+  clearHmsHistory:  ()     => api.delete('/autofarm/hms-history'),
+  // Mehrere Drucker: Übersicht + Verteilung der Warteschlange (seit v1.1.3)
+  farmPrinters:     ()     => api.get('/autofarm/printers'),
+  dispatch:         (apply) => api.post('/autofarm/dispatch', { apply: !!apply }),
   getSettings:   ()      => api.get('/autofarm/settings'),
   saveSettings:  (data)  => api.put('/autofarm/settings', data),
   getQueue:      ()      => api.get('/autofarm/queue'),
@@ -189,16 +237,20 @@ export const autofarmService = {
   setupHomingFile:   ()      => api.post('/autofarm/homing_file/setup'),
   clearLog:          ()      => api.post('/autofarm/clear_log'),
   downloadLogFile:   ()      => window.open('/api/autofarm/log/download', '_blank'),
-  clearLogFile:      ()      => api.delete('/autofarm/log/file'),
   getStats:          ()      => api.get('/autofarm/stats'),
   resetStats:        ()      => api.delete('/autofarm/stats'),
+  getCompleted:      (limit = 500) => api.get('/autofarm/completed', { params: { limit } }),
+  clearCompleted:    ()      => api.delete('/autofarm/completed'),
   getHistory:        ()      => api.get('/autofarm/history'),
   getTimeline:       (hours = 24) => api.get('/autofarm/timeline', { params: { hours } }),
   getFileFilaments:  (id, plate) => api.get(`/autofarm/file_filaments/${id}`, plate != null ? { params: { plate } } : undefined),
   setFileAms:        (id, ams_map) => api.put(`/autofarm/file_ams/${id}`, { ams_map }),
-  testCycle:         ()      => api.post('/autofarm/test-cycle'),
-  testCycleStop:     ()      => api.post('/autofarm/test-cycle/stop'),
-  testCycleStatus:   ()      => api.get('/autofarm/test-cycle/status'),
+  // Stresstest: alle liegenden Platten ins entfernteste Regal umlagern.
+  // `plan` bewegt nichts — nur Vorschau samt hochgerechneter Dauer.
+  stressPlan:        (mitDrucker = false) => api.get('/autofarm/stress-test/plan', { params: { include_printer: !!mitDrucker } }),
+  stressStart:       (body = {}) => api.post('/autofarm/stress-test', body),
+  stressStop:        ()      => api.post('/autofarm/stress-test/stop'),
+  stressStatus:      ()      => api.get('/autofarm/stress-test/status'),
 }
 
 export const projectService = {

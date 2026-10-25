@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { systemService, healthService, pushService } from '../services/api'
 import SetupHealth from '../components/SetupHealth'
+import OnlineServices from '../components/OnlineServices'
 import { pushSupported, pushUnsupportedReason, isSubscribed, syncSubscription, subscribe as pushSubscribe, unsubscribe as pushUnsubscribe } from '../services/push'
 import { VERSION } from '../version'
 import { THEMES, getTheme, applyTheme } from '../services/theme'
+import { ThemeIcon } from '../components/ThemeToggle'
 import { useLanguage } from '../services/i18n'
 import { CHANGELOG } from '../changelog'
 
@@ -11,25 +13,49 @@ function ThemePicker() {
   const { tr } = useLanguage()
   const [theme, setTheme] = useState(getTheme())
   const pick = (id) => { applyTheme(id); setTheme(id) }
+  // Der Umschalter oben rechts stellt dasselbe ein — mitziehen.
+  useEffect(() => {
+    const sync = () => setTheme(getTheme())
+    window.addEventListener('printloom:themeChanged', sync)
+    return () => window.removeEventListener('printloom:themeChanged', sync)
+  }, [])
+  // Vorschau je Thema: Seite · Block · Akzent (feste Farben, damit man sieht,
+  // wie es aussieht, BEVOR man umschaltet).
+  const PREVIEW = {
+    light: ['#f2f3f4', '#ffffff', '#23507a'],
+    dark:  ['#14181c', '#1d2228', '#82b4e6'],
+  }
   return (
-    <div className="card p-6 space-y-4">
-      <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Darstellung')}</h2>
-      <p className="text-xs text-surface-500 -mt-2">{tr('Farbschema der Oberfläche. Wird auf diesem Gerät gespeichert.')}</p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {THEMES.map(t => (
-          <button
-            key={t.id}
-            onClick={() => pick(t.id)}
-            className={`flex flex-col items-center gap-2 px-3 py-3 rounded-xl border text-sm transition-colors ${
-              theme === t.id
-                ? 'border-blue-600 bg-blue-600/10 text-blue-300'
-                : 'border-surface-700 bg-surface-900 text-surface-400 hover:border-surface-600'
-            }`}
-          >
-            <span className="w-full h-8 rounded-lg border border-white/10" style={{ backgroundColor: t.swatch }} />
-            <span className="font-medium">{tr(t.label)}</span>
-          </button>
-        ))}
+    <div className="card space-y-3">
+      <h2 className="section-label mb-0">{tr('Darstellung')}</h2>
+      <p className="text-xs text-surface-400">{tr('Farbschema der Oberfläche. Wird auf diesem Gerät gespeichert.')}</p>
+      <div className="grid grid-cols-3 gap-3 max-w-md">
+        {THEMES.map(t => {
+          const [page, block, accent] = PREVIEW[t.id] ?? PREVIEW.light
+          return (
+            <button
+              key={t.id}
+              onClick={() => pick(t.id)}
+              className={`flex flex-col gap-2 p-2 rounded border text-sm transition-colors ${
+                theme === t.id
+                  ? 'border-blue-600 bg-blue-900 text-blue-300 font-semibold'
+                  : 'border-surface-700 bg-surface-800 text-surface-300 hover:border-surface-600'
+              }`}
+            >
+              {t.id === 'auto' ? (
+                <span className="flex h-10 rounded-sm overflow-hidden border border-surface-700">
+                  <span className="flex-1" style={{ background: PREVIEW.light[0] }} />
+                  <span className="flex-1" style={{ background: PREVIEW.dark[0] }} />
+                </span>
+              ) : (
+                <span className="h-10 rounded-sm border border-surface-700 p-1.5 flex items-start" style={{ background: page }}>
+                  <span className="flex-1 h-full rounded-sm border-l-[3px]" style={{ background: block, borderLeftColor: accent }} />
+                </span>
+              )}
+              <span className="inline-flex items-center justify-center gap-1.5"><ThemeIcon id={t.id} /> {tr(t.label)}</span>
+            </button>
+          )
+        })}
       </div>
     </div>
   )
@@ -74,6 +100,7 @@ function PushNotifications() {
       // Ensure THIS device's subscription is registered server-side before testing,
       // so a desync doesn't make the test silently hit 0 devices.
       await syncSubscription().catch(() => {})
+      const r = await pushService.test()
       const d = r.data
       if (d.disabled) {
         flash(tr('Server-Push nicht verfügbar (Abhängigkeiten fehlen)'), false)
@@ -92,7 +119,7 @@ function PushNotifications() {
 
   return (
     <div className="card p-6 space-y-4">
-      <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Push-Benachrichtigungen')}</h2>
+      <h2 className="text-[15px] font-semibold text-surface-100">{tr('Push-Benachrichtigungen')}</h2>
       <p className="text-xs text-surface-500">
         {tr('Erhalte auf diesem Gerät Push-Meldungen bei „fertig / Fehler / Eingriff nötig" — auch als Home-Screen-App (iOS 16.4+).')}
       </p>
@@ -144,7 +171,7 @@ function waitForRestart() {
   })
 }
 
-export default function System({ onUpdateAvailable, onUpdatePhase }) {
+export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPage }) {
   const { tr, lang } = useLanguage()
   const [info, setInfo]               = useState(null)
   const [checking, setChecking]       = useState(false)
@@ -156,29 +183,20 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
 
   const [backupFeedback, setBackupFeedback] = useState(null)
   const importRef = useRef(null)
+  // Zugangsdaten nur auf ausdrücklichen Wunsch ins Backup (seit v1.1.39).
+  const [withSecrets, setWithSecrets] = useState(false)
+  const [backupPw, setBackupPw]       = useState('')
+  // Backup mit verschlüsselten Zugangsdaten wartet aufs Passwort.
+  const [pendingImport, setPendingImport] = useState(null)
+  const [importPw, setImportPw]       = useState('')
 
-  // Kamera global aus (Energiesparmodus, z. B. Raspberry Pi) — null = lädt noch
-  const [camDisabled, setCamDisabled] = useState(null)
-  useEffect(() => {
-    systemService.getCameraSettings()
-      .then(r => setCamDisabled(!!r.data?.disabled))
-      .catch(() => setCamDisabled(false))
-  }, [])
-  const toggleCamera = async () => {
-    const next = !camDisabled
-    setCamDisabled(next)
-    try {
-      await systemService.saveCameraSettings({ disabled: next })
-    } catch {
-      setCamDisabled(!next)   // Speichern fehlgeschlagen → zurückrollen
-    }
-  }
-
-  const checkVersion = useCallback(async (silent = false) => {
+  // `force` = ausdrückliche Prüfung per Knopf. Ohne force respektiert das Backend
+  // den Opt-in-Schalter „Update-Prüfung im Internet" und geht NICHT ins Netz.
+  const checkVersion = useCallback(async (silent = false, force = false) => {
     if (!silent) setChecking(true)
     setError(null)
     try {
-      const r = await systemService.getVersion(channel)
+      const r = await systemService.getVersion(channel, force)
       setInfo(r.data)
       onUpdateAvailable?.(r.data.update_available)
     } catch {
@@ -215,8 +233,8 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
         // Backend answered with an error → the update did NOT start. Show the real
         // reason (e.g. private ghcr package, no Docker socket) instead of waiting.
         const detail = e.response.data?.detail || tr('Fehler {0}', e.response.status)
-        if (/watchtower|service not known/i.test(detail)) {
-          setPhase('no-watchtower')
+        if (e.response.status === 501) {
+          setPhase('manual')   // kein Docker-Socket → Befehl für die Kommandozeile zeigen
         } else {
           setPhase(null)
           setError(detail)
@@ -234,15 +252,17 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
     }
   }
 
-  const exportBackup = async () => {
+  // secrets=true nur aus der Backup-Karte; das Backup vor dem Update bleibt ohne.
+  const exportBackup = async (secrets = false) => {
     setBackupFeedback(null)
     try {
-      const r = await systemService.exportBackup()
+      const r = await systemService.exportBackup(
+        secrets ? { include_secrets: true, password: backupPw || null } : null)
       const blob = new Blob([JSON.stringify(r.data, null, 2)], { type: 'application/json' })
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
       a.href     = url
-      a.download = `printloom-backup-${new Date().toISOString().split('T')[0]}.json`
+      a.download = `printloom-backup-${new Date().toISOString().split('T')[0]}${secrets ? '-zugangsdaten' : ''}.json`
       a.click()
       URL.revokeObjectURL(url)
       setBackupFeedback({ ok: true, msg: tr('Backup exportiert') })
@@ -254,20 +274,47 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
     }
   }
 
+  const SECRETS_STATE = {
+    restored: tr('Zugangsdaten eingespielt.'),
+    skipped:  tr('Zugangsdaten NICHT eingespielt (kein Passwort) — die vorhandenen bleiben.'),
+    none:     tr('Das Backup enthält keine Zugangsdaten — die vorhandenen bleiben.'),
+  }
+
+  const restoreBackup = async (data, password) => {
+    setBackupFeedback(null)
+    try {
+      const r = await systemService.importBackup(data, password)
+      setPendingImport(null)
+      setImportPw('')
+      setBackupFeedback({ ok: true, msg: tr('Backup wiederhergestellt (v{0}, exportiert: {1})', data.current_version ?? '?', data.exported_at?.split('T')[0] ?? '?')
+        + ' ' + (SECRETS_STATE[r.data?.secrets] ?? '') })
+      setTimeout(() => setBackupFeedback(null), 8000)
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      if (detail === 'BACKUP_PASSWORT_FALSCH') {
+        setBackupFeedback({ ok: false, msg: tr('Passwort falsch — nichts eingespielt.') })
+        return   // Eingabe offen lassen, damit man es nochmal versuchen kann
+      }
+      setPendingImport(null)
+      setBackupFeedback({ ok: false, msg: tr('Import fehlgeschlagen: {0}', detail || err.message || err) })
+    }
+  }
+
   const handleImport = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
     setBackupFeedback(null)
     try {
-      const text = await file.text()
-      const data = JSON.parse(text)
-      await systemService.importBackup(data)
-      setBackupFeedback({ ok: true, msg: tr('Backup wiederhergestellt (v{0}, exportiert: {1})', data.current_version ?? '?', data.exported_at?.split('T')[0] ?? '?') })
+      const data = JSON.parse(await file.text())
+      if (data?.secrets?.encrypted) {
+        setPendingImport(data)   // erst Passwort abfragen
+      } else {
+        await restoreBackup(data)
+      }
     } catch (err) {
       setBackupFeedback({ ok: false, msg: tr('Import fehlgeschlagen: {0}', err.message ?? err) })
     } finally {
       e.target.value = ''
-      setTimeout(() => setBackupFeedback(null), 6000)
     }
   }
 
@@ -275,6 +322,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
   const isBeta = channel === 'beta'
   const isNative = info?.runtime === 'native'   // native Desktop-App (Windows/macOS) statt Docker
   const isNativeLinux = info?.runtime === 'native-linux'   // nativer Linux-Dienst (systemd, ohne Docker)
+  const latestVersion = isBeta ? info?.latest_version : info?.latest
 
   const switchChannel = (ch) => {
     setChannel(ch)
@@ -288,74 +336,79 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-surface-100">{tr('System')}</h1>
+        <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('System')}</h1>
         <p className="text-sm text-surface-500 mt-1">{tr('Darstellung, Versionsverwaltung & Updates')}</p>
       </div>
 
       <ThemePicker />
 
-      {/* Release channel */}
-      <div className="card p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Release-Kanal')}</h2>
-        <div className="flex gap-3">
-          <button
-            onClick={() => switchChannel('latest')}
-            className={`flex-1 flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border text-sm transition-colors ${
-              !isBeta
-                ? 'border-emerald-700 bg-emerald-950/30 text-emerald-300'
-                : 'border-surface-700 bg-surface-900 text-surface-400 hover:border-surface-600'
-            }`}
-          >
-            <span className="text-lg">🏷️</span>
-            <span className="font-semibold">Latest</span>
-            <span className="text-[11px] text-surface-500 text-center">{tr('Stabile Releases')}</span>
-          </button>
-          <button
-            onClick={() => switchChannel('beta')}
-            className={`flex-1 flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border text-sm transition-colors ${
-              isBeta
-                ? 'border-blue-700 bg-blue-950/30 text-blue-300'
-                : 'border-surface-700 bg-surface-900 text-surface-400 hover:border-surface-600'
-            }`}
-          >
-            <span className="text-lg">🧪</span>
-            <span className="font-semibold">Beta</span>
-            <span className="text-[11px] text-surface-500 text-center">{tr('Aktive Entwicklung')}</span>
-          </button>
+      {/* Setup-Assistent — sitzt hier statt in der Seitenleiste (einmalige Einrichtung) */}
+      <div className="card p-4 space-y-2">
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Einrichtung')}</h2>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] text-surface-500 min-w-0">
+            {tr('Verbaute Komponenten, Drucker, OTTOeject, Regal und Kalibrierung in einem Durchlauf — daraus entsteht die Grundkonfiguration.')}
+          </p>
+          <button onClick={() => setCurrentPage?.('setup')}
+            className="btn-secondary text-sm shrink-0">{tr('🧭 Setup-Assistent öffnen')}</button>
         </div>
-        {isBeta && !isNative && (
-          <div className="flex items-start gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
-            <span className="text-blue-400 text-sm mt-0.5">ℹ</span>
-            <p className="text-blue-300 text-xs">
-              {tr('Beta-Kanal aktiv — neue Features vor dem stabilen Release. Docker-Image-Tag:')}
-              {' '}<span className="font-mono bg-blue-950/50 px-1 rounded">:beta</span>
+      </div>
+
+      {/* Online-Dienste — Opt-in, standardmäßig alles aus */}
+      <OnlineServices setCurrentPage={setCurrentPage} />
+
+      {/* Release channel — kompakter Toggle Latest ↔ Beta */}
+      <div className="card p-4 space-y-3">
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Release-Kanal')}</h2>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`text-sm font-medium ${!isBeta ? 'text-emerald-300' : 'text-surface-500'}`}>🏷️ Latest</span>
+            <span className="text-[10px] text-surface-600 hidden sm:inline">{tr('Stabil')}</span>
+          </div>
+          {/* Toggle-Schalter: links = Latest, rechts = Beta */}
+          <button
+            onClick={() => switchChannel(isBeta ? 'latest' : 'beta')}
+            aria-pressed={isBeta}
+            title={tr('Zwischen Latest (stabil) und Beta umschalten')}
+            className={`relative w-14 h-7 rounded-full transition-colors shrink-0 ${isBeta ? 'bg-blue-600' : 'bg-emerald-600'}`}
+          >
+            <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-all ${isBeta ? 'left-[30px]' : 'left-0.5'}`} />
+          </button>
+          <div className="flex items-center gap-2 min-w-0 justify-end">
+            <span className="text-[10px] text-surface-600 hidden sm:inline">{tr('Entwicklung')}</span>
+            <span className={`text-sm font-medium ${isBeta ? 'text-blue-300' : 'text-surface-500'}`}>🧪 Beta</span>
+          </div>
+        </div>
+        {/* Beta = Warnung „auf eigene Gefahr"; Latest = neutraler Hinweis */}
+        {isBeta ? (
+          <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2">
+            <span className="text-amber-400 text-sm mt-0.5">⚠</span>
+            <p className="text-amber-300 text-[11px] leading-relaxed">
+              {tr('Beta ist NICHT stabil und kann Fehler enthalten — Nutzung auf eigene Gefahr. Vor dem Wechsel ein Backup exportieren.')}
+              {!isNative && <>{' '}<span className="font-mono bg-amber-950/40 px-1 rounded">:beta</span></>}
             </p>
           </div>
-        )}
-        {isBeta && isNative && (
-          <div className="flex items-start gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
-            <span className="text-blue-400 text-sm mt-0.5">ℹ</span>
-            <p className="text-blue-300 text-xs">
-              {tr('Beta-Kanal aktiv — neue Features vor dem stabilen Release (Prerelease-Installer von GitHub).')}
-            </p>
-          </div>
+        ) : (
+          <p className="text-[11px] text-surface-600">{tr('Stabile Releases — empfohlen für den Produktivbetrieb.')}</p>
         )}
       </div>
 
       {/* Version card */}
       <div className="card p-6 space-y-5">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Version')}</h2>
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Version')}</h2>
 
         <div className="flex items-end gap-8">
           <div>
             <p className="text-xs text-surface-500 mb-1">{tr('Installiert')}</p>
             <p className="text-3xl font-mono font-bold text-surface-100">v{VERSION}</p>
           </div>
-          {info?.latest && !isBeta && (
+          {/* Beta: Version aus dem Image-Label (seit v1.1.39) — ältere Images haben
+              keines, dann bleibt nur „beta". */}
+          {latestVersion && (
             <div>
               <p className="text-xs text-surface-500 mb-1">{tr('Neueste')}</p>
               <p className={`text-3xl font-mono font-bold ${info.update_available ? 'text-amber-400' : 'text-emerald-400'}`}>
-                v{info.latest}
+                v{latestVersion}
               </p>
             </div>
           )}
@@ -380,7 +433,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
               <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
                 <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
                 <span className="text-amber-300 text-sm font-medium">
-                  {isBeta ? tr('Beta-Update verfügbar') : tr('Update verfügbar — v{0}', info.latest)}
+                  {isBeta && !latestVersion ? tr('Beta-Update verfügbar') : tr('Update verfügbar — v{0}', latestVersion)}
                 </span>
               </div>
             )
@@ -393,6 +446,14 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
             </div>
           )
         })()}
+
+        {/* GitHub hat schon eine neuere Version, das Image dazu ist noch im Bau.
+            Vorher hieß es in dieser Zeit „App ist aktuell" — und man wartete. */}
+        {info?.building && !info.error && !['done', 'running'].includes(phase) && (
+          <p className="text-[11px] text-blue-300 bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-2">
+            {tr('v{0} wird gerade gebaut (dauert 3–8 Minuten) — danach erneut prüfen.', info.building)}
+          </p>
+        )}
 
         {phase === 'running' && (
           <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
@@ -416,11 +477,11 @@ export default function System({ onUpdateAvailable, onUpdatePhase }) {
             </p>
           </div>
         )}
-        {phase === 'no-watchtower' && (
+        {phase === 'manual' && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-4 space-y-3">
-            <p className="text-amber-300 text-sm font-medium">{tr('Weder Docker-Socket noch Watchtower verfügbar — manuell:')}</p>
+            <p className="text-amber-300 text-sm font-medium">{tr('Kein Docker-Socket — Update auf dem Server ausführen:')}</p>
             <pre className="bg-surface-900 rounded-lg px-3 py-2 text-xs font-mono text-emerald-300 select-all overflow-x-auto">
-{`docker pull ghcr.io/dasklaus00/printloom:${isBeta ? 'beta' : 'latest'}
+{`docker compose pull
 docker compose up -d`}
             </pre>
             <button onClick={() => setPhase(null)} className="text-xs text-surface-500 hover:text-surface-300">{tr('Schließen')}</button>
@@ -440,32 +501,60 @@ docker compose up -d`}
             <p className="text-amber-300 text-xs">
               {tr('Kein Docker-Socket erkannt — Ein-Klick-Update ist nicht möglich. In der Compose-Datei')}
               {' '}<span className="font-mono bg-amber-950/40 px-1 rounded">/var/run/docker.sock</span>{' '}
-              {tr('in den App-Container mounten (siehe')} <span className="font-mono">docker-compose.prod.yml.example</span>).
+              {tr('in den App-Container mounten (siehe')} <span className="font-mono">docker-compose.yml</span>).
             </p>
           </div>
         )}
 
+        {/* Automatische Prüfung ist aus → sagen, dass hier nichts ins Netz geht */}
+        {info?.online_disabled && (
+          <p className="text-[11px] text-surface-500 bg-surface-900/50 border border-surface-800 rounded-lg px-3 py-2">
+            {tr('Die automatische „Update-Prüfung im Internet" ist aus — Printloom fragt von allein NICHT bei GitHub nach. „Jetzt prüfen" macht eine einmalige Abfrage. Dauerhaft einschalten kannst du sie unter „Online-Dienste".')}
+          </p>
+        )}
+
         {/* Action buttons (both channels) */}
-        <div className="flex gap-3 flex-wrap">
+        <div className="flex gap-3 flex-wrap items-center">
           <button
-            onClick={() => checkVersion()}
+            onClick={() => checkVersion(false, true)}
             disabled={!canUpdate}
             className="btn-secondary text-sm"
           >
-            {checking ? tr('Prüfe…') : tr('Auf Updates prüfen')}
+            {checking ? tr('Prüfe…') : (info?.online_disabled ? tr('Jetzt prüfen (einmalig)') : tr('Auf Updates prüfen'))}
           </button>
+
+          {/* Der auffordernde Knopf erscheint NUR, wenn es wirklich etwas zu
+              installieren gibt. Vorher stand hier dauerhaft ein blauer Knopf mit
+              „Neu installieren", obwohl die App aktuell war — das sieht aus wie
+              eine offene Aufgabe, ist aber keine.
+
+              Ohne Update bleibt der Weg als unauffälliger Link offen. Er wird
+              gebraucht: der KANAL-Wechsel zurück von Beta auf Stabil meldet nie
+              ein „Update" (die Stabil-Version ist ja älter), und eine
+              Neuinstallation ist manchmal die Reparatur. Auch wenn die Prüfung
+              selbst scheitert (GitHub nicht erreichbar), soll man noch handeln
+              können. */}
           {!confirmUpdate && !isNativeLinux && !['done', 'running'].includes(phase) && (
-            <button
-              onClick={() => setConfirmUpdate(true)}
-              disabled={!canUpdate}
-              className="btn-primary text-sm"
-            >
-              {updating
-                ? tr('Aktualisiert…')
-                : isBeta
-                  ? tr('Beta installieren / wechseln')
-                  : (info?.update_available ? tr('Update installieren') : tr('Neu installieren'))}
-            </button>
+            info?.update_available ? (
+              <button
+                onClick={() => setConfirmUpdate(true)}
+                disabled={!canUpdate}
+                className="btn-primary text-sm"
+              >
+                {updating
+                  ? tr('Aktualisiert…')
+                  : isBeta ? tr('Beta installieren / wechseln') : tr('Update installieren')}
+              </button>
+            ) : (
+              <button
+                onClick={() => setConfirmUpdate(true)}
+                disabled={!canUpdate}
+                className="text-xs text-surface-500 hover:text-surface-300 underline
+                           underline-offset-2 disabled:opacity-50"
+              >
+                {updating ? tr('Aktualisiert…') : tr('Trotzdem neu installieren / Kanal wechseln')}
+              </button>
+            )
           )}
         </div>
 
@@ -477,7 +566,7 @@ docker compose up -d`}
               {tr('Ein Update kann Einstellungen verändern. Exportiere zur Sicherheit zuerst ein Backup deiner Konfiguration (Geräte, Rack, Sequenzen, Zeitpläne) — dann erst aktualisieren.')}
             </p>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={exportBackup} className="btn-secondary text-sm">{tr('↓ Backup exportieren')}</button>
+              <button onClick={() => exportBackup()} className="btn-secondary text-sm">{tr('↓ Backup exportieren')}</button>
               <button
                 onClick={() => { setConfirmUpdate(false); triggerUpdate() }}
                 disabled={!canUpdate}
@@ -531,46 +620,38 @@ docker compose up -d`}
 
       {/* 2.9 — Einrichtungs-Status / Health-Checkliste */}
       <div className="card p-6 space-y-3">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Einrichtungs-Status')}</h2>
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Einrichtungs-Status')}</h2>
         <SetupHealth />
-      </div>
-
-      {/* Kamera — globaler Aus-Schalter (Energiesparmodus für schwache Geräte) */}
-      <div className="card p-6 space-y-3">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Kamera')}</h2>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={toggleCamera}
-            disabled={camDisabled === null}
-            aria-pressed={!!camDisabled}
-            title={tr('Kamera komplett deaktivieren (Energiesparmodus)')}
-            className={`w-10 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${camDisabled ? 'bg-red-600' : 'bg-surface-700'}`}
-          >
-            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${camDisabled ? 'left-[18px]' : 'left-0.5'}`} />
-          </button>
-          <span className={`text-sm ${camDisabled ? 'text-red-300' : 'text-surface-300'}`}>
-            {camDisabled ? tr('Kamera ist komplett deaktiviert (Energiesparmodus)') : tr('Kamera komplett deaktivieren (Energiesparmodus)')}
-          </span>
-        </div>
-        <p className="text-xs text-surface-500">
-          {tr('Schaltet den Kamera-Transcoder (ffmpeg) vollständig ab — Live-Bild und Drucker-Snapshots sind dann aus. Empfohlen für schwache Geräte wie Raspberry Pi: der Live-Stream kostet sonst mehrere CPU-Kerne. Externe Webcams (HTTP-URL) funktionieren weiter.')}
-        </p>
-        {camDisabled && (
-          <p className="text-[11px] text-amber-500/90">
-            {tr('Ein bereits laufender Kamera-Stream wird sofort beendet. Das Kamera-Panel im Auto-Farm-Dashboard zeigt einen Hinweis statt des Livebilds.')}
-          </p>
-        )}
       </div>
 
       {/* Backup & Restore */}
       <div className="card p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-surface-300 uppercase tracking-wider">{tr('Backup & Restore')}</h2>
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Backup & Restore')}</h2>
         <p className="text-xs text-surface-500">
-          {tr('Sichert die')} <span className="text-surface-300">{tr('komplette Konfiguration')}</span> {tr('als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Kamera-/HA-Einstellungen, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.')}
+          {tr('Sichert die')} <span className="text-surface-300">{tr('komplette Konfiguration')}</span> {tr('als JSON: Geräte, Drucker-/Kamera-/HA-Einstellungen, Drucker-Geometrie, Profile, Sequenzen, Farm-Einstellungen, Regal, Projekte, AMS-Zuordnungen, Filamente & Sprachpakete.')}
         </p>
-        <p className="text-[11px] text-amber-500/90">
-          {tr('⚠ Die Datei enthält Zugangsdaten (Drucker-Access-Code, HA-/Telegram-Token). Sicher aufbewahren und nicht teilen.')}
+        <p className="text-[11px] text-surface-500">
+          {tr('Zugangsdaten (Drucker-Access-Code, Home-Assistant-Token, Steckdosen-Passwort) sind standardmäßig NICHT enthalten. Beim Einspielen bleiben die vorhandenen erhalten.')}
         </p>
+
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-xs text-surface-300 cursor-pointer">
+            <input type="checkbox" checked={withSecrets} onChange={e => setWithSecrets(e.target.checked)} />
+            {tr('Zugangsdaten mitsichern (für einen Umzug auf ein neues Gerät)')}
+          </label>
+          {withSecrets && (
+            <div className="pl-6 space-y-1.5">
+              <input type="password" value={backupPw} onChange={e => setBackupPw(e.target.value)}
+                autoComplete="new-password" placeholder={tr('Passwort (mind. 8 Zeichen, empfohlen)')}
+                className="text-sm w-full max-w-xs" />
+              <p className={`text-[11px] ${backupPw ? 'text-surface-500' : 'text-amber-500/90'}`}>
+                {backupPw
+                  ? tr('Die Zugangsdaten werden mit diesem Passwort verschlüsselt. Ohne das Passwort lässt sich das Backup nur ohne Zugangsdaten einspielen.')
+                  : tr('⚠ Ohne Passwort stehen die Zugangsdaten im Klartext in der Datei. Sicher aufbewahren und nicht teilen.')}
+              </p>
+            </div>
+          )}
+        </div>
 
         {backupFeedback && (
           <div className={`px-3 py-2 rounded-lg text-xs border ${backupFeedback.ok ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-red-950/40 border-red-800 text-red-300'}`}>
@@ -579,7 +660,8 @@ docker compose up -d`}
         )}
 
         <div className="flex gap-3 flex-wrap">
-          <button onClick={exportBackup} className="btn-secondary text-sm">
+          <button onClick={() => exportBackup(withSecrets)} className="btn-secondary text-sm"
+            disabled={withSecrets && backupPw.length > 0 && backupPw.length < 8}>
             {tr('↓ Backup exportieren')}
           </button>
           <div>
@@ -595,6 +677,27 @@ docker compose up -d`}
             </button>
           </div>
         </div>
+
+        {pendingImport && (
+          <form className="bg-surface-900/60 border border-surface-700 rounded-lg px-4 py-3 space-y-2"
+            onSubmit={e => { e.preventDefault(); restoreBackup(pendingImport, importPw) }}>
+            <p className="text-xs text-surface-300">
+              {tr('Die Zugangsdaten in diesem Backup sind verschlüsselt. Passwort eingeben — oder ohne Zugangsdaten einspielen.')}
+            </p>
+            <input type="password" value={importPw} onChange={e => setImportPw(e.target.value)}
+              autoComplete="off" autoFocus placeholder={tr('Backup-Passwort')}
+              className="text-sm w-full max-w-xs" />
+            <div className="flex gap-2 flex-wrap">
+              <button type="submit" disabled={!importPw} className="btn-primary text-sm">{tr('Einspielen')}</button>
+              <button type="button" onClick={() => restoreBackup(pendingImport)} className="btn-secondary text-sm">
+                {tr('Ohne Zugangsdaten einspielen')}
+              </button>
+              <button type="button" onClick={() => { setPendingImport(null); setImportPw('') }} className="btn-ghost text-sm">
+                {tr('Abbrechen')}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Push notifications */}

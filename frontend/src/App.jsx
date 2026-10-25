@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, Component, Suspense } from 'react'
-import { isChunkLoadError, reloadOnceForStaleChunk } from './services/reloadGuard'
+import { isChunkLoadError, reloadOnceForStaleChunk,
+         reloadForVersionChange, clearVersionReloads } from './services/reloadGuard'
+import { tr as translate } from './services/i18n'
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -19,14 +21,15 @@ class ErrorBoundary extends Component {
       const stale = isChunkLoadError(this.state.error)
       return (
         <div className="p-6 space-y-3">
+          {/* Klassen-Komponente → kein Hook; das freie tr() aus i18n greift trotzdem. */}
           <p className="text-red-400 font-semibold text-sm">
-            {stale ? 'Neue Version verfügbar' : 'Fehler auf dieser Seite'}
+            {stale ? translate('Neue Version verfügbar') : translate('Fehler auf dieser Seite')}
           </p>
           <p className="text-surface-500 text-xs font-mono">
-            {stale ? 'Die App wurde aktualisiert — bitte neu laden.' : String(this.state.error)}
+            {stale ? translate('Die App wurde aktualisiert — bitte neu laden.') : String(this.state.error)}
           </p>
           {/* Echter Seiten-Reload (nicht nur Re-Render) → holt frische index.html + Assets. */}
-          <button onClick={() => window.location.reload()} className="btn-secondary text-xs">Neu laden</button>
+          <button onClick={() => window.location.reload()} className="btn-secondary text-xs">{translate('Neu laden')}</button>
         </div>
       )
     }
@@ -54,9 +57,14 @@ const FileAnalyzer    = React.lazy(() => import('./pages/FileAnalyzer'))
 const AmsDiagnostics  = React.lazy(() => import('./pages/AmsDiagnostics'))
 const MobileView      = React.lazy(() => import('./pages/MobileView'))
 const Projekt         = React.lazy(() => import('./pages/Projekt'))
+const History         = React.lazy(() => import('./pages/History'))
+const Library         = React.lazy(() => import('./pages/Library'))
 import { healthService, systemService, deviceService, printerService } from './services/api'
 import { PageActiveContext } from './services/useAutoRefresh'
 import Toaster from './components/Toaster'
+import WhatsNew from './components/WhatsNew'
+import PowerToggle from './components/PowerToggle'
+import ThemeToggle from './components/ThemeToggle'
 import { learnFromAms } from './services/amsLearn'
 import { loadLangPacks, useLanguage } from './services/i18n'
 import { useFarmStatusStream } from './services/useFarmStatusStream'
@@ -71,8 +79,13 @@ const PATH_TO_PAGE = {
   '/diagnose':      'diagnose',
   '/steuerung':     'steuerung',
   '/autofarm':      'autofarm',
+  '/history':       'history',
+  '/bibliothek':    'library',
   '/projekt':       'projekt',
   '/rack':          'rack',
+  // „Farm-Layout" ist seit v1.1.8 Teil des Drucker-Tabs (eine Quelle für alle
+  // X-Positionen) — alte Lesezeichen landen dort.
+  '/layout':        'drucker',
   '/drucker':       'drucker',
   '/configuration': 'configuration',
   '/filamente':     'filamente',
@@ -90,6 +103,8 @@ const PAGE_TO_PATH = {
   diagnose:      '/diagnose',
   steuerung:     '/steuerung',
   autofarm:      '/autofarm',
+  history:       '/history',
+  library:       '/bibliothek',
   projekt:       '/projekt',
   rack:          '/rack',
   drucker:       '/drucker',
@@ -107,13 +122,14 @@ function pageFromPath() {
 }
 
 /* ── Multi-target status pills (printer · klipper · server) ──── */
+// Prüfplanung: ruhige Pille mit Punkt; nur bei Problemen färbt sich der Text.
 const STATUS_STYLES = {
-  online:       { dot: 'dot-green', cls: 'bg-emerald-950/60 text-emerald-400 border-emerald-800/50', pulse: true },
-  stale:        { dot: 'dot-amber', cls: 'bg-amber-950/60 text-amber-400 border-amber-800/50' },
-  unauth:       { dot: 'dot-amber', cls: 'bg-amber-950/60 text-amber-400 border-amber-800/50' },
-  offline:      { dot: 'dot-red',   cls: 'bg-red-950/60 text-red-400 border-red-800/50' },
-  unconfigured: { dot: 'dot-gray',  cls: 'bg-surface-800 text-surface-500 border-surface-700/50' },
-  unknown:      { dot: 'dot-gray',  cls: 'bg-surface-800 text-surface-500 border-surface-700/50' },
+  online:       { dot: 'dot-green', cls: '' },
+  stale:        { dot: 'dot-amber', cls: 'text-amber-300 border-amber-700' },
+  unauth:       { dot: 'dot-amber', cls: 'text-amber-300 border-amber-700' },
+  offline:      { dot: 'dot-red',   cls: 'text-red-300 border-red-700' },
+  unconfigured: { dot: 'dot-gray',  cls: '' },
+  unknown:      { dot: 'dot-gray',  cls: '' },
 }
 
 function StatusPill({ label, target }) {
@@ -123,9 +139,9 @@ function StatusPill({ label, target }) {
   return (
     <div
       title={`${label}: ${status}${detail}`}
-      className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono border ${st.cls}`}
+      className={`pill ${st.cls}`}
     >
-      <span className={`dot ${st.dot} ${st.pulse ? 'animate-pulse' : ''}`} />
+      <span className={`dot ${st.dot}`} />
       <span className="hidden sm:inline">{label}</span>
     </div>
   )
@@ -135,7 +151,7 @@ function StatusPill({ label, target }) {
 function PageFallback() {
   return (
     <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 rounded-full border-4 border-surface-700 border-t-blue-500 animate-spin" />
+      <div className="w-7 h-7 rounded-full border-[3px] border-surface-700 border-t-blue-600 animate-spin" />
     </div>
   )
 }
@@ -151,6 +167,23 @@ function App() {
   const [updateOverlay,   setUpdateOverlay]   = useState(null)  // null | 'running' | 'done'
   const [farmStatus,      setFarmStatus]      = useState(null)  // für den Start-Countdown im Header
   const [clock,           setClock]           = useState(() => new Date())
+  // Server meldet eine andere Version, Neuladen half aber nicht → Cache klemmt.
+  const [stuckVersion,    setStuckVersion]    = useState(null)
+  // Seitenleiste: eingeklappt (je Gerät gemerkt) und — auf schmalen Bildschirmen — aufgeklappt.
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    try { return localStorage.getItem('ottomat3d_nav_compact') === '1' } catch { return false }
+  })
+  const [navOpenMobile, setNavOpenMobile] = useState(false)
+  const toggleNav = useCallback(() => {
+    // Der Knopf oben links tut, was auf dem Bildschirm Sinn ergibt: schmal → Leiste
+    // überblenden, breit → ein-/ausklappen.
+    if (window.matchMedia?.('(max-width: 767px)').matches) { setNavOpenMobile(v => !v); return }
+    setNavCollapsed(v => {
+      const next = !v
+      try { localStorage.setItem('ottomat3d_nav_compact', next ? '1' : '0') } catch { /* Privatmodus */ }
+      return next
+    })
+  }, [])
 
   /* ── Geteilter Farm-Status (Singleton-WS) — nur für den Header-Countdown ── */
   useFarmStatusStream(setFarmStatus)
@@ -250,9 +283,16 @@ function App() {
       systemService.getRunningVersion()
         .then(r => {
           const v = r.data?.version
-          if (!reloaded && v && v !== 'unknown' && v !== VERSION) {
-            reloaded = true
-            window.location.reload()
+          if (!v || v === 'unknown') return
+          if (v === VERSION) { clearVersionReloads(); setStuckVersion(null); return }
+          // Nicht blind neu laden: bringt das Neuladen wieder dasselbe alte Bundle,
+          // liefe das endlos (siehe reloadGuard). Nach zwei Versuchen wird es
+          // gemeldet statt wiederholt.
+          if (reloaded) return
+          reloaded = true
+          if (!reloadForVersionChange()) {
+            reloaded = false
+            setStuckVersion(v)
           }
         })
         .catch(() => {})
@@ -288,6 +328,9 @@ function App() {
   }, [])
 
   /* ── Multi-target health: printer · klipper ──────────────── */
+  const fetchTargets = useCallback(() => {
+    healthService.targets().then(r => setTargets(r.data)).catch(() => {})
+  }, [])
   useEffect(() => {
     let timer
     const run = () => {
@@ -297,8 +340,21 @@ function App() {
         .catch(() => { timer = setTimeout(run, 5000) })
     }
     run()
-    return () => clearTimeout(timer)
-  }, [])
+    // Status sofort auffrischen, wenn der Tab wieder sichtbar wird / Fokus bekommt —
+    // sonst zeigt der Header nach längerem Wegklicken bis zu 30 s alten/keinen Stand.
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchTargets() }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', fetchTargets)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', fetchTargets)
+    }
+  }, [fetchTargets])
+  // Bei jedem Seitenwechsel den Geräte-Status frisch holen (behebt „nach Seitenwechsel
+  // kein Drucker angezeigt, erst nach Reload"): die SPA bleibt zwar montiert, aber ohne
+  // Trigger lief der Status nur im 30-s-Takt.
+  useEffect(() => { fetchTargets() }, [currentPage, fetchTargets])
 
   const pageTitle = {
     dashboard:     'Dashboard',
@@ -307,6 +363,8 @@ function App() {
     diagnose:      'AMS-Diagnose',
     steuerung:     'Steuerung',
     autofarm:      'Auto Farm',
+    history:       'Historie',
+    library:       'Bibliothek',
     projekt:       'Projekt',
     rack:          'Rack Manager',
     drucker:       'Drucker',
@@ -317,6 +375,13 @@ function App() {
     setup:         'Setup-Assistent',
     mobile:        'Mobile View',
   }
+
+  // Die Kopfzeile nennt die Seite nicht mehr (das tut die Überschrift der Seite,
+  // wie in der Prüfplanung) — der Browser-Tab schon.
+  const currentTitle = tr(pageTitle[currentPage] ?? '')
+  useEffect(() => {
+    document.title = currentTitle ? `${currentTitle} · Printloom` : 'Printloom'
+  }, [currentTitle])
 
   /* ── Render a page — lazy mount, never unmount ────────────── */
   // Components are only created on first visit, then kept in the DOM
@@ -350,59 +415,91 @@ function App() {
   return (
     <div className="h-screen overflow-hidden bg-surface-950 flex flex-col">
 
-      {/* Top bar */}
-      <header className="h-13 bg-surface-900/80 backdrop-blur-md border-b border-surface-800/60 flex items-center justify-between px-5 flex-shrink-0 sticky top-0 z-40" style={{ height: '48px' }}>
-        <div className="flex items-center gap-3">
-          {/* Logo mark */}
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow shadow-blue-900/50">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
-            </svg>
-          </div>
-          <span className="text-sm font-bold tracking-tight text-surface-100">Printloom</span>
-          <span className="text-surface-700">/</span>
-          <span className="text-sm text-surface-400">{tr(pageTitle[currentPage] ?? '')}</span>
-        </div>
-        <div className="flex items-center gap-2 sm:gap-3">
+      {/* Kopfzeile — wie die Prüfplanung: weiß, eine Linie darunter, links Menü-Knopf
+          und Name mit Version, rechts die Zustände und der Hell/Dunkel-Umschalter. */}
+      <header className="h-[47px] bg-surface-800 border-b border-surface-700 flex items-center gap-3 px-3 sm:pl-3 sm:pr-5 flex-shrink-0 sticky top-0 z-40">
+        <button
+          onClick={toggleNav}
+          className="p-1.5 rounded text-surface-100 hover:bg-surface-900 flex-none"
+          title={tr('Menü')}
+          aria-label={tr('Menü')}
+          aria-expanded={navOpenMobile || !navCollapsed}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
+          </svg>
+        </button>
+        <button onClick={() => setCurrentPage('dashboard')} className="flex items-baseline gap-1.5 min-w-0 pl-1">
+          <span className="font-semibold text-surface-100">Printloom</span>
+          <span className="hidden sm:inline text-[11px] text-surface-400">v{VERSION}</span>
+        </button>
+
+        <div className="ml-auto flex items-center gap-2">
           {startCountdown > 0 && (
-            <div
-              title={tr('Nächster Job startet automatisch')}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono border bg-blue-950/60 text-blue-300 border-blue-800/50 animate-pulse"
-            >
+            <div title={tr('Nächster Job startet automatisch')} className="pill border-blue-700 bg-blue-900 text-blue-300">
               <span>⏳</span>
-              <span>{tr('Start in {0}s', startCountdown)}</span>
+              <span className="tabular-nums">{tr('Start in {0}s', startCountdown)}</span>
             </div>
           )}
-          <span className="hidden md:inline text-xs font-mono text-surface-700 select-none">v{VERSION}</span>
+          {/* Smart-Steckdose (Konfiguration → Geräte → Energie & Kosten). Ohne
+              eingerichtete Steckdose rendert die Komponente nichts. */}
+          <PowerToggle farmRunning={!!farmStatus?.running} />
           <StatusPill label={tr('Drucker')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.printer} />
           <StatusPill label={tr('Klipper')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.klipper} />
-          <span className="text-xs font-mono text-surface-300 tabular-nums select-none pl-0.5" title={tr('Uhrzeit')}>
+          <span className="hidden sm:inline text-xs text-surface-400 tabular-nums select-none px-1" title={tr('Uhrzeit')}>
             {clock.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
+          <ThemeToggle />
         </div>
       </header>
+
+      {/* Der Server läuft auf einer anderen Version als dieser Tab, und Neuladen
+          hat daran nichts geändert — dann liegt das alte Frontend im Browser-Cache.
+          Lieber einmal klar sagen, was zu tun ist, als endlos weiter neu zu laden. */}
+      {stuckVersion && (
+        <div className="bg-amber-900 border-b border-amber-700 px-5 py-2 flex items-center gap-3 flex-shrink-0">
+          <span className="text-amber-400 text-sm">⚠</span>
+          <p className="text-amber-200 text-[13px] flex-1">
+            {tr('Der Server läuft auf v{0}, dieser Tab zeigt noch v{1}. Neu laden hat nicht geholfen — der Browser hält die alte Fassung fest.', stuckVersion, VERSION)}
+            {' '}
+            <span className="font-mono bg-amber-800 px-1 rounded">Strg</span>+
+            <span className="font-mono bg-amber-800 px-1 rounded">Umschalt</span>+
+            <span className="font-mono bg-amber-800 px-1 rounded">R</span>
+            {' '}{tr('lädt unter Umgehung des Caches.')}
+          </p>
+          <button onClick={() => { clearVersionReloads(); window.location.reload(true) }}
+            className="btn-secondary text-xs flex-shrink-0">{tr('Nochmal versuchen')}</button>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <Navigation
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
           updateAvailable={updateAvailable}
+          collapsed={navCollapsed}
+          onToggleCollapsed={toggleNav}
+          mobileOpen={navOpenMobile}
+          onCloseMobile={() => setNavOpenMobile(false)}
         />
 
-        <main className="flex-1 overflow-auto bg-surface-950">
-          <div className="p-6 max-w-6xl mx-auto">
+        {/* Prüfplanung: volle Breite, 20/24 px Rand. */}
+        <main className="flex-1 min-w-0 overflow-auto bg-surface-950">
+          <div className="px-3 py-4 sm:px-6 sm:pt-5 sm:pb-14">
             {page('dashboard',     Dashboard)}
             {page('files',         FileLibrary)}
             {page('filamente',     FilamentLibrary)}
             {page('analyze',       FileAnalyzer)}
             {page('diagnose',      AmsDiagnostics)}
             {page('steuerung',     Steuerung)}
-            {page('autofarm',      AutoFarm)}
+            {page('autofarm',      AutoFarm, { setCurrentPage })}
+            {page('history',       History)}
+            {page('library',       Library, { setCurrentPage })}
             {page('projekt',       Projekt)}
             {page('rack',          RackManager)}
             {page('drucker',       Drucker)}
             {page('configuration', Configuration)}
-            {page('system',        System, { onUpdateAvailable: setUpdateAvailable, onUpdatePhase: setUpdateOverlay })}
+            {page('system',        System, { onUpdateAvailable: setUpdateAvailable, onUpdatePhase: setUpdateOverlay, setCurrentPage })}
             {page('sequence',      SequenceEditor)}
             {page('profiles',      Profiles)}
             {page('setup',         Setup, { setCurrentPage })}
@@ -411,20 +508,20 @@ function App() {
       </div>
       {/* Full-screen update overlay — blocks all interaction */}
       {updateOverlay && (
-        <div className="fixed inset-0 z-[9999] bg-surface-950/97 backdrop-blur-sm flex flex-col items-center justify-center gap-6 select-none">
+        <div className="fixed inset-0 z-[9999] bg-surface-950/95 flex flex-col items-center justify-center gap-6 select-none">
           {updateOverlay === 'running' ? (
             <>
-              <div className="w-14 h-14 rounded-full border-4 border-blue-900/50 border-t-blue-500 animate-spin" />
+              <div className="w-12 h-12 rounded-full border-[3px] border-surface-700 border-t-blue-600 animate-spin" />
               <div className="text-center space-y-2">
                 <p className="text-lg font-semibold text-surface-100">{tr('Update läuft…')}</p>
                 <p className="text-sm text-surface-400">{tr('Container wird neugestartet — bitte warten')}</p>
-                <p className="text-sm text-blue-400/90 mt-1">{tr('Die Seite lädt sich nach Fertigstellung automatisch neu')}</p>
+                <p className="text-sm text-blue-400 mt-1">{tr('Die Seite lädt sich nach Fertigstellung automatisch neu')}</p>
                 <p className="text-xs text-surface-600 mt-3">{tr('Keine Eingaben möglich während des Updates')}</p>
               </div>
             </>
           ) : (
             <>
-              <div className="w-14 h-14 rounded-full bg-emerald-500/20 border-2 border-emerald-500/50 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-full bg-emerald-900 border-2 border-emerald-600 flex items-center justify-center">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400">
                   <polyline points="20 6 9 17 4 12"/>
                 </svg>
@@ -439,6 +536,7 @@ function App() {
       )}
       <ConfirmHost />
       <Toaster />
+      <WhatsNew />
     </div>
   )
 }

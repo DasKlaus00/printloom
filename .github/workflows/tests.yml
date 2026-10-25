@@ -1,9 +1,13 @@
 name: Tests
 
 on:
-  push:
-    branches: [ main, beta ]
   pull_request:
+  workflow_dispatch:
+  # Pushes auf main/beta testet der Docker-Build selbst (Job „tests" in
+  # docker-publish.yml) — ein Image entsteht erst, wenn diese Tests grün sind. Bei
+  # v1.1.26 lief der Build trotz roter Tests durch. Ein eigener push-Trigger hier
+  # ließ dieselben Tests bis v1.1.34 je Push zweimal laufen.
+  workflow_call:
 
 jobs:
   backend:
@@ -15,6 +19,13 @@ jobs:
           python-version: '3.11'
       - name: Install deps
         run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      # Undefinierte Namen fallen erst auf, wenn genau diese Zeile läuft — beim
+      # Notaus-Fehlerpfad und der Regal-Liste einer Neuinstallation war das der Fall
+      # (v1.1.34). Bewusst NUR diese Regel: ungenutzte Importe & Co. sind Stil.
+      - name: Check undefined names (pyflakes)
+        run: |
+          cd backend
+          python -m pyflakes app | grep -E "undefined name" && exit 1 || exit 0
       - name: Run pytest
         run: cd backend && python -m pytest -q
 
@@ -27,5 +38,10 @@ jobs:
           node-version: '20'
       - name: Install deps
         run: cd frontend && npm install --no-audit --no-fund
+      # Faengt Abstuerze ab, die kein Test sieht: eine vergessene Variable
+      # (no-undef) reisst beim Rendern die ganze Seite runter. Bewusst nur die
+      # Absturz-Regeln - Stil-Meckern wuerde den Waechter unbrauchbar machen.
+      - name: Run lint (Absturz-Regeln)
+        run: cd frontend && npm run lint:ci
       - name: Run vitest
         run: cd frontend && npm test
