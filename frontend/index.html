@@ -15,13 +15,15 @@
     <title>Printloom — 3D Print Farm Controller</title>
     <script>
       /* Thema VOR dem ersten Bild setzen — sonst blitzt kurz die falsche Farbe auf.
-         Gleiche Logik wie services/theme.js (getTheme/resolveTheme). */
+         Gleiche Logik wie services/theme.js (getTheme/resolveTheme): ausdrückliche
+         Wahl, sonst altes dunkles Thema, sonst dem System folgen. */
       (function () {
-        var t = null
-        try { t = localStorage.getItem('printloom_theme') } catch (e) {}
-        if (t === 'slate' || t === 'midnight') t = 'dark'
+        var t = null, alt = null
+        try { t = localStorage.getItem('printloom_theme_choice'); alt = localStorage.getItem('printloom_theme') } catch (e) {}
+        if (t !== 'light' && t !== 'dark' && t !== 'auto') {
+          t = (alt === 'dark' || alt === 'slate' || alt === 'midnight') ? 'dark' : 'auto'
+        }
         if (t === 'auto') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-        if (t !== 'dark') t = 'light'
         document.documentElement.setAttribute('data-theme', t)
       })()
     </script>

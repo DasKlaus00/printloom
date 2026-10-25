@@ -1212,8 +1212,8 @@ const EN_STRINGS = {
   'komplette Konfiguration': 'complete configuration',
   'als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Kamera-/HA-Einstellungen, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.':
     'as JSON: devices (printer & OTTOeject incl. credentials), camera/HA settings, calibration, sequences, farm settings, rack layout, filaments, schedules & language packs — export or restore.',
-  '⚠ Die Datei enthält Zugangsdaten (Drucker-Access-Code, HA-/Telegram-Token). Sicher aufbewahren und nicht teilen.':
-    '⚠ The file contains credentials (printer access code, HA/Telegram token). Keep it safe and do not share it.',
+  '⚠ Die Datei enthält Zugangsdaten (Drucker-Access-Code, Home-Assistant-Token, Zugang zur Smart-Steckdose). Sicher aufbewahren und nicht teilen.':
+    '⚠ The file contains credentials (printer access code, Home Assistant token, smart plug login). Keep it safe and do not share it.',
   '↑ Backup importieren': '↑ Import backup',
 
   /* ── Datei-Browser: Multi-Plate-Dropdown ── */

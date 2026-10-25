@@ -585,7 +585,7 @@ docker compose up -d`}
           {tr('Sichert die')} <span className="text-surface-300">{tr('komplette Konfiguration')}</span> {tr('als JSON: Geräte (Drucker & OTTOeject inkl. Zugangsdaten), Drucker-/Kamera-/HA-Einstellungen, Drucker-Geometrie (X-Positionen & G-code-Overrides), Profile, Kalibrierung, Sequenzen, Farm-Einstellungen, Regal-Layout, Filamente, Zeitpläne & Sprachpakete — exportieren oder wiederherstellen.')}
         </p>
         <p className="text-[11px] text-amber-500/90">
-          {tr('⚠ Die Datei enthält Zugangsdaten (Drucker-Access-Code, HA-/Telegram-Token). Sicher aufbewahren und nicht teilen.')}
+          {tr('⚠ Die Datei enthält Zugangsdaten (Drucker-Access-Code, Home-Assistant-Token, Zugang zur Smart-Steckdose). Sicher aufbewahren und nicht teilen.')}
         </p>
 
         {backupFeedback && (

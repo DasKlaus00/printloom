@@ -1,7 +1,17 @@
 // Darstellung umschalten: Hell, Dunkel oder dem System folgen — wie in der
-// Prüfplanung (☀ ☾ ◐). Jedes Thema tauscht nur die Farb-Variablen aus index.css;
-// am <html> steht immer das AUFGELÖSTE Thema (light | dark), damit das CSS nichts
+// Prüfplanung. Jedes Thema tauscht nur die Farb-Variablen aus index.css; am
+// <html> steht immer das AUFGELÖSTE Thema (light | dark), damit das CSS nichts
 // über „auto" wissen muss.
+//
+// Standard ist „System" (seit v1.1.38). Gespeichert wird NUR eine ausdrückliche
+// Wahl — der Startwert nicht. Sonst würde aus „nie gewählt" beim ersten Laden ein
+// fest gespeichertes „Hell", und ein späterer Wechsel des Standards käme bei
+// niemandem mehr an. Genau das war in v1.1.36 der Fall: Dort schrieb jeder Start
+// den Wert in `printloom_theme`. Deshalb gibt es jetzt einen eigenen Schlüssel für
+// die Wahl; der alte zählt nur noch, wenn er ein dunkles Thema meint.
+//
+// Gleiche Logik als Vorab-Skript in index.html (gegen das Aufblitzen) — beide
+// zusammen ändern.
 
 export const THEMES = [
   { id: 'light', label: 'Hell',   barColor: '#ffffff' },
@@ -9,17 +19,21 @@ export const THEMES = [
   { id: 'auto',  label: 'System', barColor: null },
 ]
 
-const KEY = 'printloom_theme'
+export const DEFAULT_THEME = 'auto'
+const CHOICE_KEY = 'printloom_theme_choice'   // nur ausdrückliche Wahl
+const LEGACY_KEY = 'printloom_theme'          // bis v1.1.37
 
-// Frühere Themen (bis v1.1.35) — alle dunkel. Wer eines davon gewählt hatte,
-// bleibt im Dunkeln, statt plötzlich weiß angestrahlt zu werden.
-const LEGACY_DARK = new Set(['slate', 'midnight'])
+// Frühere dunkle Themen (bis v1.1.35: dark, slate, midnight). Wer eines davon
+// hatte, bleibt im Dunkeln, statt plötzlich weiß angestrahlt zu werden.
+const LEGACY_DARK = new Set(['dark', 'slate', 'midnight'])
+
+const read = (k) => { try { return localStorage.getItem(k) } catch { return null } }
 
 export function getTheme() {
-  let t = null
-  try { t = localStorage.getItem(KEY) } catch { /* Privatmodus */ }
-  if (LEGACY_DARK.has(t)) return 'dark'
-  return THEMES.some(x => x.id === t) ? t : 'light'
+  const choice = read(CHOICE_KEY)
+  if (THEMES.some(x => x.id === choice)) return choice
+  if (LEGACY_DARK.has(read(LEGACY_KEY))) return 'dark'
+  return DEFAULT_THEME
 }
 
 const systemDark = () =>
@@ -42,13 +56,24 @@ function paint(id) {
   window.dispatchEvent(new CustomEvent('printloom:themeChanged', { detail: resolved }))
 }
 
-export function applyTheme(id) {
-  const theme = THEMES.some(x => x.id === id) ? id : 'light'
-  try { localStorage.setItem(KEY, theme) } catch { /* Privatmodus */ }
+function watchSystem() {
   // „System" folgt dem Betriebssystem auch, während die Seite offen ist.
-  if (!mql && window.matchMedia) {
+  if (!mql && typeof window !== 'undefined' && window.matchMedia) {
     mql = window.matchMedia('(prefers-color-scheme: dark)')
     mql.addEventListener?.('change', onSystemChange)
   }
+}
+
+/** Beim Start: anwenden, was gilt — ohne etwas zu speichern. */
+export function initTheme() {
+  watchSystem()
+  paint(getTheme())
+}
+
+/** Ausdrückliche Wahl (Umschalter oben rechts, System → Darstellung): merken und anwenden. */
+export function applyTheme(id) {
+  const theme = THEMES.some(x => x.id === id) ? id : DEFAULT_THEME
+  try { localStorage.setItem(CHOICE_KEY, theme) } catch { /* Privatmodus */ }
+  watchSystem()
   paint(theme)
 }

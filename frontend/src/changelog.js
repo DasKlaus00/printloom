@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.38',
+    de: [
+      'DARSTELLUNG FOLGT JETZT DEM SYSTEM. Wer nie selbst Hell oder Dunkel gewählt hat, bekommt das Farbschema des Betriebssystems — auch, wenn es abends umschaltet. Eine Wahl oben rechts oder unter System → Darstellung gilt weiter und wird gemerkt. Wer bis v1.1.35 ein dunkles Thema hatte, bleibt dunkel.',
+      'BEHOBEN: v1.1.36 hat beim ersten Laden „Hell" fest gespeichert, auch ohne dass jemand etwas gewählt hatte. Dadurch wäre der neue Standard bei niemandem angekommen. Gespeichert wird jetzt nur noch eine ausdrückliche Wahl. Wer in v1.1.36 bewusst „Hell" eingestellt hatte, muss das einmal neu wählen.',
+      'Die Tests schreiben nicht mehr in den echten Datenordner. Bisher legten sie beim Testlauf im Entwicklungs-Checkout printloom.db und farm_log.txt an, und im Farm-Log standen danach erfundene Notaus- und Stresstest-Zeilen. Ein eigener Test hält fest, dass das so bleibt.',
+      'Der Hinweis beim Backup nennt jetzt, was wirklich drinsteht: Drucker-Access-Code, Home-Assistant-Token und Zugang zur Smart-Steckdose. Telegram gibt es seit v1.1.35 nicht mehr.',
+    ],
+    en: [
+      'APPEARANCE NOW FOLLOWS THE SYSTEM. Anyone who never picked Light or Dark gets the operating system\'s colour scheme — even when it switches in the evening. A choice at the top right or under System → Appearance still applies and is remembered. Anyone who had a dark theme up to v1.1.35 stays dark.',
+      'FIXED: v1.1.36 stored "Light" on the first load even when nobody had chosen anything, so the new default would never have reached anyone. Only an explicit choice is stored now. If you deliberately set "Light" in v1.1.36, pick it once more.',
+      'The tests no longer write into the real data folder. Until now a test run in the development checkout created printloom.db and farm_log.txt there, and the farm log then contained made-up emergency-stop and stress-test lines. A dedicated test keeps it that way.',
+      'The backup notice now names what is actually inside: printer access code, Home Assistant token and smart plug login. Telegram has been gone since v1.1.35.',
+    ],
+  },
+  {
     version: '1.1.37',
     de: [
       'BEHOBEN: Der Stresstest mit „Drucker einbeziehen" brach beim Start mit „Request failed with status code 500" ab — sobald die Auto-Farm seit dem Start des Servers einmal gelaufen war. Printloom suchte das Gerät zum Drucker-Block an der falschen Stelle (es bekam nur die Kennung des Blocks, nicht den Block). Jetzt wird das Gerät aus genau dem Block genommen, dessen Positionen der Test fährt. Zwei neue Tests prüfen das mit der echten Form der Daten — der alte Test hatte sie nachgestellt und den Fehler deshalb nicht gesehen.',

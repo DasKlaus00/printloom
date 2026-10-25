@@ -2,11 +2,12 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
-import { applyTheme, getTheme } from './services/theme'
+import { initTheme } from './services/theme'
 import { reloadOnceForStaleChunk } from './services/reloadGuard'
 
-// Apply the saved theme before first paint to avoid a flash.
-applyTheme(getTheme())
+// Thema anwenden (index.html hat es schon vor dem ersten Bild gesetzt) und auf
+// Wechsel des Betriebssystems hören. Speichert nichts — siehe services/theme.js.
+initTheme()
 
 // Nach einem Update (neuer Build → neue Hash-Dateinamen) kann ein alter offener Tab ein
 // gelöschtes Lazy-Asset nicht mehr laden → Vite feuert 'vite:preloadError'. Einmal hart
