@@ -198,10 +198,49 @@ def test_das_geraet_kommt_aus_dem_drucker_block(monkeypatch):
             pass
 
     monkeypatch.setattr(autofarm, "SessionLocal", lambda: FakeDB())
-    monkeypatch.setattr(autofarm, "_stress_geometry", lambda: {})
-    monkeypatch.setattr(autofarm, "_farm_printer", lambda g=None: {"device_id": 42})
+    # Echte Form: _farm_printer gibt die Block-ID zurück, nicht den Block. Der alte
+    # Test reichte hier ein dict herein — und übersah so den HTTP 500 aus v1.1.36.
+    monkeypatch.setattr(autofarm, "_stress_geometry",
+                        lambda: {"printers": [{"id": "p1", "device_id": 7},
+                                              {"id": "p2", "device_id": 42}]})
+    monkeypatch.setattr(autofarm, "_farm_printer", lambda g=None: "p2")
     autofarm._stress_bambu()
     assert 42 in gefragt, f"nach der ID aus dem Block wurde nicht gefragt: {gefragt}"
+
+
+def test_ohne_laufende_farm_gilt_der_erste_drucker_block(monkeypatch):
+    """Lief die Farm seit dem Start noch nicht, gibt es keine Zuordnung — dann fährt
+    der Test den ersten Block, also gehört auch dessen Gerät dazu."""
+    gefragt = []
+
+    class Q:
+        def filter(self, *bedingungen, **kw):
+            for b in bedingungen:
+                try:
+                    gefragt.append(b.right.value)
+                except AttributeError:
+                    pass
+            return self
+
+        def all(self):
+            return [FakeDevice()]
+
+        def first(self):
+            return FakeDevice()
+
+    class FakeDB:
+        def query(self, *a, **kw):
+            return Q()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(autofarm, "SessionLocal", lambda: FakeDB())
+    monkeypatch.setattr(autofarm, "_stress_geometry",
+                        lambda: {"printers": [{"id": "p1", "device_id": 7}]})
+    monkeypatch.setattr(autofarm, "_farm_printer", lambda g=None: None)
+    autofarm._stress_bambu()
+    assert 7 in gefragt, f"nach dem Gerät des ersten Blocks wurde nicht gefragt: {gefragt}"
 
 
 def test_ohne_drucker_startet_der_umweg_gar_nicht(monkeypatch):

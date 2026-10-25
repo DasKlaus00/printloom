@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.37',
+    de: [
+      'BEHOBEN: Der Stresstest mit „Drucker einbeziehen" brach beim Start mit „Request failed with status code 500" ab — sobald die Auto-Farm seit dem Start des Servers einmal gelaufen war. Printloom suchte das Gerät zum Drucker-Block an der falschen Stelle (es bekam nur die Kennung des Blocks, nicht den Block). Jetzt wird das Gerät aus genau dem Block genommen, dessen Positionen der Test fährt. Zwei neue Tests prüfen das mit der echten Form der Daten — der alte Test hatte sie nachgestellt und den Fehler deshalb nicht gesehen.',
+    ],
+    en: [
+      'FIXED: the stress test with "Include printer" failed on start with "Request failed with status code 500" — as soon as the auto farm had run once since the server started. Printloom looked up the printer block\'s device in the wrong place (it only received the block\'s id, not the block). The device now comes from exactly the block whose positions the test drives. Two new tests check this with the real data shape — the old test had faked it and therefore missed the bug.',
+    ],
+  },
+  {
     version: '1.1.36',
     de: [
       'NEUES AUSSEHEN, gestaltet wie die Prüfplanung: ruhige graue Seite, weiße Blöcke mit feiner Linie, EIN Akzent in Marineblau und gedeckte Statusfarben (Rot, Gelb, Grün). Kleine Radien, kaum Schatten, Segoe UI — weniger Effekt, mehr Lesbarkeit. Die Funktionen sind unverändert.',

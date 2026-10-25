@@ -3511,7 +3511,15 @@ def _stress_bambu(device_id=None) -> Device:
     try:
         q = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB)
         if device_id is None:
-            block = _farm_printer(_stress_geometry()) or {}
+            # _farm_printer liefert die ID des Drucker-Blocks (z. B. "p1"), nicht den
+            # Block selbst — bis v1.1.36 stand hier ein `.get()` auf diese ID, und der
+            # Start mit Drucker endete in HTTP 500, sobald die Farm einmal gelaufen war.
+            # Derselbe Block, den _run_stress_test fährt (ohne Zuordnung: der erste).
+            geom = _stress_geometry()
+            try:
+                block = _motion.printer_block(geom, _farm_printer(geom)) or {}
+            except Exception:
+                block = {}
             device_id = block.get("device_id")
         if device_id is not None:
             d = q.filter(Device.id == int(device_id)).first()
