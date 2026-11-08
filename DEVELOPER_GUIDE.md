@@ -44,6 +44,10 @@ frontend/                React 18 + Vite + Tailwind
   src/pages/             Seiten
   src/components/        Navigation, Layout-Bausteine
   src/services/          api.js, i18n.js, theme.js, Rechenlogik
+orca-plugin/             OrcaSlicer-Plugin (eine Datei, läuft in Orcas Python 3.12)
+  printloom_orca.py      Farm-Check, Drucker-Agent „Printloom“, Tab — urteilt nicht selbst,
+                         sondern fragt /api/slicer/… (backend/app/routers/slicer.py)
+  tests/                 mit Ersatz für Orcas `orca`-Modul und lokalem HTTP-Server
 desktop/                 Windows-Paket (PyInstaller + Inno Setup)
 scripts/                 Native Linux-Installation (install-/update-native.sh)
 ```
@@ -143,6 +147,9 @@ cd backend
 python -m pytest -q
 python -m pyflakes app | grep "undefined name"      # der CI-Wächter
 
+# OrcaSlicer-Plugin (aus dem Repo-Wurzelverzeichnis)
+python -m pytest -q orca-plugin/tests
+
 # Nur eine Datei / ein Test
 python -m pytest tests/test_geometry_check.py -q
 python -m pytest -k "magazin" -q
@@ -170,6 +177,9 @@ oder Zusagen bricht**, nicht die Menge an Code:
 | `test_diagnostics.py`    | keine Geheimnisse im Diagnose-ZIP |
 | `test_http_safety.py`    | keine CORS-Freigabe, fremde Seiten dürfen nicht schreiben |
 | `test_update_check.py`   | Version aus dem Image-Label, „wird gebaut", Update ohne Docker-Socket |
+| `test_slicer_api.py`     | Plugin-Schnittstelle urteilt wie Farm und Bibliothek; Geräte-Bericht ohne „fun"/„ipcam" |
+| `test_filament_usage_spool.py` | Verbrauch je Filament aus echten Orca-Formaten; Spulen-Check: unbekannt ≠ reicht |
+| `orca-plugin/tests/`     | Bericht und Antworten, die Orcas Druckdialog verlangt; Hardware-Befehle „nicht unterstützt" |
 | `test_camera.py` / `test_camera_hub.py` | richtiges Kamera-Protokoll je Modell; ein Producer je Drucker |
 | `test_printer_models.py` | Modell-Erkennung: lieber „unbekannt" als falsch |
 | `test_bambu_settings.py` | Report lesen (unbekannt ≠ aus) + MQTT-Befehle |

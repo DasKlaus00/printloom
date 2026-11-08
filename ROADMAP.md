@@ -1,6 +1,6 @@
 # Printloom — Roadmap
 
-**Stand: v1.1.39** (25.10.2026). Die vorige Fassung stand auf v1.1.20; ihre
+**Stand: v1.1.40** (08.11.2026). Die vorige Fassung stand auf v1.1.20; ihre
 Phase 1 ist bis auf zwei Messungen erledigt (Tür, Magnet-Greifer, Versionsnummer im
 Image, Zugangsdaten im Backup), Teile von Phase 2 ebenso.
 
@@ -13,7 +13,7 @@ Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 
 ---
 
-## Fundament — was steht (v1.1.39)
+## Fundament — was steht (v1.1.40)
 
 | Bereich | Stand |
 |---|---|
@@ -28,7 +28,8 @@ Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 | **Online** | Alles Opt-in: Update-Prüfung, Hinweise, Bibliothek. Diagnose-ZIP ohne Geheimnisse und Adressen |
 | **Sicherheit** | Keine eigene Anmeldung (Reverse-Proxy davor). Kein CORS, schreibende Anfragen fremder Seiten gesperrt, Backup ohne Zugangsdaten (auf Wunsch verschlüsselt mit) |
 | **Auslieferung** | Docker (amd64/arm64), native Windows-App, native Linux. Version im Image, Update aus der Oberfläche über den Docker-Socket, Promote-Workflow Beta → Stabil |
-| **Qualität** | 677 Backend-Tests + 53 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
+| **Slicer** | OrcaSlicer-Plugin (ab Orca 2.5): Farm-Check nach dem Slicen, Senden in die Warteschlange, Drucker und AMS im Geräte-Tab, Farm-Tab |
+| **Qualität** | 716 Backend-, 48 Plugin- und 53 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
 
 ---
 
@@ -37,10 +38,12 @@ Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 1. ⚡ **Fehlerstrategie „zurückstellen"** für `ams_unmatched`: Job ans Ende der
    Warteschlange, Farm läuft mit dem nächsten weiter. Heute nur pausieren,
    überspringen oder stoppen — nachts steht die Farm wegen einer falschen Farbe.
-2. ⚡ **Reicht die Spule?** Gramm aus dem Slicer gegen die AMS-Restmenge VOR dem
-   Start. Beide Zahlen liegen vor. `remain = -1` heißt unbekannt, nicht leer.
-3. ⚡ **Überwachter Ordner (Hotfolder).** Datei landet im Ordner → in der Bibliothek.
-   Der kürzeste Weg von OrcaSlicer zu Printloom.
+2. ⚡ **Reicht die Spule — auch beim Farm-Start?** Seit v1.1.40 prüft das
+   OrcaSlicer-Plugin je Job gegen den AMS-Rest (`spool_check`). Fehlt noch: dieselbe
+   Prüfung in der Farm vor dem Start und über die GANZE Warteschlange (mehrere Jobs
+   aus derselben Spule).
+3. ⚡ **Überwachter Ordner (Hotfolder)** für Slicer ohne Plugin (Bambu Studio,
+   PrusaSlicer). Für OrcaSlicer erledigt das seit v1.1.40 das Plugin.
 4. 🏗 **Shop-Anbindung** nach `odoo-connector-plan.md` (Odoo zuerst, dann Shopify).
 
 ## Offene Messungen

@@ -354,6 +354,23 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
         </div>
       </div>
 
+      {/* OrcaSlicer-Plugin — kommt vom Server, damit Plugin und Printloom zusammenpassen */}
+      <div className="card p-4 space-y-2">
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('OrcaSlicer-Plugin')}</h2>
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-[11px] text-surface-500 min-w-0">
+            {tr('Prüft Drucke direkt nach dem Slicen gegen deine Farm (Arm-Kollision, Regalhöhe, Spulen), schickt sie mit „Senden“ in die Warteschlange und zeigt Farm und Drucker in einem eigenen Tab in OrcaSlicer (ab 2.5).')}
+          </p>
+          <a href="/api/slicer/plugin" download="printloom_orca.py"
+            className="btn btn-secondary text-sm shrink-0">{tr('↓ Plugin herunterladen')}</a>
+        </div>
+        <ol className="list-decimal list-inside text-[11px] text-surface-500 space-y-0.5">
+          <li>{tr('In OrcaSlicer: Plugins → „Lokales Plugin installieren“ → diese Datei.')}</li>
+          <li>{tr('Im neuen Tab „Printloom“ die Adresse dieser Seite eintragen (hinter authentik: Benutzer + App-Passwort).')}</li>
+          <li>{tr('Für „Senden“ und „Drucken“: Einstellungen → Entwickler → Experimentelle Funktionen → „Drucker-Agenten anstelle von Druck-Hosts verwenden“, dann im Drucker-Profil (Grundlegende Informationen → Erweiterte Einstellungen) als „Drucker-Agent“ „Printloom“ wählen.')}</li>
+        </ol>
+      </div>
+
       {/* Online-Dienste — Opt-in, standardmäßig alles aus */}
       <OnlineServices setCurrentPage={setCurrentPage} />
 

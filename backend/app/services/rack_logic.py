@@ -27,6 +27,14 @@ DEFAULT_SLOT_TOLERANCE_MM = 20.0
 DEFAULT_STACKED_PCT = 50.0
 
 
+def tolerance_of(data: dict) -> float:
+    """Konfigurierte Fächer-Toleranz (mm) aus der Regal-Config; Default 20."""
+    try:
+        return float((data or {}).get("slot_tolerance_mm", DEFAULT_SLOT_TOLERANCE_MM))
+    except (TypeError, ValueError):
+        return DEFAULT_SLOT_TOLERANCE_MM
+
+
 def stacked_pct_of(data: dict) -> float:
     """Nutzbarer Anteil der Fachhöhe, wenn oben schon eine Platte liegt (%)."""
     try:
@@ -73,6 +81,25 @@ def slot_has_plate(rack: int, slot: int, slots: dict, magazine_slot: int = 0,
     if s.get("empty_plate"):
         return True              # markierte Leerplatte (Aufbau ohne Magazin)
     return s.get("status", "free") not in ("free", "ready")
+
+
+def storable(height_mm: float, data: dict) -> dict:
+    """Passt ein Objekt dieser Höhe überhaupt in EIN Regal? → {ok, slots_needed,
+    max_height_mm}.
+
+    Was maximal geht: alle Fächer eines Regals voll ausgenutzt — über dem obersten
+    liegt aber das Magazin (falls vorhanden), dort gilt nur der Stapel-Anteil. Die
+    Farm pausiert bei einem höheren Objekt („im Drucker lassen"); das OrcaSlicer-
+    Plugin warnt schon beim Slicen. Beide fragen hier, damit sie gleich urteilen."""
+    slot_h = float((data or {}).get("slot_height_mm", 50) or 50)
+    spr = int((data or {}).get("slots_per_rack", 6) or 6)
+    tol = tolerance_of(data)
+    max_h = height_limit(spr, slot_h, tol,
+                         plate_above=magazine_slot_of(data) > 0,
+                         stacked_pct=stacked_pct_of(data))
+    needed = slots_needed(height_mm, slot_h, tol)
+    return {"ok": needed <= spr and (height_mm or 0) <= max_h,
+            "slots_needed": needed, "max_height_mm": round(max_h, 1)}
 
 
 def fits_below(height_mm: float, needed: int, plate_above: bool, slot_h: float,

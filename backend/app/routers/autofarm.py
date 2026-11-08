@@ -593,11 +593,7 @@ def _magazine_count() -> int:
 def _slot_tolerance(data: dict = None) -> float:
     """Konfigurierte Fächer-Toleranz (mm) aus der Regal-Config; Default 20.
     Wird `data` (bereits geladener Regal-Zustand) übergeben, wird nicht neu gelesen."""
-    data = _rack_data() if data is None else data
-    try:
-        return float(data.get("slot_tolerance_mm", DEFAULT_SLOT_TOLERANCE_MM))
-    except (TypeError, ValueError):
-        return DEFAULT_SLOT_TOLERANCE_MM
+    return _rack_logic.tolerance_of(_rack_data() if data is None else data)
 
 
 def _stacked_pct(data: dict = None) -> float:
@@ -677,17 +673,13 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
         if not data:
             return
         slot_h  = float(data.get("slot_height_mm", 50))
-        spr     = int(data.get("slots_per_rack", 6))
 
-        # Was maximal in EIN Regal passt: alle Fächer voll ausgenutzt — über dem
-        # obersten liegt aber das Magazin, dort gilt nur der Stapel-Anteil. Ohne
-        # diese Grenze würde ein zu hohes Objekt endlos auf ein Fach warten, das es
-        # nie geben kann („Regal voll", obwohl das Regal leer ist).
-        rack_max = _rack_logic.height_limit(
-            spr, slot_h, _slot_tolerance(data),
-            plate_above=_rack_logic.magazine_slot_of(data) > 0,
-            stacked_pct=_stacked_pct(data))
-        if _slots_needed(height_mm, slot_h) > spr or height_mm > rack_max:
+        # Was maximal in EIN Regal passt (rack_logic.storable). Ohne diese Grenze
+        # würde ein zu hohes Objekt endlos auf ein Fach warten, das es nie geben
+        # kann („Regal voll", obwohl das Regal leer ist).
+        fit = _rack_logic.storable(height_mm, data)
+        rack_max = fit["max_height_mm"]
+        if not fit["ok"]:
             _log(f"⚠ Objekt {height_mm:.0f}mm zu hoch (max {rack_max:.0f}mm/Rack) — Farm pausiert")
             _farm["paused"] = True
             _farm["error"]  = (f"Objekt {height_mm:.0f}mm zu hoch — im Drucker lassen, "
@@ -3260,6 +3252,41 @@ async def enqueue_job(job: EnqueueRequest):
     })
     _log(f"[+] {job.fileName}{f' (Platte {job.plate})' if job.plate else ''} → Fach wird bei Ausführung zugewiesen")
     return {"success": True}
+
+
+async def add_library_jobs(file_id: int, file_name: str, units: list) -> list:
+    """Jobs für eine Bibliotheksdatei anlegen, wie „+ Warteschlange" in der Bibliothek:
+    läuft die Farm, in ihre Warteschlange (Höhe ermittelt enqueue_job), sonst in die
+    gespeicherte. `units` = [(plate, plate_total, plate_name), …], je Eintrag ein Job.
+    → die neuen Job-IDs.
+
+    Für das OrcaSlicer-Plugin. Die Bibliothek macht dasselbe noch im Browser
+    (FileLibrary.jsx) — die Jobs sehen in beiden Fällen gleich aus."""
+    if _farm["running"]:
+        next_id = max([int(j.get("id") or 0) for j in _farm["jobs"]] or [0]) + 1
+        ids = []
+        for plate, total, name in units:
+            await enqueue_job(EnqueueRequest(
+                id=next_id, fileId=file_id, fileName=file_name, slot="1-0", amsMap="",
+                plate=plate, plateTotal=total, plateName=name))
+            ids.append(next_id)
+            next_id += 1
+        return ids
+    jobs = list(_read_config(QUEUE_PATH, {"jobs": []}).get("jobs", []))
+    next_id = max([int(j.get("id") or 0) for j in jobs] or [0]) + 1
+    ids = []
+    for plate, total, name in units:
+        jobs.append({
+            "id": next_id, "fileId": file_id, "fileName": file_name,
+            "slot": None, "amsMap": "", "status": "pending",
+            "plate": plate, "plateTotal": total, "plateName": name,
+            "objectHeight": None, "progress": 0, "remaining": 0,
+        })
+        ids.append(next_id)
+        next_id += 1
+    _write_config(QUEUE_PATH, {"jobs": jobs})
+    _log(f"[+] {file_name} → Warteschlange ({len(ids)} Job{'s' if len(ids) != 1 else ''})")
+    return ids
 
 
 @router.put("/jobs/reorder")

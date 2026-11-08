@@ -40,6 +40,10 @@ one unattended, with live status, cameras and ETA in a clean web UI.
 - **Notifications** — Web Push to the browsers you subscribe (job done, errors, pauses).
 - **In-app updates** — switch between **Latest** and **Beta** channels and update with
   one click from the System page (see [Updates](#updates)).
+- **OrcaSlicer plugin** (OrcaSlicer 2.5+, download from the System page) — checks every
+  print right after slicing against your farm (arm collision zone, rack height, spools),
+  sends it to the queue with Orca's own *Send* button and shows farm and printer in a
+  Printloom tab inside Orca.
 - **Backup / restore** — credentials (access codes, tokens) only on request and
   optionally password-encrypted; multi-language UI, downloadable language packs.
 

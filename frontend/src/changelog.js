@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.40',
+    de: [
+      'NEU: OrcaSlicer-Plugin (für OrcaSlicer ab 2.5). Herunterladen unter System → OrcaSlicer-Plugin, in Orca über Plugins → „Lokales Plugin installieren“. Im neuen Tab „Printloom“ trägst du einmal die Adresse von Printloom ein (hinter authentik mit Benutzer und App-Passwort).',
+      'FARM-CHECK NACH DEM SLICEN: Direkt nach jedem Slicen sagt Orca im 3D-Bild, ob der Arm am Bett anstößt (über 30 mm im 10-mm-Randstreifen), ob das Teil ins Regal passt und wie viele Fächer es belegt, und ob die Spule im AMS reicht — gerechnet von Printloom mit denselben Regeln wie die Farm. Bisher sah man die Kollision erst am „!“ in der Bibliothek.',
+      'SENDEN AUS ORCA: Mit dem Drucker-Agenten „Printloom“ landet ein Druck mit Orcas eigenem „Senden“ oder „Drucken“ in Bibliothek und Warteschlange — ohne Export und Hochladen im Browser. Solange der Drucker druckt, sperrt Orca „Drucken“; „Senden“ geht immer. Welches AMS-Fach gedruckt wird, entscheidet die Farm wie bisher erst beim Druckstart. Dafür in Orca „Drucker-Agenten anstelle von Druck-Hosts verwenden“ einschalten (Einstellungen → Entwickler → Experimentelle Funktionen) und im Drucker-Profil „Printloom“ als Drucker-Agent wählen.',
+      'Orcas Geräte-Tab zeigt Druckerzustand und AMS-Belegung über Printloom — ohne zweite Verbindung zum Drucker. Befehle, die Hardware bewegen, gehen aus Orca bewusst nicht; dafür bleibt Printloom.',
+      'Der Tab „Printloom“ in Orca zeigt Farm, Warteschlange, Regal, Drucker und AMS auf einen Blick, dazu den letzten Farm-Check.',
+      'Hinweis: Orcas Plugin-Schnittstelle ist neu und der Drucker-Agent dort noch als experimentell markiert. Wenn etwas hakt, steht die Ursache in Orcas Python-Log (im Orca-Datenordner unter log/python_….log).',
+    ],
+    en: [
+      'NEW: OrcaSlicer plugin (for OrcaSlicer 2.5 and later). Download it under System → OrcaSlicer plugin and install it in Orca via Plugins → “Install local plugin”. Enter Printloom’s address once in the new “Printloom” tab (behind authentik with user and app password).',
+      'FARM CHECK AFTER SLICING: right after every slice Orca shows in the 3D view whether the arm would hit the print (above 30 mm in the 10 mm edge strip), whether the part fits the rack and how many slots it takes, and whether the AMS spool suffices — computed by Printloom with the same rules as the farm. Until now the collision only showed up as the “!” in the library.',
+      'SEND FROM ORCA: with the “Printloom” printer agent, Orca’s own “Send” or “Print” puts a print into the library and the queue — no export and browser upload. While the printer is printing, Orca blocks “Print”; “Send” always works. Which AMS slot is used is still decided by the farm when the print starts. Turn on “Use printer agents instead of print hosts” in Orca (Preferences → Developer → Experimental Features) and pick “Printloom” as printer agent in the printer profile.',
+      'Orca’s Device tab shows printer state and AMS through Printloom — without a second connection to the printer. Commands that move hardware deliberately do not work from Orca; Printloom stays in charge of that.',
+      'The “Printloom” tab in Orca shows farm, queue, rack, printer and AMS at a glance, plus the last farm check.',
+      'Note: Orca’s plugin interface is new and its printer agent is still marked experimental. If something goes wrong, the cause is in Orca’s Python log (Orca data folder, log/python_….log).',
+    ],
+  },
+  {
     version: '1.1.39',
     de: [
       'BACKUP OHNE ZUGANGSDATEN. Ein Backup enthält jetzt standardmäßig weder den Drucker-Access-Code noch Home-Assistant-Token, Steckdosen-Passwort oder Kamera-Adressen mit Passwort. Bisher stand das alles im Klartext in jeder Backup-Datei — auch in der, die man vor einem Update „nur zur Sicherheit" zieht. Beim Einspielen bleiben die vorhandenen Zugangsdaten erhalten.',

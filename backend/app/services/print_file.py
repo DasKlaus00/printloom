@@ -9,6 +9,7 @@ Platte N?" — stand dabei sechsmal ausgeschrieben im Code.
 """
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ import re
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
+from collections import deque
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -532,6 +534,119 @@ def used_filament_slot_ids(filepath: str, file_type: str, plate: int | None = No
             return ids
     except Exception as e:
         logger.warning(f"slice_info filament ids read failed: {e}")
+        return []
+
+
+# Gramm je Filament im G-code: Orca/Prusa schreiben sie ans DATEIENDE
+# („; filament used [g] = 0.00, 0.00, 111.26"), Bambu Studio in den Kopf
+# („; total filament weight [g] : 12.34,5.67"). Je Projekt-Filament ein Wert.
+_RE_GRAMS = (re.compile(r';\s*filament used \[g\]\s*=\s*(.+)', re.IGNORECASE),
+             re.compile(r';\s*total filament weight \[g\]\s*:\s*(.+)', re.IGNORECASE))
+_RE_FIL_TYPE = re.compile(r';\s*filament_type\s*=\s*(.+)', re.IGNORECASE)
+_RE_FIL_COLOUR = re.compile(r';\s*filament_colour\s*=\s*(.+)', re.IGNORECASE)
+_USAGE_HEAD_LINES = 1500    # der CONFIG_BLOCK mit filament_type steht in den ersten ~600
+_USAGE_TAIL_LINES = 400
+
+
+def _grams_list(raw: str) -> list:
+    out = []
+    for x in re.split(r'[,;]', raw or ''):
+        x = x.strip()
+        if not x:
+            continue
+        try:
+            out.append(float(x))
+        except ValueError:
+            return []        # ein unlesbarer Wert → die Zuordnung je Index stimmt nicht mehr
+    return out
+
+
+def _usage_from_gcode_lines(lines) -> list:
+    """Kopf + Fuß eines G-codes → benutzte Filamente. Die Typ-Liste kommt aus dem
+    Kopf (alle Projekt-Filamente), die Gramm von wo immer der Slicer sie hinschreibt;
+    der Index verbindet beides."""
+    types, colours, grams = [], [], []
+    for line in lines:
+        line = line.strip()
+        if not line.startswith(';'):
+            continue
+        if not types:
+            m = _RE_FIL_TYPE.match(line)
+            if m:
+                types = [t.strip() for t in m.group(1).split(';')]
+                continue
+        if not colours:
+            m = _RE_FIL_COLOUR.match(line)
+            if m:
+                colours = [c.strip() for c in m.group(1).split(';')]
+                continue
+        if not grams:
+            for rx in _RE_GRAMS:
+                m = rx.match(line)
+                if m:
+                    grams = _grams_list(m.group(1))
+                    break
+    used = []
+    for i, g in enumerate(grams):
+        if g <= 0:
+            continue
+        used.append({"slot": i + 1,
+                     "type": types[i] if i < len(types) else "",
+                     "color": colours[i] if i < len(colours) else "",
+                     "grams": round(g, 2)})
+    return used
+
+
+def _head_and_tail(line_iter) -> list:
+    """Die ersten und letzten Zeilen eines Stroms — für Kopf und Fuß, ohne die
+    Millionen Zeilen dazwischen im Speicher zu halten."""
+    head, tail = [], deque(maxlen=_USAGE_TAIL_LINES)
+    for i, line in enumerate(line_iter):
+        if i < _USAGE_HEAD_LINES:
+            head.append(line)
+        else:
+            tail.append(line)
+    return head + list(tail)
+
+
+def filament_usage(path: str, file_type: str, plate=None) -> list:
+    """Was ein Druck je Filament braucht → [{slot, type, color, grams}].
+
+    Nur die WIRKLICH benutzten Filamente; `slot` ist die 1-basierte Slicer-Position
+    (wie im ams_mapping). `grams` None = unbekannt — nie 0, sonst sähe ein
+    unvollständiger Spulen-Check vollständig aus. Leere Liste = nicht ermittelbar.
+
+    .3mf: slice_info.config der Platte (`used_g`), sonst der G-code darin.
+    .gcode: Typen aus dem Kopf, Gramm aus Fuß oder Kopf (siehe _RE_GRAMS)."""
+    try:
+        if file_type == '.3mf':
+            with zipfile.ZipFile(path, 'r') as z:
+                chosen = _slice_info_plate(z, plate)
+                if chosen is not None:
+                    used = []
+                    for fil in chosen.findall('filament'):
+                        try:
+                            slot = int(fil.get('id'))
+                        except (TypeError, ValueError):
+                            return []
+                        try:
+                            grams = round(float(fil.get('used_g')), 2)
+                        except (TypeError, ValueError):
+                            grams = None
+                        used.append({"slot": slot, "type": (fil.get('type') or '').strip(),
+                                     "color": (fil.get('color') or '').strip(), "grams": grams})
+                    if used:
+                        return used
+                gname = first_gcode(z.namelist(), plate)
+                if not gname:
+                    return []
+                with z.open(gname) as gf:
+                    return _usage_from_gcode_lines(_head_and_tail(
+                        io.TextIOWrapper(gf, encoding='utf-8', errors='ignore')))
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            return _usage_from_gcode_lines(_head_and_tail(f))
+    except Exception as e:
+        logger.warning(f"filament usage read failed for {path}: {e}")
         return []
 
 

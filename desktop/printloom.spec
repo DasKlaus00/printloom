@@ -30,6 +30,7 @@ for _p in (str(BACKEND), str(DESKTOP)):
 datas = []
 datas += [(str(FRONTEND_DIST), "frontend/dist")]
 datas += [(str(BACKEND / "version.txt"), ".")]
+datas += [(str(ROOT / "orca-plugin" / "printloom_orca.py"), "orca-plugin")]
 datas += [(str(DESKTOP / "icon.png"), "."), (str(DESKTOP / "icon.ico"), ".")]
 # tzdata (zoneinfo-DB für Betriebszeiten) mitliefern.
 datas += collect_data_files("tzdata")

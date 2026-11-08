@@ -30,6 +30,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
 COPY backend/version.txt ./version.txt
 
+# OrcaSlicer-Plugin — Printloom bietet es zum Herunterladen an (/api/slicer/plugin),
+# damit Plugin und Server-Version zusammenpassen.
+COPY orca-plugin/printloom_orca.py ./orca-plugin/printloom_orca.py
+
 # Runtime data dirs. db/ is intentionally NOT copied from the build context so
 # no personal data (printer access codes, Telegram token, marketplace token,
 # SQLite DB) is ever baked into the public image. It is created empty here and

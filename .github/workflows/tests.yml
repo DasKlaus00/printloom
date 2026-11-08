@@ -28,6 +28,10 @@ jobs:
           python -m pyflakes app | grep -E "undefined name" && exit 1 || exit 0
       - name: Run pytest
         run: cd backend && python -m pytest -q
+      # Das OrcaSlicer-Plugin läuft in Orcas eigenem Python; getestet wird es mit
+      # einem Ersatz für Orcas `orca`-Modul und einem lokalen HTTP-Server.
+      - name: Run OrcaSlicer plugin tests
+        run: python -m pytest -q orca-plugin/tests
 
   frontend:
     runs-on: ubuntu-latest

@@ -13,7 +13,6 @@ import base64
 import io
 import json
 import os
-import re
 import threading
 import uuid
 import xml.etree.ElementTree as ET
@@ -70,33 +69,40 @@ async def upload_file(file: UploadFile = File(...), folder_id: Optional[int] = N
         )
     
     try:
-        # Generate unique filename
-        unique_filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = UPLOAD_DIR / unique_filename
+        file_path = new_upload_path(file.filename)
 
         # In Stücken auf die Platte — und zwar im Threadpool. Vorher wurde die GANZE
         # Datei in den RAM gelesen und dann synchron geschrieben: eine 40-MB-.3mf
         # blockierte damit den Event-Loop für die Dauer des Schreibens (die ganze App
         # stand still) und belegte den Speicher doppelt.
         size = await run_in_threadpool(_save_upload, file.file, file_path)
+        return register_upload(db, file_path, file.filename, size, folder_id)
 
-        # Store in database
-        db_file = UploadedFile(
-            filename=unique_filename,
-            original_filename=file.filename,
-            file_type=file_ext,
-            file_path=str(file_path),
-            file_size=size,
-            folder_id=folder_id,
-        )
-        db.add(db_file)
-        db.commit()
-        db.refresh(db_file)
-        
-        return db_file
-    
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
+
+
+def new_upload_path(original_name: str) -> Path:
+    """Eindeutiger Ablageort für eine neue Datei (der Originalname bleibt in der DB)."""
+    return UPLOAD_DIR / f"{uuid.uuid4()}{Path(original_name).suffix.lower()}"
+
+
+def register_upload(db: Session, file_path: Path, original_name: str, size: int,
+                    folder_id: Optional[int] = None) -> UploadedFile:
+    """Eine schon gespeicherte Datei in die Bibliothek eintragen. Eine Stelle für den
+    Browser-Upload und das OrcaSlicer-Plugin — beide Einträge sehen gleich aus."""
+    db_file = UploadedFile(
+        filename=Path(file_path).name,
+        original_filename=original_name,
+        file_type=Path(original_name).suffix.lower(),
+        file_path=str(file_path),
+        file_size=size,
+        folder_id=folder_id,
+    )
+    db.add(db_file)
+    db.commit()
+    db.refresh(db_file)
+    return db_file
 
 
 DEMO_FILENAME = "Printloom Demo Part.gcode.3mf"
@@ -435,13 +441,14 @@ def get_plates_meta(file_id: int, db: Session = Depends(get_db)):
 
 
 # ── Crash-Check: OTTOeject-Kollisionszone ────────────────────────────────────
-# Beim Auswerfen/Einlagern fährt der OTTOeject-Arm seitlich am Bett vorbei. Ragt ein
-# hohes Objekt in die seitlichen Randstreifen (links 0–X_MARGIN, rechts X_MAX−X_MARGIN),
-# kollidiert der Arm. Wir scannen den G-code der Platte: sobald OBERHALB von Z_LIMIT
-# ein X-Wert in die Randzone fällt (auch reine Verfahrwege!), gilt der Druck als riskant.
-CRASH_Z_LIMIT   = 30.0     # mm — ab hier ist die Randzone kritisch
-CRASH_X_MARGIN  = 10.0     # mm — Streifen links/rechts, in dem der Arm fährt
-CRASH_X_MAX     = 256.0    # mm — Bettbreite X (X1C); per Query überschreibbar
+# Die Prüfung selbst steht in app/services/crash_check.py (seit v1.1.40 nutzt sie
+# auch das OrcaSlicer-Plugin). Hier nur noch der Cache je Datei und der Endpunkt.
+from app.services import crash_check as _crash
+CRASH_Z_LIMIT   = _crash.Z_LIMIT
+CRASH_X_MARGIN  = _crash.X_MARGIN
+CRASH_X_MAX     = _crash.X_MAX
+_scan_gcode_for_crash = _crash.scan_lines
+_scan_file_for_crash = _crash.scan_file
 
 _CRASH_CACHE: dict = {}    # (file_id, plate, x_max) → (sig, result)
 _CRASH_CACHE_LOCK = threading.Lock()
@@ -491,93 +498,6 @@ def _save_crash_cache() -> None:
 
 
 _load_crash_cache()
-
-_NUM = r'[-+]?\d*\.?\d+'
-_RE_Z = re.compile(r'[Zz](' + _NUM + r')')
-_RE_X = re.compile(r'[Xx](' + _NUM + r')')
-_RE_MOVE = re.compile(r'^G[0-3]\b')
-
-
-def _scan_gcode_for_crash(line_iter, x_max: float,
-                          x_margin: float = CRASH_X_MARGIN,
-                          z_limit: float = CRASH_Z_LIMIT) -> dict:
-    """G-code zeilenweise durchgehen, aktuelle Z-Höhe mitführen und melden, sobald
-    oberhalb `z_limit` ein X-Wert in die Randzone (< x_margin oder > x_max − x_margin)
-    fällt. Bricht beim ersten Treffer ab. Nur absolute Positionierung (G90) wird geprüft."""
-    z = 0.0
-    absolute = True
-    max_z = 0.0
-    lo, hi = x_margin, x_max - x_margin
-    for raw in line_iter:
-        line = raw.split(';', 1)[0].strip()
-        if not line:
-            continue
-        u = line.upper()
-        if u.startswith('G90'):
-            absolute = True
-            continue
-        if u.startswith('G91'):
-            absolute = False
-            continue
-        if not _RE_MOVE.match(u):
-            continue
-        mz = _RE_Z.search(line)
-        if mz and absolute:
-            try:
-                z = float(mz.group(1))
-                if z > max_z:
-                    max_z = z
-            except ValueError:
-                pass
-        if not absolute or z <= z_limit:
-            continue
-        mx = _RE_X.search(line)
-        if mx:
-            try:
-                x = float(mx.group(1))
-            except ValueError:
-                continue
-            if x < lo or x > hi:
-                return {"crash_risk": True, "max_z_mm": round(max_z, 1),
-                        "hit_z_mm": round(z, 1), "hit_x_mm": round(x, 1)}
-    return {"crash_risk": False, "max_z_mm": round(max_z, 1)}
-
-
-def _scan_file_for_crash(path: str, file_type: str, plate, x_max: float) -> Optional[dict]:
-    """Den eigentlichen G-code-Scan ausführen (ohne Cache/DB). None = nichts zu prüfen."""
-    if file_type != '.3mf':
-        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-            return _scan_gcode_for_crash(f, x_max)
-    with zipfile.ZipFile(path, 'r') as zf:
-        names = zf.namelist()
-        if plate:
-            targets = [n for n in names
-                       if re.match(rf'Metadata/plate_{plate}\.gcode$', n, re.IGNORECASE)]
-        else:
-            # Ohne Plattenangabe ALLE Platten prüfen (bei Multi-Plate reicht eine
-            # gefährliche Platte, damit die Datei als riskant gilt).
-            targets = print_file.plate_gcodes(names)
-            if not targets:
-                single = next((n for n in names if n.lower().endswith('.gcode')), None)
-                targets = [single] if single else []
-        if not targets:
-            return None
-        result = {"crash_risk": False, "max_z_mm": 0.0}
-        for gname in targets:
-            with zf.open(gname) as gf:
-                r = _scan_gcode_for_crash(
-                    io.TextIOWrapper(gf, encoding='utf-8', errors='ignore'), x_max)
-            max_z = max(result.get("max_z_mm") or 0.0, r.get("max_z_mm") or 0.0)
-            if r.get("crash_risk"):
-                m = re.search(r'plate_(\d+)', gname)
-                r["plate"] = int(m.group(1)) if m else None
-                # Höchste Z-Höhe über ALLE bisher geprüften Platten behalten — die
-                # Fundplatte allein wäre die falsche Zahl in der Warnung.
-                r["max_z_mm"] = max_z
-                return r
-            result["max_z_mm"] = max_z
-        return result
-
 
 @router.get("/{file_id}/crash-check")
 def crash_check(file_id: int, plate: int = None, x_max: float = CRASH_X_MAX,

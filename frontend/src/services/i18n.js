@@ -1225,6 +1225,16 @@ const EN_STRINGS = {
   'Die Zugangsdaten in diesem Backup sind verschlüsselt. Passwort eingeben — oder ohne Zugangsdaten einspielen.':
     'The credentials in this backup are encrypted. Enter the password — or restore without credentials.',
   'Backup-Passwort': 'Backup password',
+  'OrcaSlicer-Plugin': 'OrcaSlicer plugin',
+  'Prüft Drucke direkt nach dem Slicen gegen deine Farm (Arm-Kollision, Regalhöhe, Spulen), schickt sie mit „Senden“ in die Warteschlange und zeigt Farm und Drucker in einem eigenen Tab in OrcaSlicer (ab 2.5).':
+    'Checks prints against your farm right after slicing (arm collision, rack height, spools), adds them to the queue with “Send” and shows farm and printer in a tab of its own in OrcaSlicer (2.5 or later).',
+  '↓ Plugin herunterladen': '↓ Download plugin',
+  'In OrcaSlicer: Plugins → „Lokales Plugin installieren“ → diese Datei.':
+    'In OrcaSlicer: Plugins → “Install local plugin” → this file.',
+  'Im neuen Tab „Printloom“ die Adresse dieser Seite eintragen (hinter authentik: Benutzer + App-Passwort).':
+    'Enter the address of this page in the new “Printloom” tab (behind authentik: user + app password).',
+  'Für „Senden“ und „Drucken“: Einstellungen → Entwickler → Experimentelle Funktionen → „Drucker-Agenten anstelle von Druck-Hosts verwenden“, dann im Drucker-Profil (Grundlegende Informationen → Erweiterte Einstellungen) als „Drucker-Agent“ „Printloom“ wählen.':
+    'For “Send” and “Print”: Preferences → Developer → Experimental Features → “Use printer agents instead of print hosts”, then pick “Printloom” as “Printer Agent” in the printer profile (Basic information → Advanced).',
   'Einspielen': 'Restore',
   'Ohne Zugangsdaten einspielen': 'Restore without credentials',
   'Zugangsdaten eingespielt.': 'Credentials restored.',

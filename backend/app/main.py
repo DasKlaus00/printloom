@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from app.routers import (files, devices, control, printer, rack_manager, system, autofarm,
-                         project, profiles, filaments, push, folders, online)
+                         project, profiles, filaments, push, folders, online, slicer)
 from app.db.database import init_db
 from app import paths
 
@@ -103,6 +103,7 @@ app.include_router(filaments.router,     prefix="/api/filaments",       tags=["F
 app.include_router(push.router,          prefix="/api/push",            tags=["Web-Push"])
 app.include_router(folders.router,       prefix="/api/folders",         tags=["Folders"])
 app.include_router(online.router,        prefix="/api/online",          tags=["Online-Dienste"])
+app.include_router(slicer.router,        prefix="/api/slicer",          tags=["OrcaSlicer-Plugin"])
 
 
 @app.get("/api/health")

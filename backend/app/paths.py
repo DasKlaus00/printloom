@@ -116,6 +116,15 @@ def frontend_dir() -> Path:
     return _BACKEND_DIR.parent / "frontend" / "dist"
 
 
+def orca_plugin_file() -> Path:
+    """Das OrcaSlicer-Plugin, das Printloom zum Herunterladen anbietet."""
+    if RUNTIME == "docker":
+        return Path("/app/orca-plugin/printloom_orca.py")
+    if RUNTIME == "native":
+        return _bundle_dir() / "orca-plugin" / "printloom_orca.py"
+    return _BACKEND_DIR.parent / "orca-plugin" / "printloom_orca.py"
+
+
 def version_file() -> Path:
     """Pfad zur version.txt (je nach Laufzeit)."""
     if RUNTIME == "docker":

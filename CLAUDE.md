@@ -8,8 +8,9 @@ Sprache im Projekt: **Deutsch** (Code-Kommentare, Commits, Changelog zweisprachi
 ## Repo und Kanäle
 
 - GitHub: `DasKlaus00/printloom` (öffentlich, AGPL-3.0). Lokales Remote heißt `printloom`.
-- `beta` → Image `ghcr.io/dasklaus00/printloom:beta` (Beta-Kanal). Änderungen kommen über
-  einen Zweig `claude/<thema>` und einen Pull Request nach `beta` (Tests laufen am PR).
+- `beta` → Image `ghcr.io/dasklaus00/printloom:beta` (Beta-Kanal). Fertige, grüne Releases
+  direkt auf `beta` pushen — so gewünscht (Alex, 25.10.2026: „pushe es doch einfach auf
+  beta"). Zweig + Pull Request nur auf Ansage.
 - `main` + Tags `vX.Y.Z` → `:latest` (stabiler Kanal). Nur nach Test auf der echten Farm:
   Actions → „Promote (Beta → Stabil)" (`promote.yml`) — setzt den Tag, spult `main` vor
   und taggt das getestete Beta-Image um. Läuft erst, wenn `promote.yml` auf `main` liegt;
@@ -28,6 +29,10 @@ Sprache im Projekt: **Deutsch** (Code-Kommentare, Commits, Changelog zweisprachi
   `routers/system.py` (Version, Update, Backup, Diagnose).
 - `frontend/` — React 18 + Vite + Tailwind. Seiten in `src/pages/`, Navigation in
   `src/components/Navigation.jsx`, Layout/Kopfzeile in `src/App.jsx`.
+- `orca-plugin/printloom_orca.py` — OrcaSlicer-Plugin (Orca ab 2.5, eine Datei). Urteilt nicht
+  selbst, sondern fragt `/api/slicer/…` (`routers/slicer.py`). Printloom bietet es unter
+  `/api/slicer/plugin` zum Download an. Orcas Plugin-API ist neu: was der Geräte-Bericht
+  braucht, steht in Orcas `MoonrakerPrinterAgent.cpp`, nicht in der Doku.
 - `desktop/`, `scripts/install-native.sh` — native Windows-/Linux-Varianten (kaum genutzt).
 - Datenordner: `PRINTLOOM_DATA_DIR` (sonst Docker `/app`, Dev `backend/`). Tests setzen
   ihn in `backend/tests/conftest.py` auf einen Temp-Ordner — nie echte Daten anfassen.
@@ -38,6 +43,7 @@ Sprache im Projekt: **Deutsch** (Code-Kommentare, Commits, Changelog zweisprachi
 # Backend
 cd backend && python -m pytest -q
 cd backend && python -m pyflakes app | grep "undefined name"   # CI-Wächter
+python -m pytest -q orca-plugin/tests                         # OrcaSlicer-Plugin
 # Frontend
 cd frontend && npm test            # vitest
 cd frontend && npm run lint:ci     # nur Absturz-Regeln; 16 bekannte Warnungen sind ok
@@ -54,8 +60,8 @@ cd frontend && npx vite --port 3000
 3. Jeder neue `tr('…')`-Text braucht die englische Fassung in `frontend/src/services/i18n.js`
    (der Test `i18n.test.js` schlägt sonst fehl).
 4. Commit-Nachricht: `vX.Y.Z — <Kurzbeschreibung>` auf Deutsch, Stichpunkte darunter.
-5. Backend-Tests, Frontend-Tests, `lint:ci`, Build — alles grün, dann Zweig pushen und
-   Pull Request nach `beta`.
+5. Backend-Tests, Plugin-Tests, Frontend-Tests, `lint:ci`, Build — alles grün, dann push
+   auf `beta`.
 
 ## Design (seit v1.1.36, Stil der „Prüfplanung")
 
