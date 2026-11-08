@@ -39,10 +39,62 @@ def start(plugin, url="", **settings):
 
 # ── Registrierung ───────────────────────────────────────────────────────────────
 
-def test_registriert_tab_und_agent_und_bittet_nur_um_threads(plugin):
+def test_registriert_tab_und_agent(plugin):
     plugin.PrintloomPlugin().register_capabilities()
     assert plugin.orca_fake.registered == [plugin.PrintloomTab, plugin.PrintloomAgent]
-    assert plugin.orca_fake.permissions == {"threading": True}
+
+
+# ── Freigaben beim Laden ────────────────────────────────────────────────────────
+# Orca 2.5.0 prüft auch eigene Threads des Plugins (Shim auf _thread.start_new_thread)
+# und lehnt dort den ersten Zugriff ab, statt zu fragen. Im Log von v1.1.40:
+#   [AUDIT BLOCKED] plugin=printloom_orca event=urllib.Request
+#   [AUDIT] block path=…\Temp/orcaslicer_model/…/Metadata\.33144.0.gcode
+# Deshalb wird alles beim Laden in EINER Frage erbeten.
+
+def test_ohne_adresse_threads_und_orcas_arbeitsordner(plugin, monkeypatch, tmp_path):
+    monkeypatch.setenv("TMP", str(tmp_path))
+    plugin.PrintloomPlugin().register_capabilities()
+    assert plugin.orca_fake.permissions == {
+        "threading": True,
+        "fs_read": [str(tmp_path.resolve() / "orcaslicer_model" / "*")]}
+
+
+def test_mit_gespeicherter_adresse_auch_der_host(plugin, tmp_path):
+    plugin.Settings(str(tmp_path)).update({"url": "http://10.10.30.145:8000"})
+    plugin.PrintloomPlugin().register_capabilities()
+    assert plugin.orca_fake.permissions["network"] == ["http://10.10.30.145:8000"]
+
+
+def test_einstellungen_auch_ohne_storage_beim_laden(plugin, monkeypatch, tmp_path):
+    """plugin.storage() braucht einen laufenden Plugin-Aufruf. Dann derselbe Ordner
+    direkt: orca_plugins/plugin_data/<Dateiname> neben dem Plugin-Ordner."""
+    def no_context():
+        raise RuntimeError("plugin.storage() must be called from a plugin callback")
+    monkeypatch.setattr(plugin.orca.host.plugin, "storage", no_context)
+    orca_plugins = tmp_path / "orca_plugins"
+    (orca_plugins / "printloom_orca.py").mkdir(parents=True)
+    monkeypatch.setattr(plugin, "__file__", str(orca_plugins / "printloom_orca.py" / "printloom_orca.py"))
+    data_dir = orca_plugins / "plugin_data" / "printloom_orca"
+    data_dir.mkdir(parents=True)
+    plugin.Settings(str(data_dir)).update({"url": "https://printloom.example.de"})
+    assert plugin.declared_permissions()["network"] == ["https://printloom.example.de"]
+
+
+def test_abgelehnter_zugriff_gibt_eine_verstaendliche_meldung(plugin, printloom, tmp_path, monkeypatch):
+    tab, _ = start(plugin, printloom.url)
+
+    def audit(*a, **k):
+        raise PermissionError('Plugin attempted audited operation "urllib.Request" '
+                              'without permission: audit permission required')
+    monkeypatch.setattr(plugin.urllib.request, "urlopen", audit)
+    g = tmp_path / "plate_1.gcode"
+    g.write_bytes(b"G1 X50\n")
+    ctx = types.SimpleNamespace(code=plugin.orca.LifecycleEvtCode.Ok, msg=str(g))
+    tab.on_lifecycle_event(plugin.orca.LifecycleEvent.GCodeExportFinished, ctx)
+    wait_for(lambda: plugin.orca_fake.notifications)
+    level, text = plugin.orca_fake.notifications[-1]
+    assert level == "warning"
+    assert "audited operation" not in text and "Speichern" in text
 
 
 def test_agent_id_bleibt_stabil(plugin):
@@ -424,10 +476,11 @@ def test_tab_bekommt_zustand_ohne_passwort(plugin, printloom):
     assert last["texts"]["queue"] == "Warteschlange"
 
 
-def test_speichern_aus_dem_tab_testet_die_verbindung(plugin, printloom):
+def test_speichern_testet_sofort_auf_dem_oberflaechen_thread(plugin, printloom):
+    """Nur dort fragt Orca sofort nach der Netzwerk-Freigabe — aus einem Hintergrund-
+    Thread lehnt es erst ab. Deshalb ist die Verbindung geprüft, wenn on_message endet."""
     tab, _ = start(plugin)
     tab.on_message({"type": "save", "settings": {"url": printloom.url}})
-    wait_for(lambda: plugin.CORE.info is not None)
     assert plugin.CORE.info["version"] == "1.1.40"
 
 

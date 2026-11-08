@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.41',
+    de: [
+      'BEHOBEN: Im OrcaSlicer-Plugin scheiterten Farm-Check und Senden mit „audit permission required“. OrcaSlicer 2.5 prüft auch die Hintergrund-Abläufe eines Plugins und lehnt dort einen Zugriff ab, statt zu fragen. Das Plugin (jetzt 1.0.1) bittet deshalb beim Laden in EINER Frage um alles, was es braucht: eigene Abläufe, Lesen in Orcas Arbeitsordner (dort liegt der geslicte G-code) und Zugriff auf deinen Printloom — nur auf diesen Host.',
+      'Wer eine neue Printloom-Adresse im Tab „Printloom“ speichert, bekommt Orcas Frage nach dem Netzwerkzugriff jetzt sofort.',
+      'So aktualisierst du: unter System → OrcaSlicer-Plugin neu herunterladen, in Orca über „Lokales Plugin installieren“ darüber installieren und die Frage beim Laden mit Ja beantworten.',
+    ],
+    en: [
+      'FIXED: in the OrcaSlicer plugin, farm check and sending failed with “audit permission required”. OrcaSlicer 2.5 also checks a plugin’s background work and refuses access there instead of asking. The plugin (now 1.0.1) therefore asks for everything it needs in ONE question when it loads: its own background work, reading Orca’s working folder (where the sliced G-code is) and access to your Printloom — to that host only.',
+      'Saving a new Printloom address in the “Printloom” tab now brings up Orca’s network question right away.',
+      'To update: download the plugin again under System → OrcaSlicer plugin, install it over the old one in Orca via “Install local plugin” and answer the question with Yes when it loads.',
+    ],
+  },
+  {
     version: '1.1.40',
     de: [
       'NEU: OrcaSlicer-Plugin (für OrcaSlicer ab 2.5). Herunterladen unter System → OrcaSlicer-Plugin, in Orca über Plugins → „Lokales Plugin installieren“. Im neuen Tab „Printloom“ trägst du einmal die Adresse von Printloom ein (hinter authentik mit Benutzer und App-Passwort).',

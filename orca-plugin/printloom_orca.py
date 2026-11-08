@@ -6,7 +6,7 @@
 # name = "Printloom"
 # description = "Verbindet OrcaSlicer mit deiner Printloom-Druckfarm: Farm-Check nach dem Slicen (Arm-Kollision, Regalhöhe, Spulen), Senden in die Warteschlange, Drucker und Farm im eigenen Tab. Spricht nur mit der Printloom-Adresse, die du einträgst."
 # author = "Printloom"
-# version = "1.0.0"
+# version = "1.0.1"
 # ///
 """Printloom für OrcaSlicer (ab 2.5).
 
@@ -21,8 +21,10 @@ Geurteilt wird in Printloom (/api/slicer/…), mit derselben Logik wie in der Fa
 Plugin sammelt nur ein und zeigt an — so urteilen Slicer und Farm nie verschieden.
 
 Threads: Orca ruft Ereignisse und Agent-Methoden auf dem Oberflächen- oder dem
-Slicing-Thread auf, und beide dürfen nie warten. Alles Netzwerk läuft deshalb in
-eigenen Threads; die muss man beim ersten Laden einmal erlauben.
+Slicing-Thread auf, und beide dürfen nie warten. Netzwerk läuft deshalb in eigenen
+Threads. Die prüft Orca 2.5 aber genauso — und lehnt dort einen nicht freigegebenen
+Zugriff ab, statt zu fragen. Darum bittet das Plugin beim Laden einmal um alles, was
+es braucht (declared_permissions).
 
 Was Orca vom Geräte-Bericht erwartet, steht nicht in der Plugin-Doku. Vorbild ist
 Orcas eigener Moonraker-Agent (src/slic3r/Utils/MoonrakerPrinterAgent.cpp).
@@ -43,7 +45,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import orca
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 API_VERSION = 1
 AGENT_ID = "printloom"          # steht in den Drucker-Profilen der Nutzer — nie ändern
 STATUS_INTERVAL_S = 3.0          # Geräte-Tab: so oft fragt Orca auch seine eigenen Drucker
@@ -81,6 +83,7 @@ TEXT = {
         "sent_library": "Printloom: „{name}“ liegt in der Bibliothek.",
         "send_failed": "Printloom: Senden fehlgeschlagen — {err}",
         "check_failed": "Printloom: Farm-Check nicht möglich — {err}",
+        "permission": "Orca hat den Zugriff noch nicht erlaubt. Im Tab „Printloom“ auf „Speichern“ klicken und Orcas Frage mit Ja beantworten — oder Orca neu starten und beim Laden zustimmen.",
         "check_ok": "Printloom: Farm-Check ok — Arm frei, {slots}, {spool}.",
         "slots_one": "1 Fach",
         "slots_many": "{n} Fächer",
@@ -105,6 +108,7 @@ TEXT = {
         "sent_library": "Printloom: “{name}” is in the library.",
         "send_failed": "Printloom: sending failed — {err}",
         "check_failed": "Printloom: farm check not possible — {err}",
+        "permission": "Orca has not allowed the access yet. Click “Save” in the “Printloom” tab and answer Orca’s question with Yes — or restart Orca and agree when the plugin loads.",
         "check_ok": "Printloom: farm check ok — arm clear, {slots}, {spool}.",
         "slots_one": "1 slot",
         "slots_many": "{n} slots",
@@ -176,6 +180,19 @@ def normalize_url(url: str) -> str:
     if url and "://" not in url:
         url = "http://" + url
     return url
+
+
+def orca_temp_tree() -> str:
+    """Ordner-Freigabe für Orcas Arbeitsdateien (<Temp>/orcaslicer_model/…): dort liegen
+    der geslicete G-code und die .3mf zum Senden. Der Unterordner wechselt je Sitzung,
+    eine Freigabe je Datei würde bei jedem Start neu fragen. `*` am Ende = ganzer Baum.
+    Bewusst über die Umgebung statt tempfile: das legt zum Prüfen eine Datei an."""
+    base = os.environ.get("TMP") or os.environ.get("TEMP") or os.environ.get("TMPDIR") or "/tmp"
+    try:
+        base = os.path.realpath(base)       # lange Pfadnamen, wie Orca sie meldet
+    except OSError:
+        pass
+    return os.path.join(base, "orcaslicer_model", "*")
 
 
 def device_id_for(url: str) -> str:
@@ -273,6 +290,10 @@ class PrintloomError(Exception):
     pass
 
 
+class PermissionMissing(PrintloomError):
+    """Orcas Prüfung hat einen Zugriff abgelehnt (Netzwerk oder Datei)."""
+
+
 class _ProgressFile:
     """Datei für den Upload: meldet den Fortschritt und bricht bei Abbruch ab —
     urllib liest den Body stückweise über read()."""
@@ -325,6 +346,10 @@ class Client:
             if e.code in (401, 403) and not detail:
                 detail = "Anmeldung abgelehnt"
             raise PrintloomError(f"HTTP {e.code}{': ' + str(detail) if detail else ''}") from None
+        except PermissionError as e:
+            # Orcas Audit: Zugriff (noch) nicht erlaubt. Kommt als PermissionError, nicht als
+            # URLError — daran erkennt der Kern, dass er um Freigabe bitten muss.
+            raise PermissionMissing(str(e)) from None
         except (urllib.error.URLError, OSError) as e:
             reason = getattr(e, "reason", None) or e
             raise PrintloomError(str(reason)) from None
@@ -333,8 +358,8 @@ class Client:
             raise PrintloomError("keine Printloom-Antwort (Anmeldeseite? Benutzer/Passwort prüfen)")
         return json.loads(raw or b"null")
 
-    def info(self) -> dict:
-        data = self.request("GET", "/api/slicer/info", timeout=8.0)
+    def info(self, timeout: float = 8.0) -> dict:
+        data = self.request("GET", "/api/slicer/info", timeout=timeout)
         if not isinstance(data, dict) or data.get("api") != API_VERSION:
             raise PrintloomError("Printloom zu alt oder zu neu für dieses Plugin")
         return data
@@ -483,12 +508,13 @@ class Core:
             raise
 
     # Netzwerk (nur aus eigenen Threads) ───────────────────────────────────────
-    def refresh_info(self) -> dict:
+    def refresh_info(self, timeout: float = 8.0) -> dict:
         try:
-            info = self.settings.client().info()
+            info = self.settings.client().info(timeout)
         except PrintloomError as e:
+            msg = tr(self.lang, "permission") if isinstance(e, PermissionMissing) else str(e)
             with self.lock:
-                self.info, self.info_error = None, str(e)
+                self.info, self.info_error = None, msg
             self.push_page()
             raise
         with self.lock:
@@ -509,12 +535,16 @@ class Core:
     def check_after_slice(self, path: str, sig: tuple) -> None:
         """Teil 1 + 4: den eben exportierten Platten-G-code prüfen lassen. Die Datei
         wird sofort gelesen — Orca ersetzt sie beim nächsten Slicen."""
-        with open(path, "rb") as f:
-            data = f.read()
         try:
+            with open(path, "rb") as f:
+                data = f.read()
             result = self.settings.client().check_gcode(data)
+        except PermissionError:
+            self.notify("warning", tr(self.lang, "check_failed", err=tr(self.lang, "permission")))
+            return
         except PrintloomError as e:
-            self.notify("warning", tr(self.lang, "check_failed", err=e))
+            err = tr(self.lang, "permission") if isinstance(e, PermissionMissing) else e
+            self.notify("warning", tr(self.lang, "check_failed", err=err))
             return
         with self.lock:
             self._checked[path] = sig
@@ -611,16 +641,19 @@ class Core:
             if self.page_visible:
                 self.wake.set()
         elif kind in ("save", "test"):
-            self.submit(self._save_and_test, data.get("settings") or {})
+            # Bewusst HIER, auf dem Oberflächen-Thread: fehlt Orcas Freigabe für diesen
+            # Host, fragt Orca jetzt sofort. Aus einem Hintergrund-Thread lehnt Orca den
+            # ersten Versuch ab und fragt erst danach. Kurzer Timeout, damit Orca nicht hängt.
+            self.settings.update(data.get("settings") or {})
+            try:
+                self.refresh_info(timeout=5.0)
+            except PrintloomError:
+                return
+            self.submit(self._after_connect)
         elif kind == "refresh":
             self.submit(self.refresh_overview)
 
-    def _save_and_test(self, new: dict) -> None:
-        self.settings.update(new)
-        try:
-            self.refresh_info()
-        except PrintloomError:
-            return
+    def _after_connect(self) -> None:
         self.refresh_overview()
         agent = self.agent
         if agent is not None:
@@ -1050,6 +1083,8 @@ class PrintloomAgent(pa.PrinterAgentBase):
         try:
             future.result()
         except Exception as e:
+            if isinstance(e, (PermissionMissing, PermissionError)):
+                e = tr(CORE.lang, "permission")
             CORE.notify("warning", tr(CORE.lang, "send_failed", err=e))
             _call(update_fn, STAGE_ERROR, 0, str(e))
             return ERR_UPLOAD
@@ -1078,11 +1113,41 @@ class PrintloomAgent(pa.PrinterAgentBase):
         return pa.CameraStreamMode.None_
 
 
+def _registration_settings() -> Settings:
+    """Die gespeicherten Einstellungen schon beim Laden. plugin.storage() braucht einen
+    laufenden Plugin-Aufruf; zur Sicherheit derselbe Ordner direkt: Orca legt ihn unter
+    orca_plugins/plugin_data/<Dateiname ohne Endung> an."""
+    try:
+        folder = orca.host.plugin.storage()
+    except Exception:
+        here = os.path.abspath(__file__)
+        folder = os.path.join(os.path.dirname(os.path.dirname(here)), "plugin_data",
+                              os.path.splitext(os.path.basename(here))[0])
+    s = Settings(folder)
+    s.load()
+    return s
+
+
+def declared_permissions() -> dict:
+    """Was beim Laden erbeten wird. Orca prüft auch eigene Threads des Plugins und lehnt
+    dort ab, statt zu fragen — deshalb alles vorab:
+      • Threads (damit Orca beim Slicen und Senden nicht auf das Netz wartet)
+      • Lesen in Orcas Arbeitsordner (geslicter G-code, .3mf zum Senden)
+      • Netzwerk zum eingetragenen Printloom — nur zu diesem Host"""
+    perms = {"threading": True, "fs_read": [orca_temp_tree()]}
+    url = _registration_settings().data.get("url")
+    if url:
+        # `network` nimmt die volle Adresse; Orca kürzt sie selbst auf scheme://host,
+        # und eine solche Freigabe gilt für den ganzen Host (alle Pfade und Ports).
+        perms["network"] = [normalize_url(url)]
+    return perms
+
+
 @orca.plugin
 class PrintloomPlugin(orca.base):
     def register_capabilities(self):
-        # Eigene Threads, damit Orca beim Prüfen und Senden nie wartet. Orca fragt
-        # einmal beim ersten Laden; Netzwerk geht nur an die eingetragene Adresse.
-        orca.request_permissions(threading=True)
+        # Alles, was das Plugin braucht, in EINER Frage beim Laden (siehe
+        # declared_permissions). Ohne das lehnt Orca Zugriffe aus Hintergrund-Threads ab.
+        orca.request_permissions(**declared_permissions())
         orca.register_capability(PrintloomTab)
         orca.register_capability(PrintloomAgent)
