@@ -1,14 +1,15 @@
 # Printloom
 
+https://printloom.alexsz.de/
+
 **Disclaimer: The software was written almost entirely using Claude**
 
 **This is still a work in Progress**
 
-slightly modified Ottoeject system:
-https://makerworld.com/de/models/2924066-ottoeject-ottomat3d-magazine-extension#profileId-3272456
-
 if you need help:
-https://discord.gg/Tx3aJWazsj
+https://discord.gg/REfB9bXKdZ
+
+
 
 **Self-hosted automation for continuous 3D print farms.** Printloom orchestrates a
 Bambu Lab X1C and an OTTOeject auto-ejector into a true *lights-out* workflow:
