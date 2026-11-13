@@ -1,4 +1,4 @@
-# Baut die native Printloom-Windows-App: Frontend -> PyInstaller-Bundle -> Inno-Installer.
+﻿# Baut die native Printloom-Windows-App: Frontend -> PyInstaller-Bundle -> Inno-Installer.
 #
 # Voraussetzungen:
 #   * .venv-build (Python 3.12 mit requirements + pyinstaller + pystray + pillow)
@@ -39,7 +39,7 @@ if (-not (Test-Path "dist\Printloom.exe")) { throw "PyInstaller-Bundle fehlgesch
 # 4) Inno-Setup-Installer (falls iscc verfügbar)
 $Iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue)
 if (-not $Iscc) {
-  foreach ($p in @("$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
+  foreach ($p in @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
     if (Test-Path $p) { $Iscc = $p; break }
   }
 }
