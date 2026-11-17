@@ -77,6 +77,7 @@ def farm(tmp_path, monkeypatch):
     monkeypatch.setattr(slicer.rack_store, "load", lambda: dict(RACK))
     monkeypatch.setitem(autofarm._farm, "running", False)
     monkeypatch.setitem(autofarm._farm, "jobs", [])
+    monkeypatch.setitem(autofarm._farm, "_queue_next_id", 1)
     monkeypatch.setattr(slicer.bambu_manager, "fetch_status", lambda *a, **k: REPORT)
     monkeypatch.setattr(slicer.bambu_manager, "last_status", lambda *a, **k: REPORT)
     monkeypatch.setattr(slicer.bambu_manager, "is_connected", lambda *a, **k: True)
@@ -189,11 +190,13 @@ def test_upload_legt_in_bibliothek_und_warteschlange(client, db, farm, x1c, tmp_
     row = db.query(UploadedFile).one()
     assert row.original_filename == "Halter.gcode.3mf" and row.file_type == ".3mf"
     assert r["file_id"] == row.id and r["queued"] is True
-    # Dieselbe Job-Form wie „+ Warteschlange" in der Bibliothek (FileLibrary.jsx).
+    # Die eine Job-Form (farm_queue.normalize_job), gespeichert wie im Speicher der Farm.
     jobs = autofarm._read_config(autofarm.QUEUE_PATH, {"jobs": []})["jobs"]
-    assert jobs == [{"id": 1, "fileId": row.id, "fileName": "Halter.gcode.3mf", "slot": None,
-                     "amsMap": "", "status": "pending", "plate": None, "plateTotal": None,
-                     "plateName": None, "objectHeight": None, "progress": 0, "remaining": 0}]
+    assert jobs == [{"id": 1, "fileId": row.id, "fileName": "Halter.gcode.3mf", "slot": "1-0",
+                     "status": "pending", "progress": 0, "remaining": 0, "estimatedMinutes": None,
+                     "amsMap": "", "layerHeightMm": 0.0, "object_height_mm": None, "plate": None,
+                     "plateTotal": None, "plateName": "", "tag": "", "reason": ""}]
+    assert autofarm._farm["jobs"] == jobs
     assert r["job_ids"] == [1]
     assert r["checks"][0]["crash"]["crash_risk"] is False
     assert r["held"] is False
@@ -267,6 +270,7 @@ def test_mehrere_platten_ergeben_je_platte_einen_job(client, db, farm, x1c, tmp_
 
 def test_neue_ids_folgen_auf_die_vorhandenen(client, db, farm, x1c):
     autofarm._write_config(autofarm.QUEUE_PATH, {"jobs": [{"id": 7, "fileId": 1, "fileName": "a"}]})
+    autofarm.reload_queue()                 # so liegt sie beim Start der App da
     r = client.post("/api/slicer/upload", params={"filename": "b.gcode"}, content=SAFE_GCODE.encode()).json()
     assert r["job_ids"] == [8]
 
@@ -326,9 +330,9 @@ def test_druckerzustand_ohne_drucker(client, db, farm):
 # ── /overview ───────────────────────────────────────────────────────────────────
 
 def test_uebersicht(client, db, farm, x1c, monkeypatch):
-    autofarm._write_config(autofarm.QUEUE_PATH, {"jobs": [
+    monkeypatch.setitem(autofarm._farm, "jobs", [
         {"id": 1, "fileName": "a", "status": "pending", "plate": 2, "plateName": "Deckel"},
-        {"id": 2, "fileName": "b", "status": "done"}]})
+        {"id": 2, "fileName": "b", "status": "done"}])
     monkeypatch.setattr(autofarm, "_magazine_count", lambda: 3)
     r = client.get("/api/slicer/overview").json()
     assert r["jobs"]["pending"] == 1 and r["jobs"]["done"] == 1

@@ -10,12 +10,13 @@ import io
 import json
 import logging
 import os
+import time as _time
 import zipfile
 from datetime import datetime, timedelta
 from typing import Optional, List
 
 import httpx
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from app.db.database import SessionLocal
@@ -595,11 +596,74 @@ def _log(msg: str):
         pass
 
 
+# ── Warteschlange: immer geladen, jede Änderung sofort in der Datei (seit v1.1.58) ──
+# Bis v1.1.57 hielt die Farm die Liste nur während des Laufs im Speicher, die
+# Auto-Farm-Seite speicherte ihre eigene Kopie, und ein Neustart oder Update mitten
+# im Druck meldete den gedruckten Job danach wieder als „wartet". Jetzt gibt es EINE
+# Liste (_farm["jobs"]), die Regeln stehen in services/farm_queue.py.
+QUEUE_PROGRESS_SAVE_S = 60      # reine Fortschritts-Meldungen höchstens so oft schreiben
+_PROGRESS_KEYS = {"progress", "remaining", "estimatedMinutes", "snapshot"}
+
+
+def reload_queue() -> None:
+    """Liste aus der Datei laden (beim Start der App und nach „Datei zurücksetzen").
+    Was mitten im Ablauf war, wird ein Fehler mit Grund (recover_after_restart)."""
+    try:
+        jobs, nid = farm_queue.load(QUEUE_PATH)
+    except storage.BrokenFile as e:
+        # Nie über die kaputte Datei schreiben: Die Liste bleibt leer und gesperrt,
+        # bis sie unter System → Datenspeicher zurückgesetzt ist.
+        logger.error(f"Warteschlange unlesbar: {e}")
+        _farm["jobs"], _farm["_queue_next_id"], _farm["_queue_broken"] = [], 1, str(e)
+        return
+    _farm.pop("_queue_broken", None)
+    recovered = farm_queue.recover_after_restart(jobs)
+    _farm["jobs"], _farm["_queue_next_id"] = recovered, nid
+    if recovered != jobs:
+        logger.warning("Warteschlange nach Neustart: unterbrochene Jobs als Fehler markiert")
+        _jobs_changed()
+
+
+def _assert_queue_ok() -> None:
+    """Kaputte Datei → 503 DATEI_UNLESBAR (main.py), statt still eine leere Liste."""
+    if _farm.get("_queue_broken"):
+        raise storage.BrokenFile(QUEUE_PATH, _farm["_queue_broken"].split(": ", 1)[-1])
+
+
+def _jobs_changed(progress_only: bool = False) -> None:
+    """Liste speichern. Reine Fortschritts-Meldungen (alle paar Sekunden) gedrosselt."""
+    now = _time.monotonic()
+    if progress_only and now - _farm.get("_queue_saved_at", float("-inf")) < QUEUE_PROGRESS_SAVE_S:
+        return
+    if _farm.get("_queue_broken"):
+        return          # siehe reload_queue: die kaputte Datei bleibt, wie sie ist
+    nid = farm_queue.next_id(_farm["jobs"], _farm.get("_queue_next_id"))
+    _farm["_queue_next_id"] = nid
+    try:
+        farm_queue.save(_farm["jobs"], nid, QUEUE_PATH)
+        _farm["_queue_saved_at"] = now
+    except OSError as e:
+        # Nicht still: Die Farm läuft weiter, aber nach einem Neustart fehlte die Änderung.
+        logger.error(f"Warteschlange nicht gespeichert: {e}")
+
+
+def _queue_etag() -> str:
+    return storage.etag(_farm["jobs"])
+
+
+def _queue_reply(**extra) -> dict:
+    return {"success": True, "jobs": _farm["jobs"], **extra}
+
+
 def _set_job(job_id: int, updates: dict):
     for j in _farm["jobs"]:
         if j["id"] == job_id:
             j.update(updates)
+            _jobs_changed(progress_only=set(updates) <= _PROGRESS_KEYS)
             return
+
+
+reload_queue()
 
 
 def _rack_update(slot: str, status: str, file_name: str = None, object_height_mm: float = None,
@@ -3542,12 +3606,10 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
         except Exception as e:
             logger.warning(f"slot cleanup on stop failed: {e}")
 
-        remaining = [j for j in _farm["jobs"] if j["status"] in ("pending", "error")]
-        try:
-            _write_config(QUEUE_PATH, {"jobs": remaining})
-        except Exception as e:
-            logger.warning(f"queue persist on stop failed: {e}")
-        _farm["jobs"] = []   # clear so status endpoint doesn't leak stale job data
+        # Fertige fallen weg, was mitten im Ablauf war, wird Fehler „Abgebrochen".
+        # Bis v1.1.57 fiel ein laufender Job beim Stopp ganz aus der Liste.
+        _farm["jobs"] = farm_queue.finalize_after_stop(_farm["jobs"])
+        _jobs_changed()
 
         _farm["running"] = False
         _farm["stopping"] = False
@@ -3614,7 +3676,9 @@ class StartRequest(BaseModel):
     use_ams: bool = True
     poll_interval: int = 20
     min_print_minutes: int = 0
-    jobs: List[JobIn]
+    # Seit v1.1.58 optional: Die Farm nimmt ihre eigene Liste. Eine ältere Seite
+    # (Browser-Cache) schickt ihre noch; unbekannte Jobs daraus werden angehängt.
+    jobs: List[JobIn] = []
 
 
 class ReorderPayload(BaseModel):
@@ -3813,6 +3877,14 @@ async def start_farm(req: StartRequest):
                                  "Drucker — nachsehen und im Hinweis bestätigen")
     await _assert_arm_idle_for_start()
     await _assert_printer_idle_for_start(req.bambu_id)
+    _assert_queue_ok()
+    known = {j["id"] for j in _farm["jobs"]}
+    fremd = [farm_queue.normalize_job(j.model_dump()) for j in req.jobs
+             if j.id not in known and j.status == "pending"]
+    if fremd:
+        _farm["jobs"], _farm["_queue_next_id"] = farm_queue.with_ids(
+            _farm["jobs"] + fremd, farm_queue.next_id(_farm["jobs"], _farm.get("_queue_next_id")))
+        _jobs_changed()
 
     _farm.update({
         "running":         True,
@@ -3829,7 +3901,6 @@ async def start_farm(req: StartRequest):
         "seq_step_total":  0,
         "seq_step_label":  "",
         "started_at":      datetime.now().isoformat(),
-        "jobs":            [j.model_dump() for j in req.jobs],
         "log":             [],
         # Startwerte über dieselbe Funktion, die sie später nachzieht — sonst laufen
         # Schnappschuss und Nachziehen mit der Zeit auseinander (siehe _live_settings).
@@ -3844,7 +3915,8 @@ async def start_farm(req: StartRequest):
 
     _farm.pop("_no_slot_logged", None)   # „Regal voll"-Log-Dedup nicht über Läufe schleppen
     _farm.pop("_settings_mtime", None)   # nächster Durchlauf liest die Einstellungen frisch
-    _record_event("farm_start", "", f"{len([j for j in req.jobs if j.status == 'pending'])} Jobs")
+    job_count = len([j for j in _farm["jobs"] if j.get("status") == "pending"])
+    _record_event("farm_start", "", f"{job_count} Jobs")
 
     _task = asyncio.create_task(_run_farm(
         bambu_id=req.bambu_id,
@@ -3855,7 +3927,6 @@ async def start_farm(req: StartRequest):
         seq_next=seq_data.get("seq_next", []),
     ))
 
-    job_count = len([j for j in req.jobs if j.status == "pending"])
     return {"success": True, "message": "Auto Farm gestartet", "job_count": job_count}
 
 
@@ -3912,61 +3983,29 @@ async def _prepare_job(job: EnqueueRequest) -> dict:
     }
 
 
-def _saved_queue_append(prepared: list) -> list:
-    """Jobs in die GESPEICHERTE Warteschlange (Farm läuft nicht). → IDs."""
-    jobs = list(_read_checked(QUEUE_PATH, {"jobs": []}).get("jobs", []))
-    taken = {int(j.get("id") or 0) for j in jobs}
-    next_id = max(taken or {0}) + 1
-    ids = []
-    for pj in prepared:
-        jid = pj.get("id")
-        if jid is None or int(jid) in taken:
-            jid, next_id = next_id, next_id + 1
-        taken.add(int(jid))
-        jobs.append({
-            "id": jid, "fileId": pj["fileId"], "fileName": pj["fileName"],
-            "slot": None, "amsMap": pj.get("amsMap", ""), "status": "pending",
-            "plate": pj.get("plate"), "plateTotal": pj.get("plateTotal"),
-            "plateName": pj.get("plateName") or None,
-            "objectHeight": pj.get("object_height_mm"), "progress": 0, "remaining": 0,
-        })
-        ids.append(jid)
-    _write_config(QUEUE_PATH, {"jobs": jobs})
-    return ids
-
-
 def _append_jobs(prepared: list) -> list:
-    """Vorbereitete Jobs anhängen — synchron, ohne await, also ohne Lücke. Ganz oder
-    gar nicht: Eine doppelte ID lehnt den ganzen Satz ab (409). Läuft die Farm nicht
-    mehr (in der Zwischenzeit gestoppt), gehen die Jobs in die gespeicherte
-    Warteschlange: Bis v1.1.54 verschwanden sie dann (die Farm hatte ihre Liste schon
-    weggeschrieben und geleert). → IDs."""
-    if not _farm["running"]:
-        ids = _saved_queue_append(prepared)
-        _log(f"[+] {len(ids)} Job(s) → gespeicherte Warteschlange (Farm lief nicht mehr)")
-        return ids
-    have = {j["id"] for j in _farm["jobs"]}
-    wanted = [pj["id"] for pj in prepared if pj.get("id") is not None]
-    if any(i in have for i in wanted) or len(set(wanted)) != len(wanted):
-        raise HTTPException(409, "Job bereits in der Warteschlange")
-    next_id = max([int(j.get("id") or 0) for j in _farm["jobs"]] + [int(i) for i in wanted] or [0]) + 1
+    """Vorbereitete Jobs anhängen und speichern — synchron, ohne await, also ohne
+    Lücke zwischen ID-Vergabe und Anhängen. IDs vergibt NUR der Server (eine ID vom
+    Client wird ignoriert): Bis v1.1.57 zählte jede Seite selbst, und zwei Geräte
+    vergaben dieselbe. Läuft die Farm nicht, gilt dieselbe Liste. → IDs."""
+    _assert_queue_ok()
+    nid = farm_queue.next_id(_farm["jobs"], _farm.get("_queue_next_id"))
     ids = []
     for pj in prepared:
-        if pj.get("id") is None:
-            pj = {**pj, "id": next_id}
-            next_id += 1
+        pj = {**farm_queue.normalize_job(pj), "id": nid}
+        nid += 1
         _farm["jobs"].append(pj)
         ids.append(pj["id"])
         platte = f" (Platte {pj.get('plate')})" if pj.get("plate") else ""
         _log(f"[+] {pj['fileName']}{platte} → Fach wird bei Ausführung zugewiesen")
+    _farm["_queue_next_id"] = nid
+    _jobs_changed()
     return ids
 
 
 @router.post("/enqueue")
 async def enqueue_job(job: EnqueueRequest):
-    """Add a job to the running farm's queue."""
-    if not _farm["running"]:
-        raise HTTPException(400, "Farm nicht aktiv — erst starten")
+    """Einen Job einreihen (alte Schnittstelle; die Seite nutzt POST /queue/jobs)."""
     # Eindeutige ID: Prüfen und anhängen ohne await dazwischen (_append_jobs). Bis
     # v1.1.48 lag die Höhen-Analyse dazwischen, und zwei gleichzeitige Aufrufe (Plugin
     # und Bibliothek) legten zwei Jobs mit derselben ID an.
@@ -3987,23 +4026,16 @@ async def add_library_jobs(file_id: int, file_name: str, units: list) -> list:
 
     Für das OrcaSlicer-Plugin. Die Bibliothek macht dasselbe noch im Browser
     (FileLibrary.jsx) — die Jobs sehen in beiden Fällen gleich aus."""
-    if _farm["running"]:
-        prepared = [await _prepare_job(EnqueueRequest(
-            id=None, fileId=file_id, fileName=file_name, slot="1-0", amsMap="",
-            plate=plate, plateTotal=total, plateName=name)) for plate, total, name in units]
-        return _append_jobs(prepared)
-    ids = _saved_queue_append([{"id": None, "fileId": file_id, "fileName": file_name,
-                                "plate": plate, "plateTotal": total, "plateName": name,
-                                "object_height_mm": None} for plate, total, name in units])
-    _log(f"[+] {file_name} → Warteschlange ({len(ids)} Job{'s' if len(ids) != 1 else ''})")
-    return ids
+    prepared = [await _prepare_job(EnqueueRequest(
+        id=None, fileId=file_id, fileName=file_name, slot="1-0", amsMap="",
+        plate=plate, plateTotal=total, plateName=name)) for plate, total, name in units]
+    return _append_jobs(prepared)
 
 
 @router.put("/jobs/reorder")
 async def reorder_jobs(payload: ReorderPayload):
-    """Reorder pending jobs while the farm is running."""
-    if not _farm["running"]:
-        raise HTTPException(400, "Farm nicht aktiv")
+    """Wartende Jobs umsortieren (mit und ohne laufende Farm)."""
+    _assert_queue_ok()
     # Fehlt der Seite ein wartender Job (eben aus dem OrcaSlicer gekommen), bleibt er
     # hinten stehen; bis v1.1.56 fiel er beim Umsortieren aus der Liste.
     _farm["jobs"] = farm_queue.reorder(_farm["jobs"], payload.job_ids)
@@ -4013,7 +4045,8 @@ async def reorder_jobs(payload: ReorderPayload):
     order = " → ".join(
         (j.get("fileName", "?") + (f" P{j['plate']}" if j.get("plate") else "")) for j in new_pending[:5])
     _log(f"↕ Warteschlange umsortiert: {order}" + (" …" if len(new_pending) > 5 else ""))
-    return {"success": True}
+    _jobs_changed()
+    return _queue_reply()
 
 
 class JobAmsPayload(BaseModel):
@@ -4022,10 +4055,9 @@ class JobAmsPayload(BaseModel):
 
 @router.put("/job/{job_id}/ams")
 async def set_job_ams(job_id: int, payload: JobAmsPayload):
-    """Set a manual AMS mapping on a job in the running farm. Clears the
-    'needs manual AMS' block so a paused job can resume after the user maps it."""
-    if not _farm["running"]:
-        raise HTTPException(400, "Farm nicht aktiv")
+    """Manuelle AMS-Zuordnung eines Jobs. Hebt die Sperre „Manuelle AMS-Festlegung"
+    auf, damit ein pausierter Job nach der Zuordnung weiterlaufen kann."""
+    _assert_queue_ok()
     found = False
     for j in _farm["jobs"]:
         if j["id"] == job_id:
@@ -4035,12 +4067,14 @@ async def set_job_ams(job_id: int, payload: JobAmsPayload):
             break
     if not found:
         raise HTTPException(404, "Job nicht in der Warteschlange")
-    return {"success": True}
+    _jobs_changed()
+    return _queue_reply()
 
 
 @router.delete("/jobs/{job_id}")
 async def remove_job_from_farm(job_id: int):
-    """Remove a pending or errored job from the farm queue."""
+    """Wartenden, fehlerhaften oder fertigen Job entfernen (mit und ohne Lauf)."""
+    _assert_queue_ok()
     job = next((j for j in _farm["jobs"] if j["id"] == job_id), None)
     try:
         _farm["jobs"] = farm_queue.remove(_farm["jobs"], job_id)
@@ -4049,7 +4083,90 @@ async def remove_job_from_farm(job_id: int):
     except ValueError:
         raise HTTPException(400, "Laufende Jobs können nicht entfernt werden")
     _log(f"[-] {job['fileName']} entfernt")
-    return {"success": True}
+    _jobs_changed()
+    return _queue_reply()
+
+
+# ── Einzel-Endpunkte der Warteschlange (seit v1.1.58) ────────────────────────
+# Die Seiten ändern nur noch einzelne Jobs; die ganze Liste schreibt nur der Server.
+
+class QueueAddBody(BaseModel):
+    fileId: int
+    plate: Optional[int] = None      # None = alle Platten der Datei, je eine
+    count: int = 1                   # Wiederholungen je Platte
+    amsMap: str = ""
+    tag: str = ""                    # z. B. "proj:<itemId>" (Projekt-Fortschritt)
+
+
+class QueuePatchBody(BaseModel):
+    amsMap: Optional[str] = None
+    retry: bool = False              # Fehler → wieder „wartet"
+
+
+@router.post("/queue/jobs")
+async def add_queue_jobs(body: QueueAddBody):
+    """Eine Datei (alle oder eine Platte, × count) einreihen. Name und Platten kommen
+    vom Server: Bis v1.1.57 teilte jede Seite selbst auf und schrieb die ganze Liste."""
+    _assert_queue_ok()
+    if not 1 <= body.count <= 50:
+        raise HTTPException(422, "Anzahl 1 bis 50")
+    db = SessionLocal()
+    try:
+        f = db.query(UploadedFile).filter(UploadedFile.id == body.fileId).first()
+        name, path, ftype = (f.original_filename, f.file_path, f.file_type) if f else (None, None, None)
+    finally:
+        db.close()
+    if not name:
+        raise HTTPException(404, "Datei nicht gefunden")
+    loop = asyncio.get_running_loop()
+    units = await loop.run_in_executor(None, print_file.print_units, path, ftype)
+    if body.plate is not None:
+        units = [u for u in units if u[0] == body.plate] or [(body.plate, None, None)]
+    prepared = [await _prepare_job(EnqueueRequest(
+        id=None, fileId=body.fileId, fileName=name, slot="1-0", amsMap=body.amsMap,
+        plate=plate, plateTotal=total, plateName=pname, tag=body.tag or None))
+        for plate, total, pname in units for _ in range(body.count)]
+    ids = _append_jobs(prepared)
+    return _queue_reply(ids=ids)
+
+
+@router.delete("/queue/jobs/{job_id}")
+async def delete_queue_job(job_id: int):
+    return await remove_job_from_farm(job_id)
+
+
+@router.put("/queue/order")
+async def set_queue_order(payload: ReorderPayload):
+    return await reorder_jobs(payload)
+
+
+@router.patch("/queue/jobs/{job_id}")
+async def patch_queue_job(job_id: int, body: QueuePatchBody):
+    """AMS-Zuordnung setzen und/oder einen fehlgeschlagenen Job wiederholen."""
+    _assert_queue_ok()
+    job = next((j for j in _farm["jobs"] if j["id"] == job_id), None)
+    if job is None:
+        raise HTTPException(404, "Job nicht in der Warteschlange")
+    if body.retry:
+        if job.get("status") != "error":
+            # Fertige nie: Die Farm druckte sie sonst ein zweites Mal.
+            raise HTTPException(409, "Nur fehlgeschlagene Jobs lassen sich wiederholen")
+        job.update({"status": "pending", "progress": 0, "remaining": 0, "reason": "",
+                    "slot": "1-0"})
+    if body.amsMap is not None:
+        job["amsMap"] = body.amsMap.strip()
+        job["needs_ams"] = False
+    _jobs_changed()
+    return _queue_reply()
+
+
+@router.post("/queue/reset-failed")
+async def reset_failed_jobs():
+    """Alle fehlgeschlagenen Jobs wieder auf „wartet" — fertige bleiben fertig."""
+    _assert_queue_ok()
+    _farm["jobs"] = farm_queue.reset_failed(_farm["jobs"])
+    _jobs_changed()
+    return _queue_reply()
 
 
 @router.get("/status")
@@ -4557,8 +4674,7 @@ async def dispatch_queue(body: dict = None):
     if not pool:
         raise HTTPException(400, "Kein Farm-Layout eingerichtet — es gibt nur einen Drucker")
 
-    jobs = [j for j in _farm.get("jobs", []) if j.get("status") == "pending"] \
-        or _read_config(QUEUE_PATH, {"jobs": []}).get("jobs", [])
+    jobs = [j for j in _farm.get("jobs", []) if j.get("status") == "pending"]
     plan = job_dispatch.distribute(pool, jobs)
 
     if body.get("apply"):
@@ -4566,12 +4682,7 @@ async def dispatch_queue(body: dict = None):
         for jid, pid in plan.items():
             if pid and jid in by_id:
                 by_id[jid]["printer"] = pid
-        if _farm.get("running"):
-            for j in _farm.get("jobs", []):
-                if j.get("id") in plan and plan[j["id"]]:
-                    j["printer"] = plan[j["id"]]
-        else:
-            _write_config(QUEUE_PATH, {"jobs": jobs})
+        _jobs_changed()
         _log(f"⇉ Warteschlange verteilt: {len([p for p in plan.values() if p])} Job(s) zugewiesen")
 
     return {
@@ -4820,18 +4931,29 @@ async def save_settings(payload: SettingsPayload):
     return {"success": True}
 
 @router.get("/queue")
-async def get_queue():
-    # Return live in-memory state when running so _id in frontend stays ahead of all known IDs
-    if _farm["running"] and _farm.get("jobs"):
-        return _farm["jobs"]
-    data = _read_checked(QUEUE_PATH, {"jobs": []})
-    return data.get("jobs", [])
+async def get_queue(response: Response):
+    """Die eine Warteschlange (mit und ohne Lauf), ETag für PUT /queue."""
+    _assert_queue_ok()
+    response.headers["ETag"] = f'"{_queue_etag()}"'
+    return _farm["jobs"]
+
 
 @router.put("/queue")
-async def save_queue(payload: QueuePayload):
-    _read_checked(QUEUE_PATH, {"jobs": []})   # kaputte Datei nicht still überschreiben
-    _write_config(QUEUE_PATH, payload.model_dump())
-    return {"success": True}
+async def save_queue(payload: QueuePayload, request: Request):
+    """Ganze Liste ersetzen — nur noch mit If-Match auf den gelesenen Stand und nie
+    während des Laufs. Bis v1.1.57 schrieb die Auto-Farm-Seite so alle 800 ms ihre
+    Kopie zurück und löschte, was inzwischen anderswo eingereiht war. Eine ältere
+    Seite im Browser-Cache schickt kein If-Match und bekommt 409."""
+    _assert_queue_ok()
+    if _farm["running"]:
+        raise HTTPException(409, "Farm läuft — die Warteschlange ändern nur noch einzelne Aktionen")
+    if (request.headers.get("if-match") or "").strip('"') != _queue_etag():
+        raise HTTPException(409, "Warteschlange inzwischen geändert — Seite neu laden")
+    jobs = [farm_queue.normalize_job(j) for j in payload.jobs if isinstance(j, dict)]
+    _farm["jobs"], _farm["_queue_next_id"] = farm_queue.with_ids(
+        jobs, farm_queue.next_id(_farm["jobs"], _farm.get("_queue_next_id")))
+    _jobs_changed()
+    return _queue_reply()
 
 
 @router.post("/homing_file/setup")

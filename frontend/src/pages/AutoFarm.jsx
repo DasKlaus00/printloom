@@ -11,6 +11,8 @@ import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { usePageActive, useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage, tr as translate, locale } from '../services/i18n'
 import RecoveryBanner from '../components/RecoveryBanner'
+import { mergeServerJobs, pendingOrder } from '../services/queueModel'
+import { confirmDialog } from '../services/confirm'
 import PrinterOverview from '../components/PrinterOverview'
 
 /* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
@@ -55,7 +57,6 @@ const S = {
   error:    { label: 'Fehler',        dot: 'dot-red',   color: 'text-red-400'    },
 }
 
-let _id = Date.now()
 
 const TEMPLATES_KEY = 'ottomat3d_queue_templates'
 const loadTemplates = () => {
@@ -784,7 +785,6 @@ function AutoFarm({ setCurrentPage } = {}) {
   const dashLoadedRef = useRef(false)
   const prevRunningRef = useRef(false)
   const pollTimerRef = useRef(null)
-  const queueSaveRef    = useRef(null)
   const runningRef  = useRef(false)
   const rackDataRef = useRef(null)
 
@@ -904,61 +904,13 @@ function AutoFarm({ setCurrentPage } = {}) {
     setAmsLoading(false)
   }, [bambuId])
 
-  /* ── Sync job statuses from backend (only while running) ─── */
+  /* ── Warteschlange vom Server (Status/WebSocket), immer ─────────
+     Seit v1.1.58 führt der Server die Liste auch ohne Lauf. Die Seite übernimmt
+     Reihenfolge und Stand und hält nur ihre Analyse (Filamente …) je Job-ID. */
   useEffect(() => {
-    if (!farmStatus?.jobs?.length || !farmStatus?.running) return
-    // Keep _id ahead of all known job IDs to prevent 409 collisions on re-enqueue
-    const maxId = Math.max(...farmStatus.jobs.map(j => j.id))
-    if (maxId >= _id) _id = maxId + 1
-    setJobs(prev => {
-      if (!prev.length) {
-        // Fresh page load while the farm already runs — map height like below so
-        // the rack preview works without waiting for a queue reload.
-        return farmStatus.jobs.map(j => ({
-          ...j,
-          computedHeight: j.object_height_mm ?? null,
-          objectHeight:   j.object_height_mm ?? null,
-          slot:           (j.slot && j.slot !== '1-0') ? j.slot : null,
-          heightLoading:  false,
-          note:           '',
-        }))
-      }
-      const updated = prev.map(j => {
-        const bj = farmStatus.jobs.find(x => x.id === j.id)
-        if (!bj) return j
-        return {
-          ...j,
-          status:           bj.status,
-          progress:         bj.progress,
-          remaining:        bj.remaining,
-          estimatedMinutes: bj.estimatedMinutes ?? j.estimatedMinutes,
-          // Use the real slot the backend assigns at print start, but keep our
-          // local preview while it still echoes the '1-0' placeholder (pending) —
-          // otherwise the rack viz loses the target fach for queued jobs mid-run.
-          slot:             (bj.slot && bj.slot !== '1-0') ? bj.slot : j.slot,
-          needs_ams:        bj.needs_ams ?? j.needs_ams,
-          ams_missing:      bj.ams_missing ?? j.ams_missing,
-          snapshot:         bj.snapshot ?? j.snapshot,
-        }
-      })
-      // Append jobs that exist in the backend but not locally — e.g. added to
-      // the running farm from another device (iPhone vs. desktop).
-      const known = new Set(updated.map(j => j.id))
-      const added = farmStatus.jobs
-        .filter(bj => !known.has(bj.id))
-        .map(bj => ({
-          ...bj,
-          // Backend uses snake_case object_height_mm; the UI height bar + slot
-          // preview read computedHeight — map it so mid-run additions render fully.
-          computedHeight: bj.object_height_mm ?? null,
-          objectHeight:   bj.object_height_mm ?? null,
-          slot:           (bj.slot && bj.slot !== '1-0') ? bj.slot : null,
-          heightLoading:  false,
-          note:           '',
-        }))
-      return added.length ? [...updated, ...added] : updated
-    })
-  }, [farmStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!Array.isArray(farmStatus?.jobs)) return
+    setJobs(prev => mergeServerJobs(prev, farmStatus.jobs))
+  }, [farmStatus])
 
   // Filamente für Jobs nachladen, die noch keine haben (z. B. aus der Datei-
   // Bibliothek in die laufende Farm gelegt) — plattengenau, damit der AMS-Mapper
@@ -1059,39 +1011,19 @@ function AutoFarm({ setCurrentPage } = {}) {
     setQueueError('')
     return autofarmService.getQueue()
       .then(r => {
-        const loaded = (r.data ?? []).map(j => ({ ...j, heightLoading: false, progress: j.progress ?? 0, remaining: j.remaining ?? 0 }))
-        if (loaded.length) {
-          _id = Math.max(...loaded.map(j => j.id)) + 1
-          setJobs(loaded)
-        }
+        setJobs(prev => mergeServerJobs(prev, r.data ?? []))
         setQueueLoaded(true)
       })
       .catch(e => setQueueError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
   }, [])
+  // Antwort einer Änderung (enthält die neue Liste) sofort übernehmen.
+  const applyServer = (r) => { if (Array.isArray(r?.data?.jobs)) setJobs(prev => mergeServerJobs(prev, r.data.jobs)) }
   useEffect(() => { loadQueue() }, [loadQueue])
 
-  // Jobs are added from the Datei-Bibliothek now — reload the queue when it
-  // signals a change or when the tab regains focus, unless the farm is running.
+  // Neu laden, wenn eine andere Seite einreiht oder der Tab wieder sichtbar wird.
   useEffect(() => {
-    const reload = () => {
-      // While running the in-memory farm queue is the source of truth; don't reload
-      // (it would clobber live state). Just refresh the status so the merge picks up
-      // mid-run additions immediately instead of waiting for the next 5s poll.
-      if (runningRef.current) { fetchStatus(); return }
-      // Anstehenden Debounce-Auto-Save VERWERFEN: er würde sonst die veraltete
-      // lokale Liste ÜBER die frisch geschriebene Server-Queue speichern (Race:
-      // Bibliothek fügt hinzu → Event → 800-ms-Save aus altem Zustand feuert
-      // dazwischen → neue Jobs „verschwinden" bzw. erscheinen erst nach F5).
-      clearTimeout(queueSaveRef.current)
-      autofarmService.getQueue()
-        .then(r => {
-          const loaded = (r.data ?? []).map(j => ({ ...j, heightLoading: false, progress: j.progress ?? 0, remaining: j.remaining ?? 0 }))
-          _id = loaded.length ? Math.max(...loaded.map(j => j.id)) + 1 : _id
-          setJobs(loaded)
-          loaded.forEach(j => { if (!j.computedHeight && j.fileId) analyzeFile(j.id, j.fileId, j.plate) })
-        })
-        .catch(() => {})
-    }
+    // Bibliothek, Historie oder OrcaSlicer haben eingereiht: die Liste des Servers holen.
+    const reload = () => { loadQueue(); if (runningRef.current) fetchStatus() }
     const onFocus = () => { if (document.visibilityState === 'visible') reload() }
     window.addEventListener('printloom:queueChanged', reload)
     window.addEventListener('focus', onFocus)
@@ -1102,16 +1034,8 @@ function AutoFarm({ setCurrentPage } = {}) {
       document.removeEventListener('visibilitychange', onFocus)
     }
   }, [fetchStatus]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!queueLoaded || running) return
-    clearTimeout(queueSaveRef.current)
-    queueSaveRef.current = setTimeout(() => {
-      const toSave = jobs.map(({ heightLoading, ...rest }) => rest)
-      autofarmService.saveQueue(toSave).catch(() => {})
-    }, 800)
-    return () => clearTimeout(queueSaveRef.current)
-  }, [jobs, running, queueLoaded])
+  // Bis v1.1.57 stand hier ein Effekt, der die ganze lokale Liste 800 ms nach jeder
+  // Änderung zurückschrieb (PUT /queue) — samt Löschen dessen, was anderswo dazukam.
 
   /* ── Load ────────────────────────────────────────────────── */
   const load = useCallback(async () => {
@@ -1231,55 +1155,18 @@ function AutoFarm({ setCurrentPage } = {}) {
   const setJobField = (id, updates) =>
     setJobs(prev => prev.map(j => j.id === id ? { ...j, ...updates } : j))
 
-  const analyzeFile = (jobId, fileId, plate = null) => {
-    // Plattengenau: Multi-Plate-Jobs analysieren IHRE Platte (Höhe/Fächer),
-    // nicht die erste.
-    rackManagerService.analyzeFile(fileId, plate)
-      .then(r => {
-        const computed = r.data.computed_height_mm ?? null
-        setJobs(prev => {
-          // Nur das Analyse-Ergebnis übernehmen — KEINE Vorschau, wohin die Platte
-          // kommt. Wartende Jobs bleiben '1-0'/„Auto"; der Server wählt das Fach
-          // live beim Druckstart.
-          return prev.map(j => j.id === jobId ? {
-            ...j,
-            objectHeight:   r.data.max_z_mm,
-            layerCount:     r.data.layer_count    ?? 0,
-            layerHeightMm:  r.data.layer_height_mm ?? 0,
-            heightSource:   r.data.source         ?? '',
-            computedHeight: computed,
-            heightLoading:  false,
-          } : j)
-        })
-      })
-      .catch(() => setJobField(jobId, { heightLoading: false }))
-
-    autofarmService.getFileFilaments(fileId, plate)
-      .then(r => setJobField(jobId, { filaments: r.data.filaments ?? [] }))
-      .catch(() => setJobField(jobId, { filaments: [] }))
-  }
-
-  const _doAddJobs = (file, amsMap, count, plate = null, plateTotal = null) => {
-    const newJobs = Array.from({ length: count }, () => {
-      const jobId = _id++
-      return {
-        id: jobId, fileId: file.id, fileName: file.original_filename,
-        slot: null, amsMap: amsMap ?? '', objectHeight: null, heightLoading: true,
-        progress: 0, remaining: 0, status: 'pending', note: '', estimatedMinutes: null,
-        filaments: [], plate: plate ?? null, plateTotal: plateTotal ?? null,
-      }
-    })
-    setJobs(prev => [...prev, ...newJobs])
-    newJobs.forEach(j => analyzeFile(j.id, file.id, j.plate))
-    if (running) {
-      newJobs.forEach(j =>
-        autofarmService.enqueue({
-          id: j.id, fileId: file.id, fileName: file.original_filename,
-          slot: '1-0', amsMap: j.amsMap ?? '', plate: j.plate ?? null, plateTotal: j.plateTotal ?? null,
-        }).catch(e => showFeedback(e.response?.data?.detail ?? e.message, false))
-      )
+  // Einreihen macht der Server: Name, Platten, Höhe und ID kommen von dort.
+  // plate = null → alle Platten der Datei, je `count`.
+  const _doAddJobs = async (file, amsMap, count, plate = null) => {
+    try {
+      const r = await autofarmService.addJobs({ fileId: file.id, plate, count, amsMap: amsMap ?? '' })
+      applyServer(r)
+      if (count > 1) setAddCount(1)
+      return r.data?.ids?.length ?? 0
+    } catch (e) {
+      showFeedback(e.response?.data?.detail ?? e.message, false)
+      return 0
     }
-    if (count > 1) setAddCount(1)
   }
 
   const addJob = () => {
@@ -1289,13 +1176,8 @@ function AutoFarm({ setCurrentPage } = {}) {
     // Kein Datei-Preset mehr (entfernt): amsMap bleibt leer → die Farm matcht beim
     // Druck material- UND farbgenau (nie materialübergreifend) oder pausiert.
     const amsMap = ''
-    // Mehr-Platten-.3mf: automatisch JE Platte ein Job (× Wiederholungen) — keine
-    // Auswahl, einfach alle. Sonst ein einzelner Job.
-    if (filePlates.length > 1) {
-      filePlates.forEach(p => _doAddJobs(file, amsMap, count, p, filePlates.length))
-    } else {
-      _doAddJobs(file, amsMap, count)
-    }
+    // Mehr-Platten-.3mf: der Server legt JE Platte einen Job an (× Wiederholungen).
+    _doAddJobs(file, amsMap, count)
   }
 
   /* ── Queue-Vorlagen (Templates) ─── */
@@ -1305,9 +1187,13 @@ function AutoFarm({ setCurrentPage } = {}) {
     // collapse identical jobs (same file + AMS-Map) into {fileId, fileName, amsMap, count}
     const groups = []
     jobs.forEach(j => {
-      const g = groups.find(x => x.fileId === j.fileId && x.amsMap === (j.amsMap || ''))
+      // Je Platte eine Gruppe: Sonst legte eine Vorlage aus 3 Platten beim Laden
+      // 3 × alle Platten an.
+      const g = groups.find(x => x.fileId === j.fileId && x.amsMap === (j.amsMap || '') &&
+                                 (x.plate ?? null) === (j.plate ?? null))
       if (g) g.count++
-      else groups.push({ fileId: j.fileId, fileName: j.fileName, amsMap: j.amsMap || '', count: 1 })
+      else groups.push({ fileId: j.fileId, fileName: j.fileName, amsMap: j.amsMap || '',
+                         plate: j.plate ?? null, count: 1 })
     })
     const all = { ...loadTemplates(), [name]: groups }
     localStorage.setItem(TEMPLATES_KEY, JSON.stringify(all))
@@ -1323,7 +1209,7 @@ function AutoFarm({ setCurrentPage } = {}) {
     entries.forEach(e => {
       const file = gcodeFiles.find(f => f.id === e.fileId)
       if (!file) { missing++; return }
-      _doAddJobs(file, e.amsMap || '', e.count || 1)
+      _doAddJobs(file, e.amsMap || '', e.count || 1, e.plate ?? null)
       added += e.count || 1
     })
     setTplOpen(false)
@@ -1343,35 +1229,20 @@ function AutoFarm({ setCurrentPage } = {}) {
   }
 
   const removeJob = async (id) => {
-    if (running) {
-      const job = jobs.find(j => j.id === id)
-      if (job?.status === 'done') {
-        setJobs(prev => prev.filter(j => j.id !== id))
-        return
-      }
-      try {
-        await autofarmService.removeJob(id)
-      } catch (e) {
-        if (e.response?.status === 404) {
-          // Job already gone from backend — remove locally
-          setJobs(prev => prev.filter(j => j.id !== id))
-          return
-        }
-        showFeedback(e.response?.data?.detail ?? e.message, false)
-        return
-      }
+    try {
+      applyServer(await autofarmService.deleteJob(id))
+    } catch (e) {
+      if (e.response?.status === 404) { loadQueue(); return }    // anderswo schon entfernt
+      showFeedback(e.response?.data?.detail ?? e.message, false)
     }
-    setJobs(prev => prev.filter(j => j.id !== id))
   }
 
+  // Neue Reihenfolge an den Server (mit und ohne Lauf). Fehlt der Seite ein Job,
+  // behält der Server ihn hinten (farm_queue.reorder).
   const syncReorder = (updatedJobs) => {
-    // IMMER an die laufende Farm melden — `running` kann kurz veraltet sein
-    // (WS-Aussetzer/Backend-Neustart); dann ging die Umsortierung nur in die
-    // gespeicherte Datei, die die LAUFENDE Farm nie wieder liest → UI zeigte
-    // die neue Reihenfolge, gedruckt wurde die alte. Läuft die Farm nicht,
-    // antwortet das Backend 400 (harmlos) und der Debounce-Save persistiert.
-    const pendingIds = updatedJobs.filter(j => j.status === 'pending').map(j => j.id)
-    autofarmService.reorderJobs(pendingIds).catch(() => {})
+    autofarmService.setOrder(pendingOrder(updatedJobs))
+      .then(applyServer)
+      .catch(e => { showFeedback(e.response?.data?.detail ?? e.message, false); loadQueue() })
   }
 
   const moveJobUp = (id) => setJobs(prev => {
@@ -1435,13 +1306,10 @@ function AutoFarm({ setCurrentPage } = {}) {
     setMagEdit(m => { const x = { ...m }; delete x[ri]; return x })
   }
 
-  const resetJob = (id) => {
-    setJobs(prev => {
-      const updated = prev.map(j => j.id === id ? { ...j, status: 'pending', progress: 0, remaining: 0 } : j)
-      const toSave = updated.map(({ heightLoading, ...rest }) => rest)
-      autofarmService.saveQueue(toSave).catch(() => {})
-      return updated
-    })
+  // Nur Fehlgeschlagene: Ein fertiger Job auf „wartet" würde ein zweites Mal gedruckt.
+  const resetJob = async (id) => {
+    try { applyServer(await autofarmService.patchJob(id, { retry: true })) }
+    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
   }
 
   // Persist the external webcam URL (shared with the Steuerung page via device settings)
@@ -1452,14 +1320,16 @@ function AutoFarm({ setCurrentPage } = {}) {
     }
   }, [bambuId])
 
-  const resetFarm = () => {
-    setJobs(prev => {
-      const reset = prev.map(j => ({ ...j, status: 'pending', progress: 0, remaining: 0 }))
-      const toSave = reset.map(({ heightLoading, ...rest }) => rest)
-      autofarmService.saveQueue(toSave).catch(() => {})
-      return reset
-    })
-    setFarmStatus(null)
+  // Bis v1.1.57 setzte „Reset" ALLE Jobs auf „wartet", auch fertige (Doppeldruck).
+  const resetFarm = async () => {
+    const n = jobs.filter(j => j.status === 'error').length
+    if (!n || !(await confirmDialog({
+      title: tr('Fehlgeschlagene wiederholen?'),
+      message: tr('{0} fehlgeschlagene Job(s) kommen wieder in die Warteschlange. Fertige bleiben fertig.', n),
+      confirmLabel: tr('Wiederholen'),
+    }))) return
+    try { applyServer(await autofarmService.resetFailed()) }
+    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
   }
 
   /* ── Rack management ─────────────────────────────────────── */
@@ -1472,7 +1342,7 @@ function AutoFarm({ setCurrentPage } = {}) {
     setJobs(prev => {
       const gone = prev.filter(j => j.status === 'done' && keys.has(j.slot))
       if (!gone.length) return prev
-      if (runningRef.current) gone.forEach(j => autofarmService.removeJob(j.id).catch(() => {}))
+      gone.forEach(j => autofarmService.deleteJob(j.id).catch(e => console.warn('Job nicht entfernt:', e?.message || e)))
       return prev.filter(j => !(j.status === 'done' && keys.has(j.slot)))
     })
   }
@@ -1528,17 +1398,9 @@ function AutoFarm({ setCurrentPage } = {}) {
       const r = await rackManagerService.getAll()
       setRackData(r.data)
       removeDoneJobsForSlots([slotKey])
-      const pendingJob = jobs.find(j => j.status === 'pending')
-      if (pendingJob) {
-        setJobs(prev => {
-          const updated = prev.map(j => j.id === pendingJob.id ? { ...j, slot: slotKey } : j)
-          autofarmService.saveQueue(updated.map(({ heightLoading, ...rest }) => rest)).catch(() => {})
-          return updated
-        })
-        showFeedback(tr('Fach {0} → "{1}" zugewiesen', slotKey, pendingJob.fileName))
-      } else {
-        showFeedback(tr('Fach {0} geleert — kein ausstehender Job', slotKey))
-      }
+      // Kein Fach am Job mehr: Der Server wählt es erst beim Druckstart (das hier
+      // gesetzte Fach hatte nie eine Wirkung, der Start schickte immer '1-0').
+      showFeedback(tr('Fach {0} geleert — der nächste Job nimmt beim Start ein freies Fach', slotKey))
     } catch {
       showFeedback(tr('Zuweisung fehlgeschlagen'), false)
     }
@@ -1644,13 +1506,7 @@ function AutoFarm({ setCurrentPage } = {}) {
         use_ams:           fresh.use_ams ?? true,
         poll_interval:     Math.max(1, fresh.poll_interval ?? 20),
         min_print_minutes: fresh.min_print_minutes ?? 0,
-        jobs: pending.map(j => ({
-          id: j.id, fileId: j.fileId, fileName: j.fileName, slot: '1-0',
-          status: 'pending', amsMap: j.amsMap ?? '',
-          layerHeightMm: j.layerHeightMm ?? 0,
-          object_height_mm: j.computedHeight ?? j.objectHeight ?? null,
-          plate: j.plate ?? null, plateTotal: j.plateTotal ?? null, plateName: j.plateName ?? null,
-        })),
+        // Keine Jobliste mehr: Die Farm nimmt ihre eigene (seit v1.1.58).
       })
       await fetchStatus()
       showFeedback(tr('Auto Farm gestartet'))
@@ -1880,8 +1736,8 @@ function AutoFarm({ setCurrentPage } = {}) {
           </button>
           {!running ? (
             <>
-              {jobs.some(j => j.status !== 'pending') && (
-                <button onClick={resetFarm} className="btn btn-ghost btn-sm text-surface-500 hover:text-surface-300" title={tr('Alle auf Ausstehend zurücksetzen')}>
+              {jobs.some(j => j.status === 'error') && (
+                <button onClick={resetFarm} className="btn btn-ghost btn-sm text-surface-500 hover:text-surface-300" title={tr('Fehlgeschlagene Jobs wiederholen')}>
                   {tr('↺ Reset')}
                 </button>
               )}
@@ -2197,7 +2053,8 @@ function AutoFarm({ setCurrentPage } = {}) {
                           value={job.amsMap}
                           onChange={map => {
                             setJobField(job.id, { amsMap: map })
-                            if (running) autofarmService.setJobAms(job.id, map).catch(() => {})
+                            autofarmService.patchJob(job.id, { amsMap: map })
+                              .catch(e => showFeedback(e.response?.data?.detail ?? e.message, false))
                           }}
                         />
                       </div>
@@ -2399,7 +2256,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                               <div className="flex items-center gap-0.5 shrink-0 ml-0.5">
                                 <button onClick={() => clearRackSlot(key)} title={tr('Fach leeren')} className={`text-[9px] hover:text-amber-300 ${isStuck || isOther ? 'text-red-500' : 'text-amber-500'}`}>✓</button>
                                 {isDone && (
-                                  <button onClick={() => assignJobToSlot(key)} title={tr('Leeren + nächsten Job zuweisen')} className="text-[9px] text-blue-500 hover:text-blue-300">↻</button>
+                                  <button onClick={() => assignJobToSlot(key)} title={tr('Fach leeren')} className="text-[9px] text-blue-500 hover:text-blue-300">↻</button>
                                 )}
                               </div>
                             )}

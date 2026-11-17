@@ -52,27 +52,8 @@ export default function History() {
   const requeue = async (it) => {
     if (it.fileId == null) { setFeedback({ ok: false, msg: tr('Datei nicht mehr verfügbar') }); return }
     try {
-      const [statusRes, queueRes] = await Promise.all([
-        autofarmService.getStatus(true).catch(() => ({ data: {} })),
-        autofarmService.getQueue().catch(() => ({ data: [] })),
-      ])
-      const running = !!statusRes.data?.running
-      const cur = queueRes.data ?? []
-      const id = cur.length ? Math.max(...cur.map(j => j.id ?? 0)) + 1 : 1
-      const job = {
-        id, fileId: it.fileId, fileName: it.fileName,
-        slot: null, amsMap: '', status: 'pending',
-        plate: it.plate ?? null, plateTotal: it.plateTotal ?? null, plateName: it.plateName || null,
-        objectHeight: null, progress: 0, remaining: 0,
-      }
-      if (running) {
-        await autofarmService.enqueue({
-          id: job.id, fileId: job.fileId, fileName: job.fileName,
-          slot: '1-0', amsMap: '', plate: job.plate, plateTotal: job.plateTotal, plateName: job.plateName,
-        })
-      } else {
-        await autofarmService.saveQueue([...cur, job])
-      }
+      // Genau diese Platte (oder die ganze Datei); ID und Name vergibt der Server.
+      await autofarmService.addJobs({ fileId: it.fileId, plate: it.plate ?? null })
       window.dispatchEvent(new CustomEvent('printloom:queueChanged'))
       setFeedback({ ok: true, msg: tr('„{0}" in die Warteschlange gelegt', (it.fileName || '').replace(/\.[^.]+$/, '')) })
     } catch {

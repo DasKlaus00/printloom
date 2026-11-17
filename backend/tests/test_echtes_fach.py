@@ -129,13 +129,13 @@ def _req(**kw):
 
 
 def test_paralleles_einreihen_erzeugt_keine_doppelten_ids(laufende_farm):
+    """Zwei Seiten schicken dieselbe (selbst gezählte) ID: Seit v1.1.58 vergibt nur
+    der Server IDs, beide Jobs kommen an, jeder mit eigener."""
     async def beide():
-        return await asyncio.gather(af.enqueue_job(_req(id=5)), af.enqueue_job(_req(id=5)),
-                                    return_exceptions=True)
-    ergebnisse = asyncio.run(beide())
-    fehler = [e for e in ergebnisse if isinstance(e, HTTPException)]
-    assert len(fehler) == 1 and fehler[0].status_code == 409
-    assert [j["id"] for j in af._farm["jobs"]] == [5]
+        return await asyncio.gather(af.enqueue_job(_req(id=5)), af.enqueue_job(_req(id=5)))
+    a, b = asyncio.run(beide())
+    assert a["id"] != b["id"]
+    assert sorted(j["id"] for j in af._farm["jobs"]) == sorted([a["id"], b["id"]])
 
 
 def test_ohne_id_vergibt_der_server_eindeutige(laufende_farm):

@@ -238,11 +238,14 @@ export const autofarmService = {
   getStatus:     (light) => api.get('/autofarm/status', light ? { params: { light: 1 } } : undefined),
   stop:          ()      => api.post('/autofarm/stop'),
   forceReset:    ()      => api.post('/autofarm/force-reset'),
-  reorderJobs:   (ids)   => api.put('/autofarm/jobs/reorder', { job_ids: ids }),
   pause:         ()      => api.post('/autofarm/pause'),
-  enqueue:       (job)   => api.post('/autofarm/enqueue', job),
-  removeJob:     (jobId) => api.delete(`/autofarm/jobs/${jobId}`),
-  setJobAms:     (jobId, amsMap) => api.put(`/autofarm/job/${jobId}/ams`, { amsMap }),
+  // Warteschlange: nur einzelne Änderungen, die ganze Liste schreibt der Server (seit
+  // v1.1.58). Jede Antwort enthält die neue Liste ({ jobs }).
+  addJobs:       (body)  => api.post('/autofarm/queue/jobs', body),   // {fileId, plate?, count?, amsMap?, tag?}
+  deleteJob:     (jobId) => api.delete(`/autofarm/queue/jobs/${jobId}`),
+  setOrder:      (ids)   => api.put('/autofarm/queue/order', { job_ids: ids }),
+  patchJob:      (jobId, body) => api.patch(`/autofarm/queue/jobs/${jobId}`, body), // {amsMap?, retry?}
+  resetFailed:   ()      => api.post('/autofarm/queue/reset-failed'),
   getSequences:  ()      => api.get('/autofarm/sequences'),
   saveSequences: (data)  => api.put('/autofarm/sequences', data),
   // Trockenlauf: Sequenz durchspielen, ohne etwas zu senden
@@ -258,7 +261,6 @@ export const autofarmService = {
   getSettings:   ()      => api.get('/autofarm/settings'),
   saveSettings:  (data)  => api.put('/autofarm/settings', data),
   getQueue:      ()      => api.get('/autofarm/queue'),
-  saveQueue:         (jobs)  => api.put('/autofarm/queue', { jobs }),
   getHomingFileInfo: ()      => api.get('/autofarm/homing_file/info'),
   setupHomingFile:   ()      => api.post('/autofarm/homing_file/setup'),
   clearLog:          ()      => api.post('/autofarm/clear_log'),

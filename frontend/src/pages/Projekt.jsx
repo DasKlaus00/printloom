@@ -14,6 +14,7 @@ function Projekt() {
   const [projects,  setProjects]  = useState([])
   const [activePid, setActivePid] = useState(() => localStorage.getItem(ACTIVE_KEY) || '')
   const [farmJobs,  setFarmJobs]  = useState([])
+  const [pushing,   setPushing]   = useState(false)   // Doppelklick reiht nicht doppelt ein
   const [search,    setSearch]    = useState('')
   const [feedback,  setFeedback]  = useState(null)
   const [uploading, setUploading] = useState(false)
@@ -138,18 +139,19 @@ function Projekt() {
   /* ── Drucken: offene Stücke einreihen (Farm starten falls nötig) ── */
   const pushToPrint = async () => {
     if (!active || totalOpen <= 0) return
-    const units = []
-    for (const it of items) for (let k = 0; k < outstanding(it); k++)
-      units.push({ fileId: it.file_id, fileName: it.file_name, tag: `proj:${it.id}` })
-    const baseId = Date.now() * 1000
-    const jobs = units.map((u, i) => ({ id: baseId + i, fileId: u.fileId, fileName: u.fileName, slot: '1-0', status: 'pending', amsMap: '', tag: u.tag }))
+    setPushing(true)
     try {
+      // Erst einreihen (zur vorhandenen Warteschlange dazu), dann ggf. starten. Bis
+      // v1.1.57 startete das Projekt die Farm NUR mit seinen Jobs, und die vorher
+      // geplanten waren weg (#21).
+      let added = 0
+      for (const it of items) {
+        const n = outstanding(it)
+        if (n > 0) added += (await autofarmService.addJobs({ fileId: it.file_id, count: n, tag: `proj:${it.id}` })).data?.ids?.length ?? 0
+      }
       const st = await autofarmService.getStatus(1)
       if (st.data?.running) {
-        for (const j of jobs) {
-          await autofarmService.enqueue({ id: j.id, fileId: j.fileId, fileName: j.fileName, slot: '1-0', amsMap: '', tag: j.tag })
-        }
-        showFeedback(tr('{0} Objekt(e) zur Warteschlange hinzugefügt', jobs.length))
+        showFeedback(tr('{0} Objekt(e) zur Warteschlange hinzugefügt', added))
       } else {
         const [devs, settings] = await Promise.all([deviceService.listDevices(), autofarmService.getSettings()])
         const bambu = (devs.data ?? []).find(d => d.device_type === 'bambu_lab')
@@ -159,11 +161,11 @@ function Projekt() {
           use_ams:           settings.data?.use_ams ?? true,
           poll_interval:     settings.data?.poll_interval ?? 20,
           min_print_minutes: settings.data?.min_print_minutes ?? 0,
-          jobs,
         })
-        showFeedback(tr('Auto Farm gestartet — {0} Objekt(e) eingereiht', jobs.length))
+        showFeedback(tr('Auto Farm gestartet — {0} Objekt(e) eingereiht', added))
       }
     } catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+    finally { setPushing(false) }
   }
 
   const filtered = files.filter(f => !search || f.original_filename.toLowerCase().includes(search.toLowerCase()))
@@ -297,7 +299,7 @@ function Projekt() {
                 <span><span className="text-surface-200 font-semibold text-sm">{totalOpen}</span> {tr('offen')}</span>
                 <span className="font-mono">{tr('{0} gesamt · {1} fertig', totalQ, totalD)}</span>
               </div>
-              <button onClick={pushToPrint} disabled={totalOpen <= 0} className="btn btn-primary w-full">
+              <button onClick={pushToPrint} disabled={totalOpen <= 0 || pushing} className="btn btn-primary w-full">
                 {tr('▶ Drucken ({0} offen)', totalOpen)}
               </button>
               {totalD > 0 && (

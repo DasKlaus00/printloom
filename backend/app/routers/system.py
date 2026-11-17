@@ -591,6 +591,8 @@ async def reset_data_file(key: str):
     backup = storage.backup_broken(path)
     storage.write_json(path, rules[1]())
     logger.warning(f"Datendatei {key} zurückgesetzt, Kopie: {backup}")
+    if key == "queue":
+        autofarm.reload_queue()      # die Farm hält die Liste im Speicher
     return {"success": True, "backup": os.path.basename(backup)}
 
 

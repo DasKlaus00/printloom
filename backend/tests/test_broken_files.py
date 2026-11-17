@@ -121,6 +121,11 @@ def dateien(tmp_path, monkeypatch):
     monkeypatch.setattr(filaments, "CUSTOM_PATH", str(pfade["filaments"]))
     for f in pfade.values():
         f.write_text(ABGESCHNITTEN, encoding="utf-8")
+    # Die Farm liest die Warteschlange beim Start der App (seit v1.1.58 immer geladen).
+    monkeypatch.setitem(autofarm._farm, "jobs", [])
+    monkeypatch.setitem(autofarm._farm, "_queue_next_id", 1)
+    monkeypatch.setitem(autofarm._farm, "_queue_broken", None)
+    autofarm.reload_queue()
     return pfade
 
 
@@ -138,6 +143,20 @@ def test_schreiben_ueberschreibt_keine_kaputte_datei(key, method, url, body, dat
     assert r.status_code in (409, 503), r.text
     assert r.json()["detail"] == "DATEI_UNLESBAR"
     assert dateien[key].read_bytes() == alt
+
+
+def test_kaputte_warteschlange_sperrt_lesen_und_einreihen(dateien):
+    assert client.get("/api/autofarm/queue").json()["detail"] == "DATEI_UNLESBAR"
+    r = client.delete("/api/autofarm/queue/jobs/1")
+    assert r.status_code == 503 and dateien["queue"].read_text(encoding="utf-8") == ABGESCHNITTEN
+
+
+def test_reset_der_warteschlange_laedt_sie_neu(dateien, monkeypatch):
+    monkeypatch.setitem(autofarm._farm, "running", False)
+    monkeypatch.setitem(autofarm._stress, "running", False)
+    assert client.post("/api/system/data-files/queue/reset").status_code == 200
+    assert not autofarm._farm.get("_queue_broken")
+    assert client.get("/api/autofarm/queue").json() == []
 
 
 def test_lesen_liefert_keine_vorgaben(dateien):

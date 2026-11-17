@@ -79,6 +79,24 @@ def thumbnail_name(names, plate_num: int = 1) -> Optional[str]:
                         if n.lower().startswith('metadata/') and n.lower().endswith('.png')), None)
 
 
+def print_units(path: str, ftype: str) -> list:
+    """Druck-Einheiten einer Datei: Mehr-Platten-.3mf → eine je Platte, sonst eine
+    ohne Plattenangabe (die Farm nimmt dann die einzige Platte darin).
+    → [(plate, plate_total, plate_name), …]. Eine Stelle für Bibliothek, Plugin und
+    Warteschlange (bis v1.1.57 in slicer.py und im Browser je eine eigene)."""
+    if ftype != ".3mf":
+        return [(None, None, None)]
+    plates = list_plates(path)
+    if len(plates) <= 1:
+        return [(None, None, None)]
+    try:
+        with zipfile.ZipFile(path) as zf:
+            names = plate_names(zf)
+    except (OSError, zipfile.BadZipFile):
+        names = {}
+    return [(p, len(plates), names.get(str(p)) or None) for p in plates]
+
+
 def plate_names(zf) -> dict:
     """{Platten-Nr (str): Name} aus model_settings.config (<metadata key="plater_name">).
     OrcaSlicer/Bambu Studio speichern dort den vom Nutzer vergebenen Platten-Namen —

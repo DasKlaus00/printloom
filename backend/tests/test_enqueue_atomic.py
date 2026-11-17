@@ -15,7 +15,6 @@ import pytest
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
-from fastapi import HTTPException  # noqa: E402
 
 from app.routers import autofarm as af  # noqa: E402
 
@@ -25,7 +24,7 @@ def farm(monkeypatch, tmp_path):
     queue = tmp_path / "farm_queue.json"
     monkeypatch.setattr(af, "QUEUE_PATH", str(queue))
     for key, val in {"running": True, "paused": False, "stopping": False,
-                     "jobs": [], "log": []}.items():
+                     "jobs": [], "log": [], "_queue_next_id": 1}.items():
         monkeypatch.setitem(af._farm, key, val)
     return queue
 
@@ -42,8 +41,8 @@ def test_stopp_waehrend_der_hoehenanalyse_verliert_den_job_nicht(farm, monkeypat
     out = asyncio.run(af.enqueue_job(_req()))
     gespeichert = json.loads(farm.read_text(encoding="utf-8"))["jobs"]
     assert [j["id"] for j in gespeichert] == [out["id"]]
-    assert gespeichert[0]["objectHeight"] == 12.5
-    assert af._farm["jobs"] == []
+    assert gespeichert[0]["object_height_mm"] == 12.5
+    assert [j["id"] for j in af._farm["jobs"]] == [out["id"]]   # dieselbe Liste
 
 
 def test_scheitert_platte_2_wird_keine_eingereiht(monkeypatch):
@@ -68,15 +67,13 @@ def test_alle_platten_bekommen_eigene_ids(monkeypatch):
     assert all(j["slot"] == "1-0" for j in af._farm["jobs"][1:])
 
 
-def test_doppelte_id_lehnt_ab_und_haengt_nichts_an(monkeypatch):
+def test_id_vom_client_wird_ignoriert(monkeypatch):
     async def hoehe(job):
         return 10.0, 0.2
     monkeypatch.setattr(af, "_job_height", hoehe)
-    af._farm["jobs"] = [{"id": 9, "fileName": "alt.3mf"}]
-    with pytest.raises(HTTPException) as e:
-        asyncio.run(af.enqueue_job(_req(id=9)))
-    assert e.value.status_code == 409
-    assert len(af._farm["jobs"]) == 1
+    af._farm["jobs"] = [{"id": 9, "fileName": "alt.3mf", "status": "pending"}]
+    out = asyncio.run(af.enqueue_job(_req(id=9)))
+    assert out["id"] == 10 and [j["id"] for j in af._farm["jobs"]] == [9, 10]
 
 
 def test_gleichzeitig_eingereiht_ergibt_zwei_ids(monkeypatch):
@@ -94,9 +91,13 @@ def test_gleichzeitig_eingereiht_ergibt_zwei_ids(monkeypatch):
 
 
 def test_ohne_laufende_farm_geht_es_in_die_gespeicherte_warteschlange(farm, monkeypatch):
+    async def hoehe(job):
+        return 10.0, 0.2
+    monkeypatch.setattr(af, "_job_height", hoehe)
     af._farm["running"] = False
     farm.write_text(json.dumps({"jobs": [{"id": 2, "fileId": 1, "fileName": "x.3mf"}]}),
                     encoding="utf-8")
+    af.reload_queue()                       # so liegt sie beim Start der App da
     ids = asyncio.run(af.add_library_jobs(3, "teil.3mf", [(None, None, "")]))
     gespeichert = json.loads(farm.read_text(encoding="utf-8"))["jobs"]
     assert ids == [3]

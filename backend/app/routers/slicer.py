@@ -125,20 +125,7 @@ async def _receive(request: Request, dest: Path) -> int:
     return total
 
 
-def _units(path: str, ftype: str) -> list:
-    """Druck-Einheiten wie in der Bibliothek: Mehr-Platten-.3mf → eine je Platte,
-    sonst eine ohne Plattenangabe (die Farm nimmt dann die einzige Platte darin)."""
-    if ftype != ".3mf":
-        return [(None, None, None)]
-    plates = print_file.list_plates(path)
-    if len(plates) <= 1:
-        return [(None, None, None)]
-    try:
-        with zipfile.ZipFile(path) as zf:
-            names = print_file.plate_names(zf)
-    except (OSError, zipfile.BadZipFile):
-        names = {}
-    return [(p, len(plates), names.get(str(p)) or None) for p in plates]
+_units = print_file.print_units   # eine Quelle (seit v1.1.58 in print_file)
 
 
 def _analyze(path: str, ftype: str, plate, ams_raw: dict) -> dict:
@@ -326,8 +313,7 @@ def overview():
     Printloom ohnehin hält — keine Anfrage an den Drucker."""
     from app.routers import autofarm
     farm = autofarm._farm
-    jobs = list(farm["jobs"]) if farm["running"] else list(
-        autofarm._read_config(autofarm.QUEUE_PATH, {"jobs": []}).get("jobs", []))
+    jobs = list(farm["jobs"])   # seit v1.1.58 immer geladen, auch ohne Lauf
     current = next((j for j in jobs if j.get("id") == farm.get("current_job_id")), None)
 
     def _job(j):

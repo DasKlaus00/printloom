@@ -891,30 +891,13 @@ function FileLibrary() {
   const enqueuePlate = async (file, plate, plateTotal, plateName = null) => {
     setEnqueuing(true)
     try {
-      const [statusRes, queueRes] = await Promise.all([
-        autofarmService.getStatus(true).catch(() => ({ data: {} })),
-        autofarmService.getQueue().catch(() => ({ data: [] })),
-      ])
-      const running = !!statusRes.data?.running
-      const cur = queueRes.data ?? []
-      const id = cur.length ? Math.max(...cur.map(j => j.id ?? 0)) + 1 : 1
-      const j = {
-        id, fileId: file.id, fileName: file.original_filename,
-        slot: null, amsMap: '', status: 'pending', plate, plateTotal, plateName,
-        objectHeight: null, progress: 0, remaining: 0,
-      }
-      if (running) {
-        await autofarmService.enqueue({
-          id: j.id, fileId: j.fileId, fileName: j.fileName,
-          slot: '1-0', amsMap: '', plate, plateTotal, plateName,
-        })
-      } else {
-        await autofarmService.saveQueue([...cur, j])
-      }
+      // Der Server vergibt ID, Name und Höhe (seit v1.1.58; bis dahin zählte jede
+      // Seite selbst und schrieb die ganze Liste zurück).
+      await autofarmService.addJobs({ fileId: file.id, plate })
       window.dispatchEvent(new CustomEvent('printloom:queueChanged'))
       showFeedback(tr('Platte {0} in die Queue gelegt', plateName || plate))
-    } catch {
-      showFeedback(tr('In die Queue legen fehlgeschlagen'), false)
+    } catch (e) {
+      showFeedback(e.response?.data?.detail ?? tr('In die Queue legen fehlgeschlagen'), false)
     } finally { setEnqueuing(false) }
   }
 
@@ -927,68 +910,26 @@ function FileLibrary() {
     return next
   })
 
-  // Mehr-Platten-.3mf → je Platte eine Druck-Einheit. Eine Einzel-Platte / .gcode
-  // bleibt eine Einheit (plate=null). So entsteht pro Platte ein eigener Job.
-  const expandToPlateUnits = async (printable) => {
-    const units = []
-    for (const f of printable) {
-      let plates = [], names = {}
-      if (f.file_type === '.3mf') {
-        try {
-          const r = (await printerService.getPlates(f.id)).data
-          plates = r?.plates ?? []
-          names  = r?.names ?? {}
-        } catch { plates = [] }
-      }
-      if (plates.length > 1) plates.forEach(p => units.push({
-        file: f, plate: p, plateTotal: plates.length, plateName: names[String(p)] || null,
-      }))
-      else units.push({ file: f, plate: null, plateTotal: null, plateName: null })
-    }
-    return units
-  }
-
   const enqueueFiles = async (fileList, count = 1) => {
     const printable = fileList.filter(f => f.file_type === '.3mf' || f.file_type === '.gcode')
     if (!printable.length) return showFeedback(tr('Nur .3mf / .gcode können in die Queue'), false)
     setEnqueuing(true)
     try {
-      const [statusRes, queueRes, units] = await Promise.all([
-        autofarmService.getStatus(true).catch(() => ({ data: {} })),
-        autofarmService.getQueue().catch(() => ({ data: [] })),
-        expandToPlateUnits(printable),
-      ])
-      const running = !!statusRes.data?.running
-      const cur = queueRes.data ?? []
-      let nextId = cur.length ? Math.max(...cur.map(j => j.id ?? 0)) + 1 : 1
-      const additions = []
+      // Reihenfolge wie bisher: erst jede Datei einmal, dann die Wiederholungen. Die
+      // Platten einer Datei legt der Server an (print_units).
+      let added = 0
       for (let c = 0; c < count; c++) {
-        for (const u of units) {
-          additions.push({
-            id: nextId++, fileId: u.file.id, fileName: u.file.original_filename,
-            slot: null, amsMap: '', status: 'pending',
-            plate: u.plate, plateTotal: u.plateTotal, plateName: u.plateName,
-            objectHeight: null, progress: 0, remaining: 0,
-          })
+        for (const f of printable) {
+          added += (await autofarmService.addJobs({ fileId: f.id })).data?.ids?.length ?? 0
         }
-      }
-      if (running) {
-        // Running farm uses its in-memory queue → push via /enqueue (slot placeholder).
-        for (const j of additions) {
-          await autofarmService.enqueue({
-            id: j.id, fileId: j.fileId, fileName: j.fileName,
-            slot: '1-0', amsMap: '', plate: j.plate, plateTotal: j.plateTotal, plateName: j.plateName,
-          })
-        }
-      } else {
-        await autofarmService.saveQueue([...cur, ...additions])
       }
       window.dispatchEvent(new CustomEvent('printloom:queueChanged'))
       setSelected(new Set())
       setQty(1)
-      showFeedback(tr('{0} Job(s) in die Queue gelegt', additions.length))
-    } catch {
-      showFeedback(tr('In die Queue legen fehlgeschlagen'), false)
+      showFeedback(tr('{0} Job(s) in die Queue gelegt', added))
+    } catch (e) {
+      window.dispatchEvent(new CustomEvent('printloom:queueChanged'))   // Teil kann drin sein
+      showFeedback(e.response?.data?.detail ?? tr('In die Queue legen fehlgeschlagen'), false)
     } finally { setEnqueuing(false) }
   }
 

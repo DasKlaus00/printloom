@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.58',
+    de: [
+      'DIE WARTESCHLANGE ÜBERSTEHT NEUSTART UND UPDATE: Printloom führt sie jetzt selbst und speichert jede Änderung sofort. Bisher speicherte die Auto-Farm-Seite ihre eigene Kopie vor dem Start. Nach einem Neustart oder Update mitten im Druck stand der gedruckte Job wieder auf „wartet“, und die Farm hätte ihn noch einmal gedruckt. Jetzt steht ein unterbrochener Job als Fehler mit Grund da („Unterbrochen — Platte prüfen“).',
+      'NICHTS VERSCHWINDET MEHR AUS DER LISTE: Bibliothek, Historie, Projekte, das OrcaSlicer-Plugin und mehrere offene Seiten reihen nur noch einzeln ein. Bisher schrieb die Auto-Farm-Seite ihre ganze Liste zurück und löschte, was inzwischen anderswo eingereiht war. Die Job-Nummern vergibt nur noch Printloom.',
+      'STOPP: Ein Job, der beim Stopp lief, bleibt als Fehler „Abgebrochen“ in der Liste. Bisher fiel er ganz heraus.',
+      '„RESET“ WIEDERHOLT NUR FEHLGESCHLAGENE: Der Knopf fragt nach und lässt fertige Jobs fertig. Bisher setzte er alle auf „wartet“, auch gedruckte.',
+      'PROJEKTE: „Drucken“ reiht die offenen Stücke zur vorhandenen Warteschlange dazu, statt sie zu ersetzen, und ein Doppelklick reiht nicht doppelt ein.',
+      'Umsortieren, Entfernen und die AMS-Zuordnung wirken jetzt auch ohne laufende Farm sofort im Server. Vorlagen merken sich die Platte.',
+    ],
+    en: [
+      'THE QUEUE SURVIVES RESTARTS AND UPDATES: Printloom now keeps it itself and saves every change at once. Until now the Auto Farm page saved its own copy before the start. After a restart or update in the middle of a print, the printed job was back on “waiting”, and the farm would have printed it again. Now an interrupted job shows up as an error with a reason (“Interrupted — check plate”).',
+      'NOTHING DISAPPEARS FROM THE LIST ANY MORE: the library, history, projects, the OrcaSlicer plugin and several open pages now only add jobs one by one. Until now the Auto Farm page wrote its whole list back and deleted whatever had been queued elsewhere in the meantime. Only Printloom hands out job numbers now.',
+      'STOP: a job that was running when you stopped stays in the list as the error “Aborted”. Until now it dropped out completely.',
+      '“RESET” ONLY RETRIES FAILED JOBS: the button asks first and leaves finished jobs finished. Until now it set all of them back to “waiting”, printed ones included.',
+      'PROJECTS: “Print” adds the open pieces to the existing queue instead of replacing it, and a double click does not queue twice.',
+      'Reordering, removing and the AMS assignment now take effect on the server right away, with or without a running farm. Templates remember the plate.',
+    ],
+  },
+  {
     version: '1.1.57',
     de: [
       'UMSORTIEREN VERLIERT KEINEN JOB: Kam ein Job (etwa aus dem OrcaSlicer) dazu, nachdem die Auto-Farm-Seite geladen war, und sortierte man dann die laufende Warteschlange um, fiel er still heraus. Jetzt bleibt er hinten stehen.',
