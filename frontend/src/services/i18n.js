@@ -1438,6 +1438,8 @@ const EN_STRINGS = {
   'Regal {0}: {1}': 'Rack {0}: {1}',
   'muss über den Fächern liegen (> {0}) oder 0 sein': 'must be above the slots (> {0}) or 0',
   'Fächer {0} sind belegt — erst im Rack Manager leeren': 'Slots {0} are occupied — empty them in the Rack Manager first',
+  // Positionsfelder nie 0 (seit v1.1.53)
+  'Nicht gespeichert — Felder ohne Zahl: {0}': 'Not saved — fields without a number: {0}',
   // Geometrie mit Revision (seit v1.1.52)
   'Geometrie nicht gespeichert: {0}': 'Geometry not saved: {0}',
   'Die Geometrie wurde an anderer Stelle geändert. Diese Seite speichert nicht mehr, damit nichts überschrieben wird.': 'The geometry was changed elsewhere. This page no longer saves so that nothing gets overwritten.',

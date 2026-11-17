@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.53',
+    de: [
+      'DRUCKER-TAB: EIN LEERES FELD IST NIE 0. Wer ein Positionsfeld (Auswerfen, Einlegen, Tür, Regal-X, erste Fach-Höhe, Fach-Abstand) leert oder Unsinn eintippt, bekommt einen Hinweis mit den Feldern, und gespeichert wird erst, wenn alle eine Zahl haben. Bisher machte der Tab daraus die Koordinate 0 und speicherte sie, und die nächste Fahrt ging dorthin.',
+    ],
+    en: [
+      'PRINTER TAB: AN EMPTY FIELD IS NEVER 0. If you clear a position field (eject, place, door, rack X, first slot height, slot spacing) or type nonsense, a notice lists the fields, and nothing is saved until all of them hold a number. Until now the tab turned it into coordinate 0 and saved it, and the next move went there.',
+    ],
+  },
+  {
     version: '1.1.52',
     de: [
       'KEINE ALTE KOPIE ÜBERSCHREIBT DIE GEOMETRIE: Drucker-Tab, Setup-Assistent und Erstkalibrierung speichern die Positionen nur noch auf den Stand, den sie gelesen haben. Hat sich die Geometrie inzwischen woanders geändert, zeigt der Drucker-Tab einen Hinweis „neu laden“ und speichert nicht mehr. Bisher schrieb ein länger offener Drucker-Tab still seine alte Kopie zurück, etwa über den eben im Setup geänderten Fach-Abstand.',

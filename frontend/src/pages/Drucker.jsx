@@ -5,6 +5,7 @@ import { controlService, rackManagerService, deviceService, printerService,
 import { confirmDialog } from '../services/confirm'
 import { useMotionLock } from '../services/motionLock'
 import { saveGeometry } from '../services/geometryClient'
+import { numOrNull, invalidFields } from '../services/geometryDraft'
 import { findPrinter } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
 import TeachIn from '../components/TeachIn'
@@ -923,6 +924,7 @@ export default function Drucker() {
   // Revision der geladenen Geometrie (If-Match) und ob sie anderswo neuer gespeichert wurde.
   const geomRev = useRef(null)
   const [geomStale, setGeomStale] = useState(false)
+  const [draftErrors, setDraftErrors] = useState([])
   const armBusy = jog.busy || !!lock.arm
   const blocked = (reason) => { setJog({ busy: false, msg: reason, err: true }); return true }
   const [lastScript, setLastScript] = useState('')
@@ -1059,24 +1061,24 @@ export default function Drucker() {
     // Übersicht und in der Prüfung, obwohl es das Gerät nicht mehr gibt.
     printers: shownPrinters.map(p => ({
       ...p,
-      eject: { x: num(p.eject?.x), y: num(p.eject?.y), z: num(p.eject?.z) },
-      load: { x: num(p.load?.x), y: num(p.load?.y), z: num(p.load?.z) },
-      move: p.move ? { x: num(p.move.x), y: num(p.move.y), z: num(p.move.z) } : null,
+      eject: { x: numOrNull(p.eject?.x), y: numOrNull(p.eject?.y), z: numOrNull(p.eject?.z) },
+      load: { x: numOrNull(p.load?.x), y: numOrNull(p.load?.y), z: numOrNull(p.load?.z) },
+      move: p.move ? { x: numOrNull(p.move.x), y: numOrNull(p.move.y), z: numOrNull(p.move.z) } : null,
       door: p.door ? {
-        open: { x: num(p.door.open?.x), y: num(p.door.open?.y), z: num(p.door.open?.z), d: num(p.door.open?.d) },
-        close: { x: num(p.door.close?.x), y: num(p.door.close?.y), z: num(p.door.close?.z), d: num(p.door.close?.d) },
+        open: { x: numOrNull(p.door.open?.x), y: numOrNull(p.door.open?.y), z: numOrNull(p.door.open?.z), d: numOrNull(p.door.open?.d) },
+        close: { x: numOrNull(p.door.close?.x), y: numOrNull(p.door.close?.y), z: numOrNull(p.door.close?.z), d: numOrNull(p.door.close?.d) },
       } : null,
     })),
     rack_geo: Object.fromEntries(rackList.map(nr => {
       const g = rackOf(nr)
-      return [String(nr), { x: num(g.x), y_engage: num(g.y_engage), first_z: num(g.first_z),
-                            slot_gap: num(g.slot_gap), printer: g.printer || null,
+      return [String(nr), { x: numOrNull(g.x), y_engage: numOrNull(g.y_engage), first_z: numOrNull(g.first_z),
+                            slot_gap: numOrNull(g.slot_gap), printer: g.printer || null,
                             ...(g.name ? { name: g.name } : {}) }]
     })),
     storage: {
-      x_unclamp: num(storage.x_unclamp), y_engage: num(storage.y_engage),
-      first_z_flat: num(storage.first_z_flat), slot_gap: num(storage.slot_gap),
-      y_pullback_limit: yPullback, rack_x_gap: num(storage.rack_x_gap),
+      x_unclamp: numOrNull(storage.x_unclamp), y_engage: numOrNull(storage.y_engage),
+      first_z_flat: numOrNull(storage.first_z_flat), slot_gap: numOrNull(storage.slot_gap),
+      y_pullback_limit: yPullback, rack_x_gap: numOrNull(storage.rack_x_gap),
     },
     rack_x_trim: { ...rackXTrim },
     use_gcode: { ...useGcode },
@@ -1162,6 +1164,10 @@ export default function Drucker() {
     // Speichern liefert die Plausibilitätsprüfung mit zurück (Achsgrenzen) — so sieht
     // der Nutzer sofort, wenn ein Wert eine Bewegung aus der Achse fahren würde.
     if (geomStale) return
+    // Ein geleertes Positionsfeld ist ungültig (nie 0): erst speichern, wenn alle stimmen.
+    const bad = invalidFields(geometry)
+    setDraftErrors(bad)
+    if (bad.length) return
     const t = setTimeout(() => {
       saveGeometry(geometry, geomRev.current, 'drucker')
         .then(r => { geomRev.current = r?.data?.revision; setCheck(r?.data?.check || null) })
@@ -1387,6 +1393,11 @@ export default function Drucker() {
 
       {/* ── Werkzeuge: Referenzfahrt, Tempo, direkter G-code, Bett ── */}
       <div className="card p-3 space-y-2">
+        {draftErrors.length > 0 && (
+          <p role="alert" className="text-[12px] px-3 py-2 rounded border border-red-700 bg-red-950 text-red-300">
+            ⚠ {tr('Nicht gespeichert — Felder ohne Zahl: {0}', draftErrors.join(', '))}
+          </p>
+        )}
         {geomStale && (
           <p role="alert" className="text-[12px] px-3 py-2 rounded border border-amber-700 bg-amber-950 text-amber-300 flex flex-wrap items-center gap-2">
             <span className="flex-1">⚠ {tr('Die Geometrie wurde an anderer Stelle geändert. Diese Seite speichert nicht mehr, damit nichts überschrieben wird.')}</span>
