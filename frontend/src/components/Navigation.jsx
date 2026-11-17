@@ -135,26 +135,26 @@ const icons = {
    System (einmalige Einrichtung, kein Alltags-Tab). Direktaufruf über /setup bleibt.
    „Farm-Layout" war bis v1.1.7 ein eigener Tab mit einer ZWEITEN Stelle für
    dieselben X-Positionen; die Schienen-Ansicht steckt jetzt im Drucker-Tab. */
-function buildGroups(t, tr) {
+function buildGroups(tr) {
   return [
     { label: null, pages: [
-      { id: 'dashboard',     label: t('nav.dashboard'),     icon: 'dashboard'   },
-      { id: 'autofarm',      label: t('nav.autofarm'),      icon: 'autofarm'    },
+      { id: 'dashboard',     label: tr('Dashboard'),        icon: 'dashboard'   },
+      { id: 'autofarm',      label: tr('Auto Farm'),        icon: 'autofarm'    },
       { id: 'steuerung',     label: tr('Steuerung'),        icon: 'controls'    },
       { id: 'history',       label: tr('Historie'),         icon: 'history'     },
     ]},
     { label: tr('Aufträge'), pages: [
-      { id: 'files',         label: t('nav.files'),         icon: 'files'       },
+      { id: 'files',         label: tr('Datei-Bibliothek'), icon: 'files'       },
       { id: 'projekt',       label: tr('Projekt'),          icon: 'projekt'     },
       { id: 'library',       label: tr('Bibliothek'),       icon: 'library'     },
     ]},
     { label: tr('Einrichtung'), pages: [
       { id: 'drucker',       label: tr('Drucker'),          icon: 'drucker'     },
-      { id: 'sequence',      label: t('nav.sequence'),      icon: 'sequence'    },
-      { id: 'profiles',      label: t('nav.profiles'),      icon: 'profiles'    },
+      { id: 'sequence',      label: tr('Sequenz-Editor'),   icon: 'sequence'    },
+      { id: 'profiles',      label: tr('Profile'),          icon: 'profiles'    },
       { id: 'filamente',     label: tr('Filamente'),        icon: 'filamente'   },
-      { id: 'configuration', label: t('nav.configuration'), icon: 'config'      },
-      { id: 'system',        label: t('nav.system'),        icon: 'system'      },
+      { id: 'configuration', label: tr('Konfiguration'),    icon: 'config'      },
+      { id: 'system',        label: tr('System'),           icon: 'system'      },
     ]},
   ]
 }
@@ -250,8 +250,8 @@ function LanguageToggle() {
    Zustand bleibt je Gerät). Auf schmalen Bildschirmen schiebt sie sich über
    den Inhalt und schließt nach der Auswahl wieder. */
 function Navigation({ currentPage, setCurrentPage, updateAvailable, collapsed, onToggleCollapsed, mobileOpen, onCloseMobile }) {
-  const { t, tr } = useLanguage()
-  const groups = buildGroups(t, tr)
+  const { tr } = useLanguage()
+  const groups = buildGroups(tr)
   const go = (id) => { setCurrentPage(id); onCloseMobile?.() }
   // Zugeklappt (Handy) ist die Leiste unsichtbar und damit aus dem Tab-Pfad; geöffnet
   // bekommt der erste Eintrag den Fokus, Escape schließt.

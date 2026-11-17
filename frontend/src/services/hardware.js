@@ -76,11 +76,6 @@ export const GRIPPERS = [
   },
 ]
 
-/* Greif-Art des gewählten Greifers ('clamp' | 'magnet'). */
-export function gripperMotion(gripperId) {
-  return GRIPPERS.find(x => x.id === gripperId)?.motion || 'clamp'
-}
-
 /* Oberstes Fach: Lagerfach (Original-Aufbau) oder Magazin (Printloom-Erweiterung).
    Reihenfolge = Anzeige-Reihenfolge im Assistenten, links das Original. Die
    VORAUSWAHL steckt in DEFAULT_COMPONENTS und bleibt bewusst das Magazin: nur damit

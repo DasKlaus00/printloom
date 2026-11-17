@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.76',
+    de: [
+      'AUFGERÄUMT: Vier Python-Pakete, die nirgends benutzt wurden, sind raus (kleineres Image und Windows-Paket). Ein Test meldet künftig jedes Paket, das niemand importiert.',
+      'Rund 270 englische Übersetzungen von längst entfernten Seiten sind gelöscht, ebenso das alte zweite Wörterbuch der Seitenleiste — die App lädt dadurch etwas schneller. Ein Test meldet künftig verwaiste Übersetzungen.',
+      'Unbenutzter Code (eine alte Regal-Ansicht und zwei Hilfsfunktionen) ist entfernt.',
+    ],
+    en: [
+      'CLEANED UP: four Python packages that were never used are gone (smaller image and Windows package). A test now reports any package nobody imports.',
+      'About 270 English translations of long-removed pages are deleted, as is the old second dictionary of the sidebar — the app loads a little faster. A test now reports orphaned translations.',
+      'Unused code (an old rack view and two helper functions) is removed.',
+    ],
+  },
+  {
     version: '1.1.75',
     de: [
       'WINDOWS-UPDATE PRÜFT DEN DOWNLOAD: Die Windows-App startet einen heruntergeladenen Installer nur, wenn seine Prüfsumme zu der passt, die GitHub für das Release meldet. Ein abgebrochener oder veränderter Download bleibt liegen, statt zu laufen.',
