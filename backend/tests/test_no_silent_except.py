@@ -13,8 +13,8 @@ from pathlib import Path
 
 APP = Path(__file__).resolve().parents[1] / "app"
 
-# Stand 17.11.2026 (v1.1.49), gezählt mit silent_excepts() unten.
-BASELINE = 63
+# Stand 18.11.2026 (v1.1.73), gezählt mit silent_excepts() unten.
+BASELINE = 52
 
 _EXCEPT = re.compile(r"\s*except\b[^:]*:\s*(#.*)?$")
 _EXCEPT_INLINE = re.compile(r"\s*except\b[^:]*:\s*pass\s*(#.*)?$")

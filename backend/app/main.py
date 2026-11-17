@@ -10,7 +10,7 @@ from app.routers import (files, devices, control, printer, rack_manager, system,
                          project, profiles, filaments, push, folders, online, slicer)
 from app.db.database import init_db
 from app import paths
-from app.services import request_guard
+from app.services import credentials, request_guard
 
 # Datenordner (db/, uploads/) früh sicherstellen — nativ liegen sie im
 # Nutzerverzeichnis, in Docker unter /app (siehe app.paths).
@@ -24,6 +24,9 @@ logging.getLogger("app").setLevel(logging.INFO)
 # Gesprächige Drittanbieter-Logger zusätzlich dämpfen (Zugriffslog, HTTP, MQTT).
 for _noisy in ("uvicorn.access", "httpx", "httpcore", "paho", "paho.mqtt", "watchfiles"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
+# Keine Zugangsdaten im Log (seit v1.1.73): jede Zeile läuft durch credentials.scrub.
+# Deckt auch die Windows-App ab, deren Log-Handler vor diesem Import entsteht.
+credentials.install_log_scrub()
 
 # Kamera-Default festlegen BEVOR init_db() die Datenbank anlegt: nur eine echte
 # Neuinstallation (keine printloom.db) bekommt den neuen Default „Kamera aus";

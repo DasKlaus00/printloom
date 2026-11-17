@@ -25,6 +25,7 @@ from app.db.database import get_db, SessionLocal
 from app.models.models import Device, PrinterType, UploadedFile
 from app.services import ams_match, bambu_manager, camera, device_settings, print_file, storage
 from app.services.timestamps import as_aware_iso, now_iso
+from app.services.credentials import scrub
 from app.services.bambu_ftp import BambuFTP
 
 router = APIRouter()
@@ -222,7 +223,7 @@ async def capture_snapshot(device_id: int) -> Optional[str]:
         (SNAP_DIR / fname).write_bytes(img_bytes)
         return fname
     except Exception as e:
-        logger.warning(f"capture_snapshot failed: {e}")
+        logger.warning(f"capture_snapshot failed: {scrub(e)}")
         return None
 
 
@@ -320,8 +321,8 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
     except StopIteration:
         raise HTTPException(502, "Kamera lieferte kein Bild (LAN-Modus am Drucker aktiv?)")
     except Exception as e:
-        logger.warning(f"camera_stream first-frame failed for device {device_id}: {e}")
-        raise HTTPException(502, f"Drucker-Kamera nicht erreichbar: {e}")
+        logger.warning(f"camera_stream first-frame failed for device {device_id}: {scrub(e)}")
+        raise HTTPException(502, f"Drucker-Kamera nicht erreichbar: {scrub(e)}")
 
     def _part(img: bytes) -> bytes:
         return (b"--" + boundary.encode() + b"\r\n"
@@ -335,7 +336,7 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
             for img in frame_iter:
                 yield _part(img)
         except Exception as e:
-            logger.warning(f"camera_stream ended for device {device_id}: {e}")
+            logger.warning(f"camera_stream ended for device {device_id}: {scrub(e)}")
         finally:
             frame_iter.close()
 
@@ -360,7 +361,7 @@ def camera_frame(device_id: int, db: Session = Depends(get_db)):
     try:
         img = camera.single_frame(device, settings)
     except Exception as e:
-        raise HTTPException(502, f"Kamera nicht erreichbar: {e}")
+        raise HTTPException(502, f"Kamera nicht erreichbar: {scrub(e)}")
     if not img:
         raise HTTPException(502, "Kein Kamerabild empfangen")
     return Response(content=img, media_type="image/jpeg")
@@ -418,7 +419,7 @@ async def ha_camera_stream(device_id: int, db: Session = Depends(get_db)):
             async for chunk in resp.aiter_raw():
                 yield chunk
         except Exception as e:
-            logger.info(f"HA-Kamera-Stream beendet (device {device_id}): {e}")
+            logger.info(f"HA-Kamera-Stream beendet (device {device_id}): {scrub(e)}")
         finally:
             await resp.aclose()
             await client.aclose()

@@ -14,6 +14,7 @@ import base64
 import binascii
 import hashlib
 import json
+import logging
 import os
 import re
 
@@ -63,6 +64,54 @@ def dropped_on_change(old: dict, new: dict, brought) -> list:
 def is_secret_key(key) -> bool:
     k = str(key).lower()
     return any(h in k for h in SECRET_KEY_HINTS)
+
+
+# Für scrub(): dieselben Muster, aber IRGENDWO im Text statt nur am Anfang.
+_URL_CRED_ANYWHERE = re.compile(r"\b([a-z][a-z0-9+.-]*://)[^/@\s'\"]*:[^/@\s'\"]*@", re.IGNORECASE)
+_PARAM = re.compile(r"(^|[?&;\s,(])([A-Za-z0-9_.-]+)=([^&\s'\",)]*)")
+_BEARER = re.compile(r"(\bBearer\s+)[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
+
+
+def scrub(text) -> str:
+    """Geheimnisse aus einem Fehler- oder Logtext entfernen (seit v1.1.73).
+
+    `scheme://benutzer:passwort@` wird `scheme://***@`, der Wert eines geheimen
+    Parameters (`password=…`, `token=…`, siehe is_secret_key) wird `***`, ein
+    `Bearer …` ebenso. Bis v1.1.72 standen so Tasmota-Passwort (httpx nennt in
+    raise_for_status die volle URL) und Drucker-Access-Code (ffmpeg nennt die
+    RTSPS-URL) in Log und Fehlermeldung."""
+    if text is None:
+        return ""
+    s = str(text)
+    s = _URL_CRED_ANYWHERE.sub(r"\1***@", s)
+    s = _PARAM.sub(lambda m: f"{m.group(1)}{m.group(2)}=***" if is_secret_key(m.group(2)) else m.group(0), s)
+    return _BEARER.sub(r"\1***", s)
+
+
+class ScrubFilter(logging.Filter):
+    """Bereinigt jede Logzeile (samt Traceback) mit scrub() — die letzte Sicherung
+    für Meldungen aus Bibliotheken, die URLs mit Zugangsdaten nennen. Die eigenen
+    Meldungen bereinigen ihre Fehlertexte zusätzlich selbst."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        clean = scrub(msg)
+        if clean != msg:
+            record.msg, record.args = clean, None
+        if record.exc_info and not record.exc_text:
+            # Der Formatter nimmt exc_text, wenn es gesetzt ist — so wird auch der
+            # Traceback (mit der Fehlermeldung darin) bereinigt.
+            record.exc_text = scrub(logging.Formatter().formatException(record.exc_info))
+        return True
+
+
+def install_log_scrub(logger: logging.Logger | None = None) -> None:
+    """ScrubFilter an alle Handler des (Root-)Loggers hängen; mehrfach aufrufbar.
+    An den Handlern, nicht am Logger: Ein Logger-Filter gilt nur für Meldungen, die
+    direkt an diesen Logger gehen, nicht für weitergereichte aus Unter-Loggern."""
+    for handler in (logger or logging.getLogger()).handlers:
+        if not any(isinstance(f, ScrubFilter) for f in handler.filters):
+            handler.addFilter(ScrubFilter())
 
 
 def is_secret(key, value) -> bool:

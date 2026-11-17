@@ -17,6 +17,8 @@ from typing import Optional
 
 import httpx
 
+from app.services.credentials import scrub
+
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 6.0
@@ -106,7 +108,10 @@ async def _tasmota_cmd(s: dict, client, cmnd: str):
     if pw:
         params.update({"user": user, "password": pw})
     r = await client.get(f"{url}/cm", params=params)
-    r.raise_for_status()
+    # Selbst prüfen statt raise_for_status(): dessen Meldung enthält die volle URL —
+    # mit dem Passwort als Query-Parameter (Tasmota kennt nur diesen Weg).
+    if r.status_code >= 400:
+        raise RuntimeError(f"Tasmota HTTP {r.status_code}")
     return r.json()
 
 
@@ -118,13 +123,13 @@ async def _read_tasmota(s: dict) -> dict:
             energy = (sns.get("StatusSNS") or {}).get("ENERGY") or {}
             out["watts"]      = _f(energy.get("Power"))
             out["energy_kwh"] = _f(energy.get("Total"))   # Tasmota Total = kWh
-        except Exception:
-            pass
+        except Exception as e:   # Messung fehlt → bleibt None (unbekannt, nicht 0)
+            logger.debug(f"Tasmota-Messwerte nicht lesbar: {scrub(e)}")
         try:
             sts = await _tasmota_cmd(s, client, "Power")
             out["on"] = str(sts.get("POWER", "")).upper() == "ON"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Tasmota-Schaltzustand nicht lesbar: {scrub(e)}")
     return out
 
 
@@ -147,8 +152,8 @@ async def _read_shelly(s: dict) -> dict:
             wh = _f((d.get("aenergy") or {}).get("total"))   # Shelly aenergy.total = Wh
             out["energy_kwh"] = round(wh / 1000.0, 4) if wh is not None else None
             out["on"] = bool(d.get("output"))
-        except Exception:
-            pass
+        except Exception as e:   # Werte bleiben None (unbekannt, nicht 0)
+            logger.debug(f"Shelly nicht lesbar: {scrub(e)}")
     return out
 
 
@@ -170,7 +175,7 @@ async def read_power(s: dict) -> dict:
         if t == "tasmota": return await _read_tasmota(s)
         if t == "shelly":  return await _read_shelly(s)
     except Exception as e:
-        logger.warning(f"read_power ({t}) failed: {e}")
+        logger.warning(f"read_power ({t}) failed: {scrub(e)}")
     return {"watts": None, "energy_kwh": None, "on": None}
 
 
@@ -182,5 +187,5 @@ async def set_plug(s: dict, on: bool) -> bool:
         if t == "tasmota": return await _switch_tasmota(s, on)
         if t == "shelly":  return await _switch_shelly(s, on)
     except Exception as e:
-        logger.warning(f"set_plug ({t}, on={on}) failed: {e}")
+        logger.warning(f"set_plug ({t}, on={on}) failed: {scrub(e)}")
     return False

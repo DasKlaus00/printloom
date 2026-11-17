@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.73',
+    de: [
+      'KEINE ZUGANGSDATEN IM LOG: Das Passwort einer Tasmota-Steckdose und der Access-Code des Druckers konnten in Fehlermeldungen und im Log stehen (die Steckdose meldete ihre ganze Adresse samt Passwort, ffmpeg die Kamera-Adresse samt Access-Code). Jetzt werden Passwörter, Tokens und Zugangsdaten in Adressen vor dem Schreiben durch *** ersetzt — auch in Meldungen fremder Bibliotheken und in Fehlerberichten.',
+      'Kamera: ffmpeg-Meldungen werden laufend gelesen; ein voller Meldungspuffer konnte den Stream bisher anhalten. Beendete ffmpeg-Prozesse werden sauber abgeräumt.',
+      'Steckdose: Ein nicht lesbarer Messwert wird protokolliert statt still verschluckt und bleibt „unbekannt“.',
+    ],
+    en: [
+      'NO CREDENTIALS IN THE LOG: the password of a Tasmota plug and the printer access code could appear in error messages and the log (the plug reported its full address including the password, ffmpeg the camera address including the access code). Passwords, tokens and credentials in addresses are now replaced with *** before anything is written — including messages from third-party libraries and error tracebacks.',
+      'Camera: ffmpeg messages are read continuously; a full message buffer could stall the stream before. Finished ffmpeg processes are cleaned up properly.',
+      'Plug: a reading that cannot be read is logged instead of silently swallowed and stays “unknown”.',
+    ],
+  },
+  {
     version: '1.1.72',
     de: [
       'UHRZEITEN STIMMEN IM DOCKER: Historie, Fehlerliste, Auslastung, Statistik („seit …“) und Sende-Diagnose speichern ihre Zeit jetzt mit Zeitzone. Im Docker-Betrieb (Server in UTC) lagen sie bisher im Sommer zwei Stunden daneben. Bestehende Einträge werden beim Anzeigen richtig eingeordnet.',

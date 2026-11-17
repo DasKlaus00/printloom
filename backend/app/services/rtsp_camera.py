@@ -19,10 +19,12 @@ ist selbstsigniert; ffmpegs rtsps-Client prüft es standardmäßig nicht.
 import subprocess
 import threading
 import logging
+from collections import deque
 from typing import Iterator, Optional
 
 from app.paths import resolve_ffmpeg
 from app.services import camera_hub
+from app.services.credentials import scrub
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +105,49 @@ def _iter_jpeg(stdout, on_frame) -> int:
                 return count
 
 
+# ── ffmpeg beobachten und beenden ────────────────────────────────────────────
+def _drain_stderr(proc, lines: deque) -> threading.Thread:
+    """stderr laufend in `lines` lesen. Bis v1.1.72 wurde es erst nach dem Stream
+    gelesen: Ein voller Pipe-Puffer (64 KB Meldungen) hielt ffmpeg mitten im Stream an."""
+    def run():
+        try:
+            for raw in iter(proc.stderr.readline, b""):
+                lines.append(raw.decode("utf-8", "ignore").strip())
+        except (OSError, ValueError) as e:   # Pipe beim Beenden geschlossen
+            logger.debug(f"ffmpeg-stderr beendet: {e}")
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    return t
+
+
+def _last_error(lines) -> str:
+    """Letzte nicht leere ffmpeg-Zeile, ohne Zugangsdaten: ffmpeg nennt bei Fehlern
+    die RTSPS-URL, und darin steht der Access-Code des Druckers."""
+    for line in reversed(lines):
+        if line:
+            return scrub(line)
+    return ""
+
+
+def _end_process(proc) -> None:
+    """ffmpeg beenden und abräumen. wait() holt den Exit-Status ab — ohne bleibt unter
+    Linux je Kamera-Neustart ein Zombie-Prozess stehen."""
+    try:
+        proc.kill()
+    except OSError as e:   # schon beendet
+        logger.debug(f"ffmpeg kill: {e}")
+    try:
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        logger.warning("ffmpeg beendet sich nicht (2 s nach kill)")
+    for pipe in (proc.stdout, proc.stderr):
+        try:
+            if pipe:
+                pipe.close()
+        except OSError as e:
+            logger.debug(f"ffmpeg-Pipe nicht geschlossen: {e}")
+
+
 # ── ffmpeg-Producer (X1-Serie, RTSPS) ────────────────────────────────────────
 class _FfmpegProducer(camera_hub.Producer):
     default_error = _NO_IMAGE
@@ -110,35 +155,30 @@ class _FfmpegProducer(camera_hub.Producer):
     def __init__(self, ip: str, access_code: str):
         self.ip, self.code = ip, access_code
         self.proc: Optional[subprocess.Popen] = None
-        self._err = ""
+        self._lines: deque = deque(maxlen=50)
+        self._reader: Optional[threading.Thread] = None
 
     def open(self) -> None:
+        self._lines.clear()
         self.proc = subprocess.Popen(
             _cmd(self.ip, self.code, single=False),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
             **_no_window_kwargs(),
         )
+        self._reader = _drain_stderr(self.proc, self._lines)
 
     def read(self, on_frame) -> None:
         _iter_jpeg(self.proc.stdout, on_frame)
-        try:
-            self._err = (self.proc.stderr.read() or b"").decode("utf-8", "ignore").strip()
-        except Exception:
-            pass
+        # Stream zu Ende: kurz warten, bis die letzten Fehlerzeilen gelesen sind.
+        if self._reader:
+            self._reader.join(timeout=1)
 
     def close(self) -> None:
-        if not self.proc:
-            return
-        for closer in (lambda: self.proc.kill(),
-                       lambda: self.proc.stdout and self.proc.stdout.close(),
-                       lambda: self.proc.stderr and self.proc.stderr.close()):
-            try:
-                closer()
-            except Exception:
-                pass
+        if self.proc:
+            _end_process(self.proc)
 
     def error_detail(self) -> str:
-        return self._err
+        return _last_error(self._lines)
 
 
 def _key(ip: str, access_code: str):
@@ -179,13 +219,15 @@ def _single_frame_oneshot(ip: str, access_code: str,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
         **_no_window_kwargs(),
     )
+    lines: deque = deque(maxlen=50)
+    reader = _drain_stderr(proc, lines)
     got_first = threading.Event()
     def _watchdog():
         if not got_first.wait(read_timeout):
             try:
                 proc.kill()
-            except Exception:
-                pass
+            except OSError as e:   # schon beendet
+                logger.debug(f"ffmpeg kill (Zeitlimit): {e}")
     threading.Thread(target=_watchdog, daemon=True).start()
     result: list = []
     try:
@@ -196,22 +238,11 @@ def _single_frame_oneshot(ip: str, access_code: str,
         _iter_jpeg(proc.stdout, on_frame)
         if result:
             return result[0]
-        err = b""
-        try:
-            err = proc.stderr.read() or b""
-        except Exception:
-            pass
-        detail = err.decode("utf-8", "ignore").strip().splitlines()
-        raise ConnectionError((detail[-1] if detail else "") or _NO_IMAGE)
+        reader.join(timeout=1)
+        raise ConnectionError(_last_error(lines) or _NO_IMAGE)
     finally:
         got_first.set()
-        for closer in (lambda: proc.kill(),
-                       lambda: proc.stdout and proc.stdout.close(),
-                       lambda: proc.stderr and proc.stderr.close()):
-            try:
-                closer()
-            except Exception:
-                pass
+        _end_process(proc)
 
 
 def single_frame(ip: str, access_code: str) -> Optional[bytes]:
