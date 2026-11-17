@@ -107,6 +107,16 @@ def scan_file(path: str, file_type: str, plate, x_max: float = X_MAX) -> Optiona
         return result
 
 
+def not_checked(reason: str = "") -> dict:
+    """Ergebnis, wenn nichts zu prüfen war (kein G-code, Datei fehlt/unlesbar).
+    Unbekannt ist nicht „ok": Bis v1.1.54 kam hier crash_risk False ohne Vermerk,
+    und Bibliothek wie Plugin zeigten „keine Kollisionsgefahr"."""
+    r = {"crash_risk": False, "unknown": True, "max_z_mm": None}
+    if reason:
+        r["error"] = reason
+    return r
+
+
 def limits(x_max: float = X_MAX) -> dict:
     """Die Grenzwerte so, wie sie in jedes Ergebnis geschrieben werden."""
     return {"z_limit_mm": Z_LIMIT, "x_margin_mm": X_MARGIN, "x_max_mm": x_max}

@@ -124,6 +124,12 @@ class FakePrintloom:
                       "print": {"gcode_state": "RUNNING", "mc_percent": 42,
                                 "ams": {"ams": [{"id": "0", "tray": []}]}}}
         self.html_login = False
+        # Wie Printloom ab v1.1.55: Grund, warum nicht eingereiht wird (Crash-Risiko …).
+        self.held = None
+        # Verbindung nach dem Upload kappen: "kept" = Printloom hat ihn trotzdem,
+        # "lost" = nicht angekommen.
+        self.drop_upload = None
+        self.uploads = {}
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -157,10 +163,21 @@ class FakePrintloom:
                     return self._reply(200, fake.check)
                 if url.path == "/api/slicer/upload":
                     q = dict(urllib.parse.parse_qsl(url.query))
-                    jobs = [3] if q.get("queue") == "true" else []
-                    return self._reply(200, {"file_id": 9, "file_name": q.get("filename"),
-                                             "queued": bool(jobs), "job_ids": jobs,
-                                             "checks": [fake.check]})
+                    jobs = [3] if q.get("queue") == "true" and not fake.held else []
+                    result = {"file_id": 9, "file_name": q.get("filename"),
+                              "queued": bool(jobs), "job_ids": jobs, "checks": [fake.check],
+                              "held": bool(fake.held), "held_reason": fake.held}
+                    if q.get("upload_id") and fake.drop_upload != "lost":
+                        fake.uploads[q["upload_id"]] = result
+                    if fake.drop_upload:
+                        self.close_connection = True      # keine Antwort
+                        return None
+                    return self._reply(200, result)
+                if url.path.startswith("/api/slicer/upload/"):
+                    uid = url.path.rsplit("/", 1)[1]
+                    if uid in fake.uploads:
+                        return self._reply(200, fake.uploads[uid])
+                    return self._reply(404, {"detail": "Upload unbekannt"})
                 if url.path == "/api/slicer/printer/state":
                     return self._reply(200, fake.state)
                 if url.path == "/api/slicer/overview":

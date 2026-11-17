@@ -98,10 +98,10 @@ def client():
     return TestClient(app)
 
 
-def _three_mf(path, plates=(1,)):
+def _three_mf(path, plates=(1,), gcode=None):
     with zipfile.ZipFile(path, "w") as z:
         for p in plates:
-            z.writestr(f"Metadata/plate_{p}.gcode", GCODE)
+            z.writestr(f"Metadata/plate_{p}.gcode", gcode if gcode is not None else SAFE_GCODE)
         z.writestr("Metadata/slice_info.config",
                    "<config>" + "".join(
                        f'<plate><metadata key="index" value="{p}"/>'
@@ -195,7 +195,64 @@ def test_upload_legt_in_bibliothek_und_warteschlange(client, db, farm, x1c, tmp_
                      "amsMap": "", "status": "pending", "plate": None, "plateTotal": None,
                      "plateName": None, "objectHeight": None, "progress": 0, "remaining": 0}]
     assert r["job_ids"] == [1]
-    assert r["checks"][0]["crash"]["crash_risk"] is True
+    assert r["checks"][0]["crash"]["crash_risk"] is False
+    assert r["held"] is False
+
+
+# ── Erst prüfen, dann einreihen (seit v1.1.55) ──────────────────────────────────
+
+def test_crash_risiko_wird_nicht_eingereiht(client, db, farm, x1c, tmp_path):
+    body = _three_mf(tmp_path / "x.3mf", plates=(1, 2), gcode=GCODE)
+    r = client.post("/api/slicer/upload", params={"filename": "Hoch.gcode.3mf"}, content=body).json()
+    assert r["queued"] is False and r["job_ids"] == []
+    assert r["held"] is True and "Kollisionsgefahr" in r["held_reason"]
+    assert autofarm._read_config(autofarm.QUEUE_PATH, {"jobs": []})["jobs"] == []
+    assert db.query(UploadedFile).count() == 1        # liegt in der Bibliothek
+
+
+def test_ohne_pruefbaren_gcode_gilt_nicht_geprueft(client, db, farm, x1c, tmp_path):
+    path = tmp_path / "leer.3mf"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("3D/3dmodel.model", "<model/>")
+    r = client.post("/api/slicer/upload", params={"filename": "Projekt.3mf"},
+                    content=path.read_bytes()).json()
+    assert r["checks"][0]["crash"]["unknown"] is True
+    assert r["held"] is True and r["queued"] is False
+
+
+def test_gleiche_upload_id_legt_nichts_doppelt_an(client, db, farm, x1c, monkeypatch):
+    monkeypatch.setattr(slicer, "_UPLOADS", type(slicer._UPLOADS)())
+    params = {"filename": "b.gcode", "upload_id": "a1b2c3d4e5f6"}
+    r1 = client.post("/api/slicer/upload", params=params, content=SAFE_GCODE.encode()).json()
+    r2 = client.post("/api/slicer/upload", params=params, content=SAFE_GCODE.encode()).json()
+    assert r2["job_ids"] == r1["job_ids"] and r2["repeated"] is True
+    assert db.query(UploadedFile).count() == 1
+    assert len(autofarm._read_config(autofarm.QUEUE_PATH, {"jobs": []})["jobs"]) == 1
+    assert client.get("/api/slicer/upload/a1b2c3d4e5f6").json()["job_ids"] == r1["job_ids"]
+    assert client.get("/api/slicer/upload/unbekannt99").status_code == 404
+
+
+def test_gescheiterter_upload_darf_erneut_gesendet_werden(client, db, farm, x1c, monkeypatch):
+    monkeypatch.setattr(slicer, "_UPLOADS", type(slicer._UPLOADS)())
+    params = {"filename": "b.gcode", "upload_id": "zz99yy88xx77"}
+    assert client.post("/api/slicer/upload", params=params, content=b"").status_code == 400
+    r = client.post("/api/slicer/upload", params=params, content=SAFE_GCODE.encode())
+    assert r.status_code == 200 and r.json()["queued"] is True
+
+
+def test_upload_id_wird_geprueft(client, db, farm, x1c):
+    r = client.post("/api/slicer/upload", params={"filename": "b.gcode", "upload_id": "../x"},
+                    content=SAFE_GCODE.encode())
+    assert r.status_code == 400
+
+
+def test_es_bleiben_hoechstens_100_upload_ids(client, db, farm, x1c, monkeypatch):
+    alt = type(slicer._UPLOADS)((f"id{i:08d}", {"job_ids": []}) for i in range(slicer.UPLOADS_KEEP))
+    monkeypatch.setattr(slicer, "_UPLOADS", alt)
+    client.post("/api/slicer/upload", params={"filename": "b.gcode", "upload_id": "neu00000001"},
+                content=SAFE_GCODE.encode())
+    assert "id00000000" not in slicer._UPLOADS and "neu00000001" in slicer._UPLOADS
+    assert len(slicer._UPLOADS) == slicer.UPLOADS_KEEP
 
 
 def test_mehrere_platten_ergeben_je_platte_einen_job(client, db, farm, x1c, tmp_path):
@@ -287,3 +344,41 @@ def test_plugin_zum_herunterladen(client):
     assert r.status_code == 200
     assert "[tool.orcaslicer.plugin]" in r.text
     assert 'filename="printloom_orca.py"' in r.headers["content-disposition"]
+
+
+# ── Welcher Drucker? Der der Farm (seit v1.1.55) ────────────────────────────────
+
+def _zweiter(db):
+    d = Device(name="P1S", device_type=PrinterType.BAMBU_LAB, model="p1s",
+               ip_address="10.0.0.6", port=990, serial_number="01P00A000000000",
+               access_code="87654321")
+    db.add(d)
+    db.commit()
+    return d
+
+
+def test_ohne_angabe_gilt_der_drucker_der_farm(db, farm, x1c, monkeypatch):
+    p1s = _zweiter(db)
+    monkeypatch.setattr(autofarm, "farm_printer_id", lambda: p1s.id)
+    assert slicer._printer(db).id == p1s.id
+    assert slicer._printer(db, x1c.id).id == x1c.id        # ausdrücklich gewählt
+
+
+def test_ohne_zuordnung_der_erste(db, farm, x1c, monkeypatch):
+    _zweiter(db)
+    monkeypatch.setattr(autofarm, "farm_printer_id", lambda: None)
+    assert slicer._printer(db).id == x1c.id
+
+
+def test_farm_drucker_im_lauf_und_aus_dem_drucker_block(farm, monkeypatch):
+    monkeypatch.setitem(autofarm._farm, "running", True)
+    monkeypatch.setitem(autofarm._farm, "bambu_id", 5)
+    assert autofarm.farm_printer_id() == 5
+    monkeypatch.setitem(autofarm._farm, "running", False)
+    monkeypatch.setitem(autofarm._farm, "bambu_id", None)
+    geom = autofarm._motion.merge_defaults(None)
+    # Form wie im Drucker-Tab gespeichert: Block mit Geräte-Zuordnung
+    geom["printers"] = [{"id": "p1", "device_id": 7, "name": "P1S",
+                         "eject": {"x": 425, "y": 340, "z": 17.5}}]
+    monkeypatch.setattr(autofarm, "_load_farm_geometry", lambda: geom)
+    assert autofarm.farm_printer_id() == 7

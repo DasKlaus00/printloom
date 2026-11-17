@@ -41,11 +41,12 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import orca
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 API_VERSION = 1
 AGENT_ID = "printloom"          # steht in den Drucker-Profilen der Nutzer — nie ändern
 STATUS_INTERVAL_S = 3.0          # Geräte-Tab: so oft fragt Orca auch seine eigenen Drucker
@@ -90,6 +91,8 @@ TEXT = {
         "spool_ok": "Spulen reichen",
         "spool_unknown": "Spulen unbekannt",
         "crash": "Arm-Kollision: über {zlim:g} mm fährt der Druck bei X {x:g} mm (Randstreifen {margin:g} mm). Teil zur Mitte schieben.",
+        "crash_unknown": "Kollisions-Check nicht möglich (kein G-code gefunden) — selbst prüfen.",
+        "held": "Printloom: „{name}“ liegt in der Bibliothek, aber NICHT in der Warteschlange: {reason}",
         "too_tall": "Zu hoch fürs Regal: {h:g} mm (max. {max:g} mm) — die Farm würde pausieren.",
         "slots_hint": "Belegt {n} Fächer ({h:g} mm hoch).",
         "spool_short": "Fach {label} ({type}): noch ca. {left:g} g, der Druck braucht {need:g} g.",
@@ -115,6 +118,8 @@ TEXT = {
         "spool_ok": "spools suffice",
         "spool_unknown": "spools unknown",
         "crash": "Arm collision: above {zlim:g} mm the print moves to X {x:g} mm (edge strip {margin:g} mm). Move the part towards the centre.",
+        "crash_unknown": "Collision check not possible (no G-code found) — check it yourself.",
+        "held": "Printloom: “{name}” is in the library but NOT in the queue: {reason}",
         "too_tall": "Too tall for the rack: {h:g} mm (max. {max:g} mm) — the farm would pause.",
         "slots_hint": "Takes {n} slots ({h:g} mm tall).",
         "spool_short": "Slot {label} ({type}): about {left:g} g left, the print needs {need:g} g.",
@@ -261,6 +266,9 @@ def describe_checks(lang: str, checks: list) -> tuple:
             warnings.append(prefix + tr(lang, "crash", zlim=crash.get("z_limit_mm") or 30,
                                         x=crash.get("hit_x_mm") or 0,
                                         margin=crash.get("x_margin_mm") or 10))
+        elif crash.get("unknown"):
+            # Ungeprüft ist nicht „ok" (bis 1.0.2 stand hier nichts, das Fazit sagte „passt").
+            warnings.append(prefix + tr(lang, "crash_unknown"))
         height = c.get("height") or {}
         if height.get("ok") is False:
             warnings.append(prefix + tr(lang, "too_tall", h=height.get("height_mm") or 0,
@@ -287,7 +295,11 @@ def describe_checks(lang: str, checks: list) -> tuple:
 
 
 class PrintloomError(Exception):
-    pass
+    """`status` = HTTP-Status der Antwort; None = keine Antwort (Netz, Zeitüberschreitung)."""
+
+    def __init__(self, msg="", status=None):
+        super().__init__(msg)
+        self.status = status
 
 
 class PermissionMissing(PrintloomError):
@@ -350,7 +362,8 @@ class Client:
                 detail = ""
             if e.code in (401, 403) and not detail:
                 detail = "Anmeldung abgelehnt"
-            raise PrintloomError(f"HTTP {e.code}{': ' + str(detail) if detail else ''}") from None
+            raise PrintloomError(f"HTTP {e.code}{': ' + str(detail) if detail else ''}",
+                                 status=e.code) from None
         except PermissionError as e:
             # Orcas Audit: Zugriff (noch) nicht erlaubt. Kommt als PermissionError, nicht als
             # URLError — daran erkennt der Kern, dass er um Freigabe bitten muss.
@@ -376,10 +389,13 @@ class Client:
                              "Content-Encoding": "gzip"}, timeout=180.0)
 
     def upload(self, path: str, name: str, queue: bool, progress: dict,
-               cancelled: threading.Event) -> dict:
+               cancelled: threading.Event, upload_id: str = "") -> dict:
         size = os.path.getsize(path)
         progress["total"] = size
-        query = urllib.parse.urlencode({"filename": name, "queue": "true" if queue else "false"})
+        fields = {"filename": name, "queue": "true" if queue else "false"}
+        if upload_id:
+            fields["upload_id"] = upload_id
+        query = urllib.parse.urlencode(fields)
         body = _ProgressFile(path, progress, cancelled)
         try:
             return self.request("POST", "/api/slicer/upload?" + query, body,
@@ -387,6 +403,10 @@ class Client:
                                  "Content-Length": str(size)}, timeout=900.0)
         finally:
             body.close()
+
+    def upload_result(self, upload_id: str) -> dict:
+        return self.request("GET", "/api/slicer/upload/" + urllib.parse.quote(upload_id),
+                            timeout=10.0)
 
     def overview(self) -> dict:
         return self.request("GET", "/api/slicer/overview")
@@ -561,15 +581,30 @@ class Core:
     def send_file(self, path: str, name: str, queue: bool, progress: dict,
                   cancelled: threading.Event) -> dict:
         """Teil 2: in die Bibliothek (und Warteschlange) — danach dieselbe Prüfung
-        mit der echten Datei, je Platte."""
-        result = self.settings.client().upload(path, name, queue, progress, cancelled)
+        mit der echten Datei, je Platte.
+
+        Eine `upload_id` je Senden: Reißt die Verbindung ab, nachdem Printloom die Datei
+        schon hatte, wird nachgefragt statt still neu gesendet (sonst zwei Jobs)."""
+        client = self.settings.client()
+        upload_id = uuid.uuid4().hex
+        try:
+            result = client.upload(path, name, queue, progress, cancelled, upload_id)
+        except PrintloomError as e:
+            if cancelled.is_set() or e.status is not None:
+                raise                      # Printloom hat geantwortet: echter Fehler
+            result = self._upload_outcome(client, upload_id)
+            if result is None:
+                raise
         jobs = result.get("job_ids") or []
         with self.lock:
             self.last_send = {"at": time.time(), "name": result.get("file_name") or name,
                               "jobs": jobs}
             self.last_check = {"at": time.time(), "name": result.get("file_name") or name,
                                "checks": result.get("checks") or []}
-        if jobs:
+        if result.get("held"):
+            self.notify("warning", tr(self.lang, "held", name=result.get("file_name") or name,
+                                      reason=result.get("held_reason") or "?"))
+        elif jobs:
             label = tr(self.lang, "jobs_one") if len(jobs) == 1 else tr(self.lang, "jobs_many", n=len(jobs))
             self.notify("regular", tr(self.lang, "sent_queue", name=result.get("file_name") or name,
                                       jobs=label))
@@ -578,6 +613,20 @@ class Core:
         self.announce_checks(result.get("checks") or [], quiet_ok=True)
         self.wake.set()
         return result
+
+    def _upload_outcome(self, client, upload_id: str, wait_s: float = 120.0):
+        """Nach abgerissener Verbindung: Was hat Printloom aus dem Upload gemacht?
+        → die Antwort von damals, oder None (nicht angekommen: neu senden ist sicher)."""
+        deadline = time.time() + wait_s
+        while True:
+            try:
+                return client.upload_result(upload_id)
+            except PrintloomError as e:
+                if e.status == 409 and time.time() < deadline:
+                    time.sleep(3)          # läuft noch (große Datei wird geprüft)
+                    continue
+                _log(f"Upload {upload_id[:8]}: kein Ergebnis ({e})")
+                return None
 
     def announce_checks(self, checks: list, quiet_ok: bool = False) -> None:
         warnings, hints, summary = describe_checks(self.lang, checks)

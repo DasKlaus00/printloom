@@ -387,9 +387,16 @@ function CrashWarning({ fileId, plate = null }) {
     let alive = true
     fileService.crashCheck(fileId, plate)
       .then(r => { if (alive) setInfo(r.data ?? {}) })
-      .catch(() => { if (alive) setInfo({}) })
+      // Nicht erreichbar heißt „nicht geprüft", nicht „ok".
+      .catch(() => { if (alive) setInfo({ unknown: true }) })
     return () => { alive = false }
   }, [fileId, plate])
+  if (info?.unknown && !info?.crash_risk) {
+    return (
+      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-surface-700 text-surface-100 text-xs font-bold shrink-0"
+        title={tr('Kollisions-Check nicht möglich (kein G-code in der Datei oder unlesbar) — vor dem Einreihen selbst prüfen')}>?</span>
+    )
+  }
   if (!info?.crash_risk) return null
   const xmax = info.x_max_mm ?? 256, margin = info.x_margin_mm ?? 10, zlim = info.z_limit_mm ?? 30
   return (

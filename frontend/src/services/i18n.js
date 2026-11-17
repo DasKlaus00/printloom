@@ -1312,6 +1312,7 @@ const EN_STRINGS = {
   '{0} fertig — ausgeblendet': '{0} done — hidden',
   'Historie öffnen →': 'Open history →',
   'Mögliche Kollision mit dem OTTOeject-Arm — klicken für Details': 'Possible collision with the OTTOeject arm — click for details',
+  'Kollisions-Check nicht möglich (kein G-code in der Datei oder unlesbar) — vor dem Einreihen selbst prüfen': 'Collision check not possible (no G-code in the file, or unreadable) — check it yourself before queueing',
   'Wahrscheinliche Kollision mit dem OTTOeject-Arm': 'Likely collision with the OTTOeject arm',
   'Oberhalb von {0} mm Höhe ragt der Druck bei Z={1} mm auf X={2} mm in die seitliche Randzone (0–{3} mm bzw. {4}–{5} mm). Dort fährt der OTTOeject-Arm beim Auswerfen und Einlagern entlang — beim Druck dieser Datei kommt es sehr wahrscheinlich zu einem Crash.':
     'Above {0} mm height the print reaches X={2} mm at Z={1} mm into the side margin (0–{3} mm or {4}–{5} mm). The OTTOeject arm travels there when ejecting and storing — printing this file will very likely cause a crash.',

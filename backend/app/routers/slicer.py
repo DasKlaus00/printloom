@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import tempfile
 import zipfile
 import zlib
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
@@ -47,12 +49,29 @@ STATE_KEYS = ("gcode_state", "mc_percent", "mc_remaining_time", "subtask_name",
               "nozzle_type", "ams", "vt_tray")
 
 
+# Letzte Uploads je `upload_id` (das Plugin schickt eine je Klick auf „Senden").
+# Schickt es nach einer Zeitüberschreitung dieselbe noch einmal, bekommt es die
+# erste Antwort zurück statt einer zweiten Datei mit zweitem Job. None = läuft noch.
+UPLOADS_KEEP = 100
+_UPLOADS: "OrderedDict[str, Optional[dict]]" = OrderedDict()
+_UPLOAD_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+
 # ── Hilfen ────────────────────────────────────────────────────────────────────
 
 def _printer(db, device_id: Optional[int] = None) -> Optional[Device]:
+    """Ausdrücklich gewähltes Gerät, sonst der Drucker der Farm, sonst der erste Bambu
+    (ein einzelner, noch keinem Drucker-Block zugeordneter Drucker)."""
     q = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB)
     if device_id is not None:
-        q = q.filter(Device.id == device_id)
+        return q.filter(Device.id == device_id).first()
+    from app.routers import autofarm
+    farm_id = autofarm.farm_printer_id()
+    if farm_id is not None:
+        d = q.filter(Device.id == farm_id).first()
+        if d is not None:
+            return d
+        logger.warning(f"Farm-Drucker {farm_id} nicht in der Geräteliste — nehme den ersten")
     return q.first()
 
 
@@ -124,7 +143,14 @@ def _units(path: str, ftype: str) -> list:
 
 def _analyze(path: str, ftype: str, plate, ams_raw: dict) -> dict:
     """Crash-Zone, Fachhöhe und Spulen für EINE Druck-Einheit."""
-    crash = crash_check.scan_file(path, ftype, plate) or {"crash_risk": False, "max_z_mm": None}
+    try:
+        crash = crash_check.scan_file(path, ftype, plate)
+    except (OSError, zipfile.BadZipFile, ValueError) as e:
+        logger.warning(f"Crash-Check nicht möglich ({os.path.basename(path)}): {e}")
+        crash = None
+    # Kein G-code gefunden oder Datei unlesbar: „nicht geprüft", nicht „ok". Bis
+    # v1.1.54 meldete das Plugin dann „keine Kollisionsgefahr".
+    crash = crash or crash_check.not_checked()
     crash.update(crash_check.limits())
     rack = rack_store.load()
     h = print_file.object_height(path, ftype, plate, rack.get("height_margin_pct", 15.0))
@@ -193,17 +219,24 @@ async def check(request: Request):
             logger.warning(f"Prüf-Datei nicht gelöscht: {e}")
 
 
-@router.post("/upload")
-async def upload(request: Request, filename: str, queue: bool = True):
-    """Gesliceten Druck in die Bibliothek legen und (Standard) einreihen.
+def _hold_reason(checks: list) -> Optional[str]:
+    """Warum diese Datei NICHT von selbst in die Warteschlange darf, sonst None.
+    Crash-Risiko oder ungeprüft: Die Datei liegt in der Bibliothek, einreihen muss
+    man sie dort bewusst (bis v1.1.54 ging sie trotz Warnung direkt in die Farm)."""
+    for c in checks:
+        crash = c.get("crash") or {}
+        platte = f"Platte {c['plate']}: " if c.get("plate") else ""
+        if crash.get("crash_risk"):
+            return f"{platte}Kollisionsgefahr für den OTTOeject — in der Bibliothek prüfen"
+        if crash.get("unknown"):
+            return f"{platte}Kollisions-Check nicht möglich — in der Bibliothek prüfen"
+    return None
 
-    Body = die Datei selbst (.gcode.3mf oder .gcode). Antwort mit Job-IDs und dem
-    Farm-Check je Platte — derselbe wie nach dem Slicen, jetzt mit der echten Datei."""
+
+async def _store_upload(request: Request, name: str, ftype: str, queue: bool) -> dict:
+    """Datei speichern, prüfen, dann (falls erlaubt) einreihen. Erst prüfen: Bis
+    v1.1.54 wurde vor dem Check eingereiht."""
     from app.routers import autofarm, files
-    name = os.path.basename((filename or "").replace("\\", "/")).strip()
-    ftype = Path(name).suffix.lower()
-    if not name or ftype not in PRINT_TYPES:
-        raise HTTPException(400, "Nur .3mf und .gcode")
     dest = files.new_upload_path(name)
     try:
         size = await _receive(request, dest)
@@ -217,10 +250,56 @@ async def upload(request: Request, filename: str, queue: bool = True):
     finally:
         db.close()
     units = await run_in_threadpool(_units, str(dest), ftype)
-    job_ids = await autofarm.add_library_jobs(file_id, file_name, units) if queue else []
     checks = await run_in_threadpool(_analyze_units, str(dest), ftype, units)
+    held = _hold_reason(checks) if queue else None
+    job_ids = await autofarm.add_library_jobs(file_id, file_name, units) \
+        if queue and not held else []
     return {"file_id": file_id, "file_name": file_name, "queued": bool(job_ids),
-            "job_ids": job_ids, "checks": checks}
+            "job_ids": job_ids, "checks": checks, "held": bool(held), "held_reason": held}
+
+
+@router.post("/upload")
+async def upload(request: Request, filename: str, queue: bool = True,
+                 upload_id: Optional[str] = None):
+    """Gesliceten Druck in die Bibliothek legen und (Standard) einreihen.
+
+    Body = die Datei selbst (.gcode.3mf oder .gcode). Antwort mit Job-IDs und dem
+    Farm-Check je Platte — derselbe wie nach dem Slicen, jetzt mit der echten Datei.
+    Mit Crash-Risiko oder ohne prüfbaren G-code: nur Bibliothek, `held` + Grund.
+    `upload_id` macht das Senden wiederholbar (siehe _UPLOADS)."""
+    name = os.path.basename((filename or "").replace("\\", "/")).strip()
+    ftype = Path(name).suffix.lower()
+    if not name or ftype not in PRINT_TYPES:
+        raise HTTPException(400, "Nur .3mf und .gcode")
+    if upload_id is None:
+        return await _store_upload(request, name, ftype, queue)
+    if not _UPLOAD_ID_RE.match(upload_id):
+        raise HTTPException(400, "upload_id ungültig")
+    if upload_id in _UPLOADS:
+        if _UPLOADS[upload_id] is None:
+            raise HTTPException(409, "Dieser Upload läuft noch")
+        return {**_UPLOADS[upload_id], "repeated": True}
+    _UPLOADS[upload_id] = None
+    while len(_UPLOADS) > UPLOADS_KEEP:
+        _UPLOADS.popitem(last=False)
+    try:
+        result = await _store_upload(request, name, ftype, queue)
+    except BaseException:
+        _UPLOADS.pop(upload_id, None)      # gescheitert → darf erneut gesendet werden
+        raise
+    _UPLOADS[upload_id] = result
+    return result
+
+
+@router.get("/upload/{upload_id}")
+def upload_result(upload_id: str):
+    """Was ist aus einem Upload geworden? Für das Plugin nach einer Zeitüberschreitung:
+    fertig (die Antwort von damals), läuft noch (409) oder unbekannt (404)."""
+    if upload_id not in _UPLOADS:
+        raise HTTPException(404, "Upload unbekannt")
+    if _UPLOADS[upload_id] is None:
+        raise HTTPException(409, "Dieser Upload läuft noch")
+    return _UPLOADS[upload_id]
 
 
 @router.get("/printer/state")

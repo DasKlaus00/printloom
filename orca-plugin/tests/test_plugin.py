@@ -359,12 +359,61 @@ def test_senden_legt_in_die_warteschlange(plugin, printloom, tmp_path):
     rc = agent.start_send_gcode_to_sdcard(params, lambda s, c, m: stages.append(s), lambda: False, None)
     assert rc == 0
     up = next(r for r in printloom.requests if r["path"] == "/api/slicer/upload")
+    upload_id = up["query"].pop("upload_id")
     assert up["query"] == {"filename": "Halter.gcode.3mf", "queue": "true"}
+    assert len(upload_id) == 32 and int(upload_id, 16) >= 0
     assert stages[0] == plugin.STAGE_CREATE and stages[-1] == plugin.STAGE_FINISHED
     note = plugin.orca_fake.notifications
     assert ("regular", "Printloom: „Halter.gcode.3mf“ in der Warteschlange (1 Job).") in note
     # Die Prüfung der echten Datei kommt gleich mit (hier: Kollisionszone).
     assert any(level == "warning" and "Arm-Kollision" in text for level, text in note)
+
+
+def _senden(plugin, printloom, tmp_path, name="Halter.gcode.3mf"):
+    _, agent = start(plugin, printloom.url)
+    f = tmp_path / "plate.3mf"
+    f.write_bytes(b"3mf" * 1000)
+    params = types.SimpleNamespace(project_name=name, filename=str(f))
+    return agent.start_send_gcode_to_sdcard(params, None, lambda: False, None)
+
+
+def test_jedes_senden_hat_eine_eigene_upload_id(plugin, printloom, tmp_path):
+    _senden(plugin, printloom, tmp_path)
+    _senden(plugin, printloom, tmp_path)
+    ids = [r["query"]["upload_id"] for r in printloom.requests if r["path"] == "/api/slicer/upload"]
+    assert len(ids) == 2 and ids[0] != ids[1]
+
+
+def test_abgerissene_verbindung_fragt_nach_statt_neu_zu_senden(plugin, printloom, tmp_path):
+    printloom.drop_upload = "kept"
+    assert _senden(plugin, printloom, tmp_path) == 0
+    posts = [r for r in printloom.requests if r["path"] == "/api/slicer/upload"]
+    gets = [r for r in printloom.requests if r["path"].startswith("/api/slicer/upload/")]
+    assert len(posts) == 1                                  # nicht doppelt gesendet
+    assert gets and gets[0]["path"].endswith(posts[0]["query"]["upload_id"])
+    assert ("regular", "Printloom: „Halter.gcode.3mf“ in der Warteschlange (1 Job).") \
+        in plugin.orca_fake.notifications
+
+
+def test_nicht_angekommen_ist_ein_fehler(plugin, printloom, tmp_path):
+    printloom.drop_upload = "lost"
+    assert _senden(plugin, printloom, tmp_path) == plugin.ERR_UPLOAD
+    assert any(level == "warning" for level, _ in plugin.orca_fake.notifications)
+
+
+def test_zurueckgehalten_warnt_statt_warteschlange(plugin, printloom, tmp_path):
+    printloom.held = "Kollisionsgefahr für den OTTOeject — in der Bibliothek prüfen"
+    assert _senden(plugin, printloom, tmp_path) == 0
+    note = plugin.orca_fake.notifications
+    assert any(level == "warning" and "NICHT in der Warteschlange" in text
+               and "Kollisionsgefahr" in text for level, text in note)
+    assert not any("in der Warteschlange (" in text for _, text in note)
+
+
+def test_ungeprueft_ist_eine_warnung(plugin):
+    warnings, _, _ = plugin.describe_checks("de", [{"plate": 2, "crash": {
+        "crash_risk": False, "unknown": True, "max_z_mm": None}}])
+    assert any("Kollisions-Check nicht möglich" in w for w in warnings)
 
 
 def test_senden_nur_bibliothek_wenn_so_eingestellt(plugin, printloom, tmp_path):

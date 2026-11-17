@@ -521,8 +521,10 @@ def crash_check(file_id: int, plate: int = None, x_max: float = CRASH_X_MAX,
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
-    if file.file_type not in ('.3mf', '.gcode') or not os.path.exists(file.file_path):
-        return {"crash_risk": False, "max_z_mm": None}
+    if file.file_type not in ('.3mf', '.gcode'):
+        return {"crash_risk": False, "max_z_mm": None}     # keine Druckdatei: nichts zu prüfen
+    if not os.path.exists(file.file_path):
+        return _crash.not_checked("Datei fehlt")
     path, file_type = file.file_path, file.file_type
     # Eine .gcode hat keine Platten; der Scan ignoriert `plate` dort. Im Cache-Schlüssel
     # legte jede erfundene Plattennummer sonst einen neuen Eintrag an. (Eine .3mf mit
@@ -548,10 +550,10 @@ def crash_check(file_id: int, plate: int = None, x_max: float = CRASH_X_MAX,
                 return cached[1]
             result = _scan_file_for_crash(path, file_type, plate, x_max)
         if result is None:
-            return {"crash_risk": False, "max_z_mm": None}
+            return _crash.not_checked()
     except Exception as e:
         logger.warning(f"crash-check failed for {file_id}: {e}")
-        return {"crash_risk": False, "max_z_mm": None, "error": str(e)}
+        return _crash.not_checked(str(e))
     result["z_limit_mm"] = CRASH_Z_LIMIT
     result["x_margin_mm"] = CRASH_X_MARGIN
     result["x_max_mm"] = x_max

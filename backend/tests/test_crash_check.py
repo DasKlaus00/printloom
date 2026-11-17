@@ -85,3 +85,45 @@ def test_ohne_gcode_im_archiv_gibt_es_nichts_zu_pruefen(tmp_path):
     with zipfile.ZipFile(p, "w") as z:
         z.writestr("Metadata/plate_1.png", b"nicht wirklich ein PNG")
     assert f._scan_file_for_crash(str(p), ".3mf", None, 256.0) is None
+
+
+# ── Bibliothek: „nicht geprüft" ist nicht „ok" (seit v1.1.55) ───────────────────
+
+class _Zeile:
+    # Form eines echten UploadedFile-Eintrags (nur die gelesenen Felder)
+    def __init__(self, path, ftype):
+        self.id, self.file_path, self.file_type = 41, str(path), ftype
+
+
+class _DB:
+    def __init__(self, zeile):
+        self.zeile = zeile
+
+    def query(self, *a):
+        zeile = self.zeile
+
+        class Q:
+            def filter(self, *a, **kw):
+                return self
+
+            def first(self):
+                return zeile
+        return Q()
+
+
+def test_bibliothek_meldet_ohne_gcode_nicht_geprueft(tmp_path):
+    p = tmp_path / "projekt.3mf"
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("3D/3dmodel.model", "<model/>")
+    r = f.crash_check(41, db=_DB(_Zeile(p, ".3mf")))
+    assert r["crash_risk"] is False and r["unknown"] is True
+
+
+def test_bibliothek_meldet_fehlende_datei_nicht_geprueft(tmp_path):
+    r = f.crash_check(41, db=_DB(_Zeile(tmp_path / "weg.3mf", ".3mf")))
+    assert r["unknown"] is True and r["error"] == "Datei fehlt"
+
+
+def test_keine_druckdatei_ist_nicht_unbekannt(tmp_path):
+    r = f.crash_check(41, db=_DB(_Zeile(tmp_path / "teil.stl", ".stl")))
+    assert r == {"crash_risk": False, "max_z_mm": None}

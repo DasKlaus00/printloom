@@ -2361,6 +2361,23 @@ def _farm_printer(geom: dict = None):
         raise RuntimeError(f"Drucker-Geometrie nicht lesbar ({e})") from e
 
 
+def farm_printer_id() -> Optional[int]:
+    """Geräte-ID des Druckers, den die Farm bedient: im Lauf der gestartete, sonst
+    der des Drucker-Blocks, den sie fahren würde. None = keinem Gerät zugeordnet.
+    Für das OrcaSlicer-Plugin (Spulen-Check, Geräte-Tab, Übersicht): Bis v1.1.54
+    zeigte es den ersten Bambu der Datenbank, bei zwei Druckern womöglich den falschen."""
+    if _farm.get("running") and _farm.get("bambu_id") is not None:
+        return int(_farm["bambu_id"])
+    try:
+        geom = _load_farm_geometry()
+        block = _motion.printer_block(geom, _farm_printer(geom)) or {}
+    except (storage.BrokenFile, RuntimeError) as e:
+        logger.warning(f"Farm-Drucker nicht bestimmbar: {e}")
+        return None
+    did = block.get("device_id")
+    return int(did) if did is not None else None
+
+
 def _assert_printer_geometry(bambu_id) -> None:
     """Start verweigern, wenn für DIESES Gerät kein Drucker-Block existiert und die
     Farm App-G-code fahren soll.

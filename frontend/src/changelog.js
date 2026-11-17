@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.56',
+    de: [
+      'ORCASLICER-PLUGIN: ERST PRÜFEN, DANN EINREIHEN. Hat eine gesendete Datei Kollisionsgefahr für den OTTOeject oder lässt sie sich nicht prüfen (kein G-code), landet sie nur in der Bibliothek und nicht in der Warteschlange. Das Plugin sagt dann, warum. Bisher ging sie trotz Warnung direkt in die Farm.',
+      'KEIN DOPPELTER JOB NACH VERBINDUNGSABBRUCH: Reißt die Verbindung beim Senden ab, fragt das Plugin bei Printloom nach, ob die Datei angekommen ist, statt sie ein zweites Mal einzureihen. Dafür das Plugin neu herunterladen (Version 1.0.3, System → OrcaSlicer).',
+      '„NICHT GEPRÜFT“ IST NICHT „OK“: Kann der Kollisions-Check eine Datei nicht lesen, zeigt die Bibliothek ein graues „?“ und das Plugin eine Warnung. Bisher hieß das „keine Kollisionsgefahr“.',
+      'Spulen-Check, Geräte-Tab und Übersicht im Plugin zeigen den Drucker der Farm, nicht einfach den ersten Bambu in der Geräteliste.',
+    ],
+    en: [
+      'ORCASLICER PLUGIN: CHECK FIRST, THEN QUEUE. If a sent file risks a collision with the OTTOeject or cannot be checked (no G-code), it only goes into the library, not into the queue, and the plugin says why. Until now it went straight into the farm despite the warning.',
+      'NO DUPLICATE JOB AFTER A DROPPED CONNECTION: if the connection drops while sending, the plugin asks Printloom whether the file arrived instead of queueing it a second time. Download the plugin again for this (version 1.0.3, System → OrcaSlicer).',
+      '“NOT CHECKED” IS NOT “OK”: if the collision check cannot read a file, the library shows a grey “?” and the plugin a warning. Until now this meant “no collision risk”.',
+      'The spool check, device tab and overview in the plugin show the farm’s printer, not simply the first Bambu in the device list.',
+    ],
+  },
+  {
     version: '1.1.55',
     de: [
       'KEIN DRUCKSTART NACH STOPP ODER NOTAUS: Kam Stopp oder Notaus, während eine Druckdatei noch hochgeladen wurde, startete der Drucker sie bisher trotzdem. Jetzt geht danach kein Startbefehl mehr raus, auch keine Bett-Fahrt.',
