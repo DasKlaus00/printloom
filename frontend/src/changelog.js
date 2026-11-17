@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.79',
+    de: [
+      'Intern umgebaut, keine sichtbare Änderung: Teile der Auto-Farm-Seite (AMS-Zuordnung, Kameras, Zeitplaner) und des Farm-Servers (Homing-Datei, Laufzeit-Historie) liegen jetzt in eigenen Dateien. Das macht spätere Änderungen sicherer.',
+    ],
+    en: [
+      'Internal restructuring, nothing visible changes: parts of the Auto Farm page (AMS mapping, cameras, planner) and of the farm server (homing file, runtime history) now live in their own files. That makes later changes safer.',
+    ],
+  },
+  {
     version: '1.1.78',
     de: [
       'DOKU PASST ZUR SOFTWARE: README und Anleitungen nennen die richtigen Menüs (Konfiguration → Geräte / Kameras / Allgemein, Setup-Assistent), die erkannten Drucker-Modelle, die Windows-App (Installer, Adresse, Datenordner, Update) und die Einrichtung des OrcaSlicer-Plugins. Die Kamera wird beschrieben, wie sie heute läuft (direkt am Drucker, Home Assistant optional).',

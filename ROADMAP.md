@@ -95,9 +95,11 @@ Größtes offenes Versprechen und größter Umbau — mit eigenem Design-Schritt
 - **Status über den WebSocket** statt 13 einzelner Timer.
 - **16 React-Warnungen** (`exhaustive-deps`) beheben.
 - **4–5 Playwright-Smoke-Tests** in die CI.
-- **Große Dateien teilen**: `autofarm.py` (~4 150 Zeilen), `AutoFarm.jsx`,
-  `Drucker.jsx`, `Configuration.jsx` — beim nächsten Feature im Bereich das Passende
-  herausziehen, nicht auf einmal.
+- **Große Dateien teilen**: begonnen in v1.1.79 (Homing-.3mf und Laufzeit-Historie aus
+  `autofarm.py`, AMS-Zuordnung, Kameras und Planer aus `AutoFarm.jsx` nach
+  `components/farm/`). Offen: `autofarm.py` (~5 260 Zeilen, der Rest hängt an `_farm`
+  und an Test-Patches), `Drucker.jsx`, `Configuration.jsx` — beim nächsten Feature im
+  Bereich das Passende herausziehen, nicht auf einmal.
 
 ---
 

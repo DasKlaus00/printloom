@@ -77,12 +77,15 @@ describe('Quelltext-Regeln für Lesbarkeit', () => {
 
 /* Die Kamera-Fläche ist immer schwarz: dort keine Themenfarben (seit v1.1.70). */
 describe('Kamera-Fläche', () => {
-  const farm = readFileSync(resolve(SRC, 'pages', 'AutoFarm.jsx'), 'utf8')
+  const farm = readFileSync(resolve(SRC, 'components', 'farm', 'Camera.jsx'), 'utf8')
   for (const name of ['StreamView', 'X1CView', 'HaPollView']) {
     it(`${name} nutzt cam-surface und keine Themen-Schrift darin`, () => {
       const start = farm.indexOf(`function ${name}(`)
-      const ende = farm.indexOf('\nfunction ', start + 10)
-      const teil = farm.slice(start, ende)
+      expect(start).toBeGreaterThan(-1)
+      // bis zur nächsten Funktion (auch einer exportierten) oder zum Dateiende
+      const rest = farm.slice(start + 10)
+      const m = rest.match(/\n(export (default )?)?function /)
+      const teil = farm.slice(start, m ? start + 10 + m.index : undefined)
       expect(teil).toContain('cam-surface')
       const flaeche = teil.slice(teil.indexOf('cam-surface'))
       expect(flaeche).not.toMatch(/text-(surface|red)-\d/)

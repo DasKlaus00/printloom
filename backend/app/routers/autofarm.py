@@ -6,12 +6,10 @@ New jobs can be enqueued at any time via POST /enqueue.
 The loop idles when the queue is empty and picks up new jobs automatically.
 """
 import asyncio
-import io
 import json
 import logging
 import os
 import time as _time
-import zipfile
 from datetime import datetime, timedelta
 from typing import Optional, List
 
@@ -25,6 +23,8 @@ from app.paths import db_path
 from app.routers.printer import capture_snapshot, publish_live_status
 from app.services import ams_match, bambu_manager, device_settings, farm_queue, farm_settings, hms
 from app.services.timestamps import aware_iso, as_aware, as_aware_iso, now_iso
+from app.services.farm_history import read as _read_history, record as _record_duration
+from app.services.homing_3mf import build_homing_3mf as _build_homing_3mf
 from app.services import crash_check, print_file, printer_guard, rack_store, storage
 from app.services import geometry_check as _geometry_check
 from app.services import ottoeject_motion as _motion
@@ -47,7 +47,6 @@ SETTINGS_PATH = farm_settings.PATH
 QUEUE_PATH    = farm_queue.PATH      # eine Quelle (services/farm_queue.py)
 LOG_PATH      = db_path("farm_log.txt")
 STATS_PATH    = db_path("farm_stats.json")
-HISTORY_PATH  = db_path("farm_history.json")
 TIMELINE_PATH = db_path("farm_timeline.json")
 COMPLETED_PATH = db_path("farm_completed.json")   # Historie: abgeschlossene Druck-Jobs
 STATE_PATH    = db_path("farm_state.json")        # Laufzustand — überlebt den Neustart
@@ -55,7 +54,6 @@ HMS_PATH      = db_path("farm_hms.json")          # Drucker-Fehler mit Zeitstemp
 TIMELINE_MAX  = 1000  # keep the most recent N events
 COMPLETED_MAX = 2000  # keep the most recent N completed jobs (Historie)
 HMS_MAX       = 300   # keep the most recent N printer errors (HMS-Historie)
-HISTORY_KEEP  = 8     # rolling samples per file for the duration average
 
 SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
 
@@ -64,33 +62,6 @@ from app.services import geometry_store as _geometry_store  # noqa: E402
 GEOMETRY_PATH = _geometry_store.PATH  # Drucker-Geometrie (Drucker-Tab), eine Quelle
 
 _DEFAULT_SETTINGS = farm_settings.DEFAULTS
-
-# ── Homing .3mf generator ────────────────────────────────────
-_HOMING_GCODE = """; Printloom Homing Sequence
-G28 ; Home all axes
-G1 Z200 F3000 ; Move bed to loading position (fast — same feed as the cycle's Z200 move)
-M400 ; Wait for moves to complete
-"""
-_HOMING_CONTENT_TYPES = '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="gcode" ContentType="text/x.gcode"/><Default Extension="config" ContentType="text/xml"/></Types>'
-_HOMING_RELS = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'
-_HOMING_MODEL = '<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">Printloom</metadata><resources/><build/></model>'
-_HOMING_SETTINGS = '<?xml version="1.0" encoding="utf-8"?><config><plate><metadata key="plater_id" value="1"/><metadata key="gcode_file" value="Metadata/plate_1.gcode"/><metadata key="thumbnail_file" value=""/></plate></config>'
-_HOMING_SLICE = '<?xml version="1.0" encoding="utf-8"?><config><header><value key="gcode_version" val="1.0.0.0"/><value key="source_file" val="printloom_homing.3mf"/><value key="nozzle_diameter" val="0.4"/></header><plates><plate><metadata key="index" val="1"/><metadata key="skipped" val="0"/><metadata key="gcode_file" val="Metadata/plate_1.gcode"/></plate></plates><filaments/></config>'
-
-def _build_3mf(gcode: str) -> bytes:
-    """Wrap arbitrary G-code into a minimal printable .3mf (single plate)."""
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("[Content_Types].xml",          _HOMING_CONTENT_TYPES)
-        zf.writestr("_rels/.rels",                  _HOMING_RELS)
-        zf.writestr("3D/3dmodel.model",             _HOMING_MODEL)
-        zf.writestr("Metadata/plate_1.gcode",       gcode)
-        zf.writestr("Metadata/model_settings.config", _HOMING_SETTINGS)
-        zf.writestr("Metadata/slice_info.config",   _HOMING_SLICE)
-    return buf.getvalue()
-
-def _build_homing_3mf() -> bytes:
-    return _build_3mf(_HOMING_GCODE)
 
 def _read_config(path: str, default):
     """Tolerant: für den laufenden Zyklus (Einstellungen je Schritt). Eine kaputte
@@ -269,43 +240,6 @@ def _record_failure(error_msg: str = ""):
     if not s.get("since"):
         s["since"] = now_iso()
     _write_stats(s)
-
-
-# ── Per-file duration history (B.2 — real ETA from past runs) ─────────────────
-# farm_history.json: { "<file_id>": {"samples": [min, …], "avg_min": x, "n": k} }
-def _read_history() -> dict:
-    data = storage.read_json(HISTORY_PATH, {})
-    return data if isinstance(data, dict) else {}
-
-
-def _record_duration(file_id, minutes: float, kwh: float = 0.0):
-    """Append a measured full-cycle duration (wall-clock running→done, in minutes)
-    and energy (kWh) for a file; keep rolling averages over the last HISTORY_KEEP runs."""
-    if file_id is None or minutes <= 0:
-        return
-    try:
-        hist = _read_history()
-        key  = str(file_id)
-        entry = hist.get(key) or {}
-        samples = [float(x) for x in entry.get("samples", []) if x] + [round(float(minutes), 1)]
-        samples = samples[-HISTORY_KEEP:]
-        out = {
-            "samples": samples,
-            "avg_min": round(sum(samples) / len(samples), 1),
-            "n":       len(samples),
-        }
-        if kwh and kwh > 0:
-            ksamples = [float(x) for x in entry.get("kwh_samples", []) if x] + [round(float(kwh), 4)]
-            ksamples = ksamples[-HISTORY_KEEP:]
-            out["kwh_samples"] = ksamples
-            out["avg_kwh"]     = round(sum(ksamples) / len(ksamples), 4)
-        elif entry.get("avg_kwh"):
-            out["kwh_samples"] = entry.get("kwh_samples", [])
-            out["avg_kwh"]     = entry["avg_kwh"]
-        hist[key] = out
-        storage.write_json(HISTORY_PATH, hist)
-    except Exception as e:
-        logger.warning(f"history write failed: {e}")
 
 
 # ── Smart-Plug-Anbindung (Roadmap 3.1/3.2) ───────────────────────────────────
