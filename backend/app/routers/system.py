@@ -794,6 +794,11 @@ def _restore_devices(db, devices: list, settings: dict) -> int:
     (evtl. neuen) ID ablegen. Zugangsdaten, die das Backup nicht mitbringt, bleiben
     wie sie sind — ein Backup ohne Zugangsdaten darf keine löschen."""
     from app.services import printer_models
+    from app.routers import control
+    # Ein laufender Notaus bleibt stehen. Bis v1.1.42 gab das Einspielen alle Geräte
+    # frei, ohne Klipper-Neustart und ohne Rückfrage: Der Arm war danach „frei",
+    # obwohl niemand „Betrieb fortsetzen" gedrückt hatte.
+    gesperrt = control.notaus_aktiv(db)
     n = 0
     name_to_id = {}
     for d in devices or []:
@@ -807,6 +812,10 @@ def _restore_devices(db, devices: list, settings: dict) -> int:
         row = db.query(Device).filter(Device.name == name).first()
         if not row:
             row = Device(name=name)
+            # Neue Geräte übernehmen den Zustand der Anlage: frei, außer ein Notaus
+            # steht an. Ein Backup aus einem Notaus-Zustand (ältere Backups enthalten
+            # `is_active`) sperrt so keine frische Anlage.
+            row.is_active = not gesperrt
             db.add(row)
         row.device_type    = dtype
         row.model          = printer_models.normalize(d.get("model")) or             printer_models.from_serial(d.get("serial_number")) or None
@@ -817,9 +826,7 @@ def _restore_devices(db, devices: list, settings: dict) -> int:
             row.access_code = d["access_code"]
         row.mqtt_port      = d.get("mqtt_port", 8883)
         row.use_tls        = d.get("use_tls", True)
-        # Immer freigegeben: Ein Backup aus einem Notaus-Zustand (ältere Backups
-        # enthalten `is_active`) hätte sonst eine frische Anlage gesperrt eingespielt.
-        row.is_active      = True
+        # Vorhandene Geräte behalten ihr is_active (das Backup entscheidet das nie).
         db.flush()  # assign id
         name_to_id[name] = row.id
         n += 1

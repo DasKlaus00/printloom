@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { rackManagerService } from '../services/api'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { useLanguage, locale } from '../services/i18n'
+import EmergencyStop from '../components/EmergencyStop'
 
 const STATUS_META = {
   free:     { label: 'Leer',     bg: 'bg-surface-800',    border: 'border-surface-700', text: 'text-surface-400',  dot: 'bg-gray-500'   },
@@ -112,6 +113,7 @@ export default function MobileView() {
             <p className="text-xs text-gray-500">{tr('Rack-Übersicht · Mobile')}</p>
           </div>
           <div className="flex flex-col items-end gap-1">
+            <EmergencyStop compact />
             <div className="flex items-center gap-2">
               <span className={`w-2.5 h-2.5 rounded-full ${farmDotColor} ${farmRunning && !farmPaused ? 'animate-pulse' : ''}`} />
               <span className={`text-sm font-semibold ${farmStatusColor}`}>Farm {tr(farmStatusLabel)}</span>

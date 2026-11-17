@@ -223,6 +223,33 @@ def test_wiederherstellung_ist_nie_gesperrt(db):
     assert db.query(Device).one().is_active is True
 
 
+def test_einspielen_hebt_aktiven_notaus_nicht_auf(db):
+    """Bis v1.1.42 gab das Einspielen alle Geräte frei, ohne Klipper-Neustart."""
+    db.add(Device(name="OTTOeject", device_type=PrinterType.KLIPPER, ip_address="10.0.0.6",
+                  port=7125, is_active=False))
+    db.commit()
+    system._restore_devices(db, [{"name": "OTTOeject", "device_type": "klipper",
+                                  "ip_address": "10.0.0.6", "port": 7125}], {})
+    assert db.query(Device).one().is_active is False
+
+
+def test_neues_geraet_bei_aktivem_notaus_bleibt_gesperrt(db):
+    db.add(Device(name="OTTOeject", device_type=PrinterType.KLIPPER, ip_address="10.0.0.6",
+                  port=7125, is_active=False))
+    db.commit()
+    system._restore_devices(db, [{"name": "X1C", "device_type": "bambu_lab", "port": 990}], {})
+    neu = db.query(Device).filter(Device.name == "X1C").one()
+    assert neu.is_active is False
+
+
+def test_einspielen_ohne_notaus_laesst_vorhandene_frei(db):
+    db.add(Device(name="X1C", device_type=PrinterType.BAMBU_LAB, port=990, is_active=True))
+    db.commit()
+    system._restore_devices(db, [{"name": "X1C", "device_type": "bambu_lab", "port": 990,
+                                  "is_active": False}], {})
+    assert db.query(Device).one().is_active is True
+
+
 def test_modell_wird_wiederhergestellt_oder_aus_der_seriennummer_erraten(db):
     system._restore_devices(db, [
         {"name": "A", "device_type": "bambu_lab", "model": "x1c", "port": 990},

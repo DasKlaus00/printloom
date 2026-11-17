@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.43',
+    de: [
+      'NOTAUS AUF JEDER SEITE: Der rote Notaus-Knopf steht jetzt oben in der Kopfzeile, auch auf dem Handy und in der mobilen Rack-Ansicht. Bisher gab es ihn nur in der Steuerung. Solange ein Notaus aktiv ist, steht daneben „Fortsetzen“.',
+      'NACH DEM NOTAUS FÄHRT NICHTS MEHR, auch kein Aufräumen. Bisher parkte die Farm nach einem Notaus noch den Arm, und der Stresstest schloss die Tür. Jetzt sperrt Printloom die Geräte, bevor irgendein Ablauf aufräumen kann, und jede Bewegung prüft die Sperre. Eine offene Tür bleibt offen; das steht im Log.',
+      '„Betrieb fortsetzen“ gibt nur frei, wenn Klipper wirklich neu gestartet ist. Scheitert der Neustart, bleibt alles gesperrt, und Printloom sagt, dass du es noch einmal versuchen sollst. Bisher zeigte die Oberfläche „frei“, während der Arm noch im Notaus-Zustand stand.',
+      'Ein Backup einzuspielen hebt einen aktiven Notaus nicht mehr auf.',
+      'BESTÄTIGEN PER TASTATUR: Ein gehaltenes Enter bestätigt keine Rückfrage mehr, und in Rückfragen zu gefährlichen Aktionen (Löschen, Fortsetzen nach dem Notaus, Steckdose ausschalten) steht der Fokus auf „Abbrechen“. Enter bestätigt nur noch, wenn der Fokus auf „Bestätigen“ liegt (Tab, dann Enter, oder klicken).',
+    ],
+    en: [
+      'EMERGENCY STOP ON EVERY PAGE: the red emergency stop button now sits in the header, also on phones and in the mobile rack view. Until now it was only on the Control page. While an emergency stop is active, “Resume” appears next to it.',
+      'AFTER AN EMERGENCY STOP NOTHING MOVES, not even clean-up. Until now the farm still parked the arm after an emergency stop, and the stress test closed the door. Printloom now locks the devices before any process can clean up, and every move checks the lock. An open door stays open; the log says so.',
+      '“Resume operation” only releases once Klipper has really restarted. If the restart fails, everything stays locked and Printloom asks you to try again. Until now the UI showed “released” while the arm was still in Klipper’s emergency state.',
+      'Restoring a backup no longer lifts an active emergency stop.',
+      'CONFIRMING WITH THE KEYBOARD: a held Enter no longer confirms a dialog, and in dialogs for dangerous actions (delete, resume after an emergency stop, switching the smart plug off) the focus starts on “Cancel”. Enter only confirms when the focus is on “Confirm” (Tab, then Enter, or click).',
+    ],
+  },
+  {
     version: '1.1.42',
     de: [
       'WICHTIG, VOR DEM UPDATE: Wer Printloom über einen Namen mit Punkt per http öffnet (z. B. http://farm.example.de, ohne https), oder Home Assistant und Skripte so auf Printloom zeigen lässt, trägt diesen Namen vorher in PRINTLOOM_ALLOWED_HOSTS ein (docker-compose.yml, unter environment). Sonst zeigt Printloom nur eine Seite „Adresse nicht freigegeben“. Über die IP-Adresse, über Heimnetz-Namen (.local, .lan, fritz.box, Name ohne Punkt) und über https hinter authentik geht alles wie bisher.',

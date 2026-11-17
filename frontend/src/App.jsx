@@ -64,6 +64,7 @@ import { PageActiveContext } from './services/useAutoRefresh'
 import Toaster from './components/Toaster'
 import WhatsNew from './components/WhatsNew'
 import PowerToggle from './components/PowerToggle'
+import EmergencyStop from './components/EmergencyStop'
 import ThemeToggle from './components/ThemeToggle'
 import { learnFromAms } from './services/amsLearn'
 import { loadLangPacks, useLanguage } from './services/i18n'
@@ -435,6 +436,8 @@ function App() {
         </button>
 
         <div className="ml-auto flex items-center gap-2">
+          {/* Notaus auf jeder Seite, auch in der schmalen Ansicht. */}
+          <EmergencyStop compact />
           {startCountdown > 0 && (
             <div title={tr('Nächster Job startet automatisch')} className="pill border-blue-700 bg-blue-900 text-blue-300">
               <span>⏳</span>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { controlService, printerService, deviceService, deviceSettingsService, klipperConfigService } from '../services/api'
 import { useLanguage, locale } from '../services/i18n'
-import { confirmDialog } from '../services/confirm'
+import EmergencyStop from '../components/EmergencyStop'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { usePageActive, useAutoRefresh } from '../services/useAutoRefresh'
 
@@ -294,10 +294,6 @@ export default function Steuerung() {
 
   /* OTTOeject / Makros */
   const [executing,    setExecuting]    = useState(null)
-  const [emergencyOn,  setEmergencyOn]  = useState(false)
-  // Konnte der Notaus den Arm NICHT anhalten, bleibt das stehen, bis jemand es
-  // wegklickt — eine Meldung, die nach 5 s verschwindet, ist hier die falsche.
-  const [armNotStopped, setArmNotStopped] = useState('')
   const [activePrId,   setActivePrId]   = useState(
     () => localStorage.getItem('activePrinter') ?? 'bambu_x1c'
   )
@@ -467,47 +463,6 @@ export default function Steuerung() {
     sendKlipperGcode(`G90\nG1 Z${v} F1000`, `Z → ${v} mm`)
   }
 
-  // Notaus-Zustand steht in der Datenbank — nach dem Neuladen der Seite wäre
-  // „Fortsetzen" sonst ausgegraut, obwohl die Geräte noch gesperrt sind.
-  useEffect(() => {
-    controlService.emergencyState()
-      .then(r => setEmergencyOn(!!r.data?.active))
-      .catch(() => {})
-  }, [])
-
-  // KEINE Rückfrage: ein Notaus, der erst „Sind Sie sicher?" fragt, kostet genau die
-  // Sekunde, um die es geht. Die Vorsicht gehört an „Fortsetzen".
-  const emergencyStop = async () => {
-    setEmergencyOn(true)
-    try {
-      const r = await controlService.emergencyStop()
-      const d = r.data || {}
-      if (d.arms?.length && !d.arm_stopped) {
-        setArmNotStopped(tr('ARM NICHT ANGEHALTEN — Klipper hat den Notaus nicht bestätigt. Strom des OTTOeject trennen!'))
-      } else {
-        showFeedback(d.arms?.length ? tr('Notaus: Arm angehalten, Abläufe gestoppt, Drucker pausiert')
-                                    : tr('Notaus: kein OTTOeject eingerichtet — Abläufe gestoppt, Drucker pausiert'), true)
-      }
-    } catch (e) {
-      // Printloom selbst nicht erreichbar → wir wissen NICHTS über den Arm.
-      setArmNotStopped(tr('Notaus konnte nicht gesendet werden ({0}). Strom des OTTOeject trennen!', e.message))
-    }
-  }
-  const resumeOps = async () => {
-    if (!(await confirmDialog({
-      title: tr('Betrieb fortsetzen?'),
-      message: tr('Klipper wird neu gestartet und die Geräte werden freigegeben. Die Farm startet NICHT von selbst; die erste Bewegung fährt eine Referenzfahrt. Ist der Arbeitsbereich frei?'),
-      confirmLabel: tr('Freigeben'),
-    }))) return
-    try {
-      const r = await controlService.resume()
-      setEmergencyOn(false)
-      setArmNotStopped('')
-      showFeedback(r.data?.success === false ? (r.data?.message || tr('Fehler'))
-                                             : tr('Betrieb freigegeben'), r.data?.success !== false)
-    } catch (e) { showFeedback(e.message, false) }
-  }
-
   const slotBtns = (prefix, slots = [1,2,3,4,5,6]) => slots.map(n => (
     <button key={n} onClick={() => macro(`${prefix}_${n}`)} disabled={busy}
       className="btn btn-ghost btn-sm font-mono">{n}</button>
@@ -550,27 +505,8 @@ export default function Steuerung() {
         </div>
       )}
 
-      {armNotStopped && (
-        <div className="flex items-start gap-3 px-4 py-3 rounded-lg border-2 border-red-600 bg-red-950/60 text-red-200 text-sm font-semibold">
-          <span className="flex-1">⚠ {armNotStopped}</span>
-          <button onClick={() => setArmNotStopped('')} className="text-red-400 hover:text-red-200 text-xs font-normal">
-            {tr('Verstanden')}
-          </button>
-        </div>
-      )}
-
-      {/* Notaus */}
-      <div className="flex gap-3">
-        <button onClick={emergencyStop} className="flex-1 btn btn-danger">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6"/>
-          </svg>
-          {tr('Notaus')}
-        </button>
-        <button onClick={resumeOps} disabled={!emergencyOn} className="flex-1 btn btn-ghost disabled:opacity-30">
-          {tr('▶ Betrieb fortsetzen')}
-        </button>
-      </div>
+      {/* Notaus (derselbe Baustein wie in der Kopfzeile, große Form) */}
+      <EmergencyStop />
 
       {/* ── Hauptlayout: Links Bambu Lab, Rechts OTTOeject ── */}
       <div className="grid grid-cols-[1fr_300px] gap-4 items-start">

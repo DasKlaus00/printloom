@@ -158,10 +158,12 @@ def test_naechste_bewegung_referenziert_zuerst(state, monkeypatch):
 
     class FakeDev:
         ip_address, port = "127.0.0.1", 7125
+        is_active = True   # echte Form: _do_macro prüft die Notaus-Sperre
 
     class FakeQ:
         def filter(self, *a, **kw): return self
         def first(self): return FakeDev()
+        def all(self): return [FakeDev()]
 
     class FakeSession:
         def query(self, *a, **kw): return FakeQ()
@@ -199,10 +201,12 @@ def test_homing_selbst_raeumt_das_flag_ab(state, monkeypatch):
 
     class FakeDev:
         ip_address, port = "127.0.0.1", 7125
+        is_active = True   # echte Form: _do_macro prüft die Notaus-Sperre
 
     class FakeQ:
         def filter(self, *a, **kw): return self
         def first(self): return FakeDev()
+        def all(self): return [FakeDev()]
 
     class FakeSession:
         def query(self, *a, **kw): return FakeQ()
@@ -233,10 +237,12 @@ def test_haengende_bewegung_wird_zum_eigenen_fehler(state, monkeypatch):
 
     class FakeDev:
         ip_address, port = "127.0.0.1", 7125
+        is_active = True   # echte Form: _do_macro prüft die Notaus-Sperre
 
     class FakeQ:
         def filter(self, *a, **kw): return self
         def first(self): return FakeDev()
+        def all(self): return [FakeDev()]
 
     class FakeSession:
         def query(self, *a, **kw): return FakeQ()

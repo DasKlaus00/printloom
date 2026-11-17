@@ -859,6 +859,15 @@ async def _do_macro(name: str, _recover: bool = True):
         if not klipper:
             raise RuntimeError("Klipper nicht konfiguriert")
         url = f"http://{klipper.ip_address}:{klipper.port}/printer/gcode/script"
+        # Notaus-Sperre: Hier geht jede Bewegung der Farm, des Stresstests und der
+        # Sequenzen durch. Bis v1.1.42 prüfte nur der manuelle Makro-Endpunkt die
+        # Sperre; nach dem Notaus parkte die Farm im finally noch, der Stresstest
+        # schloss die Tür. „Gestoppt" behandeln _exec_sequence und _run_farm schon als
+        # Stopp, auch bei optionalen Schritten. Eine Quelle: control.notaus_aktiv.
+        from app.routers import control as _control
+        if _control.notaus_aktiv(db):
+            _log(f"⛔ {name[:40]}: Notaus aktiv — keine Bewegung bis „Betrieb fortsetzen“")
+            raise RuntimeError("Gestoppt")
     finally:
         db.close()
 
@@ -2985,7 +2994,10 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
         _left_task = _farm.pop("_homing_task", None)
         if _left_task is not None:
             _left_task.cancel()
-        if completed > 0:
+        if completed > 0 and _farm.get("stop_reason") == "Notaus":
+            # Nach dem Notaus bewegt sich nichts mehr, auch kein Aufräumen.
+            _log("Abschluss: nach Notaus kein Parken")
+        elif completed > 0:
             _log("Abschluss: OTTOeject parken…")
             try:
                 await _do_macro("PARK_OTTOEJECT")
@@ -3569,6 +3581,20 @@ def _stress_bambu(device_id=None) -> Device:
         db.close()
 
 
+def _notaus_aktiv() -> bool:
+    """Notaus-Sperre aus der Datenbank (control.notaus_aktiv), mit eigener Sitzung.
+    Unbekannt ist nicht „frei": Kann die DB nicht gelesen werden, gilt der Notaus."""
+    from app.routers import control as _control
+    db = SessionLocal()
+    try:
+        return _control.notaus_aktiv(db)
+    except Exception as e:
+        _log(f"Notaus-Zustand nicht lesbar ({e}) — behandle als Notaus")
+        return True
+    finally:
+        db.close()
+
+
 async def _run_stress_test(moves: list, include_printer: bool = False,
                            device: Optional[Device] = None):
     """Jede Platte einzeln: aus dem Magazin greifen, hinfahren, ablegen, buchen.
@@ -3648,7 +3674,10 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
         _stress["error"] = str(e)
         _log(f"🏋 ⚠ Stresstest abgebrochen: {e}")
     finally:
-        if tuer_offen:
+        if tuer_offen and _notaus_aktiv():
+            # Nach dem Notaus bewegt sich nichts mehr; die Tür schließt man von Hand.
+            _log("🏋 Tür bleibt offen (Notaus)")
+        elif tuer_offen:
             # Auch nach Abbruch oder Fehler: eine offene Tür ist ein offener Drucker.
             # Aber nur, wenn sie wirklich offen ist — „Tür zu" auf eine geschlossene
             # Tür zu fahren heisst, mit dem Arm dagegen zu druecken.

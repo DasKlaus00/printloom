@@ -1424,6 +1424,9 @@ const EN_STRINGS = {
   'Bett: {0}°C (Ziel {1}°C)': 'Bed: {0}°C (target {1}°C)',
   'Notaus': 'Emergency stop',
   '▶ Betrieb fortsetzen': '▶ Resume operation',
+  // Notaus-Baustein in der Kopfzeile (seit v1.1.43)
+  'Fortsetzen': 'Resume',
+  'Notaus: Arm sofort anhalten': 'Emergency stop: halt the arm immediately',
   'Warnschwelle': 'Warning threshold',
   '⟳ Man.': '⟳ Man.',
   'Jetzt': 'Now',

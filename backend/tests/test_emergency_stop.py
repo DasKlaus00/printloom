@@ -97,6 +97,9 @@ class FakeDB:
 
     def commit(self):
         self.committed = True
+        # Wann die Sperre in der DB steht, zählt (siehe test_geraete_sind_gesperrt_…).
+        if hasattr(self, "reihenfolge") and any(not g.is_active for g in self.geraete):
+            self.reihenfolge.append("gesperrt")
 
 
 @pytest.fixture
@@ -134,6 +137,7 @@ def anlage(monkeypatch, tmp_path):
 
     db = FakeDB([Geraet(1, "OTTOeject", PrinterType.KLIPPER),
                  Geraet(2, "X1C", PrinterType.BAMBU_LAB)])
+    db.reihenfolge = reihenfolge
     return db, reihenfolge, zustand
 
 
@@ -228,12 +232,49 @@ def test_fortsetzen_startet_klipper_neu(anlage):
     assert all(g.is_active for g in db.geraete)
 
 
+def test_geraete_sind_gesperrt_bevor_drucker_pausiert(anlage):
+    """Beim ersten await (Drucker-Pause) laufen Farm und Stresstest in ihr finally.
+    Dann muss die Sperre schon in der DB stehen, sonst parken sie noch."""
+    db, reihenfolge, _ = anlage
+    asyncio.run(control.emergency_stop(db))
+    assert reihenfolge.index("gesperrt") < reihenfolge.index("drucker:pause")
+
+
+def _gesperrt(db):
+    for g in db.geraete:
+        g.is_active = False
+
+
 def test_fehlgeschlagener_neustart_wird_gemeldet(anlage):
     db, _, zustand = anlage
+    _gesperrt(db)
     zustand["neustart_ok"] = False
     r = asyncio.run(control.resume_operations(db))
     assert r["success"] is False
     assert r["failed"] == ["OTTOeject"]
+    assert "gesperrt" in r["message"]
+    # Klipper steht noch im Notaus: nichts freigeben.
+    assert all(g.is_active is False for g in db.geraete)
+
+
+def test_zweiter_versuch_nach_gescheitertem_neustart_gibt_frei(anlage):
+    db, _, zustand = anlage
+    _gesperrt(db)
+    zustand["neustart_ok"] = False
+    asyncio.run(control.resume_operations(db))
+    zustand["neustart_ok"] = True
+    r = asyncio.run(control.resume_operations(db))
+    assert r["success"] is True
+    assert all(g.is_active for g in db.geraete)
+
+
+def test_ohne_ottoeject_wird_freigegeben(anlage):
+    db, _, _ = anlage
+    db.geraete = [g for g in db.geraete if g.device_type != PrinterType.KLIPPER]
+    _gesperrt(db)
+    r = asyncio.run(control.resume_operations(db))
+    assert r["success"] is True
+    assert all(g.is_active for g in db.geraete)
 
 
 def test_der_zustand_uebersteht_das_neuladen_der_seite(anlage):

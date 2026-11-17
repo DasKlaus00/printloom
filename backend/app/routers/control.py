@@ -241,14 +241,11 @@ async def emergency_stop(db: Session = Depends(get_db)):
     except Exception as e:
         logger.warning(f"Notaus: Abläufe nicht angehalten: {e}")
 
-    # 3. Drucker pausieren.
-    try:
-        drucker = await _pause_printers(db)
-    except Exception as e:
-        logger.warning(f"Notaus: Drucker nicht pausiert: {e}")
-        drucker = []
-
-    # 4. Geräte sperren — hält jede Bewegung bis „Fortsetzen" zurück.
+    # 3. Geräte sperren — hält jede Bewegung bis „Fortsetzen" zurück. VOR dem ersten
+    # await: Dort kommen Farm und Stresstest zum Zug und laufen in ihren finally
+    # (parken, Tür schließen). Bis v1.1.42 stand die Sperre erst nach der Drucker-
+    # Pause, und dieses Aufräumen fuhr noch los. Klipper nimmt im Fall „ARM NICHT
+    # ANGEHALTEN" weiter Befehle an; dann hält nur diese Sperre (_do_macro) den Arm.
     try:
         for device in db.query(Device).all():
             device.is_active = False
@@ -256,6 +253,13 @@ async def emergency_stop(db: Session = Depends(get_db)):
         db.commit()
     except Exception as e:
         logger.warning(f"Notaus: Geräte nicht gesperrt: {e}")
+
+    # 4. Drucker pausieren.
+    try:
+        drucker = await _pause_printers(db)
+    except Exception as e:
+        logger.warning(f"Notaus: Drucker nicht pausiert: {e}")
+        drucker = []
 
     if not arme:
         meldung = "Kein OTTOeject eingerichtet — es gab keinen Arm anzuhalten."
@@ -286,20 +290,31 @@ async def resume_operations(db: Session = Depends(get_db)):
     arme = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).all()
     neu = await asyncio.gather(*(MoonrakerAPI(d).firmware_restart() for d in arme),
                                return_exceptions=True)
+    fehlgeschlagen = [d.name for d, r in zip(arme, neu) if r is not True]
+
+    # Nur freigeben, wenn jeder Arm neu gestartet ist. Bis v1.1.42 gab Printloom auch
+    # nach einem gescheiterten Neustart frei: Die Oberfläche zeigte „frei", der Arm
+    # stand noch im Notaus-Zustand von Klipper, und die nächste Bewegung scheiterte
+    # mitten im Ablauf. Gesperrt bleiben heißt: erneut versuchen.
+    if fehlgeschlagen:
+        return {
+            "success": False,
+            "restarted": [d.name for d, r in zip(arme, neu) if r is True],
+            "failed": fehlgeschlagen,
+            "message": (f"Klipper-Neustart fehlgeschlagen: {', '.join(fehlgeschlagen)} — "
+                        "Geräte bleiben gesperrt, erneut versuchen"),
+        }
 
     for device in db.query(Device).all():
         device.is_active = True
         db.add(device)
     db.commit()
-
-    fehlgeschlagen = [d.name for d, r in zip(arme, neu) if r is not True]
     return {
-        "success": not fehlgeschlagen,
-        "restarted": [d.name for d, r in zip(arme, neu) if r is True],
-        "failed": fehlgeschlagen,
+        "success": True,
+        "restarted": [d.name for d in arme],
+        "failed": [],
         "message": ("Betrieb freigegeben — die Farm startet nicht von selbst, die erste "
-                    "Bewegung referenziert." if not fehlgeschlagen else
-                    f"Klipper-Neustart fehlgeschlagen: {', '.join(fehlgeschlagen)}"),
+                    "Bewegung referenziert."),
     }
 
 

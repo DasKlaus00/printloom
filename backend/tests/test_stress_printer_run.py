@@ -55,6 +55,8 @@ def spur(tmp_path, monkeypatch):
     monkeypatch.setattr(autofarm, "_persist_state", lambda: None)
     monkeypatch.setattr(autofarm, "STATE_PATH", str(tmp_path / "farm_state.json"))
     monkeypatch.setitem(autofarm._farm, "log", [])
+    # Kein Notaus. Ohne Datenbank gälte er als aktiv (unbekannt ist nicht frei).
+    monkeypatch.setattr(autofarm, "_notaus_aktiv", lambda: False)
     return log
 
 
