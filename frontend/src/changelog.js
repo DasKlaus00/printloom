@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.67',
+    de: [
+      'RASTER SPRINGEN NICHT MEHR: Startseite und Auto Farm messen ihre Breite selbst und zeichnen erst mit der echten Breite. Bisher lagen die Panels nach einem Seitenwechsel kurz links übereinander und glitten zurück.',
+      'ANORDNUNG NUR BEIM BEARBEITEN GESPEICHERT: Das Layout wird nur noch gespeichert, wenn man es unter „✎ Layout“ selbst verschiebt. Bisher speicherte jeder Seitenwechsel, und ein Gerät überschrieb, was ein anderes gerade angeordnet hatte.',
+      'Kaputte oder alte gespeicherte Layouts werden beim Laden bereinigt (Größen geklemmt, fehlende Panels ergänzt), und der Server nimmt nur noch gültige Layout-Formen an.',
+    ],
+    en: [
+      'GRIDS NO LONGER JUMP: the home page and Auto Farm measure their width themselves and only draw with the real width. Until now the panels briefly stacked on the left after switching pages and slid back.',
+      'LAYOUT ONLY SAVED WHILE EDITING: the layout is only saved when you move it yourself under “✎ Layout”. Until now every page switch saved it, and one device overwrote what another had just arranged.',
+      'Broken or old saved layouts are cleaned up when loading (sizes clamped, missing panels added), and the server only accepts valid layout shapes.',
+    ],
+  },
+  {
     version: '1.1.66',
     de: [
       'STEUERUNG: Während der Drucker eine Datei vorbereitet, steht dort „Bereitet vor…“ statt „Offline“. Ein unbekannter Zustand wird genannt, „Offline“ heißt nur noch: keine Verbindung.',

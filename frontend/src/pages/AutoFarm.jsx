@@ -3,6 +3,7 @@ import { apiError } from '../services/apiError'
 import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService, systemService } from '../services/api'
 import { parseNumber, rackSaveError } from '../services/rackForm'
 import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout, GRID_VERSION } from '../components/DashboardGrid'
+import { migrateLayout, mergeVisible, shouldPersist } from '../services/dashboardLayout'
 import { parseSlotKey, slotsNeeded, autoSlot, checkClearance, slotTolerance } from '../services/rackUtils'
 import { amsMissing, colorDist, amsAutoMap, EXACT_COLOR_THRESHOLD, AMS_COLOR_THRESHOLD } from '../services/amsUtils'
 import { colorLabel } from '../services/colorNames'
@@ -831,12 +832,8 @@ function AutoFarm({ setCurrentPage } = {}) {
     systemService.getDashboardLayout()
       .then(r => {
         const d = r.data || {}
-        let layout = d.layout
-        // Migration auf das feinere Raster (GRID_VERSION 2): alte Layouts (12
-        // Spalten / 30 px) einmalig ×2 skalieren, damit sie gleich aussehen.
-        if (Array.isArray(layout) && layout.length && (d.grid_v ?? 1) < GRID_VERSION) {
-          layout = layout.map(l => ({ ...l, x: l.x * 2, y: l.y * 2, w: l.w * 2, h: l.h * 2 }))
-        }
+        // Altes Raster (Version 1) ×2 heben, dann bereinigen (kaputte Werte, Ränder).
+        const layout = migrateLayout(d.layout, d.grid_v)
         if (Array.isArray(layout) && layout.length) setDashLayout(mergeLayout(layout))
         if (Array.isArray(d.hidden)) setDashHidden(d.hidden)
       })
@@ -854,11 +851,14 @@ function AutoFarm({ setCurrentPage } = {}) {
 
   // RGL meldet nur die sichtbaren Items — in den Gesamt-Layout-Stand einmischen,
   // damit ausgeblendete Panels ihre Position/Größe behalten.
+  // Nur im Bearbeiten-Modus (siehe Dashboard.jsx): Seitenwechsel und Breitenänderung
+  // melden ebenfalls ein Layout; gespeichert wurde es bis v1.1.66 jedes Mal.
+  const editingDashRef = useRef(false)
+  editingDashRef.current = editingDash
   const onDashLayoutChange = useCallback((lay) => {
+    if (!shouldPersist({ editing: editingDashRef.current, loaded: dashLoadedRef.current })) return
     setDashLayout(prev => {
-      const map = new Map(prev.map(l => [l.i, l]))
-      lay.forEach(l => map.set(l.i, { ...map.get(l.i), ...l }))
-      const next = Array.from(map.values())
+      const next = mergeVisible(prev, lay)
       persistDash(next, dashHidden)
       return next
     })

@@ -1396,18 +1396,38 @@ async def get_dashboard_layout(view: str = "farm"):
     return data if isinstance(data, dict) else {}
 
 
+def _layout_items(items) -> list:
+    """Layout-Einträge: nur dicts mit Text-„i" und Zahlen für x/y/w/h."""
+    if not isinstance(items, list):
+        return []
+    out = []
+    for it in items:
+        if not isinstance(it, dict) or not isinstance(it.get("i"), str):
+            continue
+        if all(isinstance(it.get(k), (int, float)) and not isinstance(it.get(k), bool)
+               for k in ("x", "y", "w", "h")):
+            out.append({k: it[k] for k in ("i", "x", "y", "w", "h") if k in it})
+    return out
+
+
 @router.put("/dashboard-layout")
 async def save_dashboard_layout(body: dict, view: str = "farm"):
     """Layout (Positionen/Größen) + ausgeblendete Panels speichern."""
     if not isinstance(body, dict):
         raise HTTPException(400, "Ungültiges Layout")
+    # Nur verwertbare Formen speichern; Ungültiges fällt still weg. Bis v1.1.66 landete
+    # jeder Inhalt in der Datei, und ein kaputter Eintrag (Zahl als Text, ein String
+    # statt einer Liste) brachte beim nächsten Laden das Raster durcheinander.
+    grid_v = body.get("grid_v")
     payload = {
-        "layout": body.get("layout") or [],
-        # Fassungen je Bildschirmbreite (Startseite). Nur ein dict ist verwertbar —
-        # sonst leer, damit die Oberfläche auf ihre Standard-Layouts zurückfällt.
-        "layouts": body.get("layouts") if isinstance(body.get("layouts"), dict) else {},
-        "hidden": body.get("hidden") or [],
-        "grid_v": body.get("grid_v") or 1,   # Raster-Version (für Migration des feineren Grids)
+        "layout": _layout_items(body.get("layout")),
+        # Fassungen je Bildschirmbreite (Startseite) — nur ein dict von Listen.
+        "layouts": {k: _layout_items(v) for k, v in body.get("layouts").items() if isinstance(k, str)}
+                   if isinstance(body.get("layouts"), dict) else {},
+        "hidden": [h for h in body.get("hidden") if isinstance(h, str)]
+                  if isinstance(body.get("hidden"), list) else [],
+        # Raster-Version (für die Migration des feineren Rasters)
+        "grid_v": grid_v if isinstance(grid_v, int) and not isinstance(grid_v, bool) and grid_v > 0 else 1,
     }
     storage.write_json(_dashboard_file(view), payload)
     return {"success": True}

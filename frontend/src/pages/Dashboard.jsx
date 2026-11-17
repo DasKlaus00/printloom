@@ -8,6 +8,7 @@ import { useLanguage, locale } from '../services/i18n'
 import HmsErrorText from '../components/HmsErrorText'
 import { ResponsiveDashboardGrid, HOME_PANELS, HOME_LAYOUTS,
          mergeHomeLayouts } from '../components/DashboardGrid'
+import { mergeChange, shouldPersist } from '../services/dashboardLayout'
 
 function fmtMin(min) {
   if (!min || min <= 0) return '—'
@@ -161,15 +162,16 @@ export default function Dashboard() {
   // react-grid-layout meldet nur die SICHTBAREN Panels. Ohne Einmischen in den
   // Gesamtstand verlöre ein ausgeblendetes Panel beim ersten Verschieben seine
   // Position — es käme beim Wiedereinblenden irgendwo unten heraus.
+  // Nur im Bearbeiten-Modus übernehmen und speichern: Das Raster meldet auch beim
+  // Laden, beim Seitenwechsel und bei jeder Breitenänderung ein (verdichtetes) Layout.
+  // Bis v1.1.66 wurde das jedes Mal gespeichert — auch über die Anordnung, die ein
+  // anderes Gerät gerade gespeichert hatte.
+  const editingRef = useRef(false)
+  editingRef.current = editing
   const onLayoutChange = useCallback((_cur, all) => {
-    if (!layoutsLoaded.current || !all) return
+    if (!all || !shouldPersist({ editing: editingRef.current, loaded: layoutsLoaded.current })) return
     setLayouts(prev => {
-      const next = {}
-      for (const bp of Object.keys(prev)) {
-        const map = new Map(prev[bp].map(l => [l.i, l]))
-        for (const l of (all[bp] || [])) map.set(l.i, { ...map.get(l.i), ...l })
-        next[bp] = Array.from(map.values())
-      }
+      const next = mergeChange(prev, all)
       persist(next, hidden)
       return next
     })

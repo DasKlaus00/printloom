@@ -96,3 +96,22 @@ def test_beide_ansichten_liegen_im_backup(client):
     names = [name for _, name in system._backup_files()]
     assert "dashboard_layout" in names
     assert "dashboard_layout_home" in names
+
+
+# ── Nur gültige Formen (seit v1.1.67) ───────────────────────────────────────────
+
+def test_ungueltige_layout_eintraege_fallen_weg(tmp_path, monkeypatch):
+    import asyncio
+    from app.routers import system
+    ziel = tmp_path / "dashboard_layout.json"
+    monkeypatch.setattr(system, "_dashboard_file", lambda view: str(ziel))
+    asyncio.run(system.save_dashboard_layout({
+        "layout": [1, "x", {"i": "queue", "x": 6, "y": 0, "w": 12, "h": "abc"},
+                   {"i": "rack", "x": 18, "y": 6, "w": 6, "h": 24, "moved": False}],
+        "layouts": {"lg": [{"i": "status", "x": 0, "y": 0, "w": 9, "h": 10}], "md": "kaputt"},
+        "hidden": "camera", "grid_v": "abc"}))
+    import json
+    d = json.loads(ziel.read_text(encoding="utf-8"))
+    assert d["layout"] == [{"i": "rack", "x": 18, "y": 6, "w": 6, "h": 24}]
+    assert d["layouts"] == {"lg": [{"i": "status", "x": 0, "y": 0, "w": 9, "h": 10}], "md": []}
+    assert d["hidden"] == [] and d["grid_v"] == 1
