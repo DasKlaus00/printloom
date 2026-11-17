@@ -48,11 +48,23 @@ async def set_settings(body: dict):
     return {"success": True, **cfg}
 
 
+# „Neu laden" (am Cache vorbei) ist ein POST: Als GET mit ?refresh=1 konnte jede
+# fremde Seite mit einem <img> Abrufe im Internet auslösen (bis v1.1.41). Die GETs
+# antworten aus dem Cache und holen höchstens nach Ablauf neu (online.fetch).
 @router.get("/notices")
-async def get_notices(refresh: bool = False):
+async def get_notices():
     """Bekannte Probleme & Hinweise — gefiltert auf die laufende Version.
     Ohne Freigabe: nur ein evtl. vorhandener Cache-Stand, kein Netzverkehr."""
-    res = await online.fetch(NOTICES_PATH, "notices", force=refresh)
+    return await _notices(force=False)
+
+
+@router.post("/notices/refresh")
+async def refresh_notices():
+    return await _notices(force=True)
+
+
+async def _notices(force: bool) -> dict:
+    res = await online.fetch(NOTICES_PATH, "notices", force=force)
     version = _current_version()
     notices = online.clean_notices(res.get("data") or {}, version) if res.get("data") else []
     return {
@@ -66,9 +78,18 @@ async def get_notices(refresh: bool = False):
 
 
 @router.get("/library")
-async def get_library(refresh: bool = False, kind: str = None):
+async def get_library(kind: str = None):
     """Katalog der Sprachpakete / Profile / Sequenzen (nur Index, keine Inhalte)."""
-    res = await online.fetch(LIBRARY_PATH, "library", force=refresh)
+    return await _library(force=False, kind=kind)
+
+
+@router.post("/library/refresh")
+async def refresh_library(kind: str = None):
+    return await _library(force=True, kind=kind)
+
+
+async def _library(force: bool, kind: str = None) -> dict:
+    res = await online.fetch(LIBRARY_PATH, "library", force=force)
     items = online.clean_library(res.get("data") or {}) if res.get("data") else []
     if kind:
         items = [i for i in items if i["kind"] == kind]
@@ -82,7 +103,7 @@ async def get_library(refresh: bool = False, kind: str = None):
 
 
 @router.get("/library/item")
-async def get_library_item(id: str, refresh: bool = False):
+async def get_library_item(id: str):
     """Inhalt EINES Bibliotheks-Eintrags, geprüft — für die Vorschau.
     Angewendet wird erst über die bestehenden Import-Endpoints."""
     if not online.enabled("library"):
@@ -93,7 +114,7 @@ async def get_library_item(id: str, refresh: bool = False):
     if not entry:
         raise HTTPException(404, "Eintrag nicht im Katalog")
 
-    res = await online.fetch(f"api/v1/library/{entry['path']}", "library", force=refresh)
+    res = await online.fetch(f"api/v1/library/{entry['path']}", "library")
     if not res.get("data"):
         raise HTTPException(502, f"Inhalt nicht abrufbar: {res.get('error') or 'unbekannt'}")
     try:

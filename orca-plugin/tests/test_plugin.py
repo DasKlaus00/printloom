@@ -222,6 +222,12 @@ def test_basic_auth_hinter_authentik(plugin, printloom):
     assert printloom.requests[-1]["auth"] == "Basic YWxleDphcHAtcHc="
 
 
+def test_plugin_weist_sich_als_programm_aus(plugin, printloom):
+    # Ohne den Kopf sperrt Printloom das Plugin hinter authentik (Domain-Name, kein Browser).
+    plugin.Client(printloom.url).info()
+    assert printloom.requests[-1]["client"] == f"orca/{plugin.VERSION}"
+
+
 def test_ohne_zugangsdaten_kein_auth_kopf(plugin, printloom):
     plugin.Client(printloom.url).info()
     assert printloom.requests[-1]["auth"] is None

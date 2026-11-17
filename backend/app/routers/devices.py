@@ -1,5 +1,7 @@
 import asyncio
+import ipaddress
 import logging
+import re
 from typing import List
 
 import httpx
@@ -16,7 +18,28 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/discover")
+def _check_subnet(subnet: str | None) -> str | None:
+    """Nur ein privates /24 wie „192.168.1" (oder nichts = automatisch).
+
+    Ohne die Prüfung ließ sich die Farm als Portscanner für beliebige Netze
+    benutzen, auch für Adressen im Internet."""
+    s = (subnet or "").strip().rstrip(".")
+    if not s:
+        return None
+    if not re.fullmatch(r"\d{1,3}\.\d{1,3}\.\d{1,3}", s):
+        raise HTTPException(400, "Subnetz bitte als drei Zahlen angeben, z. B. 192.168.1")
+    try:
+        private = ipaddress.ip_network(f"{s}.0/24").is_private
+    except ValueError:
+        private = False
+    if not private:
+        raise HTTPException(400, "Nur private Netze (z. B. 192.168.x, 10.x, 172.16–31.x)")
+    return s
+
+
+# POST statt GET: Ein Scan sendet Pakete ins Netz. Als GET hätte ihn jede fremde
+# Seite mit einem <img> auslösen können, an der Sperre für fremde Seiten vorbei.
+@router.post("/discover")
 async def discover_devices(subnet: str = None, db: Session = Depends(get_db)):
     """Netzwerk nach Druckern durchsuchen: Bambu (SSDP, inkl. Seriennummer) +
     Klipper/Moonraker (Subnetz-Scan). Bereits angelegte Geräte werden markiert
@@ -28,7 +51,7 @@ async def discover_devices(subnet: str = None, db: Session = Depends(get_db)):
     das per Docker-Routing erreichbar ist. Nativ / `network_mode: host` erkennt alles
     automatisch (SSDP inkl. Seriennummer)."""
     from app.services import discovery
-    result = await discovery.discover(subnet=subnet)
+    result = await discovery.discover(subnet=_check_subnet(subnet))
     # Bereits angelegte Geräte werden gar nicht erst als Fund angeboten (per IP ODER
     # Seriennummer — so taucht ein umgezogener Drucker mit neuer IP nicht doppelt auf).
     devices = db.query(Device).all()

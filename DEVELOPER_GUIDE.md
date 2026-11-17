@@ -130,8 +130,12 @@ im Image. Die App liest es für „v1.1.x verfügbar" und meldet „wird gebaut"
 - Keine Geheimnisse in Logs, Diagnose-Paket oder Backup ohne ausdrücklichen
   Wunsch. Was ein Geheimnis ist, entscheidet `services/credentials.py`.
 - Printloom hat keine eigene Anmeldung (Reverse-Proxy mit Anmeldung davor, z. B.
-  authentik). Deshalb: kein CORS, Oberfläche und API vom selben Server, und
-  schreibende Anfragen von fremden Seiten sperrt `main.py` über `Sec-Fetch-Site`.
+  authentik). Deshalb: kein CORS, Oberfläche und API vom selben Server. Der Wächter
+  in `main.py` (Regeln in `services/request_guard.py`) lässt nur Heimnetz-Adressen
+  und `PRINTLOOM_ALLOWED_HOSTS` zu (gegen DNS-Rebinding) und sperrt schreibende
+  Anfragen und WebSockets fremder Seiten: über https per `Sec-Fetch-Site`, über
+  http per `Origin`. Ein GET darf nichts ändern und nicht ins Internet gehen —
+  alles mit Nebenwirkung ist POST.
 - Windows-Checkout: Dateien mit CRLF (autocrlf), `.sh` immer LF (`.gitattributes`).
 
 ---
@@ -175,7 +179,10 @@ oder Zusagen bricht**, nicht die Menge an Code:
 | `test_online.py`         | OHNE Zustimmung + Schalter geht KEIN Request nach außen |
 | `test_backup.py`         | Backup vollständig; Zugangsdaten nur auf Wunsch, verschlüsselt; Einspielen löscht keine |
 | `test_diagnostics.py`    | keine Geheimnisse im Diagnose-ZIP |
-| `test_http_safety.py`    | keine CORS-Freigabe, fremde Seiten dürfen nicht schreiben |
+| `test_http_safety.py` / `test_request_guard.py` | keine CORS-Freigabe, fremde Seiten dürfen nicht schreiben, fremde Adressen (DNS-Rebinding) gesperrt, kein Einbetten |
+| `test_get_ohne_nebenwirkung.py` | GETs ändern nichts: kein Internet ohne Freigabe, kein Netzscan, kein Kammerlicht |
+| `test_native_update.py`  | Windows-Update lädt nur den Installer aus dem eigenen Release, ohne Token |
+| `test_no_silent_except.py` / `silentCatch.test.js` | keine neuen stillen `except: pass` / leeren `catch {}` (Zahl darf nur sinken) |
 | `test_update_check.py`   | Version aus dem Image-Label, „wird gebaut", Update ohne Docker-Socket |
 | `test_slicer_api.py`     | Plugin-Schnittstelle urteilt wie Farm und Bibliothek; Geräte-Bericht ohne „fun"/„ipcam" |
 | `test_filament_usage_spool.py` | Verbrauch je Filament aus echten Orca-Formaten; Spulen-Check: unbekannt ≠ reicht |

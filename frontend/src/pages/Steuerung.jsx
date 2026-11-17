@@ -397,6 +397,8 @@ export default function Steuerung() {
     setLiveCamErr(false); setLiveCamMsg(''); setCamReady(false)
     setCamKey(k => k + 1)
     setLiveCam(true)
+    // Licht an, sonst bleibt das Bild im dunklen Bauraum schwarz (nur Konsolen-Log bei Fehler).
+    printerService.cameraLight(bambuDevice.id).catch(e => console.warn('Kammerlicht:', e?.message || e))
     try {
       const r = await fetch(`${printerService.cameraFrameUrl(bambuDevice.id)}?probe=${Date.now()}`)
       if (!r.ok) {

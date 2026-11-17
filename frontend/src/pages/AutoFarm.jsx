@@ -455,6 +455,9 @@ function X1CView({ bambuId }) {
   const connect = async () => {
     if (!bambuId) return
     setErr(''); setReady(false); setKey(k => k + 1); setLive(true)
+    // Licht an, sonst bleibt das Bild im dunklen Bauraum schwarz. Ein Fehler hier
+    // ändert nichts am Bild selbst, darum nur ins Konsolen-Log.
+    printerService.cameraLight(bambuId).catch(e => console.warn('Kammerlicht:', e?.message || e))
     try {
       const r = await fetch(`${printerService.cameraFrameUrl(bambuId)}?probe=${Date.now()}`)
       if (!r.ok) {

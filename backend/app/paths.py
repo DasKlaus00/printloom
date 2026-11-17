@@ -61,10 +61,13 @@ def _resolve_runtime() -> str:
     env = (os.environ.get("PRINTLOOM_RUNTIME") or "").strip().lower()
     if env:
         return env
-    if os.path.exists("/app"):
-        return "docker"
+    # Die Desktop-App zuerst: Auf Windows prüft os.path.exists("/app") den Ordner
+    # C:\app. Gab es den zufällig, hielt sich die Windows-App für Docker, schrieb
+    # nach C:\app\db, fand kein Frontend und nahm den Docker-Update-Weg.
     if _is_frozen():
         return "native"
+    if sys.platform != "win32" and os.path.exists("/app"):
+        return "docker"
     return "dev"
 
 

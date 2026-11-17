@@ -4,6 +4,29 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.42',
+    de: [
+      'WICHTIG, VOR DEM UPDATE: Wer Printloom über einen Namen mit Punkt per http öffnet (z. B. http://farm.example.de, ohne https), oder Home Assistant und Skripte so auf Printloom zeigen lässt, trägt diesen Namen vorher in PRINTLOOM_ALLOWED_HOSTS ein (docker-compose.yml, unter environment). Sonst zeigt Printloom nur eine Seite „Adresse nicht freigegeben“. Über die IP-Adresse, über Heimnetz-Namen (.local, .lan, fritz.box, Name ohne Punkt) und über https hinter authentik geht alles wie bisher.',
+      'SICHERHEIT: Fremde Webseiten können Printloom jetzt auch über http nicht mehr steuern. v1.1.39 sperrte sie nur über https, denn über http://<IP> schickt der Browser den Kopf nicht, an dem Printloom sie erkannte. Jetzt prüft Printloom zusätzlich, woher eine Anfrage kommt und unter welcher Adresse sie ankommt. Damit ist auch DNS-Rebinding gesperrt: Dabei leitet eine fremde Seite ihren eigenen Namen auf die Farm um und darf dann im Browser alles lesen und schreiben.',
+      'SICHERHEIT: Das Update der Windows-App lädt nur noch den Installer aus dem Printloom-Release auf GitHub. Bisher ließ sich die Download-Adresse von außen vorgeben, und Printloom hätte jede Datei gestartet.',
+      'Printloom lässt sich nicht mehr unsichtbar in fremde Seiten einbetten. Wer Printloom in Home Assistant als iframe zeigt, trägt dessen Adresse in PRINTLOOM_FRAME_ANCESTORS ein.',
+      'Das Kammerlicht schaltet jetzt die Live-Ansicht ein, wenn du sie öffnest (Auto Farm, Steuerung). Bisher tat das jedes Kamerabild nebenbei. Die Farm-Schnappschüsse schalten es weiter selbst. Ist die Kamera für einen Drucker ausgeschaltet, liefert Printloom auch kein Live-Bild mehr.',
+      'Update-Prüfung auf Knopfdruck, Neuladen der Online-Hinweise und Netzwerksuche lassen sich nicht mehr von fremden Seiten auslösen, und die Netzwerksuche sucht nur noch in privaten Netzen.',
+      'OrcaSlicer-Plugin 1.0.2: weist sich bei Printloom als Programm aus und funktioniert so auch hinter authentik mit Domain-Namen. Bitte unter System → OrcaSlicer-Plugin neu herunterladen und in Orca darüber installieren.',
+      'Windows-App: Gab es auf dem PC zufällig einen Ordner C:\\app, hielt sich die App für Docker (Daten am falschen Ort, falscher Update-Weg). Behoben.',
+    ],
+    en: [
+      'IMPORTANT, BEFORE UPDATING: if you open Printloom by a name with a dot over plain http (e.g. http://farm.example.com, no https), or point Home Assistant and scripts at it that way, add that name to PRINTLOOM_ALLOWED_HOSTS first (docker-compose.yml, under environment). Otherwise Printloom only shows an “Address not allowed” page. By IP address, by home-network names (.local, .lan, fritz.box, names without a dot) and over https behind authentik everything works as before.',
+      'SECURITY: other websites can no longer control Printloom over http either. v1.1.39 only blocked them over https, because over http://<IP> the browser does not send the header Printloom used to recognise them. Printloom now also checks where a request comes from and which address it was sent to. This also blocks DNS rebinding, where a foreign page points its own name at your farm and may then read and write everything in the browser.',
+      'SECURITY: updating the Windows app only downloads the installer from Printloom’s GitHub release. Until now the download address could be set from outside, and Printloom would have started any file.',
+      'Printloom can no longer be embedded invisibly in other websites. If you show Printloom in Home Assistant as an iframe, add its address to PRINTLOOM_FRAME_ANCESTORS.',
+      'The chamber light is now switched on by the live view when you open it (Auto Farm, Control). Until now every camera frame did it on the side. Farm snapshots still switch it on themselves. If the camera is turned off for a printer, Printloom no longer serves a live image either.',
+      'The on-demand update check, reloading online notices and the network search can no longer be triggered by other websites, and the network search only scans private networks.',
+      'OrcaSlicer plugin 1.0.2: identifies itself to Printloom as a program, so it also works behind authentik with a domain name. Please download it again under System → OrcaSlicer plugin and install it over the old one in Orca.',
+      'Windows app: if the PC happened to have a folder C:\\app, the app thought it was running in Docker (data in the wrong place, wrong update path). Fixed.',
+    ],
+  },
+  {
     version: '1.1.41',
     de: [
       'BEHOBEN: Im OrcaSlicer-Plugin scheiterten Farm-Check und Senden mit „audit permission required“. OrcaSlicer 2.5 prüft auch die Hintergrund-Abläufe eines Plugins und lehnt dort einen Zugriff ab, statt zu fragen. Das Plugin (jetzt 1.0.1) bittet deshalb beim Laden in EINER Frage um alles, was es braucht: eigene Abläufe, Lesen in Orcas Arbeitsordner (dort liegt der geslicte G-code) und Zugriff auf deinen Printloom — nur auf diesen Host.',

@@ -147,6 +147,7 @@ class FakePrintloom:
                 fake.requests.append({"method": method, "path": url.path,
                                       "query": dict(urllib.parse.parse_qsl(url.query)),
                                       "auth": self.headers.get("Authorization"),
+                                      "client": self.headers.get("Sec-Printloom-Client"),
                                       "body": body})
                 if fake.html_login:
                     return self._reply(200, b"<html>authentik login</html>", "text/html")

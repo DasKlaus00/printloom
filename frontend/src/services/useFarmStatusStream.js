@@ -23,11 +23,25 @@ let _reconnectTimer = null
 let _started = false
 let _pollMs = 5000
 
-function _emit() { for (const fn of _subs) { try { fn(_status) } catch {} } }
+// Fehler im Status-Stream nicht verschlucken, aber auch nicht alle 5 s dieselbe
+// Zeile ins Konsolen-Log schreiben: jeder Fehlertext genau einmal.
+const _warned = new Set()
+function _warnOnce(where, e) {
+  const msg = `${where}: ${e?.message || e}`
+  if (_warned.has(msg) || _warned.size > 50) return
+  _warned.add(msg)
+  console.warn('Farm-Status', msg)
+}
+
+function _emit() {
+  for (const fn of _subs) { try { fn(_status) } catch (e) { _warnOnce('Abonnent', e) } }
+}
 
 function _startPoll() {
   if (_pollTimer) return
-  const tick = () => autofarmService.getStatus().then(r => { _status = r.data; _emit() }).catch(() => {})
+  const tick = () => autofarmService.getStatus()
+    .then(r => { _status = r.data; _emit() })
+    .catch(e => _warnOnce('Abfrage', e))
   tick()
   _pollTimer = setInterval(tick, _pollMs)
 }
@@ -40,7 +54,10 @@ function _connect() {
   catch { _startPoll(); _reconnectTimer = setTimeout(_connect, 4000); return }
   _ws = sock
   sock.onopen    = () => _stopPoll()                       // WS aktiv → Polling aus
-  sock.onmessage = (e) => { try { _status = JSON.parse(e.data); _emit() } catch {} }
+  sock.onmessage = (e) => {
+    try { _status = JSON.parse(e.data) } catch (err) { _warnOnce('WebSocket-Nachricht', err); return }
+    _emit()
+  }
   sock.onerror   = () => { try { sock.close() } catch {} }
   sock.onclose   = () => {
     if (_ws === sock) _ws = null

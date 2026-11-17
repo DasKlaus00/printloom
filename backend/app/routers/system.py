@@ -4,6 +4,7 @@ import sys
 import json
 import asyncio
 import logging
+import time
 import httpx
 from datetime import datetime
 from pathlib import Path
@@ -227,15 +228,37 @@ async def _check_native_linux(current: str, channel: str) -> dict:
 
 
 @router.get("/version")
-async def get_version(channel: str = "latest", force: bool = False):
+async def get_version(channel: str = "latest"):
     """Update check for the selected channel: stable (git tags) or beta (:beta image).
 
     Native Desktop-App: prüft GitHub-Releases auf einen Installer statt Docker/ghcr.
 
     WICHTIG (Opt-in): Die Prüfung geht ins Internet (GitHub/ghcr). Ist die
     „Update-Prüfung im Internet" nicht freigeschaltet, wird KEIN externer Request
-    gemacht — es kommt nur die installierte Version zurück. `force=true` erlaubt
-    eine einmalige Prüfung auf ausdrücklichen Knopfdruck (die UI fragt vorher)."""
+    gemacht — es kommt nur die installierte Version zurück. Die einmalige Prüfung
+    auf Knopfdruck ist POST /version/check: Bis v1.1.41 ging das per GET mit
+    force=1, und jede fremde Seite konnte mit einem <img> eine Anfrage ins Internet
+    auslösen, obwohl der Nutzer sie abgeschaltet hatte."""
+    return await _version_info(channel, force=False)
+
+
+@router.post("/version/check")
+async def check_version_now(channel: str = "latest"):
+    """Einmalige Update-Prüfung auf ausdrücklichen Knopfdruck (die UI fragt vorher),
+    auch wenn die automatische Prüfung aus ist. POST, damit der Wächter in main.py
+    fremde Seiten aussperrt."""
+    return await _version_info(channel, force=True)
+
+
+# Ergebnis der Prüfung im Internet für ein paar Minuten merken. Ohne das fragte bei
+# eingeschalteter Update-Prüfung JEDER GET GitHub/ghcr, ggf. mit GITHUB_TOKEN; eine
+# fremde Seite konnte so per <img> das Rate-Limit leeren. Der POST /version/check
+# (Knopf in der Oberfläche) fragt immer frisch.
+_VERSION_CACHE: dict = {}
+_VERSION_CACHE_S = 300.0
+
+
+async def _version_info(channel: str, force: bool) -> dict:
     current = _get_current_version()
     from app.services import online
     if not online.enabled("update_check") and not force:
@@ -245,6 +268,17 @@ async def get_version(channel: str = "latest", force: bool = False):
             "docker_available": _docker_available(), "runtime": paths.RUNTIME,
             "error": None,
         }
+    key = (paths.RUNTIME, (channel or "latest").lower(), current)
+    hit = _VERSION_CACHE.get(key)
+    if not force and hit and time.monotonic() - hit[0] < _VERSION_CACHE_S:
+        return dict(hit[1])
+    result = await _version_check(current, channel)
+    if not result.get("error"):
+        _VERSION_CACHE[key] = (time.monotonic(), dict(result))
+    return result
+
+
+async def _version_check(current: str, channel: str) -> dict:
     if paths.RUNTIME == "native":
         from app.services import native_update
         result = await native_update.check(current, channel or "latest")
@@ -346,9 +380,12 @@ async def _check_stable(current: str) -> dict:
 
 
 class UpdateIn(BaseModel):
+    # Nur der Kanal. Bis v1.1.41 nahm der Endpunkt auch download_url/asset_name an
+    # und startete, was dort stand — eine fremde Seite (DNS-Rebinding) konnte so
+    # jede .exe auf dem Windows-PC ausführen lassen. Woher der Installer kommt,
+    # entscheidet jetzt allein native_update.check(). Pydantic ignoriert die alten
+    # Felder, ältere Oberflächen brechen also nicht.
     channel: Optional[str] = None
-    download_url: Optional[str] = None
-    asset_name: Optional[str] = None
 
 
 @router.post("/update")
@@ -364,19 +401,19 @@ async def trigger_update(body: UpdateIn = UpdateIn()):
             "bash ~/printloom/scripts/update-native.sh")
     if paths.RUNTIME == "native":
         from app.services import native_update
-        url = body.download_url
-        asset = body.asset_name
+        info = await native_update.check(_get_current_version(), (body.channel or "latest"))
+        if info.get("error"):
+            raise HTTPException(502, info["error"])
+        if not info.get("update_available"):
+            return {"success": False, "reason": "up_to_date", "current": info.get("current")}
+        url, asset = info.get("download_url"), info.get("asset_name")
         if not url:
-            info = await native_update.check(_get_current_version(), (body.channel or "latest"))
-            if info.get("error"):
-                raise HTTPException(502, info["error"])
-            if not info.get("update_available"):
-                return {"success": False, "reason": "up_to_date", "current": info.get("current")}
-            url, asset = info.get("download_url"), info.get("asset_name")
-            if not url:
-                raise HTTPException(502, "Kein Installer-Asset im Release gefunden")
+            raise HTTPException(502, "Kein Installer-Asset im Release gefunden")
         try:
             res = await asyncio.to_thread(native_update.download_and_launch, url, asset)
+        except ValueError as e:
+            # Adresse oder Dateiname passen nicht zum eigenen Release: nichts geladen.
+            raise HTTPException(400, f"Installer abgelehnt: {e}")
         except Exception as e:
             raise HTTPException(502, f"Installer-Download/Start fehlgeschlagen: {e}")
         return {"success": True, "method": "native", **res}

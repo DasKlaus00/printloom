@@ -6,7 +6,7 @@
 # name = "Printloom"
 # description = "Verbindet OrcaSlicer mit deiner Printloom-Druckfarm: Farm-Check nach dem Slicen (Arm-Kollision, Regalhöhe, Spulen), Senden in die Warteschlange, Drucker und Farm im eigenen Tab. Spricht nur mit der Printloom-Adresse, die du einträgst."
 # author = "Printloom"
-# version = "1.0.1"
+# version = "1.0.2"
 # ///
 """Printloom für OrcaSlicer (ab 2.5).
 
@@ -45,7 +45,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import orca
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 API_VERSION = 1
 AGENT_ID = "printloom"          # steht in den Drucker-Profilen der Nutzer — nie ändern
 STATUS_INTERVAL_S = 3.0          # Geräte-Tab: so oft fragt Orca auch seine eigenen Drucker
@@ -328,7 +328,12 @@ class Client:
             self._auth = f"Basic {token}"
 
     def request(self, method: str, path: str, body=None, headers=None, timeout: float = 15.0):
-        hdrs = {"Accept": "application/json", "User-Agent": f"Printloom-Orca/{VERSION}"}
+        # Sec-Printloom-Client: Printloom sperrt seit v1.1.42 unbekannte Adressen (gegen
+        # DNS-Rebinding aus dem Browser). Hinter authentik ruft das Plugin Printloom aber
+        # über einen Domain-Namen. Köpfe mit „Sec-" kann keine Webseite setzen, darum
+        # weist dieser Kopf das Plugin als Programm ohne Browser aus.
+        hdrs = {"Accept": "application/json", "User-Agent": f"Printloom-Orca/{VERSION}",
+                "Sec-Printloom-Client": f"orca/{VERSION}"}
         hdrs.update(headers or {})
         if self._auth:
             hdrs["Authorization"] = self._auth

@@ -44,7 +44,8 @@ export const deviceService = {
   listModels:   ()         => api.get('/devices/models'),
   // Netzwerk-Suche (SSDP-Bambu + Moonraker-Scan) dauert ~5 s → großzügiger Timeout.
   // subnet: optionales /24 (z. B. „192.168.1"), nötig in Docker-Bridge-Netzen.
-  discover:     (subnet)   => api.get('/devices/discover', {
+  // POST: Der Scan sendet Pakete ins Netz, das darf keine fremde Seite auslösen.
+  discover:     (subnet)   => api.post('/devices/discover', null, {
     params: subnet ? { subnet } : {}, timeout: 25000,
   }),
 }
@@ -131,6 +132,8 @@ export const printerService = {
   getStatus:            (deviceId)         => _getPrinterStatus(deviceId),
   cameraStreamUrl:      (deviceId)         => `/api/printer/camera/${deviceId}`,
   cameraFrameUrl:       (deviceId)         => `/api/printer/camera/${deviceId}/frame`,
+  // Kammerlicht für die Live-Ansicht; die Kamera-GETs schalten es nicht mehr selbst.
+  cameraLight:          (deviceId)         => api.post(`/printer/camera/${deviceId}/light`),
   haCameraStreamUrl:    (deviceId)         => `/api/printer/ha-camera/${deviceId}`,
   haCameraTest:         (deviceId)         => api.get(`/printer/ha-camera/${deviceId}/test`),
   getPlates:            (fileId)           => api.get(`/printer/plates/${fileId}`),
@@ -169,9 +172,11 @@ export const rackManagerService = {
 
 export const systemService = {
   // force=true = einmalige Prüfung auf ausdrücklichen Knopfdruck, auch wenn die
-  // automatische „Update-Prüfung im Internet" ausgeschaltet ist.
-  getVersion:       (channel, force) => api.get('/system/version', {
-                      params: { ...(channel && { channel }), ...(force && { force: 1 }) } }),
+  // automatische „Update-Prüfung im Internet" ausgeschaltet ist. Das ist ein POST,
+  // damit keine fremde Seite die Anfrage ins Internet auslösen kann.
+  getVersion:       (channel, force) => force
+                      ? api.post('/system/version/check', null, { params: channel ? { channel } : {} })
+                      : api.get('/system/version', { params: channel ? { channel } : {} }),
   getRunningVersion:() => api.get('/system/running-version'),
   // Kein Timeout: Image ziehen + Container neu starten dauert Minuten.
   triggerUpdate:    (channel) => api.post('/system/update', channel ? { channel } : {},
@@ -200,9 +205,12 @@ export const systemService = {
 export const onlineService = {
   getSettings:  ()          => api.get('/online/settings'),
   saveSettings: (data)      => api.post('/online/settings', data),
-  getNotices:   (refresh)   => api.get('/online/notices', refresh ? { params: { refresh: 1 } } : undefined),
-  getLibrary:   (kind, refresh) => api.get('/online/library', {
-                                 params: { ...(kind && { kind }), ...(refresh && { refresh: 1 }) } }),
+  // refresh = am Cache vorbei neu laden; das ist ein POST, damit keine fremde Seite
+  // per <img> Abrufe im Internet auslösen kann.
+  getNotices:   (refresh)   => refresh ? api.post('/online/notices/refresh') : api.get('/online/notices'),
+  getLibrary:   (kind, refresh) => refresh
+                                 ? api.post('/online/library/refresh', null, { params: kind ? { kind } : {} })
+                                 : api.get('/online/library', { params: kind ? { kind } : {} }),
   getItem:      (id)        => api.get('/online/library/item', { params: { id } }),
   clearCache:   ()          => api.post('/online/cache/clear'),
 }

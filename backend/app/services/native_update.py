@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -130,17 +132,50 @@ async def check(current: str, channel: str = "latest") -> dict:
     return result
 
 
+# So heißt der Inno-Installer (desktop/installer.iss, OutputBaseFilename), auf dem
+# Mac das Disk-Image. Eine Quelle für beide Prüfungen unten.
+_TAG_RE = re.compile(r"v?\d+\.\d+\.\d+(-[\w.]+)?")
+_ASSET_RE = {".exe": re.compile(r"Printloom-Setup-\d+\.\d+\.\d+\.exe"),
+             ".dmg": re.compile(r"Printloom-\d+\.\d+\.\d+\.dmg")}
+
+
+def _check_download(download_url: str, asset_name: Optional[str]) -> str:
+    """Nur ein Installer aus einem Release des eigenen Repos. Gibt den Dateinamen zurück.
+
+    Bis v1.1.41 lud die App jede URL und startete jede Datei (os.startfile), dazu
+    mit dem GITHUB_TOKEN im Kopf an jeden Host, und ein Name wie ../../x.exe
+    landete außerhalb des Temp-Ordners."""
+    if not download_url:
+        raise ValueError("download_url fehlt")
+    parts = urlsplit(download_url)
+    # Genau /<owner>/<repo>/releases/download/<tag>/<datei>: Ein bloßer Präfix-Vergleich
+    # ließe /…/releases/download/../../anderes/repo/… durch.
+    segs = parts.path.split("/")
+    ok = (parts.scheme == "https" and parts.hostname == "github.com" and parts.port is None
+          and not parts.query and not parts.fragment and len(segs) == 7
+          and "/".join(segs[1:3]) == GITHUB_REPO and segs[3:5] == ["releases", "download"]
+          and _TAG_RE.fullmatch(segs[5]))
+    if not ok:
+        raise ValueError("nur Installer aus den Releases von " + GITHUB_REPO)
+    name = segs[6]
+    if asset_name is not None and asset_name != name:
+        raise ValueError(f"Dateiname {asset_name!r} passt nicht zur Adresse")
+    pattern = _ASSET_RE.get(_asset_suffix())
+    if not pattern or not pattern.fullmatch(name):
+        raise ValueError(f"unerwarteter Dateiname {name!r}")
+    return name
+
+
 def download_and_launch(download_url: str, asset_name: Optional[str] = None) -> dict:
     """Installer herunterladen und starten. Der Installer schließt die laufende
     App selbst (Inno „CloseApplications") und ersetzt die Dateien."""
-    if not download_url:
-        raise ValueError("download_url fehlt")
-    name = asset_name or download_url.rsplit("/", 1)[-1] or ("Printloom-Setup" + _asset_suffix())
-    target = Path(tempfile.gettempdir()) / name
-    headers = {}
-    if GITHUB_TOKEN:
-        headers["Authorization"] = f"token {GITHUB_TOKEN}"
-    with httpx.stream("GET", download_url, headers=headers, follow_redirects=True, timeout=None) as r:
+    name = _check_download(download_url, asset_name)
+    # Eigener, frisch angelegter Ordner: Eine schon liegende Datei gleichen Namens im
+    # gemeinsamen Temp-Ordner kann so nicht untergeschoben werden.
+    target = Path(tempfile.mkdtemp(prefix="printloom-update-")) / name
+    # Ohne Authorization-Kopf: Die Release-Dateien sind öffentlich, und GitHub leitet
+    # auf einen anderen Host weiter. Das Token geht nur an api.github.com (check()).
+    with httpx.stream("GET", download_url, follow_redirects=True, timeout=None) as r:
         r.raise_for_status()
         with open(target, "wb") as f:
             for chunk in r.iter_bytes(chunk_size=1 << 16):

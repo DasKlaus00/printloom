@@ -39,6 +39,18 @@ services:
       # Damit das Update aus der Oberfläche das richtige Image und den Container findet:
       - PRINTLOOM_IMAGE=ghcr.io/dasklaus00/printloom
       - PRINTLOOM_CONTAINER=printloom-app
+      # Namen, unter denen du Printloom öffnest, wenn das KEINE IP und kein Heimnetz-
+      # Name (.local, .lan, fritz.box, Name ohne Punkt) ist, z. B. farm.example.de.
+      # Über https hinter einem Proxy geht es im Browser auch ohne; per http, mit
+      # Skripten oder Home Assistant braucht es den Eintrag (oder im Skript den Kopf
+      # „Sec-Printloom-Client: <name>"). Mehrere mit Komma, *.example.de erlaubt.
+      # Ein http-Proxy davor muss den Host des Browsers samt Port weiterreichen
+      # (nginx: proxy_set_header Host $http_host; Apache: ProxyPreserveHost On).
+      # Schutz gegen DNS-Rebinding (fremde Seite leitet ihren Namen auf die Farm um).
+      - PRINTLOOM_ALLOWED_HOSTS=${PRINTLOOM_ALLOWED_HOSTS:-}
+      # Seiten, die Printloom in einem iframe zeigen dürfen (z. B. Home Assistant),
+      # mit Leerzeichen getrennt. Leer = nur Printloom selbst.
+      - PRINTLOOM_FRAME_ANCESTORS=${PRINTLOOM_FRAME_ANCESTORS:-}
     volumes:
       # Daten (Geräte, Regal, Sequenzen, Warteschlange, Druckdateien) bleiben erhalten.
       - ./backend/uploads:/app/uploads

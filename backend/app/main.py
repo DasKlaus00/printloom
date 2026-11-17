@@ -1,3 +1,4 @@
+import html
 import logging
 from contextlib import asynccontextmanager
 
@@ -9,6 +10,7 @@ from app.routers import (files, devices, control, printer, rack_manager, system,
                          project, profiles, filaments, push, folders, online, slicer)
 from app.db.database import init_db
 from app import paths
+from app.services import request_guard
 
 # Datenordner (db/, uploads/) früh sicherstellen — nativ liegen sie im
 # Nutzerverzeichnis, in Docker unter /app (siehe app.paths).
@@ -58,14 +60,40 @@ app = FastAPI(title="Printloom - 3D Print Farm Controller", lifespan=_lifespan)
 # Formular, das sich selbst abschickt, braucht keine Freigabe. Bis v1.1.38 hätte
 # so jede Webseite, die man im Heimnetz (oder angemeldet hinter authentik) öffnet,
 # ein Update samt Neustart auslösen, ein Backup einspielen oder den Arm bewegen
-# können. Browser sagen per `Sec-Fetch-Site`, woher eine Anfrage kommt; Aufrufe
-# ohne Browser (Home Assistant, curl, Skripte) schicken den Kopf nicht und bleiben
-# erlaubt. „same-site" zählt mit: ein anderer Dienst unter derselben Domain ist
-# genauso fremd. Reines ASGI statt @app.middleware: BaseHTTPMiddleware hat bei
-# langlaufenden Streams (Kamera) bekannte Macken beim Verbindungsende.
-FOREIGN_ORIGIN = "FREMDE_HERKUNFT"
-_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-_FOREIGN_SITES = {b"cross-site", b"same-site"}
+# können. v1.1.39 sperrte das über `Sec-Fetch-Site` — den Kopf schicken Browser aber
+# nur an https- und localhost-Adressen, über http://<IP> fehlt er. Seit v1.1.42
+# prüft der Wächter deshalb zusätzlich die Adresse (gegen DNS-Rebinding) und die
+# Herkunft (Origin); die Regeln stehen in app/services/request_guard.py. Aufrufe
+# ohne Browser (Home Assistant, curl, Skripte) schicken weder Sec-Fetch-Site noch
+# Origin und bleiben erlaubt, solange sie eine Heimnetz-Adresse benutzen.
+# Reines ASGI statt @app.middleware: BaseHTTPMiddleware hat bei langlaufenden
+# Streams (Kamera) bekannte Macken beim Verbindungsende.
+FOREIGN_ORIGIN = request_guard.FOREIGN_ORIGIN
+_log = logging.getLogger("app.request_guard")
+# Jede abgelehnte Adresse nur einmal ins Log, und höchstens so viele: Eine Seite,
+# die wild Namen durchprobiert, soll das Log nicht füllen.
+_logged_hosts: set = set()
+_LOG_HOSTS_MAX = 50
+
+
+def _unknown_host_page(host: str) -> HTMLResponse:
+    h = html.escape(host or "?")
+    body = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Printloom</title>
+<style>body{{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem}}
+code{{background:#eee;padding:0 .25rem;border-radius:.2rem}}</style></head><body>
+<h1>Adresse nicht freigegeben</h1>
+<p>Printloom wurde über <code>{h}</code> aufgerufen. Diesen Namen kennt Printloom nicht,
+deshalb ist die Anfrage gesperrt. So kann keine fremde Webseite Printloom über einen
+umgeleiteten Namen steuern (DNS-Rebinding).</p>
+<p>Öffne Printloom über die IP-Adresse, oder trage den Namen beim Start ein:
+<code>PRINTLOOM_ALLOWED_HOSTS={h}</code> (mehrere mit Komma, <code>*.beispiel.de</code>
+für alle Unternamen). In Docker gehört die Zeile unter <code>environment:</code> in die
+docker-compose.yml.</p>
+<hr><p lang="en"><b>Address not allowed.</b> Printloom was opened as <code>{h}</code>,
+which it does not know. Open it by IP address, or start it with
+<code>PRINTLOOM_ALLOWED_HOSTS={h}</code>.</p></body></html>"""
+    return HTMLResponse(body, status_code=403)
 
 
 class _NoForeignWrites:
@@ -74,17 +102,43 @@ class _NoForeignWrites:
 
     async def __call__(self, scope, receive, send):
         kind = scope["type"]
-        if kind in ("http", "websocket"):
-            site = dict(scope.get("headers") or []).get(b"sec-fetch-site")
-            if site in _FOREIGN_SITES and (kind == "websocket" or scope["method"] in _WRITE_METHODS):
-                if kind == "websocket":
-                    await receive()   # websocket.connect, dann ablehnen (HTTP 403)
-                    await send({"type": "websocket.close", "code": 1008})
-                else:
-                    await JSONResponse(status_code=403,
-                                       content={"detail": FOREIGN_ORIGIN})(scope, receive, send)
-                return
-        await self.inner(scope, receive, send)
+        if kind not in ("http", "websocket"):
+            await self.inner(scope, receive, send)
+            return
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1")
+                   for k, v in (scope.get("headers") or [])}
+        reason = request_guard.decide(kind, scope.get("method"), headers)
+        if reason:
+            host = headers.get("host", "")
+            if (reason == request_guard.UNKNOWN_HOST and host not in _logged_hosts
+                    and len(_logged_hosts) < _LOG_HOSTS_MAX):
+                _logged_hosts.add(host)
+                _log.warning("Anfrage an unbekannte Adresse %r abgelehnt. Ist das die eigene "
+                             "Adresse, gehört sie in PRINTLOOM_ALLOWED_HOSTS.", host)
+            if kind == "websocket":
+                # Erst websocket.connect annehmen, dann ablehnen (HTTP 403 beim Handshake).
+                await receive()
+                await send({"type": "websocket.close", "code": 1008})
+            elif reason == request_guard.UNKNOWN_HOST and not scope.get("path", "").startswith("/api"):
+                await _unknown_host_page(host)(scope, receive, send)
+            else:
+                await JSONResponse(status_code=403, content={"detail": reason})(scope, receive, send)
+            return
+
+        if kind == "websocket":
+            await self.inner(scope, receive, send)
+            return
+
+        # Gegen das Einbetten in fremde Seiten: Köpfe an jede Antwort hängen, auch an
+        # Kamera-Streams (dort stören sie nicht).
+        extra = request_guard.frame_headers()
+
+        async def send_with_frame_headers(message):
+            if message["type"] == "http.response.start":
+                message = {**message, "headers": [*message.get("headers", []), *extra]}
+            await send(message)
+
+        await self.inner(scope, receive, send_with_frame_headers)
 
 
 app.add_middleware(_NoForeignWrites)

@@ -499,6 +499,16 @@ def _save_crash_cache() -> None:
 
 _load_crash_cache()
 
+
+def _allowed_x_max() -> set:
+    """Plattenbreiten, für die ein Crash-Check Sinn ergibt: die bekannten Drucker
+    (printer_models, eine Quelle) und der Standard. Jeder andere Wert legte einen
+    eigenen Cache-Eintrag an; eine fremde Seite konnte die Cache-Datei so per GET
+    beliebig wachsen lassen."""
+    from app.services import printer_models
+    return {float(m["bed_mm"]) for m in printer_models.MODELS if m.get("bed_mm")} | {float(CRASH_X_MAX)}
+
+
 @router.get("/{file_id}/crash-check")
 def crash_check(file_id: int, plate: int = None, x_max: float = CRASH_X_MAX,
                 db: Session = Depends(get_db)):
@@ -506,12 +516,19 @@ def crash_check(file_id: int, plate: int = None, x_max: float = CRASH_X_MAX,
     links/rechts in den 10-mm-Randstreifen (auch Verfahrwege). Ergebnis wird gecacht.
     Bewusst SYNCHRON (def): der volle G-code-Scan blockiert sonst den Event-Loop —
     so führt FastAPI ihn im Threadpool aus."""
+    if float(x_max) not in _allowed_x_max():
+        raise HTTPException(status_code=400, detail="Unbekannte Plattenbreite")
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     if file.file_type not in ('.3mf', '.gcode') or not os.path.exists(file.file_path):
         return {"crash_risk": False, "max_z_mm": None}
     path, file_type = file.file_path, file.file_type
+    # Eine .gcode hat keine Platten; der Scan ignoriert `plate` dort. Im Cache-Schlüssel
+    # legte jede erfundene Plattennummer sonst einen neuen Eintrag an. (Eine .3mf mit
+    # unbekannter Platte liefert keinen Treffer und wird gar nicht gespeichert.)
+    if file_type != '.3mf':
+        plate = None
     cache_key = (file_id, plate, x_max)
     try:
         sig = _qmeta_sig(path)

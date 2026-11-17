@@ -214,6 +214,31 @@ def _ensure_chamber_light_async(device, on: bool = True) -> None:
     threading.Thread(target=_ensure_chamber_light, args=(device, on), daemon=True).start()
 
 
+CAMERA_OFF_FOR_DEVICE = "Kamera für diesen Drucker ausgeschaltet (Drucker → Kamera)"
+
+
+# Das Kammerlicht schalten die Kamera-GETs seit v1.1.42 nicht mehr selbst: Ein GET
+# darf nichts am Drucker ändern, sonst schaltet jede fremde Seite mit einem <img>
+# das Licht. Die Oberfläche ruft diesen POST einmal beim Start der Live-Ansicht;
+# die Farm-Snapshots (capture_snapshot) schalten es weiter selbst.
+@router.post("/camera/{device_id}/light")
+def camera_light(device_id: int, db: Session = Depends(get_db)):
+    """Kammerlicht für die Live-Ansicht einschalten (ohne Warten, höchstens einmal je
+    Minute und Drucker)."""
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        raise HTTPException(404, "Gerät nicht gefunden")
+    from app.services import appsettings
+    if appsettings.camera_disabled() or not _camera_enabled(db, device_id):
+        return {"success": False, "reason": "camera_off"}
+    # Spalten laden und vom Session lösen: Der Thread läuft nach dem Request weiter.
+    _ = (device.serial_number, device.use_tls, device.mqtt_port, device.id,
+         device.ip_address, device.access_code)
+    db.expunge(device)
+    _ensure_chamber_light_async(device)
+    return {"success": True}
+
+
 @router.get("/camera/{device_id}")
 def camera_stream(device_id: int, db: Session = Depends(get_db)):
     """Live MJPEG stream from the printer's built-in camera. The backend picks the
@@ -227,6 +252,8 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
     from app.services import appsettings
     if appsettings.camera_disabled():
         raise HTTPException(503, "Kamera in Printloom deaktiviert (System → Kamera) — Energiesparmodus")
+    if not _camera_enabled(db, device_id):
+        raise HTTPException(503, CAMERA_OFF_FOR_DEVICE)
     settings = device_settings.get(db, device_id)
     boundary = "ottoframe"
 
@@ -239,9 +266,6 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
     # verfällt keine Attribute), und mehr braucht der Stream nicht.
     db.expunge(device)
     db.close()
-
-    # Turn the chamber light on (non-blocking, so it can't delay the first frame).
-    _ensure_chamber_light_async(device)
 
     # Geteilter Hub: EIN Client pro Drucker, alle Zuschauer teilen sich die Frames
     # (X1C erlaubt nur einen RTSP-Client, P1/A1 nur einen Port-6000-Client; mehrere
@@ -291,8 +315,9 @@ def camera_frame(device_id: int, db: Session = Depends(get_db)):
     from app.services import appsettings
     if appsettings.camera_disabled():
         raise HTTPException(503, "Kamera in Printloom deaktiviert (System → Kamera) — Energiesparmodus")
+    if not _camera_enabled(db, device_id):
+        raise HTTPException(503, CAMERA_OFF_FOR_DEVICE)
     settings = device_settings.get(db, device_id)
-    _ensure_chamber_light_async(device)
     try:
         img = camera.single_frame(device, settings)
     except Exception as e:

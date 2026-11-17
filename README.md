@@ -113,8 +113,21 @@ can also be switched live in the web UI.
 Printloom has **no login of its own** — it is meant for your LAN. If you make it
 reachable from outside, put it behind a reverse proxy with authentication (e.g.
 authentik) and publish the port only locally (`"127.0.0.1:8000:8000"` in
-`docker-compose.yml`), otherwise port 8000 bypasses the proxy. Requests from other
-websites in your browser cannot change anything (checked via `Sec-Fetch-Site`).
+`docker-compose.yml`), otherwise port 8000 bypasses the proxy.
+
+Other websites open in your browser cannot change anything: write requests must come
+from Printloom's own page (`Sec-Fetch-Site` over https, the `Origin` header over
+http). Printloom only answers to addresses that belong to your network: IP addresses,
+names without a dot, `.local`, `.lan`, `.home.arpa`, `.internal`, `fritz.box`. That
+stops DNS rebinding (a foreign page pointing its own name at your farm). If you open
+Printloom under another name over plain http, or call the API from scripts or Home
+Assistant by such a name, list it in `PRINTLOOM_ALLOWED_HOSTS` (comma-separated,
+`*.example.com` allowed), or let the script send the header `Sec-Printloom-Client: <name>`
+(the OrcaSlicer plugin does). Over https behind a proxy browsers work without. A plain-http
+reverse proxy must pass the browser's `Host` on, including the port (nginx:
+`proxy_set_header Host $http_host;`, Apache: `ProxyPreserveHost On`). Printloom may
+only be shown in an iframe on its own pages; for Home Assistant, set
+`PRINTLOOM_FRAME_ANCESTORS` (e.g. `https://ha.example.com`).
 
 ### Cameras
 
