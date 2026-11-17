@@ -229,7 +229,9 @@ def test_gleiche_upload_id_legt_nichts_doppelt_an(client, db, farm, x1c, monkeyp
     assert db.query(UploadedFile).count() == 1
     assert len(autofarm._read_config(autofarm.QUEUE_PATH, {"jobs": []})["jobs"]) == 1
     assert client.get("/api/slicer/upload/a1b2c3d4e5f6").json()["job_ids"] == r1["job_ids"]
-    assert client.get("/api/slicer/upload/unbekannt99").status_code == 404
+    weg = client.get("/api/slicer/upload/unbekannt99")
+    # Mit dem Grund, auch hinter dem 404-Handler der Oberfläche (main.py)
+    assert weg.status_code == 404 and weg.json()["detail"] == "Upload unbekannt"
 
 
 def test_gescheiterter_upload_darf_erneut_gesendet_werden(client, db, farm, x1c, monkeypatch):

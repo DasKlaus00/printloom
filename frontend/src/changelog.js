@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.57',
+    de: [
+      'UMSORTIEREN VERLIERT KEINEN JOB: Kam ein Job (etwa aus dem OrcaSlicer) dazu, nachdem die Auto-Farm-Seite geladen war, und sortierte man dann die laufende Warteschlange um, fiel er still heraus. Jetzt bleibt er hinten stehen.',
+      'Fehlermeldungen wie „Job nicht gefunden“ kommen wieder bei der Oberfläche und beim OrcaSlicer-Plugin an; bisher stand dort immer nur „Not Found“.',
+      'Unter der Haube: Die Regeln der Warteschlange (Umsortieren, Entfernen, Zurücksetzen, nach Stopp oder Neustart) stehen jetzt an einer Stelle. Das ist der erste Teil davon, dass die Warteschlange Neustart und Update übersteht.',
+    ],
+    en: [
+      'REORDERING LOSES NO JOB: if a job (for example from OrcaSlicer) arrived after the Auto Farm page had loaded and you then reordered the running queue, it silently dropped out. Now it stays at the end.',
+      'Error messages such as “job not found” reach the interface and the OrcaSlicer plugin again; until now they always just said “Not Found”.',
+      'Under the hood: the queue rules (reorder, remove, reset, after a stop or restart) now live in one place. This is the first part of making the queue survive restarts and updates.',
+    ],
+  },
+  {
     version: '1.1.56',
     de: [
       'ORCASLICER-PLUGIN: ERST PRÜFEN, DANN EINREIHEN. Hat eine gesendete Datei Kollisionsgefahr für den OTTOeject oder lässt sie sich nicht prüfen (kein G-code), landet sie nur in der Bibliothek und nicht in der Warteschlange. Das Plugin sagt dann, warum. Bisher ging sie trotz Warnung direkt in die Farm.',

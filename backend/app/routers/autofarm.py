@@ -22,7 +22,7 @@ from app.db.database import SessionLocal
 from app.models.models import Device, PrinterType, UploadedFile
 from app.paths import db_path
 from app.routers.printer import capture_snapshot, publish_live_status
-from app.services import ams_match, bambu_manager, device_settings, farm_settings, hms
+from app.services import ams_match, bambu_manager, device_settings, farm_queue, farm_settings, hms
 from app.services import print_file, printer_guard, rack_store, storage
 from app.services import geometry_check as _geometry_check
 from app.services import ottoeject_motion as _motion
@@ -4004,10 +4004,10 @@ async def reorder_jobs(payload: ReorderPayload):
     """Reorder pending jobs while the farm is running."""
     if not _farm["running"]:
         raise HTTPException(400, "Farm nicht aktiv")
-    id_to_job = {j["id"]: j for j in _farm["jobs"]}
-    non_pending  = [j for j in _farm["jobs"] if j["status"] != "pending"]
-    new_pending  = [id_to_job[i] for i in payload.job_ids if i in id_to_job and id_to_job[i]["status"] == "pending"]
-    _farm["jobs"] = non_pending + new_pending
+    # Fehlt der Seite ein wartender Job (eben aus dem OrcaSlicer gekommen), bleibt er
+    # hinten stehen; bis v1.1.56 fiel er beim Umsortieren aus der Liste.
+    _farm["jobs"] = farm_queue.reorder(_farm["jobs"], payload.job_ids)
+    new_pending = [j for j in _farm["jobs"] if j.get("status") == "pending"]
     # Sichtbar bestätigen — so lässt sich im Farm-Log prüfen, dass eine Umsortierung
     # bei der LAUFENDEN Farm angekommen ist (und nicht nur in der UI).
     order = " → ".join(
@@ -4042,13 +4042,12 @@ async def set_job_ams(job_id: int, payload: JobAmsPayload):
 async def remove_job_from_farm(job_id: int):
     """Remove a pending or errored job from the farm queue."""
     job = next((j for j in _farm["jobs"] if j["id"] == job_id), None)
-    if not job:
+    try:
+        _farm["jobs"] = farm_queue.remove(_farm["jobs"], job_id)
+    except KeyError:
         raise HTTPException(404, "Job nicht gefunden")
-    # done ist entfernbar: fertige Jobs verschwinden aus der Queue, sobald ihre
-    # Platte aus dem Regal entnommen wird (Frontend ruft das beim Fach-Leeren).
-    if job["status"] not in ("pending", "error", "done"):
+    except ValueError:
         raise HTTPException(400, "Laufende Jobs können nicht entfernt werden")
-    _farm["jobs"] = [j for j in _farm["jobs"] if j["id"] != job_id]
     _log(f"[-] {job['fileName']} entfernt")
     return {"success": True}
 

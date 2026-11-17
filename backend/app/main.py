@@ -245,9 +245,11 @@ if frontend_path.exists():
 
     @app.exception_handler(404)
     async def custom_404_handler(request: Request, exc: StarletteHTTPException):
-        # For API routes, return JSON error
+        # API: JSON mit dem Grund des Endpunkts („Job nicht gefunden", „Upload unbekannt").
+        # Bis v1.1.56 stand hier immer „Not Found", und jede Meldung ging verloren.
         if request.url.path.startswith("/api/"):
-            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+            detail = getattr(exc, "detail", None) or "Not Found"
+            return JSONResponse(status_code=404, content={"detail": detail})
         # Serve a real root-level static file (sw.js, manifest, icons) if it exists…
         served = _serve_root_file(request.url.path)
         if served is not None:
