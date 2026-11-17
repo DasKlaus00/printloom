@@ -1645,7 +1645,7 @@ function AutoFarm({ setCurrentPage } = {}) {
           )}
           {!bambuId && (
             <div className="pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/85 border border-amber-800 text-amber-300 text-sm shadow-xl backdrop-blur-md">
-              <span className="dot dot-amber shrink-0" /> <span className="truncate">{tr('Kein Bambu Lab Gerät konfiguriert — bitte erst unter Configuration einrichten')}</span>
+              <span className="dot dot-amber shrink-0" /> <span className="truncate">{tr('Kein Bambu Lab Gerät konfiguriert — bitte erst unter Konfiguration → Geräte einrichten')}</span>
             </div>
           )}
           {paused && (
@@ -1655,7 +1655,7 @@ function AutoFarm({ setCurrentPage } = {}) {
           )}
           {running && !curJobId && !pendingJobs.length && (
             <div className="pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-800/90 border border-surface-700 text-surface-400 text-sm shadow-xl backdrop-blur-md">
-              <span className="dot dot-gray animate-pulse shrink-0" /> <span className="truncate">{tr('Wartet auf neue Jobs — "+ Datei" klicken um fortzufahren')}</span>
+              <span className="dot dot-gray animate-pulse shrink-0" /> <span className="truncate">{tr('Wartet auf neue Jobs — Dateien in der Datei-Bibliothek einreihen')}</span>
             </div>
           )}
           {running && !jobs.find(j => j.id === curJobId) && !!curJobId && (
@@ -1924,7 +1924,7 @@ function AutoFarm({ setCurrentPage } = {}) {
               </svg>
               <p className="text-sm mb-1">{tr('Keine Jobs')}</p>
               <p className="text-xs text-surface-700">
-                {tr('+ Datei klicken um zu beginnen')}<br/>
+                {tr('Dateien in der Datei-Bibliothek einreihen, um zu beginnen')}<br/>
                 {tr('Regal-Fächer werden automatisch vergeben')}
               </p>
             </div>

@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.66',
+    de: [
+      'STEUERUNG: Während der Drucker eine Datei vorbereitet, steht dort „Bereitet vor…“ statt „Offline“. Ein unbekannter Zustand wird genannt, „Offline“ heißt nur noch: keine Verbindung.',
+      'AMS: Feuchte und Temperatur stimmen. Der Drucker meldet die Feuchte als Stufe (1–5); bisher stand sie als „4% rH“ da. Meldet die Firmware die echte Luftfeuchte, erscheint sie in % rF. Fehlende Werte zeigen „—“ statt 0.',
+      'ARM-KNÖPFE: Lehnt der OTTOeject einen Befehl ab, steht der Grund als ein Satz da statt der ganzen Antwort; ein nicht freigegebenes Makro bekommt keine lange englische Liste mehr. Meldungen wie „Gerät nicht gefunden“ sind jetzt deutsch (und in der englischen Oberfläche englisch).',
+      'WEGWEISER: Hinweise zeigen auf Stellen, die es gibt (etwa „Konfiguration → Allgemein → Regal-Konfiguration“ oder „Auto Farm → Regal“), statt auf den alten „Rack Manager“ oder einen Knopf „+ Datei“, den es nicht mehr gibt.',
+    ],
+    en: [
+      'CONTROLS: while the printer prepares a file, it now says “Preparing…” instead of “Offline”. An unknown state is named; “Offline” only means: no connection.',
+      'AMS: humidity and temperature are right. The printer reports humidity as a level (1–5); until now it showed as “4% rH”. If the firmware reports the real humidity, it appears in % RH. Missing values show “—” instead of 0.',
+      'ARM BUTTONS: if the OTTOeject rejects a command, the reason appears as one sentence instead of the whole response; a macro that is not allowed no longer gets a long English list. Messages like “device not found” now follow the interface language.',
+      'SIGNPOSTS: hints point to places that exist (such as “Configuration → General → Rack configuration” or “Auto Farm → Rack”) instead of the old “Rack Manager” or a “+ File” button that no longer exists.',
+    ],
+  },
+  {
     version: '1.1.65',
     de: [
       'NIE IN EIN BELEGTES FACH: Ein Job beginnt immer ohne Fach, die Farm wählt es live während des Drucks, und eingelagert wird nur in ein Fach, das für genau diesen Druck reserviert ist. Bisher konnte ein Job nach „↺ Reset“ sein altes Fach behalten, in dem inzwischen eine andere Platte lag. Bei einem Job-Fehler gibt die Farm nur noch das reservierte Fach frei, nie eines mit Platte.',

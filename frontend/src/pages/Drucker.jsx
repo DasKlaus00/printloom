@@ -858,7 +858,7 @@ function RackSection({ nr, geo, open, onToggle, onPatch, printers, slots, magazi
         {magazineSlot > 0 && (
           <button onClick={onMagazine} disabled={busy || magazineCount <= 0}
             className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 flex items-center gap-1.5"
-            title={magazineCount <= 0 ? tr('Magazin leer — im Rack Manager auffüllen')
+            title={magazineCount <= 0 ? tr('Magazin leer — Bestand unter Auto Farm → Regal setzen')
                                       : tr('Platte aus Magazin R{0} holen (NOLIFT, Fach {1})', nr, magazineSlot)}>
             <span>{tr('▶ Magazin')}</span>
             <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${magazineCount > 0 ? 'bg-emerald-950/60 text-emerald-300' : 'bg-red-950/60 text-red-400'}`}>{magazineCount}</span>
@@ -1496,7 +1496,7 @@ export default function Drucker() {
       <div className="flex items-center justify-between px-1 pt-1">
         <p className="section-label">{tr('Regale')}</p>
         <span className="text-[10px] text-surface-600">
-          {tr('{0} Regale · {1} Fächer · Magazin-Fach {2} — Anzahl in Konfiguration → Rack Configuration',
+          {tr('{0} Regale · {1} Fächer · Magazin-Fach {2} — Anzahl in Konfiguration → Allgemein → Regal-Konfiguration',
               numRacks, rackCfg.slots_per_rack, magazineSlot || '—')}
         </span>
       </div>

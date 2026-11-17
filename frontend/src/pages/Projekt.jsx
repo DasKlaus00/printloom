@@ -163,7 +163,7 @@ function Projekt() {
       } else {
         const [devs, settings] = await Promise.all([deviceService.listDevices(), autofarmService.getSettings()])
         const bambu = (devs.data ?? []).find(d => d.device_type === 'bambu_lab')
-        if (!bambu) { showFeedback(tr('Kein Bambu Lab Gerät konfiguriert — bitte erst unter Configuration einrichten'), false); return }
+        if (!bambu) { showFeedback(tr('Kein Bambu Lab Gerät konfiguriert — bitte erst unter Konfiguration → Geräte einrichten'), false); return }
         await autofarmService.start({
           bambu_id:          bambu.id,
           use_ams:           settings.data?.use_ams ?? true,

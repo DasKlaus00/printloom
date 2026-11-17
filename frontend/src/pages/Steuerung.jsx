@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { apiError } from '../services/apiError'
+import { printerState } from '../services/printerState'
+import { amsClimate } from '../services/amsUtils'
 import { controlService, printerService, deviceService, deviceSettingsService, klipperConfigService } from '../services/api'
 import { useLanguage, locale } from '../services/i18n'
 import EmergencyStop from '../components/EmergencyStop'
@@ -34,15 +36,7 @@ const PRINTER_PROFILES = [
     eject: 'EJECT_FROM_FLASHFORGE_AD_FIVE_X', load: 'LOAD_ONTO_FLASHFORGE_AD_FIVE_X' },
 ]
 
-const STATE_META = {
-  idle:    { label: 'Bereit',   dot: 'dot-green',  color: 'text-emerald-400' },
-  running: { label: 'Druckt',   dot: 'dot-blue',   color: 'text-blue-400'   },
-  pause:   { label: 'Pausiert', dot: 'dot-amber',  color: 'text-amber-400'  },
-  finish:  { label: 'Fertig',   dot: 'dot-green',  color: 'text-emerald-300'},
-  failed:  { label: 'Fehler',   dot: 'dot-red',    color: 'text-red-400'    },
-  offline: { label: 'Offline',  dot: 'dot-gray',   color: 'text-surface-500'},
-}
-const stateMeta = s => STATE_META[s?.toLowerCase()] ?? STATE_META.offline
+// Zustände: services/printerState.js (eine Stelle, mit „Bereitet vor…“).
 
 /* ── Hilfskomponenten ──────────────────────────────────────── */
 function TempGauge({ label, current, target }) {
@@ -104,7 +98,7 @@ function AmsPanel({ units, activeSlot, deviceId }) {
         {units.map(unit => (
           <div key={unit.id}>
             <p className="text-[10px] text-surface-500 mb-1.5">
-              AMS {unit.id + 1} · {unit.temp}°C · {unit.humidity}% rH
+              AMS {unit.id + 1} · {amsClimate(unit)}
             </p>
             <div className="grid grid-cols-4 gap-1.5">
               {(unit.slots.length ? unit.slots : [0,1,2,3].map(i => ({ id: i, type: '', color: '', remain: -1 }))).map(slot => {
@@ -470,7 +464,7 @@ export default function Steuerung() {
   ))
 
   /* Drucker-Statuswerte */
-  const meta       = stateMeta(status?.gcode_state ?? status?.status)
+  const meta       = printerState(status?.gcode_state ?? status?.status)
   const progress   = status?.progress?.progress ?? 0
   const layer      = status?.progress?.layer ?? 0
   const totalLayer = status?.progress?.total_layers ?? 0
@@ -524,7 +518,7 @@ export default function Steuerung() {
                   <p className="text-base font-semibold text-surface-200">
                     {bambuDevice?.name ?? 'Bambu Lab'}
                   </p>
-                  <p className={`text-xs font-medium ${meta.color}`}>{tr(meta.label)}</p>
+                  <p className={`text-xs font-medium ${meta.color}`}>{meta.label}</p>
                 </div>
                 {fileName && (
                   <div className="px-2.5 py-1 rounded-lg bg-surface-900 border border-surface-700">

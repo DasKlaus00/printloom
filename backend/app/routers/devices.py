@@ -111,7 +111,7 @@ async def list_devices(db: Session = Depends(get_db)):
 async def get_device(device_id: int, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
-        raise HTTPException(status_code=404, detail="Device not found")
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
     return device
 
 
@@ -126,7 +126,7 @@ def _clean_model(raw, serial=None) -> str:
 async def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
     existing = db.query(Device).filter(Device.name == device.name).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Device name already exists")
+        raise HTTPException(status_code=400, detail="Ein Gerät mit diesem Namen gibt es schon")
     data = device.model_dump()
     data["model"] = _clean_model(data.get("model"), data.get("serial_number")) or None
     db_device = Device(id=device_settings.next_device_id(db), **data)
@@ -140,7 +140,7 @@ async def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
 async def update_device(device_id: int, device: DeviceUpdate, db: Session = Depends(get_db)):
     db_device = db.query(Device).filter(Device.id == device_id).first()
     if not db_device:
-        raise HTTPException(status_code=404, detail="Device not found")
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
     fields = device.model_dump(exclude_unset=True)
     if "model" in fields:
         # Beim Ändern zählt die AUSDRÜCKLICHE Wahl: hat der Nutzer „nicht angegeben"
@@ -161,7 +161,7 @@ async def update_device(device_id: int, device: DeviceUpdate, db: Session = Depe
 async def delete_device(device_id: int, db: Session = Depends(get_db)):
     db_device = db.query(Device).filter(Device.id == device_id).first()
     if not db_device:
-        raise HTTPException(status_code=404, detail="Device not found")
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
     # Was am Gerät hängt, mit abräumen: Einstellungen (sonst erbt sie ein neues Gerät),
     # die MQTT-Verbindung und laufende Kamera-Streams.
     ip, code = db_device.ip_address, db_device.access_code
@@ -198,13 +198,13 @@ def _mask_secrets(settings: dict) -> dict:
 @router.get("/{device_id}/settings")
 async def get_device_settings(device_id: int, db: Session = Depends(get_db)):
     if not db.query(Device).filter(Device.id == device_id).first():
-        raise HTTPException(404, "Device not found")
+        raise HTTPException(404, "Gerät nicht gefunden")
     return _mask_secrets(device_settings.get(db, device_id))
 
 @router.put("/{device_id}/settings")
 async def update_device_settings(device_id: int, body: dict, db: Session = Depends(get_db)):
     if not db.query(Device).filter(Device.id == device_id).first():
-        raise HTTPException(404, "Device not found")
+        raise HTTPException(404, "Gerät nicht gefunden")
     settings = device_settings.get(db, device_id)
     body = dict(body)
     for f in _SECRET_FIELDS:
@@ -227,7 +227,7 @@ async def update_device_settings(device_id: int, body: dict, db: Session = Depen
 async def device_power(device_id: int, db: Session = Depends(get_db)):
     """Momentanleistung (W), Energiezähler (kWh) und Ein/Aus-Status der Steckdose."""
     if not db.query(Device).filter(Device.id == device_id).first():
-        raise HTTPException(404, "Device not found")
+        raise HTTPException(404, "Gerät nicht gefunden")
     from app.services import power
     settings = device_settings.get(db, device_id)
     if not power.plug_configured(settings):
@@ -239,7 +239,7 @@ async def device_power(device_id: int, db: Session = Depends(get_db)):
 @router.post("/{device_id}/power/switch")
 async def device_power_switch(device_id: int, body: dict, db: Session = Depends(get_db)):
     if not db.query(Device).filter(Device.id == device_id).first():
-        raise HTTPException(404, "Device not found")
+        raise HTTPException(404, "Gerät nicht gefunden")
     from app.services import power
     settings = device_settings.get(db, device_id)
     if not power.plug_configured(settings):
@@ -254,7 +254,7 @@ async def test_device(device_id: int, db: Session = Depends(get_db)):
     """Echte Verbindung zum Gerät testen."""
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
-        raise HTTPException(status_code=404, detail="Device not found")
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
 
     loop = asyncio.get_running_loop()
 

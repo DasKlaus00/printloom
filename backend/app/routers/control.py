@@ -76,6 +76,19 @@ def _base(klipper: Device) -> str:
     return f"http://{klipper.ip_address}:{klipper.port}"
 
 
+def _moonraker_reason(r) -> str:
+    """Warum Moonraker abgelehnt hat — als ein Satz. Moonraker antwortet mit
+    {"error": {"code", "message"}}; bis v1.1.65 stand die ganze Antwort (JSON) in der
+    Meldung. Die volle Antwort geht ins Log."""
+    logger.warning(f"Moonraker antwortet {r.status_code}: {r.text[:2000]}")
+    try:
+        msg = ((r.json() or {}).get("error") or {}).get("message")
+    except ValueError:
+        msg = None
+    text = str(msg or r.text or f"HTTP {r.status_code}").strip()
+    return text if len(text) <= 200 else text[:197] + "…"
+
+
 async def _moonraker_get(klipper: Device, path: str, timeout: float = 5.0):
     """GET an Moonraker → Response. Nicht erreichbar / Fehlerstatus → 502 mit Grund."""
     try:
@@ -86,7 +99,7 @@ async def _moonraker_get(klipper: Device, path: str, timeout: float = 5.0):
     if r.status_code == 404:
         raise HTTPException(404, "Nicht gefunden")
     if r.status_code != 200:
-        raise HTTPException(502, f"Moonraker: {r.text}")
+        raise HTTPException(502, f"Moonraker: {_moonraker_reason(r)}")
     return r
 
 
@@ -130,7 +143,7 @@ async def _fire_moonraker_script(url: str, script: str) -> bool:
         async with httpx.AsyncClient(timeout=_MOONRAKER_TRIGGER_TIMEOUT) as client:
             r = await client.post(url, json={"script": script})
         if r.status_code != 200:
-            raise HTTPException(502, f"Moonraker: {r.text}")
+            raise HTTPException(502, f"Moonraker: {_moonraker_reason(r)}")
         return False
     except httpx.ReadTimeout:
         # Connected + command sent, but the move is still running → treat as started.
@@ -154,7 +167,8 @@ async def _send_script(db: Session, script: str) -> tuple:
 async def execute_macro(request: MacroExecutionRequest, db: Session = Depends(get_db)):
     """Ein Geräte-Makro ausführen und auf das Ende warten (Homing, Parken …)."""
     if request.macro_name not in VALID_MACROS:
-        raise HTTPException(400, f"Invalid macro. Valid macros: {', '.join(sorted(VALID_MACROS))}")
+        # Ohne die lange Liste: Sie stand bis v1.1.65 englisch im Hinweis der Steuerung.
+        raise HTTPException(400, f"Makro {request.macro_name} ist für die Steuerung nicht freigegeben")
     klipper = _klipper(db, bewegt=True)
 
     def antwort(ok: bool, msg: str):
@@ -165,10 +179,10 @@ async def execute_macro(request: MacroExecutionRequest, db: Session = Depends(ge
             response = await client.post(f"{_base(klipper)}/printer/gcode/script",
                                          json={"script": request.macro_name})
     except Exception as e:
-        return antwort(False, f"Error executing macro: {e}")
+        return antwort(False, f"Moonraker nicht erreichbar: {e}")
     if response.status_code == 200:
-        return antwort(True, "Macro executed successfully")
-    return antwort(False, f"Macro execution failed: {response.text}")
+        return antwort(True, f"Makro {request.macro_name} ausgeführt")
+    return antwort(False, f"Makro {request.macro_name} abgelehnt: {_moonraker_reason(response)}")
 
 
 @router.get("/app-ops")

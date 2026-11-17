@@ -150,7 +150,7 @@ export default function MobileView() {
         {slotArr.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             <p className="text-lg">{tr('Keine Fächer konfiguriert')}</p>
-            <p className="text-sm mt-2">{tr('Konfiguriere das Rack im Rack Manager')}</p>
+            <p className="text-sm mt-2">{tr('Regal unter Konfiguration → Allgemein → Regal-Konfiguration einrichten')}</p>
           </div>
         ) : (
           <div

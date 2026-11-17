@@ -701,12 +701,12 @@ export default function Dashboard() {
               </div>
               {kwh === 0 && (
                 <p className="text-[9px] text-surface-700 mt-2 text-center">
-                  {tr('Noch kein Stromverbrauch erfasst — Smart-Steckdose unter Konfiguration → Energie & Kosten einrichten.')}
+                  {tr('Noch kein Stromverbrauch erfasst — Smart-Steckdose unter Konfiguration → Allgemein → Energie & Kosten einrichten.')}
                 </p>
               )}
               {fPrice === 0 && grams > 0 && (
                 <p className="text-[9px] text-surface-700 mt-1.5 text-center">
-                  {tr('Filamentpreis steht auf 0 — unter Konfiguration → Energie & Kosten eintragen.')}
+                  {tr('Filamentpreis steht auf 0 — unter Konfiguration → Allgemein → Energie & Kosten eintragen.')}
                 </p>
               )}
               {fGap && (

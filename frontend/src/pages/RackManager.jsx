@@ -216,7 +216,7 @@ function RackManager() {
 
       {/* ── Config ───────────────────────────────────────── */}
       <div className="card">
-        <p className="section-label">{tr('Rack Konfiguration')}</p>
+        <p className="section-label">{tr('Regal-Konfiguration')}</p>
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div>
             <label className="text-xs text-surface-500 block mb-1">

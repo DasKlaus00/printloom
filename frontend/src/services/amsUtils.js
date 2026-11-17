@@ -1,3 +1,4 @@
+import { tr } from './i18n'
 // AMS matching helpers — mirror of backend printer._ams_match_confident so the
 // UI can flag "manuelle AMS-Festlegung notwendig" and block the start before the
 // farm even runs. Keep the logic in sync with backend/app/routers/printer.py.
@@ -83,4 +84,18 @@ export function amsAutoMap(filaments, amsSlots) {
     const quality = d <= EXACT_COLOR_THRESHOLD ? 'exact' : (d <= AMS_COLOR_THRESHOLD ? 'similar' : 'far')
     return { index: i, type: f.type, color: f.color, slot: best, quality }
   })
+}
+
+
+/* Temperatur und Feuchte einer AMS-Einheit (seit v1.1.66). Bambu meldet „humidity"
+   als Stufe (1–5) und — je nach Firmware — „humidity_raw" in % rF. Bis v1.1.65 stand
+   die Stufe als „4% rH" da, und ein fehlender Wert als 0. */
+export function amsClimate(unit) {
+  const t = Number.parseFloat(unit?.temp)
+  const temp = Number.isFinite(t) ? `${Math.round(t * 10) / 10} °C` : '—'
+  const raw = Number.parseFloat(unit?.humidity_raw)
+  const lvl = Number.parseInt(unit?.humidity, 10)
+  const hum = Number.isFinite(raw) ? tr('{0} % rF', Math.round(raw))
+    : Number.isFinite(lvl) ? tr('Feuchte-Stufe {0}/5', lvl) : '—'
+  return `${temp} · ${hum}`
 }

@@ -75,7 +75,7 @@ async def upload_file(file: UploadFile = File(...), folder_id: Optional[int] = N
     if file_ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"File type not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+            detail=f"Dateityp nicht erlaubt (erlaubt: {', '.join(sorted(ALLOWED_EXTENSIONS))})"
         )
     
     try:
@@ -97,7 +97,7 @@ async def upload_file(file: UploadFile = File(...), folder_id: Optional[int] = N
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Hochladen fehlgeschlagen: {e}")
 
 
 def new_upload_path(original_name: str) -> Path:
@@ -233,7 +233,7 @@ async def get_file(file_id: int, db: Session = Depends(get_db)):
     """Get file details"""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     return file
 
 @router.get("/{file_id}/ams-info")
@@ -826,7 +826,7 @@ async def delete_file(file_id: int, db: Session = Depends(get_db)):
     """Delete an uploaded file"""
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     
     # Delete file from disk
     try:

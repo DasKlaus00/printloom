@@ -65,7 +65,8 @@ const pyJoin = (s) => [...s.matchAll(/"((?:\\.|[^"\\])*)"/g)].map(x => x[1]).joi
 function backendKeys() {
   const keys = new Map()
   const files = ['app/services/geometry_check.py', 'app/services/farm_layout.py',
-                 'app/routers/autofarm.py']
+                 'app/routers/autofarm.py', 'app/routers/devices.py', 'app/routers/files.py',
+                 'app/routers/filaments.py', 'app/routers/control.py']
   for (const rel of files) {
     const p = path.join(BACKEND, rel)
     if (!fs.existsSync(p)) continue
@@ -82,6 +83,12 @@ function backendKeys() {
         const key = pyJoin(part)
         if (key && HAS_LETTER.test(key) && !keys.has(key)) keys.set(key, rel)
       }
+    }
+    // Feste Meldungen (kein f-String): apiError schickt sie durch tr() (seit v1.1.66).
+    const reHttp = /HTTPException\(\s*(?:status_code=)?\d+\s*,\s*(?:detail=)?"((?:\\.|[^"\\])*)"\s*\)/g
+    while ((m = reHttp.exec(src))) {
+      const key = m[1]
+      if (HAS_LETTER.test(key) && /[a-zäöü]/.test(key) && !/^[A-Z_]+$/.test(key) && !keys.has(key)) keys.set(key, rel)
     }
     const reNote = /entry\["note"\]\s*=\s*"((?:\\.|[^"\\])*)"/g
     while ((m = reNote.exec(src))) {

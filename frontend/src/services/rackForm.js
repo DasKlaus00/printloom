@@ -54,7 +54,7 @@ export function rackSaveError(e) {
   const d = apiDetail(e)
   if (d && typeof d === 'object') {
     if (Array.isArray(d.slots) && d.slots.length) {
-      return tr('Fächer {0} sind belegt — erst im Rack Manager leeren', d.slots.join(', '))
+      return tr('Fächer {0} sind belegt — erst unter Auto Farm → Regal leeren', d.slots.join(', '))
     }
     return d.detail || tr('Fehler')
   }

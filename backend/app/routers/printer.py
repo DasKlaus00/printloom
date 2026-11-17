@@ -789,8 +789,11 @@ def _status_from_raw(raw: dict) -> dict:
                 })
             ams_units.append({
                 "id":       int(unit.get("id", 0)),
-                "temp":     unit.get("temp", 0),
-                "humidity": unit.get("humidity", 0),
+                # Fehlend ist None, nicht 0 (unbekannt ist nicht null). „humidity" ist bei
+                # Bambu eine Stufe; manche Firmware meldet zusätzlich % rF (humidity_raw).
+                "temp":         unit.get("temp"),
+                "humidity":     unit.get("humidity"),
+                "humidity_raw": unit.get("humidity_raw"),
                 "slots":    slots,
             })
     return {
