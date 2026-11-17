@@ -957,6 +957,11 @@ async def _do_macro(name: str, _recover: bool = True):
             async with httpx.AsyncClient(timeout=limit) as client:
                 r = await client.post(url, json={"script": send})
     except httpx.ReadTimeout:
+        # Position unbekannt → vor der nächsten Bewegung referenzieren. Hier und nur
+        # hier: Bis v1.1.45 setzte das nur die Farm-Schleife, ein Hänger im Vorstart
+        # oder in einem optionalen Schritt ließ das Flag aus.
+        _farm["needs_home"] = True
+        _persist_state()
         raise _MoveTimeout(f"{name}: keine Rückmeldung nach {int(limit)} s — Bewegung hängt")
     except httpx.HTTPError as e:
         raise RuntimeError(f"{name}: OTTOeject nicht erreichbar ({e})")
@@ -1805,6 +1810,12 @@ async def _run_prep(steps: list, slot: str, device: Device):
                 await _do_bambu_gcode(val, device)
             elif t == "delay":
                 await asyncio.sleep(float(step.get("seconds", 0)))
+        except _MoveTimeout:
+            # Eine hängende Vorstart-Fahrt ist kein Warnfall: Der Arm steht an
+            # unbekannter Stelle. Keine weiteren Fahrten; _wait_print wirft das am
+            # Druckende weiter, damit die Strategie „Bewegung hängt" greift.
+            _log("⏱ Vorstart-Bewegung hängt — keine weiteren Vorstart-Fahrten")
+            raise
         except Exception as e:
             _log(f"Warnung Vorstart: {e}")
     _log("⚡ Vorstart fertig.")
@@ -1842,289 +1853,302 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
     last_progress_t = loop.time()
     stall_notified  = False
 
-    # Status kommt aus der EINEN persistenten Verbindung (bambu_manager); sie wird
-    # hier nie geschlossen — auch nicht bei einem Abriss (paho verbindet selbst neu).
-    while not _farm["stopping"]:
-        if _farm["paused"]:
-            while _farm["paused"] and not _farm["stopping"]:
-                await asyncio.sleep(0.5)
-            # Nach manuellem Fortsetzen den Fortschritts-Watchdog neu scharf stellen.
-            last_progress_t = loop.time()
-            stall_notified = False
-        if _farm["stopping"]:
-            break
+    try:
+        # Status kommt aus der EINEN persistenten Verbindung (bambu_manager); sie wird
+        # hier nie geschlossen — auch nicht bei einem Abriss (paho verbindet selbst neu).
+        while not _farm["stopping"]:
+            if _farm["paused"]:
+                while _farm["paused"] and not _farm["stopping"]:
+                    await asyncio.sleep(0.5)
+                # Nach manuellem Fortsetzen den Fortschritts-Watchdog neu scharf stellen.
+                last_progress_t = loop.time()
+                stall_notified = False
+            if _farm["stopping"]:
+                break
 
-        # Einstellungen, die WÄHREND des Drucks geändert werden, gelten ab dem
-        # nächsten Abfragezyklus. Bis v1.1.33 wurden Takt, Mindestdruckzeit und
-        # beide Watchdog-Werte einmal zu Beginn in lokale Variablen kopiert und
-        # blieben für den ganzen Druck stehen.
-        _refresh_live_settings()
-        poll_sec   = max(1, int(_live("poll_interval", poll_sec)))
-        min_min    = max(0, int(_live("min_print_minutes", min_min)))
-        conn_alarm = bool(_live("conn_alarm", conn_alarm))
-        stall_min  = int(_live("progress_stall_min", stall_min) or 0)
+            # Einstellungen, die WÄHREND des Drucks geändert werden, gelten ab dem
+            # nächsten Abfragezyklus. Bis v1.1.33 wurden Takt, Mindestdruckzeit und
+            # beide Watchdog-Werte einmal zu Beginn in lokale Variablen kopiert und
+            # blieben für den ganzen Druck stehen.
+            _refresh_live_settings()
+            poll_sec   = max(1, int(_live("poll_interval", poll_sec)))
+            min_min    = max(0, int(_live("min_print_minutes", min_min)))
+            conn_alarm = bool(_live("conn_alarm", conn_alarm))
+            stall_min  = int(_live("progress_stall_min", stall_min) or 0)
 
-        await asyncio.sleep(poll_sec)
-        if _farm["stopping"]:
-            break
+            await asyncio.sleep(poll_sec)
+            if _farm["stopping"]:
+                break
 
-        try:
-            # Über die EINE persistente Verbindung (bambu_manager) lesen — kein
-            # Connect/Disconnect pro Poll mehr über die gesamte Druckdauer.
-            if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
-                raise ConnectionError("MQTT nicht erreichbar")
-            await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
-            await asyncio.sleep(1.5)
-            raw = bambu_manager.last_status(device)
+            try:
+                # Über die EINE persistente Verbindung (bambu_manager) lesen — kein
+                # Connect/Disconnect pro Poll mehr über die gesamte Druckdauer.
+                if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
+                    raise ConnectionError("MQTT nicht erreichbar")
+                await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
+                await asyncio.sleep(1.5)
+                raw = bambu_manager.last_status(device)
 
-            if not raw:
-                raise ConnectionError("Keine MQTT-Antwort")
+                if not raw:
+                    raise ConnectionError("Keine MQTT-Antwort")
 
-            # Live-Status für die Steuerung/Dashboard cachen → die teilen sich die
-            # persistente Verbindung der Farm, statt eine eigene aufzubauen.
-            publish_live_status(raw, getattr(device, "id", None))
+                # Live-Status für die Steuerung/Dashboard cachen → die teilen sich die
+                # persistente Verbindung der Farm, statt eine eigene aufzubauen.
+                publish_live_status(raw, getattr(device, "id", None))
 
-            p = raw.get("print", {})
-            state = p.get("gcode_state", "IDLE")
-            pct   = p.get("mc_percent", 0)
-            rem   = p.get("mc_remaining_time", 0)
+                p = raw.get("print", {})
+                state = p.get("gcode_state", "IDLE")
+                pct   = p.get("mc_percent", 0)
+                rem   = p.get("mc_remaining_time", 0)
 
-            _set_job(job["id"], {"progress": pct, "remaining": rem})
-            _log(f"Drucker: {state}  {pct}%{f'  ~{rem} min' if rem > 0 else ''}")
-            reconn_fails = 0
-            conn_alarmed = False
-            await _handle_hms(p.get("hms", []) or [])
+                _set_job(job["id"], {"progress": pct, "remaining": rem})
+                _log(f"Drucker: {state}  {pct}%{f'  ~{rem} min' if rem > 0 else ''}")
+                reconn_fails = 0
+                conn_alarmed = False
+                await _handle_hms(p.get("hms", []) or [])
 
-            if state == "RUNNING":
-                was_running = True
-                fail_count = 0
-                idle_grace = 0
-                if pct > max_pct:
-                    max_pct = pct
+                if state == "RUNNING":
+                    was_running = True
+                    fail_count = 0
+                    idle_grace = 0
+                    if pct > max_pct:
+                        max_pct = pct
 
-                # ── Fortschritts-Watchdog (1.7) — kein mc_percent-Fortschritt während
-                # RUNNING deutet auf Verstopfung/Extrusions-/Vorschubfehler hin. Greift
-                # erst wenn der Druck wirklich läuft (pct > 0), nicht beim Aufheizen. ──
-                progressed = pct > last_pct_seen or (rem > 0 and rem < last_rem_seen)
-                if progressed:
-                    last_pct_seen = max(last_pct_seen, pct)
-                    last_rem_seen = rem if rem > 0 else last_rem_seen
-                    last_progress_t = loop.time()
-                    stall_notified = False
-                elif stall_min > 0 and pct > 0 and not stall_notified \
-                        and (loop.time() - last_progress_t) >= stall_min * 60:
-                    stall_notified = True
-                    _record_event("error", job.get("fileName", ""), f"Stillstand {stall_min}min @ {pct}%")
-                    await _notify(f"🛑 Printloom — Stillstand erkannt\n{job.get('fileName','')}\n"
-                                  f"Kein Fortschritt seit {stall_min} min bei {pct}% — mögliche Verstopfung")
-                    action = _estrat("progress_stall")
-                    if action == "stop":
-                        _log(f"🛑 Watchdog: Stillstand bei {pct}% — Farm wird gestoppt (Strategie)")
-                        _farm["stopping"] = True
-                    elif action == "skip":
-                        _log(f"🛑 Watchdog: Stillstand bei {pct}% — Job übersprungen (Strategie)")
-                        # Ohne Stopp druckte der Drucker weiter, während die Farm schon
-                        # den nächsten Job vorbereitete. Das Bett bleibt „printing":
-                        # Das Einlege-Tor hält den nächsten Job an, bis die Platte raus ist.
-                        await _stop_print_for_skip()
-                        raise RuntimeError(f"Stillstand seit {stall_min} min bei {pct}% — mögliche Verstopfung")
-                    else:
-                        _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — pausiert")
-                        _farm["paused"] = True
-                        _farm["error"] = (f"Kein Druckfortschritt seit {stall_min} min ({pct}%) — "
-                                          "Düse/Filament prüfen (mögliche Verstopfung), dann fortsetzen")
-                if first_run and rem > 0:
-                    total_layers = p.get("total_layer_num", 0)
-                    layer_h      = job.get("layerHeightMm", 0.0)
-                    unassigned   = job.get("slot", "1-1") == "1-0"
-                    if total_layers > 0 and layer_h > 0:
-                        first_run = False
-                        actual_h  = round(total_layers * layer_h, 1)
-                        _set_job(job["id"], {"estimatedMinutes": rem, "object_height_mm": actual_h})
-                        if min_min > 0 and rem < min_min:
+                    # ── Fortschritts-Watchdog (1.7) — kein mc_percent-Fortschritt während
+                    # RUNNING deutet auf Verstopfung/Extrusions-/Vorschubfehler hin. Greift
+                    # erst wenn der Druck wirklich läuft (pct > 0), nicht beim Aufheizen. ──
+                    progressed = pct > last_pct_seen or (rem > 0 and rem < last_rem_seen)
+                    if progressed:
+                        last_pct_seen = max(last_pct_seen, pct)
+                        last_rem_seen = rem if rem > 0 else last_rem_seen
+                        last_progress_t = loop.time()
+                        stall_notified = False
+                    elif stall_min > 0 and pct > 0 and not stall_notified \
+                            and (loop.time() - last_progress_t) >= stall_min * 60:
+                        stall_notified = True
+                        _record_event("error", job.get("fileName", ""), f"Stillstand {stall_min}min @ {pct}%")
+                        await _notify(f"🛑 Printloom — Stillstand erkannt\n{job.get('fileName','')}\n"
+                                      f"Kein Fortschritt seit {stall_min} min bei {pct}% — mögliche Verstopfung")
+                        action = _estrat("progress_stall")
+                        if action == "stop":
+                            _log(f"🛑 Watchdog: Stillstand bei {pct}% — Farm wird gestoppt (Strategie)")
+                            _farm["stopping"] = True
+                        elif action == "skip":
+                            _log(f"🛑 Watchdog: Stillstand bei {pct}% — Job übersprungen (Strategie)")
+                            # Ohne Stopp druckte der Drucker weiter, während die Farm schon
+                            # den nächsten Job vorbereitete. Das Bett bleibt „printing":
+                            # Das Einlege-Tor hält den nächsten Job an, bis die Platte raus ist.
                             await _stop_print_for_skip()
-                            raise RuntimeError(
-                                f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
-                            )
-                        if unassigned:
-                            # Rack was full at planning time — find a real slot now
-                            await _assign_slot_for_height(job, actual_h)
+                            raise RuntimeError(f"Stillstand seit {stall_min} min bei {pct}% — mögliche Verstopfung")
                         else:
-                            # Use pre-planned slot — just update height
-                            _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=actual_h)
-                            _sh = float(_rack_data().get("slot_height_mm", 50) or 50)
-                            boeden = _slots_needed(actual_h, _sh)
-                            _log(f"📏 Fach {job['slot']}: {actual_h:.0f}mm ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
-                    elif total_layers == 0 and rem > 0:
-                        # total_layer_num not yet available — wait for next poll
-                        pass
-                    else:
-                        # No layer height data — use pre-planned height from queue analysis
-                        first_run = False
-                        _set_job(job["id"], {"estimatedMinutes": rem})
-                        if min_min > 0 and rem < min_min:
-                            await _stop_print_for_skip()
-                            raise RuntimeError(
-                                f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
-                            )
-                        pre_h = job.get("object_height_mm") or 1.0
-                        if unassigned:
-                            await _assign_slot_for_height(job, pre_h)
-                        elif job.get("object_height_mm"):
-                            _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=pre_h)
-                            _log(f"📏 Fach {job['slot']}: {pre_h:.0f}mm (aus Planung)")
-            else:
-                if state != "FAILED":
-                    fail_count = 0
+                            _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — pausiert")
+                            _farm["paused"] = True
+                            _farm["error"] = (f"Kein Druckfortschritt seit {stall_min} min ({pct}%) — "
+                                              "Düse/Filament prüfen (mögliche Verstopfung), dann fortsetzen")
+                    if first_run and rem > 0:
+                        total_layers = p.get("total_layer_num", 0)
+                        layer_h      = job.get("layerHeightMm", 0.0)
+                        unassigned   = job.get("slot", "1-1") == "1-0"
+                        if total_layers > 0 and layer_h > 0:
+                            first_run = False
+                            actual_h  = round(total_layers * layer_h, 1)
+                            _set_job(job["id"], {"estimatedMinutes": rem, "object_height_mm": actual_h})
+                            if min_min > 0 and rem < min_min:
+                                await _stop_print_for_skip()
+                                raise RuntimeError(
+                                    f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
+                                )
+                            if unassigned:
+                                # Rack was full at planning time — find a real slot now
+                                await _assign_slot_for_height(job, actual_h)
+                            else:
+                                # Use pre-planned slot — just update height
+                                _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=actual_h)
+                                _sh = float(_rack_data().get("slot_height_mm", 50) or 50)
+                                boeden = _slots_needed(actual_h, _sh)
+                                _log(f"📏 Fach {job['slot']}: {actual_h:.0f}mm ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
+                        elif total_layers == 0 and rem > 0:
+                            # total_layer_num not yet available — wait for next poll
+                            pass
+                        else:
+                            # No layer height data — use pre-planned height from queue analysis
+                            first_run = False
+                            _set_job(job["id"], {"estimatedMinutes": rem})
+                            if min_min > 0 and rem < min_min:
+                                await _stop_print_for_skip()
+                                raise RuntimeError(
+                                    f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
+                                )
+                            pre_h = job.get("object_height_mm") or 1.0
+                            if unassigned:
+                                await _assign_slot_for_height(job, pre_h)
+                            elif job.get("object_height_mm"):
+                                _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=pre_h)
+                                _log(f"📏 Fach {job['slot']}: {pre_h:.0f}mm (aus Planung)")
+                else:
+                    if state != "FAILED":
+                        fail_count = 0
 
-            if not prep_started and state == "RUNNING" and rem > 0 and rem <= 1:
-                prep_started = True
-                _log("⚡ ~1 min — Vorstart-Sequenz…")
-                prep_task = asyncio.create_task(_run_prep(prep_steps, job["slot"], device))
+                if not prep_started and state == "RUNNING" and rem > 0 and rem <= 1:
+                    prep_started = True
+                    _log("⚡ ~1 min — Vorstart-Sequenz…")
+                    prep_task = asyncio.create_task(_run_prep(prep_steps, job["slot"], device))
 
-            idle_done = state == "IDLE" and was_running and (max_pct >= 90 or pct >= 99)
-            if state == "FINISH" or idle_done:
-                if state != "FINISH":
-                    _log(f"Druck fertig erkannt ({state} {pct}%, max {max_pct}%)")
-                _set_bed("printed")
-                # Festes Zeitlimit: Eine Kamera, die nicht antwortet, hielt bis v1.1.44
-                # die ganze Farm an (der Auswurf wartete auf den Schnappschuss).
-                try:
-                    snap = await asyncio.wait_for(capture_snapshot(device.id), 20)
-                except asyncio.TimeoutError:
-                    snap = None
-                    _log("📷 Snapshot übersprungen (Zeitlimit)")
-                if snap:
-                    _set_job(job["id"], {"snapshot": snap})
-                    _log("📷 Snapshot gespeichert")
-                if prep_task and not prep_task.done():
-                    _log("Warte auf Vorstart-Sequenz…")
+                idle_done = state == "IDLE" and was_running and (max_pct >= 90 or pct >= 99)
+                if state == "FINISH" or idle_done:
+                    if state != "FINISH":
+                        _log(f"Druck fertig erkannt ({state} {pct}%, max {max_pct}%)")
+                    _set_bed("printed")
+                    # Festes Zeitlimit: Eine Kamera, die nicht antwortet, hielt bis v1.1.44
+                    # die ganze Farm an (der Auswurf wartete auf den Schnappschuss).
                     try:
-                        await prep_task
-                    except Exception as e:
-                        _log(f"Warnung Vorstart: {e}")
-                return prep_started
+                        snap = await asyncio.wait_for(capture_snapshot(device.id), 20)
+                    except asyncio.TimeoutError:
+                        snap = None
+                        _log("📷 Snapshot übersprungen (Zeitlimit)")
+                    if snap:
+                        _set_job(job["id"], {"snapshot": snap})
+                        _log("📷 Snapshot gespeichert")
+                    if prep_task:
+                        if not prep_task.done():
+                            _log("Warte auf Vorstart-Sequenz…")
+                        try:
+                            await prep_task
+                        except _MoveTimeout:
+                            raise
+                        except Exception as e:
+                            _log(f"Warnung Vorstart: {e}")
+                    return prep_started
 
-            if state == "FAILED":
-                fail_count += 1
-                if fail_count < 2:
-                    _log(f"⚠ FAILED ({fail_count}/2) — warte…")
-                    continue
-                max_retries = int(_farm.get("failed_retries",
-                                            farm_settings.DEFAULTS["failed_retries"]) or 0)
-                # Nur wiederholen, solange noch nichts gedruckt wurde: Sonst druckt der
-                # zweite Versuch auf den Resten des ersten (Düse rammt das Teil).
-                if retries < max_retries and (was_running or max_pct > 0):
-                    _log("⚠ Wiederholung übersprungen — die Platte ist nicht mehr leer")
-                    retries = max_retries
-                if retries < max_retries:
-                    retries += 1
-                    _log(f"⚠ Retry {retries}/{max_retries}…")
-                    _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
-                    # Bis v1.1.33 stand hier fest `True`: jeder neue Versuch nach einem
-                    # Druckfehler lief MIT AMS — auch wenn „AMS verwenden" aus war.
-                    await _do_send_file(job, device, bool(_live("use_ams", True)))
-                    _set_job(job["id"], {"status": "printing"})
-                    fail_count = 0
-                    continue
-                action = _estrat("print_failed")
-                if action == "stop":
-                    _log("🔴 Druck fehlgeschlagen — Farm wird gestoppt (Strategie)")
-                    await _notify(f"🔴 Printloom — Druck fehlgeschlagen, Farm gestoppt\n{job['fileName']}")
-                    _farm["stopping"] = True
-                    raise RuntimeError("Gestoppt")
-                if action == "pause":
-                    _log("🔴 Druck fehlgeschlagen — pausiert (Strategie)")
-                    _farm["paused"] = True
-                    _farm["error"] = "Druck fehlgeschlagen — prüfen, dann fortsetzen (neuer Versuch)"
-                    await _notify(f"🔴 Printloom — Druck fehlgeschlagen, pausiert\n{job['fileName']}")
-                    while _farm["paused"] and not _farm["stopping"]:
-                        await asyncio.sleep(0.5)
-                    if _farm["stopping"]:
+                if state == "FAILED":
+                    fail_count += 1
+                    if fail_count < 2:
+                        _log(f"⚠ FAILED ({fail_count}/2) — warte…")
+                        continue
+                    max_retries = int(_farm.get("failed_retries",
+                                                farm_settings.DEFAULTS["failed_retries"]) or 0)
+                    # Nur wiederholen, solange noch nichts gedruckt wurde: Sonst druckt der
+                    # zweite Versuch auf den Resten des ersten (Düse rammt das Teil).
+                    if retries < max_retries and (was_running or max_pct > 0):
+                        _log("⚠ Wiederholung übersprungen — die Platte ist nicht mehr leer")
+                        retries = max_retries
+                    if retries < max_retries:
+                        retries += 1
+                        _log(f"⚠ Retry {retries}/{max_retries}…")
+                        _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
+                        # Bis v1.1.33 stand hier fest `True`: jeder neue Versuch nach einem
+                        # Druckfehler lief MIT AMS — auch wenn „AMS verwenden" aus war.
+                        await _do_send_file(job, device, bool(_live("use_ams", True)))
+                        _set_job(job["id"], {"status": "printing"})
+                        fail_count = 0
+                        continue
+                    action = _estrat("print_failed")
+                    if action == "stop":
+                        _log("🔴 Druck fehlgeschlagen — Farm wird gestoppt (Strategie)")
+                        await _notify(f"🔴 Printloom — Druck fehlgeschlagen, Farm gestoppt\n{job['fileName']}")
+                        _farm["stopping"] = True
                         raise RuntimeError("Gestoppt")
-                    # Nach Fortsetzen erneut senden und weiter beobachten.
-                    _farm["error"] = None
-                    retries = 0
-                    fail_count = 0
-                    _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
-                    # Bis v1.1.33 stand hier fest `True`: jeder neue Versuch nach einem
-                    # Druckfehler lief MIT AMS — auch wenn „AMS verwenden" aus war.
-                    await _do_send_file(job, device, bool(_live("use_ams", True)))
-                    _set_job(job["id"], {"status": "printing"})
-                    continue
-                if action == "eject" and fail_steps:
-                    # Bergen: fehlgeschlagene Platte auf Z200 heben, Tür öffnen, auswerfen
-                    # und ins vorgesehene Fach einlagern — dann weiter mit dem nächsten Job.
-                    # Ohne diese Bergung würde der nächste Zyklus blind auf die alte Platte
-                    # laden (Kollision) — genau der gemeldete Fehler.
-                    _log("🔴 Druck fehlgeschlagen — Auswurf-Sequenz (Platte bergen)…")
-                    await _notify(f"🔴 Printloom — Druck fehlgeschlagen\n{job['fileName']}\n"
-                                  "Platte wird ausgeworfen & eingelagert, dann weiter.")
-                    # Bergung nach der JETZT gespeicherten Sequenz — wurde während des
-                    # Drucks etwa ein Abkühl-Schritt eingefügt, gilt er auch hier.
-                    _jetzt = _read_sequences()
-                    bergung = (_eject_recovery_steps(_jetzt["seq_next"]) if _jetzt else None) \
-                        or fail_steps
-                    try:
-                        await _exec_sequence(bergung, job, device, False, poll_sec, min_min, [], [])
-                    except Exception as fe:
-                        # Auswurf misslungen → NICHT blind weiterfahren (Kollisionsgefahr) → pausieren.
-                        _log(f"🛑 Auswurf-Sequenz fehlgeschlagen: {fe} — pausiert")
+                    if action == "pause":
+                        _log("🔴 Druck fehlgeschlagen — pausiert (Strategie)")
                         _farm["paused"] = True
-                        _farm["error"] = (f"Auswurf nach Druckfehler misslungen ({fe}) — Platte "
-                                          "manuell entnehmen, dann fortsetzen")
-                        await _notify(f"🛑 Printloom — Auswurf misslungen\n{job['fileName']}\n{fe}")
+                        _farm["error"] = "Druck fehlgeschlagen — prüfen, dann fortsetzen (neuer Versuch)"
+                        await _notify(f"🔴 Printloom — Druck fehlgeschlagen, pausiert\n{job['fileName']}")
                         while _farm["paused"] and not _farm["stopping"]:
                             await asyncio.sleep(0.5)
                         if _farm["stopping"]:
                             raise RuntimeError("Gestoppt")
-                        raise RuntimeError("Druck fehlgeschlagen (FAILED)")
-                    raise _EjectRecovered(
-                        "Druck fehlgeschlagen (FAILED) — Platte ausgeworfen & eingelagert")
-                # skip: Job als Fehler markieren, nächster Job. ACHTUNG: die fehlgeschlagene
-                # Platte bleibt im Drucker — der nächste Zyklus lädt darauf. Nur wählen, wenn
-                # die Platte manuell entnommen wird. Sichere Alternative: 'eject'.
-                raise RuntimeError("Druck fehlgeschlagen (FAILED)")
+                        # Nach Fortsetzen erneut senden und weiter beobachten.
+                        _farm["error"] = None
+                        retries = 0
+                        fail_count = 0
+                        _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
+                        # Bis v1.1.33 stand hier fest `True`: jeder neue Versuch nach einem
+                        # Druckfehler lief MIT AMS — auch wenn „AMS verwenden" aus war.
+                        await _do_send_file(job, device, bool(_live("use_ams", True)))
+                        _set_job(job["id"], {"status": "printing"})
+                        continue
+                    if action == "eject" and fail_steps:
+                        # Bergen: fehlgeschlagene Platte auf Z200 heben, Tür öffnen, auswerfen
+                        # und ins vorgesehene Fach einlagern — dann weiter mit dem nächsten Job.
+                        # Ohne diese Bergung würde der nächste Zyklus blind auf die alte Platte
+                        # laden (Kollision) — genau der gemeldete Fehler.
+                        _log("🔴 Druck fehlgeschlagen — Auswurf-Sequenz (Platte bergen)…")
+                        await _notify(f"🔴 Printloom — Druck fehlgeschlagen\n{job['fileName']}\n"
+                                      "Platte wird ausgeworfen & eingelagert, dann weiter.")
+                        # Bergung nach der JETZT gespeicherten Sequenz — wurde während des
+                        # Drucks etwa ein Abkühl-Schritt eingefügt, gilt er auch hier.
+                        _jetzt = _read_sequences()
+                        bergung = (_eject_recovery_steps(_jetzt["seq_next"]) if _jetzt else None) \
+                            or fail_steps
+                        try:
+                            await _exec_sequence(bergung, job, device, False, poll_sec, min_min, [], [])
+                        except Exception as fe:
+                            # Auswurf misslungen → NICHT blind weiterfahren (Kollisionsgefahr) → pausieren.
+                            _log(f"🛑 Auswurf-Sequenz fehlgeschlagen: {fe} — pausiert")
+                            _farm["paused"] = True
+                            _farm["error"] = (f"Auswurf nach Druckfehler misslungen ({fe}) — Platte "
+                                              "manuell entnehmen, dann fortsetzen")
+                            await _notify(f"🛑 Printloom — Auswurf misslungen\n{job['fileName']}\n{fe}")
+                            while _farm["paused"] and not _farm["stopping"]:
+                                await asyncio.sleep(0.5)
+                            if _farm["stopping"]:
+                                raise RuntimeError("Gestoppt")
+                            raise RuntimeError("Druck fehlgeschlagen (FAILED)")
+                        raise _EjectRecovered(
+                            "Druck fehlgeschlagen (FAILED) — Platte ausgeworfen & eingelagert")
+                    # skip: Job als Fehler markieren, nächster Job. ACHTUNG: die fehlgeschlagene
+                    # Platte bleibt im Drucker — der nächste Zyklus lädt darauf. Nur wählen, wenn
+                    # die Platte manuell entnommen wird. Sichere Alternative: 'eject'.
+                    raise RuntimeError("Druck fehlgeschlagen (FAILED)")
 
-            if state == "IDLE" and pct == 0 and not was_running:
-                idle_grace += 1
-                if idle_grace >= 3:
-                    raise RuntimeError("Drucker dauerhaft IDLE — abgebrochen")
-                _log(f"⚠ Drucker noch IDLE — warte auf Druckstart ({idle_grace}/3)…")
+                if state == "IDLE" and pct == 0 and not was_running:
+                    idle_grace += 1
+                    if idle_grace >= 3:
+                        raise RuntimeError("Drucker dauerhaft IDLE — abgebrochen")
+                    _log(f"⚠ Drucker noch IDLE — warte auf Druckstart ({idle_grace}/3)…")
 
-        except RuntimeError:
-            raise
-        except Exception as e:
-            reconn_fails += 1
-            if reconn_fails >= 5:
-                action = _estrat("connection_lost")
-                if action == "stop":
-                    _log("⚠ Verbindung dauerhaft unterbrochen — Farm wird gestoppt (Strategie)")
-                    _farm["stopping"] = True
-                    raise RuntimeError("Gestoppt")
-                if action == "pause":
-                    _log("⚠ Verbindung dauerhaft unterbrochen — pausiert (Strategie)")
-                    _farm["paused"] = True
-                    _farm["error"] = "Verbindung zum Drucker verloren — prüfen, dann fortsetzen"
-                    while _farm["paused"] and not _farm["stopping"]:
-                        await asyncio.sleep(0.5)
-                    if _farm["stopping"]:
+            except RuntimeError:
+                raise
+            except Exception as e:
+                reconn_fails += 1
+                if reconn_fails >= 5:
+                    action = _estrat("connection_lost")
+                    if action == "stop":
+                        _log("⚠ Verbindung dauerhaft unterbrochen — Farm wird gestoppt (Strategie)")
+                        _farm["stopping"] = True
                         raise RuntimeError("Gestoppt")
-                    _farm["error"] = None
-                    reconn_fails = 0
-                    conn_alarmed = False
-                    continue
-                # skip (Default): Job als Fehler markieren, nächster Job
-                raise RuntimeError(f"Verbindung dauerhaft unterbrochen ({reconn_fails}×)")
-            # Verbindungs-Watchdog (1.1): einmaliger Alarm, sobald der Reconnect
-            # mehrfach scheitert — der Druck läuft am Gerät weiter, nur die Brücke fehlt.
-            if conn_alarm and reconn_fails >= 3 and not conn_alarmed:
-                conn_alarmed = True
-                await _notify("⚠ Printloom — Verbindung zum Drucker verloren\n"
-                              f"{job.get('fileName','')}\nReconnect läuft — Drucker/Netzwerk prüfen")
-            _log(f"⚠ Verbindung unterbrochen ({reconn_fails}/5: {e}) — retry…")
+                    if action == "pause":
+                        _log("⚠ Verbindung dauerhaft unterbrochen — pausiert (Strategie)")
+                        _farm["paused"] = True
+                        _farm["error"] = "Verbindung zum Drucker verloren — prüfen, dann fortsetzen"
+                        while _farm["paused"] and not _farm["stopping"]:
+                            await asyncio.sleep(0.5)
+                        if _farm["stopping"]:
+                            raise RuntimeError("Gestoppt")
+                        _farm["error"] = None
+                        reconn_fails = 0
+                        conn_alarmed = False
+                        continue
+                    # skip (Default): Job als Fehler markieren, nächster Job
+                    raise RuntimeError(f"Verbindung dauerhaft unterbrochen ({reconn_fails}×)")
+                # Verbindungs-Watchdog (1.1): einmaliger Alarm, sobald der Reconnect
+                # mehrfach scheitert — der Druck läuft am Gerät weiter, nur die Brücke fehlt.
+                if conn_alarm and reconn_fails >= 3 and not conn_alarmed:
+                    conn_alarmed = True
+                    await _notify("⚠ Printloom — Verbindung zum Drucker verloren\n"
+                                  f"{job.get('fileName','')}\nReconnect läuft — Drucker/Netzwerk prüfen")
+                _log(f"⚠ Verbindung unterbrochen ({reconn_fails}/5: {e}) — retry…")
 
-    raise RuntimeError("Gestoppt")
+        raise RuntimeError("Gestoppt")
+    finally:
+        # Endet das Warten (Stopp, Fehler, Druckende), endet auch der Vorstart: Bis
+        # v1.1.45 fuhr er nach einem Stopp weiter (N39). gather statt await: Das
+        # CancelledError des Vorstarts landet im Ergebnis, ein Abbruch der Farm selbst
+        # geht weiter nach oben.
+        if prep_task is not None and not prep_task.done():
+            prep_task.cancel()
+            await asyncio.gather(prep_task, return_exceptions=True)
+            _log("⚡ Vorstart abgebrochen")
 
 
 # ── OTTOeject-Geometrie (opt-in: Farm sendet App-G-code statt Geräte-Macro) ──
@@ -2663,7 +2687,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         _log(f"{'✓' if ok else '⚠'} {label}{'​' if ok else ' — Befehl nicht bestätigt'}")
 
     else:
-        _log(f"⚠ Unbekannter Schritt '{t}' — übersprungen")
+        # Bis v1.1.45 nur geloggt und übersprungen: Ein Tippfehler im Typ ließ so etwa
+        # das Auswerfen aus, und der nächste Schritt fuhr trotzdem.
+        raise RuntimeError(f"Unbekannter Schritt '{t}'")
 
 
 def _filter_disabled(steps: list) -> list:
@@ -2704,16 +2730,22 @@ _PREP_FORBIDDEN = sequence_steps.PREP_FORBIDDEN
 
 
 def _split_prep(steps: list) -> tuple:
-    """Split a cycle into (normal, prep). `prep` = steps flagged `prep:true` (and not
-    disabled) → executed ~1 min before print end via _wait_print's pre-positioning;
-    they are removed from the normal flow so they don't run twice. `wait_print`/
-    `send_file` are force-kept in the normal flow regardless of the flag."""
+    """Zyklus in (normal, prep) teilen. `prep` = Schritte mit ⏱, die vor dem Druckende
+    laufen dürfen (sequence_steps.prep_allowed); sie fehlen dann im normalen Ablauf,
+    damit sie nicht doppelt laufen. Ein ⏱ an einem anderen Schritt bleibt wirkungslos:
+    Der Schritt läuft an seiner Stelle nach dem Druckende (einmal je Lauf geloggt)."""
     normal, prep = [], []
+    warned = _farm.setdefault("_prep_warned", set())
     for s in steps:
-        if s.get("prep") and not s.get("disabled") and s.get("type") not in _PREP_FORBIDDEN:
-            prep.append(s)
-        else:
-            normal.append(s)
+        if s.get("prep") and not s.get("disabled"):
+            if sequence_steps.prep_allowed(s):
+                prep.append(s)
+                continue
+            label = s.get("label") or s.get("type") or "?"
+            if label not in warned:
+                warned.add(label)
+                _log(f"⏱ bei „{label}“ ignoriert — läuft nach dem Druckende")
+        normal.append(s)
     return normal, prep
 
 
@@ -2806,6 +2838,62 @@ def _fresh_cycle_tail(started_with: list) -> Optional[list]:
     return normal[wps[0] + 1:]
 
 
+async def _run_step_checked(st: dict, job: dict, device: Device, use_ams: bool, poll_sec: int,
+                            min_min: int, prep_steps: list, fail_steps: list) -> None:
+    """Einen Schritt ausführen; was „optional" darf, entscheidet hier EINE Regel.
+
+    - „Gestoppt" und eine hängende Bewegung (_MoveTimeout) sind nie optional: Bis
+      v1.1.45 galt ein Hänger in „Tür öffnen" (optional) als erledigt, und der Arm
+      fuhr von der unbekannten Stelle zum Greifen.
+    - Ungültige Werte (Zahl erwartet, Geometrie kaputt) beenden den JOB als Fehler.
+      Bis v1.1.45 liefen sie als ValueError an der Job-Behandlung vorbei und beendeten
+      die ganze Farm."""
+    label = st.get("label") or st.get("type") or "?"
+    try:
+        await _exec_step(st, job, device, use_ams, poll_sec, min_min, prep_steps, fail_steps)
+    except (_MoveTimeout, asyncio.CancelledError):
+        raise
+    except RuntimeError as e:
+        if str(e) == "Gestoppt" or not st.get("optional"):
+            raise
+        _log(f"⚠ '{label}' fehlgeschlagen (optional) — als fertig gewertet")
+    except (ValueError, TypeError, KeyError) as e:
+        raise RuntimeError(f"Schritt '{label}': ungültiger Wert ({e})") from e
+
+
+async def _run_group(group: list, job: dict, device: Device, use_ams: bool, poll_sec: int,
+                     min_min: int, prep_steps: list, fail_steps: list) -> None:
+    """Eine ∥-Gruppe. Arm-Schritte laufen als EINE Kette in Listenreihenfolge (es gibt
+    nur einen Arm), alles andere daneben. Beim ersten Fehler werden die übrigen
+    abgebrochen, bevor der Fehler weitergeht.
+
+    Bis v1.1.45 liefen alle per gather: „Platte einlegen ∥ Tür schließen" kam in
+    beliebiger Reihenfolge an den Arm (mit Referenzfahrt auch „Tür zu" vor dem
+    Einlegen), und schlug das Einlegen fehl, schloss die Tür trotzdem."""
+    arm = [s for s in group if s.get("type") in sequence_steps.ARM_STEP_TYPES]
+    rest = [s for s in group if s.get("type") not in sequence_steps.ARM_STEP_TYPES]
+
+    async def arm_chain():
+        for s in arm:
+            await _run_step_checked(s, job, device, use_ams, poll_sec, min_min, prep_steps, fail_steps)
+
+    tasks = ([asyncio.ensure_future(arm_chain())] if arm else []) + [
+        asyncio.ensure_future(_run_step_checked(s, job, device, use_ams, poll_sec, min_min,
+                                                prep_steps, fail_steps)) for s in rest]
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+    except asyncio.CancelledError:
+        for t in tasks:
+            t.cancel()
+        raise
+    failed = next((t for t in done if not t.cancelled() and t.exception() is not None), None)
+    if failed is not None:
+        for t in pending:
+            t.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        raise failed.exception()
+
+
 async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
                           poll_sec: int, min_min: int, prep_steps: list, fail_steps: list = [],
                           started_with: Optional[list] = None):
@@ -2847,29 +2935,10 @@ async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
         _log(f"▸ {label}")
 
         if len(group) == 1:
-            st = group[0]
-            try:
-                await _exec_step(st, job, device, use_ams, poll_sec, min_min, prep_steps, fail_steps)
-            except RuntimeError as e:
-                if str(e) == "Gestoppt":
-                    raise
-                if st.get("optional"):
-                    _log(f"⚠ '{st.get('label', st.get('type', '?'))}' fehlgeschlagen (optional) — als fertig gewertet")
-                else:
-                    raise
+            await _run_step_checked(group[0], job, device, use_ams, poll_sec, min_min,
+                                    prep_steps, fail_steps)
         else:
-            results = await asyncio.gather(*[
-                _exec_step(s, job, device, use_ams, poll_sec, min_min, prep_steps, fail_steps)
-                for s in group
-            ], return_exceptions=True)
-            for s, result in zip(group, results):
-                if isinstance(result, Exception):
-                    if isinstance(result, RuntimeError) and str(result) == "Gestoppt":
-                        raise result
-                    if s.get("optional"):
-                        _log(f"⚠ '{s.get('label', '')}' fehlgeschlagen (optional) — als fertig gewertet")
-                    else:
-                        raise result
+            await _run_group(group, job, device, use_ams, poll_sec, min_min, prep_steps, fail_steps)
 
         # Druck ist durch → wurde die Sequenz in der Zwischenzeit geändert, läuft der
         # Rest dieses Zyklus schon nach der neuen Fassung.
@@ -3100,8 +3169,6 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 # Position als unbekannt markieren (erzwingt Referenzfahrt) und nach
                 # der eingestellten Strategie reagieren.
                 msg = str(e)
-                _farm["needs_home"] = True
-                _persist_state()
                 action = _estrat("move_timeout")
                 _log(f"⏱ {msg} — Strategie: {action}")
                 _record_failure(msg)
@@ -3153,7 +3220,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
 
     except Exception as e:
         _farm["error"] = str(e)
-        _log(f"FEHLER (unhandled): {e}")
+        _log(f"FEHLER (unhandled, {type(e).__name__}): {e}")
         for j in _farm["jobs"]:
             if j["status"] in ("running", "sending", "printing"):
                 j["status"] = "error"
@@ -3338,6 +3405,47 @@ def _resume_after_move_timeout(job: dict, cur_slot, job_started_at) -> None:
     _farm["current_job_id"] = None
 
 
+def _validate_sequences(seq_data: dict) -> list:
+    """Was an den gespeicherten Sequenzen kaputt ist → Liste von Problemen
+    (geometry_check.problem: Vorlage + Werte, übersetzbar). Leer = startklar.
+
+    Bis v1.1.45 startete die Farm auch mit leerem Zyklus oder einem Zyklus ohne
+    „Druckdatei senden": Sie lief los und beendete jeden Job als „fertig", oder ein
+    unbekannter Schritt fiel erst mitten im Lauf auf."""
+    problems = []
+    for name in ("seq_new", "seq_next"):
+        for st in _filter_disabled(seq_data.get(name) or []):
+            label = st.get("label") or st.get("type") or "?"
+            t = st.get("type")
+            if t not in sequence_steps.STEP_TYPES:
+                problems.append(_geometry_check.problem("seq_unknown_type", "error",
+                                  "Unbekannte Schritt-Art „{0}“ in „{1}“", [str(t), label]))
+                continue
+            for field in ("seconds", "z", "feed"):
+                v = st.get(field)
+                if v in (None, ""):
+                    continue
+                try:
+                    float(v)
+                except (TypeError, ValueError):
+                    problems.append(_geometry_check.problem("seq_not_a_number", "error",
+                                      "Schritt „{0}“: {1} ist keine Zahl ({2})", [label, field, str(v)]))
+            if t == "app_op" and str(st.get("value") or "").strip().lower() not in _motion.APP_OP_KEYS:
+                problems.append(_geometry_check.problem("seq_unknown_op", "error",
+                                  "Schritt „{0}“: unbekannte Printloom-Op „{1}“",
+                                  [label, str(st.get("value") or "")]))
+    cycle = _filter_disabled(seq_data.get("seq_next") or [])
+    waits = sum(1 for s in cycle if s.get("type") == "wait_print")
+    if waits != 1:
+        problems.append(_geometry_check.problem("seq_wait_print", "error",
+                          "Der Zyklus braucht genau einen Schritt „Auf Druckende warten“ (gefunden: {0})",
+                          [str(waits)]))
+    if not any(s.get("type") == "send_file" for s in cycle):
+        problems.append(_geometry_check.problem("seq_no_send", "error",
+                          "Der Zyklus sendet keine Druckdatei (Schritt „Druckdatei senden“ fehlt)"))
+    return problems
+
+
 async def _assert_arm_idle_for_start() -> None:
     """Start nur, wenn der OTTOeject gerade nichts ausführt. Handfahrten (Drucker-Tab,
     Joggen, Makro) laufen an arm_access vorbei; ein Start währenddessen reihte den
@@ -3403,6 +3511,9 @@ async def start_farm(req: StartRequest):
             f"Sequenzen veraltet (Schema {saved_ver} ≠ {SEQ_SCHEMA_VERSION}) — "
             f"bitte Sequenz-Editor öffnen und ↺ Standard klicken, dann erneut starten."
         )
+    seq_problems = _validate_sequences(seq_data)
+    if seq_problems:
+        raise HTTPException(400, "Sequenz nicht startklar: " + "; ".join(p["message"] for p in seq_problems))
 
     _settings = _read_config(SETTINGS_PATH, _DEFAULT_SETTINGS)
 
@@ -3442,6 +3553,7 @@ async def start_farm(req: StartRequest):
         "recovery":           None,
     })
     _farm.pop("_conn_skip_logged", None)
+    _farm.pop("_prep_warned", None)
 
     _farm.pop("_no_slot_logged", None)   # „Regal voll"-Log-Dedup nicht über Läufe schleppen
     _farm.pop("_settings_mtime", None)   # nächster Durchlauf liest die Einstellungen frisch
@@ -4267,6 +4379,8 @@ async def dry_run(payload: dict = None):
         steps += _walk(seq_data.get("seq_next"), "seq_next")
 
     problems = [p for s in steps for p in s["problems"]]
+    # Dieselbe Prüfung wie beim Start: Was den Start verweigern würde, steht als Fehler.
+    problems += _validate_sequences(seq_data)
     # Warnungen als Vorlage + Werte (siehe geometry_check.problem) — sonst blieben
     # sie in jeder Sprache deutsch.
     warnings = []

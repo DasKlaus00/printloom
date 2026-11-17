@@ -24,8 +24,35 @@ STEP_TYPES = frozenset({
 STEP_FIELDS = ("id", "type", "label", "value", "seconds", "z", "feed", "nowait",
                "parallel", "optional", "disabled", "prep", "condition")
 
-# Diese Arten bleiben IMMER im normalen Ablauf, auch wenn `prep` gesetzt ist:
-# `wait_print` vorzuziehen hieße mitten im Druck auswerfen, `send_file` muss an
-# seiner Stelle laufen, `wait_homing` wartete während eines echten Drucks endlos
-# auf FINISH, und `wait_cool` vor dem Druckende ergibt keinen Sinn.
-PREP_FORBIDDEN = ("wait_print", "send_file", "wait_homing", "wait_cool")
+# ── Vorziehen (⏱ „prep"): ~1 min vor Druckende, während der Drucker noch druckt ──
+# Eine ERLAUBNIS-Liste statt einer Verbotsliste: Bis v1.1.45 durfte alles außer
+# vier Arten vorgezogen werden. Ein ⏱ an „Auswerfen" fuhr so ~1 min vor Druckende in
+# den laufenden Druck, ein ⏱ an „Bambu Position" verschwand still. Erlaubt ist nur,
+# was den Drucker nicht berührt: warten, homen, parken, vor den Drucker fahren.
+# Dieselben Listen stehen in frontend/src/services/sequenceRules.js (Test hält sie gleich).
+PREP_APP_OPS = ("move_to_printer",)
+PREP_MACROS = ("OTTOEJECT_HOME", "PARK_OTTOEJECT")
+PREP_MACRO_PREFIXES = ("MOVE_TO_PRINTER",)
+
+
+def prep_allowed(step: dict) -> bool:
+    """Darf dieser Schritt vor dem Druckende laufen?"""
+    t = step.get("type")
+    v = str(step.get("value") or "").strip()
+    if t == "delay":
+        return True
+    if t == "app_op":
+        return v.lower() in PREP_APP_OPS
+    if t == "macro":
+        first = v.split()[0].upper() if v.split() else ""
+        return first in PREP_MACROS or first.startswith(PREP_MACRO_PREFIXES)
+    return False
+
+
+# Abgeleitet, für ältere Aufrufer: Arten, die NIE vorgezogen werden.
+PREP_FORBIDDEN = tuple(sorted(STEP_TYPES - {"delay", "app_op", "macro"}))
+
+# Schritte, die den Arm bewegen. In einer ∥-Gruppe laufen sie nacheinander in
+# Listenreihenfolge; nur Schritte für den Drucker laufen daneben (z. B. Datei senden
+# ∥ Parken).
+ARM_STEP_TYPES = ("macro", "app_op", "klipper_gcode")

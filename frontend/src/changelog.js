@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.46',
+    de: [
+      'VORZIEHEN (⏱) NUR NOCH FÜR UNGEFÄHRLICHE SCHRITTE: warten, OTTOeject homen oder parken, vor den Drucker fahren. Bisher ließ sich fast jeder Schritt vorziehen; ein ⏱ an „Auswerfen“ fuhr ~1 Minute vor Druckende in den laufenden Druck. Hattest du ⏱ an einem anderen Schritt, läuft er jetzt an seiner Stelle nach dem Druckende (das Log sagt es einmal), und der Editor bietet den Haken dort nicht mehr an.',
+      'PARALLELE SCHRITTE (∥) IN REIHENFOLGE: Schritte, die den Arm bewegen, laufen in einer Gruppe nacheinander, so wie sie in der Liste stehen; nur Drucker-Schritte (etwa „Datei senden“) laufen daneben. Scheitert ein Schritt, bricht die Gruppe ab. Bisher konnte „Tür schließen“ vor „Platte einlegen“ kommen und auch nach einem gescheiterten Einlegen.',
+      'Eine hängende Bewegung gilt nie als „optional“: Die Farm reagiert dann immer nach der Strategie „Bewegung hängt“. Bisher wurde ein Hänger in „Tür öffnen“ als erledigt gewertet, und der Arm fuhr von der unbekannten Stelle weiter.',
+      'Hängt eine Bewegung im Vorstart, kommen keine weiteren Vorstart-Fahrten, und am Druckende greift die Strategie. Stoppst du die Farm während des Drucks, endet auch der Vorstart.',
+      'Ein ungültiger Wert (etwa Buchstaben statt Sekunden) oder ein unbekannter Schritt beendet den Job mit Fehler, nicht die ganze Farm. Bisher wurde ein unbekannter Schritt still übersprungen.',
+      'DER START PRÜFT DIE SEQUENZ: unbekannte Schritte, Zahlen, Printloom-Ops, genau ein „Auf Druckende warten“ und ein „Druckdatei senden“ im Zyklus. Was fehlt, steht in der Meldung und im Trockenlauf.',
+    ],
+    en: [
+      'PULLING AHEAD (⏱) ONLY FOR HARMLESS STEPS: waiting, homing or parking the OTTOeject, moving in front of the printer. Until now almost any step could be pulled ahead; a ⏱ on “Eject” moved into the running print about a minute before it ended. If you had ⏱ on another step, it now runs in its place after the print (the log says so once), and the editor no longer offers the checkbox there.',
+      'PARALLEL STEPS (∥) IN ORDER: steps that move the arm run one after another within a group, as listed; only printer steps (such as “Send file”) run alongside. If a step fails, the group stops. Until now “Close door” could come before “Place plate”, and even after placing had failed.',
+      'A hanging move is never “optional”: the farm always reacts with the “Move hangs” strategy. Until now a hang in “Open door” counted as done, and the arm carried on from an unknown position.',
+      'If a move hangs during pre-positioning, no further pre-positioning moves are sent and the strategy applies at the end of the print. If you stop the farm during a print, pre-positioning stops too.',
+      'An invalid value (letters instead of seconds, for example) or an unknown step ends the job with an error, not the whole farm. Until now an unknown step was skipped silently.',
+      'THE START CHECKS THE SEQUENCE: unknown steps, numbers, Printloom ops, exactly one “Wait for print end” and one “Send print file” in the cycle. Whatever is missing is shown in the message and in the dry run.',
+    ],
+  },
+  {
     version: '1.1.45',
     de: [
       'PRÜFUNG VOR JEDER FAHRT IN DEN DRUCKER: Bevor der Arm eine Platte einlegt, auswirft oder eine Datei startet, fragt Printloom den Drucker frisch. Druckt er noch, oder ist sein Zustand unbekannt, wartet die Farm kurz und pausiert dann mit dem Grund. Bisher fuhr sie blind, auch in einen laufenden Druck.',

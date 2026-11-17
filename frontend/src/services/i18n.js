@@ -1427,6 +1427,12 @@ const EN_STRINGS = {
   // Notaus-Baustein in der Kopfzeile (seit v1.1.43)
   'Fortsetzen': 'Resume',
   'Notaus: Arm sofort anhalten': 'Emergency stop: halt the arm immediately',
+  // Startprüfung der Sequenz (seit v1.1.46)
+  'Unbekannte Schritt-Art „{0}“ in „{1}“': 'Unknown step type “{0}” in “{1}”',
+  'Schritt „{0}“: {1} ist keine Zahl ({2})': 'Step “{0}”: {1} is not a number ({2})',
+  'Schritt „{0}“: unbekannte Printloom-Op „{1}“': 'Step “{0}”: unknown Printloom op “{1}”',
+  'Der Zyklus braucht genau einen Schritt „Auf Druckende warten“ (gefunden: {0})': 'The cycle needs exactly one “Wait for print end” step (found: {0})',
+  'Der Zyklus sendet keine Druckdatei (Schritt „Druckdatei senden“ fehlt)': 'The cycle sends no print file (the “Send print file” step is missing)',
   // Fehlerstrategie und Tore (seit v1.1.45)
   'Drucker nach mehreren Reconnects nicht erreichbar — der Druck läuft am Gerät weiter': 'Printer unreachable after several reconnects — the print keeps running on the printer',
   '„Platte auswerfen & weiter": Bett auf Z200, Tür öffnen, Platte auswerfen und ins Fach einlagern — dann startet der nächste Job automatisch. „Job überspringen" lässt die fehlgeschlagene Platte im Drucker; die Farm hält dann vor dem nächsten Einlegen an, bis du sie entnommen hast.': '“Eject plate & continue”: bed to Z200, open the door, eject the plate and store it in its slot — then the next job starts automatically. “Skip job” leaves the failed plate in the printer; the farm then stops before the next plate goes in, until you have removed it.',

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { DEFAULT_SEQ_NEW, DEFAULT_SEQ_NEXT } from '../services/sequenceData'
+import { prepAllowed } from '../services/sequenceRules'
 import { autofarmService, controlService } from '../services/api'
 import { useLanguage, tr as translate, currentLang } from '../services/i18n'
 
@@ -160,8 +161,8 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
             <span className="text-[9px] font-mono text-blue-400 border border-blue-800/60 px-1 rounded shrink-0 select-none">∥</span>
           )}
 
-          {/* Pre-position badge (never for wait_print/send_file) */}
-          {step.prep && !['wait_print', 'send_file', 'wait_homing'].includes(step.type) && (
+          {/* ⏱-Abzeichen nur, wo Vorziehen erlaubt ist (services/sequenceRules) */}
+          {step.prep && prepAllowed(step) && (
             <span className="text-[9px] font-mono text-blue-400 border border-blue-800/60 px-1 rounded shrink-0 select-none"
               title={tr('Wird ~1 Min vor Druckende vorgezogen')}>⏱</span>
           )}
@@ -460,9 +461,10 @@ function StepBlock({ step, idx, total, onChange, onMove, onDelete, onTogglePar, 
 
             {/* Pre-position toggle — run ~1 min before print end. Only offered in the
                 CYCLE card (allowPrep): in First Start there is no print to run ahead of.
-                NEVER for wait_print/send_file/wait_homing: pre-positioning the "wait"
-                steps would pull the wait out of the flow and eject mid-print. */}
-            {allowPrep && !['wait_print', 'send_file', 'wait_homing'].includes(step.type) && (
+                Nur für Schritte, die den Drucker nicht berühren (services/sequenceRules,
+                dieselbe Regel wie das Backend): ein ⏱ an „Auswerfen" fuhr bis v1.1.45
+                in den laufenden Druck. */}
+            {allowPrep && prepAllowed(step) && (
               <label className="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-surface-800/30">
                 <input
                   type="checkbox"
@@ -708,7 +710,7 @@ function SequenceEditor() {
       let changed = false
       const out = steps.map(s => {
         let t = s
-        if (t.prep && ['wait_print', 'send_file', 'wait_homing'].includes(t.type)) {
+        if (t.prep && !prepAllowed(t)) {
           changed = true
           t = { ...t, prep: false }
         }
