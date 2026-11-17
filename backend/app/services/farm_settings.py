@@ -24,6 +24,9 @@ ERROR_DEFAULTS = {
     # Hängende Bewegung: Der Arm steht an unbekannter Stelle, evtl. mit Platte.
     # Einfach weiterfahren wäre die schlechteste Option.
     "move_timeout":    "pause",
+    # Datei ragt in die Bahn des OTTOeject (oder ist nicht prüfbar): unbeaufsichtigt
+    # nicht drucken. Bis v1.1.59 gab es nur das „!" in der Bibliothek.
+    "crash_risk":      "skip",
 }
 
 DEFAULTS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": True,

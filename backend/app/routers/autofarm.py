@@ -24,7 +24,7 @@ from app.models.models import Device, PrinterType, UploadedFile
 from app.paths import db_path
 from app.routers.printer import capture_snapshot, publish_live_status
 from app.services import ams_match, bambu_manager, device_settings, farm_queue, farm_settings, hms
-from app.services import print_file, printer_guard, rack_store, storage
+from app.services import crash_check, print_file, printer_guard, rack_store, storage
 from app.services import geometry_check as _geometry_check
 from app.services import ottoeject_motion as _motion
 from app.services import rack_logic as _rack_logic
@@ -1994,6 +1994,7 @@ async def _run_prep(steps: list, slot: str, device: Device):
                 _log(f"▶ {val}")
                 await _do_macro(val)
             elif t in ("klipper_gcode",):
+                _assert_klipper_gcode_ok(val)
                 _log(f"▶ {step.get('label', val[:30])}")
                 await _do_macro(val)   # Klipper HTTP blocks until movement complete
             elif t == "app_op":
@@ -2442,6 +2443,49 @@ def farm_printer_id() -> Optional[int]:
     return int(did) if did is not None else None
 
 
+def farm_device(db):
+    """Das Gerät der Farm (farm_printer_id), sonst der erste Bambu. Eine Stelle für
+    Crash-Check (Bettbreite), OrcaSlicer-Plugin und Bibliothek."""
+    q = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB)
+    fid = farm_printer_id()
+    if fid is not None:
+        d = q.filter(Device.id == fid).first()
+        if d is not None:
+            return d
+        logger.warning(f"Farm-Drucker {fid} nicht in der Geräteliste — nehme den ersten")
+    return q.first()
+
+
+async def _crash_gate(job: dict, device) -> None:
+    """Vor dem ersten Schritt eines Jobs: Ragt der Druck in die Bahn des OTTOeject?
+    Riskant oder nicht prüfbar → Strategie „crash_risk" (Vorgabe: nicht drucken). Es
+    hat sich noch nichts bewegt. Bis v1.1.59 druckte die Farm jede Datei; das „!"
+    stand nur in der Bibliothek."""
+    from app.routers import files as _files
+    loop = asyncio.get_running_loop()
+    res = await loop.run_in_executor(None, _files.crash_result, job.get("fileId"),
+                                     job.get("plate"), crash_check.x_max_for(device))
+    if res.get("crash_risk") is False and not res.get("unknown"):
+        return
+    grund = ("Kollisionsgefahr für den OTTOeject" if res.get("crash_risk")
+             else f"Kollisions-Check nicht möglich ({res.get('error') or 'kein G-code'})")
+    action = _estrat("crash_risk")
+    if action == "ignore":
+        _log(f"⚠ {job['fileName']}: {grund} — wird trotzdem gedruckt (Strategie „ignorieren“)")
+        return
+    if action == "stop":
+        _log(f"🛑 {job['fileName']}: {grund} — Farm wird gestoppt (Strategie)")
+        _farm["stopping"] = True
+        raise RuntimeError("Gestoppt")
+    if action == "pause":
+        await _hold_until_resumed(
+            f"{job['fileName']}: {grund} — Datei prüfen; nach „Fortsetzen“ wird sie gedruckt",
+            f"⏸ Printloom — {grund}\n{job['fileName']}")
+        return
+    await _notify(f"⚠ Printloom — nicht gedruckt\n{job['fileName']}\n{grund}")
+    raise RuntimeError(f"Nicht gedruckt: {grund}")
+
+
 def _assert_printer_geometry(bambu_id) -> None:
     """Start verweigern, wenn für DIESES Gerät kein Drucker-Block existiert und die
     Farm App-G-code fahren soll.
@@ -2477,6 +2521,17 @@ def _farm_printer_of(blocks, bambu_id):
         if p.get("device_id") is not None and int(p["device_id"]) == int(bambu_id):
             return p["id"]
     return None
+
+
+def _assert_klipper_gcode_ok(script: str) -> None:
+    """Eigener G-code eines Schritts vor dem Senden durch die Achsprüfung — wie jede
+    Printloom-Op in build_op. Bis v1.1.59 ging er ungeprüft an Klipper (auch relativ,
+    mit G91, wo sich das Ziel gar nicht prüfen lässt)."""
+    geom = _farm.get("geometry") or _load_farm_geometry()
+    errors = [p for p in _geometry_check.check_script(script, geom, "klipper_gcode")
+              if p.get("severity") == "error"]
+    if errors:
+        raise _geometry_check.GeometryError(errors)
 
 
 def _macro_kind(val: str) -> Optional[str]:
@@ -2647,6 +2702,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         _farm["_last_gcode_time"] = asyncio.get_running_loop().time()
 
     elif t == "klipper_gcode":
+        _assert_klipper_gcode_ok(val)
         label = step.get("label") or val.replace("\n", " · ")[:40]
         _log(f"[Klipper] {label}")
         await _do_macro(val)   # Klipper HTTP blocks until movement is complete
@@ -3420,6 +3476,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                         await _notify(f"❌ Printloom — Höhe nicht ermittelbar\n{job['fileName']}")
                         raise RuntimeError("Höhe nicht ermittelbar — nicht gedruckt")
                     _set_job(job["id"], {"object_height_mm": h, **({"layerHeightMm": lh} if lh else {})})
+                await _crash_gate(job, device)
                 # First Start runs exactly ONCE before the first job's cycle
                 # (one-time homing + Z200). `seq_new` = First Start, `seq_next` = cycle.
                 if not first_start_done:
@@ -4849,6 +4906,9 @@ async def dry_run(payload: dict = None):
                         entry["script"], geom, op, rack, slot, pid)
                 except ValueError as e:
                     entry["problems"] = [{"severity": "error", "message": str(e)}]
+            elif t == "klipper_gcode":
+                entry["script"] = val
+                entry["problems"] = _geometry_check.check_script(val, geom, "klipper_gcode")
             elif t == "delay":
                 entry["target"] = f"{step.get('seconds', 0)} s"
             out.append(entry)

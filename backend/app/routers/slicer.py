@@ -60,19 +60,12 @@ _UPLOAD_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 # ── Hilfen ────────────────────────────────────────────────────────────────────
 
 def _printer(db, device_id: Optional[int] = None) -> Optional[Device]:
-    """Ausdrücklich gewähltes Gerät, sonst der Drucker der Farm, sonst der erste Bambu
-    (ein einzelner, noch keinem Drucker-Block zugeordneter Drucker)."""
-    q = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB)
+    """Ausdrücklich gewähltes Gerät, sonst der Drucker der Farm (autofarm.farm_device)."""
     if device_id is not None:
-        return q.filter(Device.id == device_id).first()
+        return db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB,
+                                       Device.id == device_id).first()
     from app.routers import autofarm
-    farm_id = autofarm.farm_printer_id()
-    if farm_id is not None:
-        d = q.filter(Device.id == farm_id).first()
-        if d is not None:
-            return d
-        logger.warning(f"Farm-Drucker {farm_id} nicht in der Geräteliste — nehme den ersten")
-    return q.first()
+    return autofarm.farm_device(db)
 
 
 def _dev_model(device: Device) -> str:
@@ -128,21 +121,27 @@ async def _receive(request: Request, dest: Path) -> int:
 _units = print_file.print_units   # eine Quelle (seit v1.1.58 in print_file)
 
 
-def _analyze(path: str, ftype: str, plate, ams_raw: dict) -> dict:
-    """Crash-Zone, Fachhöhe und Spulen für EINE Druck-Einheit."""
-    try:
-        crash = crash_check.scan_file(path, ftype, plate)
-    except (OSError, zipfile.BadZipFile, ValueError) as e:
-        logger.warning(f"Crash-Check nicht möglich ({os.path.basename(path)}): {e}")
-        crash = None
+def _analyze(path: str, ftype: str, plate, ams_raw: dict, x_max: Optional[float]) -> dict:
+    """Crash-Zone, Fachhöhe und Spulen für EINE Druck-Einheit. `x_max` = Bettbreite des
+    Farm-Druckers (None = unbekannt → „nicht geprüft")."""
+    crash = None
+    if x_max is None:
+        crash = crash_check.not_checked("Bettbreite des Druckers unbekannt")
+    else:
+        try:
+            crash = crash_check.scan_file(path, ftype, plate, x_max)
+        except (OSError, zipfile.BadZipFile, ValueError) as e:
+            logger.warning(f"Crash-Check nicht möglich ({os.path.basename(path)}): {e}")
     # Kein G-code gefunden oder Datei unlesbar: „nicht geprüft", nicht „ok". Bis
     # v1.1.54 meldete das Plugin dann „keine Kollisionsgefahr".
     crash = crash or crash_check.not_checked()
-    crash.update(crash_check.limits())
+    crash.update(crash_check.limits(x_max))
     rack = rack_store.load()
     h = print_file.object_height(path, ftype, plate, rack.get("height_margin_pct", 15.0))
     height_mm = h.get("computed_height_mm") or 0.0
-    height = {"max_z_mm": h.get("max_z_mm"), "height_mm": height_mm}
+    # Höhe unbekannt (keine Z-Angaben) ist nicht „passt ins Regal" (bis v1.1.59 kam
+    # dann gar kein Urteil, und das Plugin sagte „Farm-Check ok").
+    height = {"max_z_mm": h.get("max_z_mm"), "height_mm": height_mm or None, "ok": None}
     if height_mm > 0:
         height.update(rack_logic.storable(height_mm, rack))
     usage = print_file.filament_usage(path, ftype, plate)
@@ -154,10 +153,12 @@ def _analyze(path: str, ftype: str, plate, ams_raw: dict) -> dict:
 def _analyze_units(path: str, ftype: str, units: list) -> list:
     db = SessionLocal()
     try:
-        ams_raw = _live_ams(_printer(db))
+        printer = _printer(db)
+        ams_raw = _live_ams(printer)
+        x_max = crash_check.x_max_for(printer)
     finally:
         db.close()
-    return [_analyze(path, ftype, plate, ams_raw) for plate, _, _ in units]
+    return [_analyze(path, ftype, plate, ams_raw, x_max) for plate, _, _ in units]
 
 
 # ── Endpunkte ─────────────────────────────────────────────────────────────────
@@ -172,6 +173,7 @@ def info():
                      "dev_model": _dev_model(d)}
                     for d in db.query(Device).filter(
                         Device.device_type == PrinterType.BAMBU_LAB).all()]
+        x_max = crash_check.x_max_for(_printer(db))
     finally:
         db.close()
     rack = rack_store.load()
@@ -180,7 +182,7 @@ def info():
         "version": _get_current_version(),
         "printers": printers,
         "limits": {
-            "crash": crash_check.limits(),
+            "crash": crash_check.limits(x_max),
             "rack": {"slot_height_mm": rack.get("slot_height_mm"),
                      "slot_tolerance_mm": rack_logic.tolerance_of(rack),
                      "slots_per_rack": rack.get("slots_per_rack"),

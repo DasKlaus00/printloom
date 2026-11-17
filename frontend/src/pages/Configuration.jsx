@@ -750,6 +750,8 @@ const ERROR_CATALOG = [
   { key: 'progress_stall',  label: 'Stillstand / kein Fortschritt', desc: 'Watchdog: kein Druckfortschritt (mögliche Verstopfung)',      actions: ['pause', 'skip', 'stop'] },
   { key: 'no_slot',         label: 'Kein freies Regalfach',        desc: 'Regal voll — kein Platz für die fertige Platte',              actions: ['pause', 'stop'] },
   { key: 'ams_unmatched',   label: 'AMS-Festlegung nötig',         desc: 'Kein passendes Filament im AMS gefunden',                     actions: ['pause', 'skip'] },
+  // Seit v1.1.60: Die Farm druckt eine Datei mit Crash-Risiko nicht mehr unbeaufsichtigt.
+  { key: 'crash_risk',      label: 'Kollisionsgefahr für den Arm',  desc: 'Datei ragt in die Bahn des OTTOeject oder lässt sich nicht prüfen — Vorgabe: nicht drucken', actions: ['skip', 'pause', 'stop', 'ignore'] },
   { key: 'move_timeout',    label: 'Bewegung hängt',               desc: 'OTTOeject meldet die Bewegung nicht als beendet — Arm steht an unbekannter Stelle', actions: ['pause', 'skip', 'stop'] },
 ]
 // Die Vorgaben kommen vom Backend (farm_settings.ERROR_DEFAULTS, eine Quelle). Bis

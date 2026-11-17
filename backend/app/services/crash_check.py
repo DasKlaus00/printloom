@@ -107,6 +107,19 @@ def scan_file(path: str, file_type: str, plate, x_max: float = X_MAX) -> Optiona
         return result
 
 
+def x_max_for(device) -> Optional[float]:
+    """Bettbreite X des Druckers (printer_models, eine Quelle); None = unbekannt.
+    Bis v1.1.59 galt für jeden Drucker 256 mm (X1C): Auf einem A1 mini (180 mm) lag
+    die rechte Randzone damit 76 mm neben der echten."""
+    from app.services import printer_models
+    if device is None:
+        return None
+    m = (printer_models.by_id(getattr(device, "model", None))
+         or printer_models.by_id(printer_models.from_serial(getattr(device, "serial_number", ""))))
+    bed = (m or {}).get("bed_mm")
+    return float(bed) if bed else None
+
+
 def not_checked(reason: str = "") -> dict:
     """Ergebnis, wenn nichts zu prüfen war (kein G-code, Datei fehlt/unlesbar).
     Unbekannt ist nicht „ok": Bis v1.1.54 kam hier crash_risk False ohne Vermerk,

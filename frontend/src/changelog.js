@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.60',
+    de: [
+      'KEIN UNBEAUFSICHTIGTER DRUCK MIT KOLLISIONSGEFAHR: Ragt eine Datei in die Bahn des OTTOeject (oder lässt sie sich nicht prüfen), druckt die Farm sie nicht, meldet es und nimmt den nächsten Job. Einstellbar unter Konfiguration → Fehlerstrategie („Kollisionsgefahr für den Arm“: nicht drucken, pausieren, stoppen oder ignorieren). Bisher stand die Warnung nur als „!“ in der Bibliothek.',
+      'CRASH-CHECK MIT DER ECHTEN BETTBREITE: Die Randzone wird mit der Plattenbreite des Farm-Druckers geprüft (A1 mini 180 mm, H2D 350 mm …). Bisher galt für jeden Drucker 256 mm. Bei unbekanntem Modell heißt es „nicht geprüft“, nie „ok“.',
+      'EIGENER G-CODE WIRD GEPRÜFT: Schritte „OTTOeject GCode“ laufen vor dem Senden durch dieselbe Achsprüfung wie die Printloom-Bewegungen, auch im Trockenlauf. Relative Bewegungen (G91) und das Neusetzen der Position (G92) werden abgelehnt, weil sich ihr Ziel nicht prüfen lässt — bitte absolut (G90) schreiben.',
+      'OrcaSlicer-Plugin 1.0.4: Ist die Höhe oder die Arm-Zone nicht prüfbar, heißt das Fazit „unvollständig“ statt „Farm-Check ok“. Plugin unter System → OrcaSlicer neu herunterladen.',
+    ],
+    en: [
+      'NO UNATTENDED PRINT WITH A COLLISION RISK: if a file reaches into the path of the OTTOeject (or cannot be checked), the farm does not print it, reports it and takes the next job. Configurable under Configuration → Error strategy (“Collision risk for the arm”: do not print, pause, stop or ignore). Until now the warning was only a “!” in the library.',
+      'CRASH CHECK WITH THE REAL BED WIDTH: the edge zone is checked with the plate width of the farm printer (A1 mini 180 mm, H2D 350 mm …). Until now every printer counted as 256 mm. With an unknown model it says “not checked”, never “ok”.',
+      'YOUR OWN G-CODE IS CHECKED: “OTTOeject GCode” steps go through the same axis check as Printloom’s moves before they are sent, also in the dry run. Relative moves (G91) and resetting the position (G92) are rejected because their target cannot be checked — please write them in absolute mode (G90).',
+      'OrcaSlicer plugin 1.0.4: if the height or the arm zone cannot be checked, the summary says “incomplete” instead of “farm check ok”. Download the plugin again under System → OrcaSlicer.',
+    ],
+  },
+  {
     version: '1.1.59',
     de: [
       'EIGENE SEQUENZEN WERDEN NICHT MEHR STILL ERSETZT: Nach einem Update mit neuem Sequenz-Format zeigt der Sequenz-Editor deine Schritte mit dem Hinweis „aus einer älteren Version — prüfen und übernehmen“. Bisher ersetzte er sie beim Öffnen durch den Standard und speicherte. Ein bewusst leerer First Start bleibt leer, und „↺ Standard“ fragt jetzt nach.',

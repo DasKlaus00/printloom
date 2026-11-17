@@ -388,3 +388,17 @@ def test_farm_drucker_im_lauf_und_aus_dem_drucker_block(farm, monkeypatch):
                          "eject": {"x": 425, "y": 340, "z": 17.5}}]
     monkeypatch.setattr(autofarm, "_load_farm_geometry", lambda: geom)
     assert autofarm.farm_printer_id() == 7
+
+
+def test_gcode_ohne_z_angaben_hat_keine_hoehe(client, db, farm, x1c):
+    """Seit v1.1.60: unbekannte Höhe ist kein Urteil „passt ins Regal"."""
+    r = client.post("/api/slicer/check", content=b"G90\nG1 X10 Y10\nG1 X20 Y20\n").json()
+    assert r["height"]["height_mm"] is None and r["height"]["ok"] is None
+
+
+def test_crash_check_nimmt_die_bettbreite_des_druckers(client, db, farm, x1c):
+    x1c.model = "a1mini"
+    db.commit()
+    # X 175 bei Z 40: auf 256 mm Bett harmlos, auf 180 mm (A1 mini) im rechten Randstreifen
+    r = client.post("/api/slicer/check", content=b"G90\nG1 Z40\nG1 X175 Y90\n").json()
+    assert r["crash"]["x_max_mm"] == 180.0 and r["crash"]["crash_risk"] is True

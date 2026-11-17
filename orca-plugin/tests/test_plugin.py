@@ -172,7 +172,7 @@ def test_warnung_kollision_und_zu_hoch(plugin):
 
 
 def test_warnung_spule_und_fehlendes_material(plugin):
-    warnings, _, _ = plugin.describe_checks("de", [{"crash": {}, "height": {"ok": True},
+    warnings, _, _ = plugin.describe_checks("de", [{"crash": {"crash_risk": False}, "height": {"ok": True, "height_mm": 40.0, "slots_needed": 1},
         "spool": {"state": "short", "items": [
             {"status": "short", "label": "A3", "type": "PLA", "left_g": 80.0, "need_g": 111.3},
             {"status": "no_material", "type": "PETG"}]}}])
@@ -189,8 +189,19 @@ def test_alles_gut_mit_mehreren_faechern_als_hinweis(plugin):
 
 
 def test_unbekannte_spule_ist_nicht_reicht(plugin):
-    _, _, summary = plugin.describe_checks("en", [{"spool": {"state": "unknown"}}])
+    _, _, summary = plugin.describe_checks("en", [{"crash": {"crash_risk": False}, "height": {"ok": True, "height_mm": 40.0, "slots_needed": 1}, "spool": {"state": "unknown"}}])
     assert "spools unknown" in summary
+
+
+def test_ungepruefte_hoehe_und_arm_zone_sind_kein_ok(plugin):
+    """Seit 1.0.4: Was nicht geprüft werden konnte, heißt nie „Farm-Check ok"."""
+    warnings, hints, summary = plugin.describe_checks("de", [{
+        "crash": {"crash_risk": False, "unknown": True, "max_z_mm": None},
+        "height": {"max_z_mm": None, "height_mm": None, "ok": None},
+        "spool": {"state": "ok", "items": []}}])
+    assert "ok" not in summary and "Arm-Zone, Höhe" in summary
+    assert any("Kollisions-Check nicht möglich" in w for w in warnings)
+    assert any("Höhe unbekannt" in h for h in hints)
 
 
 # ── Einstellungen ───────────────────────────────────────────────────────────────

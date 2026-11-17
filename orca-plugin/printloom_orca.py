@@ -46,7 +46,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import orca
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 API_VERSION = 1
 AGENT_ID = "printloom"          # steht in den Drucker-Profilen der Nutzer — nie ändern
 STATUS_INTERVAL_S = 3.0          # Geräte-Tab: so oft fragt Orca auch seine eigenen Drucker
@@ -91,7 +91,11 @@ TEXT = {
         "spool_ok": "Spulen reichen",
         "spool_unknown": "Spulen unbekannt",
         "crash": "Arm-Kollision: über {zlim:g} mm fährt der Druck bei X {x:g} mm (Randstreifen {margin:g} mm). Teil zur Mitte schieben.",
-        "crash_unknown": "Kollisions-Check nicht möglich (kein G-code gefunden) — selbst prüfen.",
+        "crash_unknown": "Kollisions-Check nicht möglich (kein G-code oder Druckermodell unbekannt) — selbst prüfen.",
+        "height_unknown": "Höhe unbekannt (keine Z-Angaben) — das Fach wählt die Farm erst beim Druck.",
+        "check_partial": "Printloom: Farm-Check unvollständig — nicht geprüft: {what}.",
+        "part_crash": "Arm-Zone",
+        "part_height": "Höhe",
         "held": "Printloom: „{name}“ liegt in der Bibliothek, aber NICHT in der Warteschlange: {reason}",
         "too_tall": "Zu hoch fürs Regal: {h:g} mm (max. {max:g} mm) — die Farm würde pausieren.",
         "slots_hint": "Belegt {n} Fächer ({h:g} mm hoch).",
@@ -118,7 +122,11 @@ TEXT = {
         "spool_ok": "spools suffice",
         "spool_unknown": "spools unknown",
         "crash": "Arm collision: above {zlim:g} mm the print moves to X {x:g} mm (edge strip {margin:g} mm). Move the part towards the centre.",
-        "crash_unknown": "Collision check not possible (no G-code found) — check it yourself.",
+        "crash_unknown": "Collision check not possible (no G-code or unknown printer model) — check it yourself.",
+        "height_unknown": "Height unknown (no Z values) — the farm only picks the slot when printing.",
+        "check_partial": "Printloom: farm check incomplete — not checked: {what}.",
+        "part_crash": "arm zone",
+        "part_height": "height",
         "held": "Printloom: “{name}” is in the library but NOT in the queue: {reason}",
         "too_tall": "Too tall for the rack: {h:g} mm (max. {max:g} mm) — the farm would pause.",
         "slots_hint": "Takes {n} slots ({h:g} mm tall).",
@@ -259,6 +267,8 @@ def describe_checks(lang: str, checks: list) -> tuple:
     """Prüfergebnisse aus Printloom → (Warnungen, Hinweise, Kurzfazit)."""
     warnings, hints = [], []
     slots_needed, spool_states = 1, []
+    # Was nicht geprüft werden konnte: Dann heißt das Fazit nie „ok" (bis 1.0.3 schon).
+    unknown = set()
     for c in checks or []:
         prefix = tr(lang, "plate", n=c["plate"]) if c.get("plate") else ""
         crash = c.get("crash") or {}
@@ -266,13 +276,17 @@ def describe_checks(lang: str, checks: list) -> tuple:
             warnings.append(prefix + tr(lang, "crash", zlim=crash.get("z_limit_mm") or 30,
                                         x=crash.get("hit_x_mm") or 0,
                                         margin=crash.get("x_margin_mm") or 10))
-        elif crash.get("unknown"):
+        elif crash.get("unknown") or crash.get("crash_risk") is None:
             # Ungeprüft ist nicht „ok" (bis 1.0.2 stand hier nichts, das Fazit sagte „passt").
             warnings.append(prefix + tr(lang, "crash_unknown"))
+            unknown.add("crash")
         height = c.get("height") or {}
         if height.get("ok") is False:
             warnings.append(prefix + tr(lang, "too_tall", h=height.get("height_mm") or 0,
                                         max=height.get("max_height_mm") or 0))
+        elif not height.get("height_mm"):
+            hints.append(prefix + tr(lang, "height_unknown"))
+            unknown.add("height")
         elif (height.get("slots_needed") or 1) > 1:
             hints.append(prefix + tr(lang, "slots_hint", n=height["slots_needed"],
                                      h=height.get("height_mm") or 0))
@@ -290,7 +304,11 @@ def describe_checks(lang: str, checks: list) -> tuple:
     slots = tr(lang, "slots_one") if slots_needed <= 1 else tr(lang, "slots_many", n=slots_needed)
     spool = tr(lang, "spool_ok") if spool_states and all(s == "ok" for s in spool_states) \
         else tr(lang, "spool_unknown")
-    summary = tr(lang, "check_ok", slots=slots, spool=spool)
+    if unknown:
+        summary = tr(lang, "check_partial",
+                     what=", ".join(tr(lang, "part_" + k) for k in sorted(unknown)))
+    else:
+        summary = tr(lang, "check_ok", slots=slots, spool=spool)
     return warnings, hints, summary
 
 

@@ -509,23 +509,34 @@ def _allowed_x_max() -> set:
     return {float(m["bed_mm"]) for m in printer_models.MODELS if m.get("bed_mm")} | {float(CRASH_X_MAX)}
 
 
-@router.get("/{file_id}/crash-check")
-def crash_check(file_id: int, plate: int = None, x_max: float = CRASH_X_MAX,
-                db: Session = Depends(get_db)):
-    """Prüft, ob der Druck den OTTOeject-Arm rammt: Objekt höher als 30 mm UND ragt
-    links/rechts in den 10-mm-Randstreifen (auch Verfahrwege). Ergebnis wird gecacht.
-    Bewusst SYNCHRON (def): der volle G-code-Scan blockiert sonst den Event-Loop —
-    so führt FastAPI ihn im Threadpool aus."""
-    if float(x_max) not in _allowed_x_max():
-        raise HTTPException(status_code=400, detail="Unbekannte Plattenbreite")
-    file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
-    if not file:
-        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
-    if file.file_type not in ('.3mf', '.gcode'):
-        return {"crash_risk": False, "max_z_mm": None}     # keine Druckdatei: nichts zu prüfen
-    if not os.path.exists(file.file_path):
-        return _crash.not_checked("Datei fehlt")
-    path, file_type = file.file_path, file.file_type
+def _x_max_of_farm(db) -> Optional[float]:
+    from app.routers import autofarm
+    return _crash.x_max_for(autofarm.farm_device(db))
+
+
+def crash_result(file_id: int, plate=None, x_max: Optional[float] = None, db=None) -> dict:
+    """Crash-Check einer Bibliotheksdatei (für Bibliothek und Farm). `x_max` = Bettbreite;
+    None → die des Farm-Druckers. Unbekannt → „nicht geprüft", nie „ok". Ergebnis wird
+    gecacht. Ohne `db` mit eigener Sitzung (die Farm ruft im Executor)."""
+    from app.db.database import SessionLocal
+    own = db is None
+    db = db or SessionLocal()
+    try:
+        file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+        if not file:
+            return _crash.not_checked("Datei nicht gefunden")
+        if file.file_type not in ('.3mf', '.gcode'):
+            return {"crash_risk": False, "max_z_mm": None}     # keine Druckdatei: nichts zu prüfen
+        if not os.path.exists(file.file_path):
+            return _crash.not_checked("Datei fehlt")
+        path, file_type = file.file_path, file.file_type
+        if x_max is None:
+            x_max = _x_max_of_farm(db)
+    finally:
+        if own:
+            db.close()
+    if x_max is None:
+        return _crash.not_checked("Bettbreite des Druckers unbekannt")
     # Eine .gcode hat keine Platten; der Scan ignoriert `plate` dort. Im Cache-Schlüssel
     # legte jede erfundene Plattennummer sonst einen neuen Eintrag an. (Eine .3mf mit
     # unbekannter Platte liefert keinen Treffer und wird gar nicht gespeichert.)
@@ -562,6 +573,20 @@ def crash_check(file_id: int, plate: int = None, x_max: float = CRASH_X_MAX,
             _CRASH_CACHE[cache_key] = (sig, result)
             _save_crash_cache()
     return result
+
+
+@router.get("/{file_id}/crash-check")
+def crash_check(file_id: int, plate: int = None, x_max: Optional[float] = None,
+                db: Session = Depends(get_db)):
+    """Prüft, ob der Druck den OTTOeject-Arm rammt: Objekt höher als 30 mm UND ragt
+    links/rechts in den 10-mm-Randstreifen (auch Verfahrwege). Ohne `x_max` gilt die
+    Bettbreite des Farm-Druckers. Bewusst SYNCHRON (def): der volle G-code-Scan
+    blockiert sonst den Event-Loop — so führt FastAPI ihn im Threadpool aus."""
+    if x_max is not None and float(x_max) not in _allowed_x_max():
+        raise HTTPException(status_code=400, detail="Unbekannte Plattenbreite")
+    if not db.query(UploadedFile).filter(UploadedFile.id == file_id).first():
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    return crash_result(file_id, plate, x_max, db)
 
 
 @router.get("/{file_id}/deep-analyze")

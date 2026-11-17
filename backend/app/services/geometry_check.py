@@ -41,11 +41,15 @@ AXES = ("x", "y", "z")
 STANDARD_LIMITS = {"x": 485.0, "y": 340.0, "z": 365.0}
 
 _MOVE_RE = re.compile(r"^\s*G[0-3]\b", re.IGNORECASE)
+_REL_RE = re.compile(r"^\s*G91\b", re.IGNORECASE)
+_ABS_RE = re.compile(r"^\s*G90\b", re.IGNORECASE)
+_SETPOS_RE = re.compile(r"^\s*(G92\b|SET_KINEMATIC_POSITION\b)", re.IGNORECASE)
 _COORD_RE = re.compile(r"\b([XYZ])\s*(-?\d+(?:\.\d+)?)", re.IGNORECASE)
 
 _OP_LABELS = {o["key"]: o["label_de"] for o in motion.APP_OPS}
 _OP_LABELS.update({"approach": "Fach anfahren", "park": "Parken", "home": "Referenzfahrt",
-                   "load": "Einlegen", "move": "Vor Drucker fahren"})
+                   "load": "Einlegen", "move": "Vor Drucker fahren",
+                   "klipper_gcode": "OTTOeject GCode"})
 
 # Operationen, die ein Fach brauchen (werden für mehrere Regale/Fächer geprüft).
 _SLOT_OPS = {o["key"] for o in motion.APP_OPS if o["rack_slot"]} | {"approach"}
@@ -117,15 +121,43 @@ def script_coords(script) -> list:
     """
     lines = script if isinstance(script, list) else str(script or "").splitlines()
     out = []
+    relative = False
     for line in lines:
-        if not _MOVE_RE.match(line or ""):
+        code = (line or "").split(";", 1)[0]
+        # Nach G91 sind die Werte Abstände, keine Ziele: nicht als Ziel werten
+        # (script_relative meldet sie als nicht prüfbar).
+        if _REL_RE.match(code):
+            relative = True
             continue
-        for axis, val in _COORD_RE.findall(line):
+        if _ABS_RE.match(code):
+            relative = False
+            continue
+        if relative or not _MOVE_RE.match(code):
+            continue
+        for axis, val in _COORD_RE.findall(code):
             try:
                 out.append((axis.lower(), float(val)))
             except ValueError:
                 continue
     return out
+
+
+def script_relative(script) -> bool:
+    """Fährt das Script relativ (Bewegung nach G91) oder setzt es die Position neu
+    (G92, SET_KINEMATIC_POSITION)? Dann lässt sich kein Ziel prüfen."""
+    lines = script if isinstance(script, list) else str(script or "").splitlines()
+    relative = False
+    for line in lines:
+        code = (line or "").split(";", 1)[0]
+        if _SETPOS_RE.match(code):
+            return True
+        if _REL_RE.match(code):
+            relative = True
+        elif _ABS_RE.match(code):
+            relative = False
+        elif relative and _MOVE_RE.match(code) and _COORD_RE.search(code):
+            return True
+    return False
 
 
 def _axis_problems(script, limits: dict, ctx: dict) -> list:
@@ -149,6 +181,14 @@ def _axis_problems(script, limits: dict, ctx: dict) -> list:
     out = []
     ctx = dict(ctx)
     pname = ctx.pop("printer_name", None)
+    if script_relative(script):
+        # Bis v1.1.59 ging das ungeprüft durch: „G91 / G1 Z10" sah für die Prüfung
+        # aus wie das Ziel Z10, gefahren wurde aber +10 ab der Ist-Position.
+        out.append(problem("relative_move_unchecked", "error",
+                           "„{0}“ enthält relative Bewegungen (G91) oder setzt die Position "
+                           "neu (G92) — das Ziel lässt sich nicht prüfen. Bitte absolut (G90) "
+                           "schreiben.",
+                           [_OP_LABELS.get(ctx.get("op"), ctx.get("op") or "Bewegung")], **ctx))
     for (axis, kind), val in sorted(worst.items()):
         A = axis.upper()
         # Der Ort („Regal 2 Fach 5: ‚Auswerfen'") steckt als Werte in der Vorlage,
