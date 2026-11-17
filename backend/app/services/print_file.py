@@ -956,6 +956,12 @@ def height_gcode(file_path: str) -> dict:
             "layer_height_mm": layer_height, "source": "gcode_move_scan"}
 
 
+def with_margin(raw_mm: float, margin_pct: float = 15.0) -> float:
+    """Höhe mit Sicherheitszuschlag (eine Formel für Einreihen und Druckstart).
+    Bis v1.1.48 rechnete der Druckstart die gemessene Höhe OHNE Zuschlag."""
+    return round(float(raw_mm) * (1.0 + float(margin_pct) / 100.0), 1)
+
+
 def object_height(file_path: str, file_type: str, plate=None, margin_pct: float = 15.0) -> dict:
     """Höhe eines Drucks für die Fachwahl, mit Sicherheitszuschlag.
 
@@ -964,12 +970,11 @@ def object_height(file_path: str, file_type: str, plate=None, margin_pct: float 
     0, wenn nichts ermittelbar ist. Stand bis v1.1.34 zweimal ausgeschrieben im
     Code — in der Regalverwaltung und beim Einreihen in die Farm."""
     result = height_3mf(file_path, plate) if file_type == ".3mf" else height_gcode(file_path)
-    margin = 1.0 + float(margin_pct) / 100.0
     lc, lh, mz = result.get("layer_count", 0), result.get("layer_height_mm", 0.0), result.get("max_z_mm", 0.0)
     if lc > 0 and lh > 0:
-        computed = round(lc * lh * margin, 1)
+        computed = with_margin(lc * lh, margin_pct)
     elif mz > 0:
-        computed = round(mz * margin, 1)
+        computed = with_margin(mz, margin_pct)
     else:
         computed = 0.0
     return {**result, "computed_height_mm": computed}

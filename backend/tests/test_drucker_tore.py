@@ -48,11 +48,12 @@ def farm(monkeypatch, tmp_path):
     monkeypatch.setattr(af, "_decrement_magazine", lambda *a, **kw: None)
     monkeypatch.setattr(af, "_magazine_gate", _magazin_voll)
     monkeypatch.setattr(af._motion, "build_op", lambda g, op, **kw: f"OP:{op}")
-    monkeypatch.setattr(af, "_load_farm_geometry", lambda: {})
+    # Echte Datenform: Vorgabe-Geometrie (merge_defaults), kein leeres dict.
+    monkeypatch.setattr(af, "_load_farm_geometry", lambda: af._motion.merge_defaults(None))
     monkeypatch.setattr(af, "_farm_printer", lambda g=None: None)
     for key, val in {"running": True, "paused": False, "stopping": False, "bed": "empty",
                      "arm": dict(af._ARM_EMPTY), "log": [], "error": None,
-                     "_in_first_start": False, "geometry": {}}.items():
+                     "_in_first_start": False, "geometry": af._motion.merge_defaults(None)}.items():
         monkeypatch.setitem(af._farm, key, val)
     return lage
 

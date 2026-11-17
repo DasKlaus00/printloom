@@ -1262,6 +1262,31 @@ def op_override(g: dict, op: str, printer=None):
     return v if isinstance(v, str) and v.strip() else None
 
 
+def _check_rack_slot(g: dict, op: str, rack, slot) -> None:
+    """Regal und Fach müssen existieren, auch ohne Achsprüfung (check=False).
+
+    Bis v1.1.48 fuhr „store" auch in Fach 0 (der Platzhalter „1-0" einer Platte ohne
+    Fach), ins Magazin-Fach oder in Regal 4 von 3: Die Achsprüfung sah nur Koordinaten,
+    und Fach 0 liegt im Bereich. Jetzt: ValueError, die Platte bleibt im Greifer."""
+    racks = int(_num(g.get("racks"), 1))
+    store_n = int(_num(g.get("storage_slots"), 6))
+    mag = magazine_slot(g)
+    try:
+        r, s = int(rack), int(slot)
+    except (TypeError, ValueError):
+        raise ValueError(f"Regal/Fach ungültig ({rack!r}/{slot!r})")
+    if not 1 <= r <= racks:
+        raise ValueError(f"Regal {r} gibt es nicht (1–{racks})")
+    if op in ("grab_magazine", "grab_mag"):
+        return
+    if op == "grab":
+        if not 1 <= s <= max(store_n, mag):
+            raise ValueError(f"Fach {s} gibt es in Regal {r} nicht")
+        return
+    if not 1 <= s <= store_n or s == mag:
+        raise ValueError(f"Fach {s} ist kein Ablagefach (1–{store_n}, ohne Magazin)")
+
+
 def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None,
              check: bool = True, printer=None) -> str:
     """G-code einer Operation aus der Geometrie. `check=False` überspringt die
@@ -1277,6 +1302,8 @@ def build_op(g: dict, op: str, rack: int = 1, slot: int = 1, nolift=None,
     # als +1020 ab Ist-Position ausgeführt → „Move out of range". G90 macht ALLE
     # Op-Koordinaten verlässlich absolut. G90 an den ANFANG (vor M220), damit der
     # Transport-Guard (startswith G90) es erkennt und kein zweites G90 voranstellt.
+    if op in ("grab", "grab_magazine", "grab_mag", "store", "approach"):
+        _check_rack_slot(g, op, rack, slot)
     speed = "G90\n" + _speed_prefix(g, op, printer)   # Vorschub PRO Operation (Fallback global)
     # Eigener G-code hat Vorrang, sobald für DIESE Operation ein Override gesetzt ist —
     # beim „Custom Printer" ist das der einzige Modus, bei benannten Druckern eine

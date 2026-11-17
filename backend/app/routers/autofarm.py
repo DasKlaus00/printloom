@@ -661,7 +661,10 @@ def _magazine_count() -> int:
     Magazin die Zahl der als bestückt markierten Fächer (rack_logic)."""
     d = _rack_data()
     if not d:
-        return 4
+        # Bis v1.1.48 hier 4: Ohne Regal-Daten griff die Farm in ein Magazin, von dem
+        # sie nichts wusste. 0 heißt: Magazin-Tor parkt und fragt nach.
+        _log("⚠ Keine Regal-Daten — Magazin-Bestand gilt als 0")
+        return 0
     if d.get("magazine_counts") or _rack_logic.uses_marks(d):
         return max(0, _rack_logic.empty_plate_count(d))
     # Alt: max_plates minus belegte Fächer
@@ -696,6 +699,10 @@ def _is_blocked_from_below(rack: int, slot_num: int, slots: dict, slot_h: float,
     if pct is None:
         pct = _stacked_pct()
     return _is_blocked_base(rack, slot_num, slots, slot_h, tol, pct)
+
+
+class _SlotLookupError(RuntimeError):
+    """Die Fachsuche selbst ist gescheitert (kaputte Daten) — nicht „kein Platz"."""
 
 
 def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optional[str]:
@@ -742,16 +749,28 @@ def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optio
                 ):
                     return f"{r}-{s}"
         return None
-    except Exception as e:
-        logger.warning(f"_find_slot_for_height error: {e}")
-        return None
+    except (TypeError, ValueError, KeyError, AttributeError) as e:
+        # Kaputte Fachdaten sind kein „Regal voll": Der echte Grund geht an den Nutzer.
+        raise _SlotLookupError(f"Fachsuche fehlgeschlagen ({e})") from e
+
+
+async def _wait_while_paused() -> None:
+    while _farm["paused"] and not _farm["stopping"]:
+        await asyncio.sleep(0.5)
+    if _farm["stopping"]:
+        raise RuntimeError("Gestoppt")
+    _farm["error"] = None
 
 
 async def _assign_slot_for_height(job: dict, height_mm: float):
     while not _farm["stopping"]:
         data = _rack_data()
         if not data:
-            return
+            # Bis v1.1.48 still zurück: Der Job behielt „1-0" und legte in Fach 0 ab.
+            if _farm.get("paused"):        # _rack_data hat angehalten (Datei unlesbar)
+                await _wait_while_paused()
+                continue
+            raise RuntimeError("Keine Regal-Daten — kein Fach zuweisbar")
         slot_h  = float(data.get("slot_height_mm", 50))
 
         # Was maximal in EIN Regal passt (rack_logic.storable). Ohne diese Grenze
@@ -771,7 +790,14 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
             _farm["error"] = None
             continue
 
-        new_slot = _find_slot_for_height(height_mm, exclude_job_id=job.get("id"))
+        try:
+            new_slot = _find_slot_for_height(height_mm, exclude_job_id=job.get("id"))
+        except _SlotLookupError as e:
+            _log(f"🛑 {e} — Farm pausiert (Regal im Rack Manager prüfen)")
+            _farm["paused"] = True
+            _farm["error"] = f"{e} — Regal prüfen, dann fortsetzen"
+            await _wait_while_paused()
+            continue
         if new_slot is None:
             action = _estrat("no_slot")
             if action == "stop":
@@ -990,11 +1016,15 @@ async def _do_macro(name: str, _recover: bool = True):
 
     # Geräte-Macros zählen Regal 1 = am Homing-Punkt (rechts), Printloom R1 = am
     # Drucker → RACK=-Nummern erst hier beim Senden spiegeln (mirror_rack_params).
-    send = name
+    # Spiegeln (Geräte zählen Regal 1 am Homing-Punkt). Scheitert das, ginge das
+    # ungespiegelte Macro ans falsche Regal (bis v1.1.48 still so) → anhalten.
     try:
         send = _motion.mirror_rack_params(name, rack_store.load().get("num_racks"))
-    except Exception:
-        send = name
+    except storage.BrokenFile:
+        raise
+    except Exception as e:
+        _log(f"⚠ RACK=-Spiegelung fehlgeschlagen ({e})")
+        raise RuntimeError(f"{name[:40]}: Regal-Zählung nicht spiegelbar ({e})") from e
     if send != name:
         _log(f"↔ Geräte-Zählung (Regal 1 = Homing rechts): {send}")
 
@@ -1146,6 +1176,18 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
     _log(f"'{file.original_filename}' gestartet (AMS: {ams_mapping})")
 
 
+def _stack_vars_lazy(value) -> tuple:
+    """Quelle der leeren Platte, aber nur Pflicht, wo ein Schritt sie wirklich nennt
+    ({stack_rack}/{stack_slot}). Greifen holt sie ohnehin frisch über das Magazin-Tor.
+    So hält ein fehlender Regal-Stand nur die Schritte an, die ihn brauchen."""
+    try:
+        return _stack_vars()
+    except RuntimeError:
+        if "{stack_" in str(value or ""):
+            raise
+        return "", ""
+
+
 def _subst(value, rack_num: str, slot_num: str, stack_rack: str, stack_slot: str) -> str:
     """Platzhalter eines Schritts füllen: {rack}/{slot} = Ziel-Fach des Jobs,
     {stack_rack}/{stack_slot} = Quelle der nächsten leeren Platte."""
@@ -1177,9 +1219,11 @@ def _stack_vars() -> tuple[str, str]:
                 return str(rack), str(slot)
             mag_slot = str(_magazine_slot_cfg(d) or 1)
             return str(d.get("stack_rack", "1")), str(d.get("stack_slot", mag_slot))
-    except Exception:
-        pass
-    return "1", "7"
+    except (TypeError, ValueError, KeyError, AttributeError) as e:
+        _log(f"⚠ Quelle der leeren Platte nicht bestimmbar: {e}")
+        raise RuntimeError(f"Quelle der leeren Platte nicht bestimmbar ({e})") from e
+    # Bis v1.1.48 hier still „Regal 1, Fach 7": ein Griff an eine geratene Stelle.
+    raise RuntimeError("Keine Regal-Daten — Quelle der leeren Platte unbekannt")
 
 
 # Wie lange ein Tor wartet, bevor es die Farm pausiert: Nach einer Bett-Fahrt per
@@ -1841,7 +1885,8 @@ async def _handle_hms(hms_list: list):
 
 async def _run_prep(steps: list, slot: str, device: Device):
     rack_num, slot_num = _slot_vars(slot)
-    stack_rack, stack_slot = _stack_vars()
+    # Vorstart greift nie (prep_allowed): Quelle nur, falls ein Schritt sie nennt.
+    stack_rack, stack_slot = _stack_vars_lazy(" ".join(str(st.get("value") or "") for st in steps))
     for step in steps:
         if _farm["stopping"]:
             return
@@ -2013,7 +2058,9 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         unassigned   = job.get("slot", "1-1") == "1-0"
                         if total_layers > 0 and layer_h > 0:
                             first_run = False
-                            actual_h  = round(total_layers * layer_h, 1)
+                            # Derselbe Zuschlag wie beim Einreihen (#52): bis v1.1.48 ohne.
+                            actual_h  = print_file.with_margin(
+                                total_layers * layer_h, (_rack_data() or {}).get("height_margin_pct", 15.0))
                             _set_job(job["id"], {"estimatedMinutes": rem, "object_height_mm": actual_h})
                             if min_min > 0 and rem < min_min:
                                 await _stop_print_for_skip()
@@ -2041,7 +2088,8 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                                 raise RuntimeError(
                                     f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
                                 )
-                            pre_h = job.get("object_height_mm") or 1.0
+                            # Steht seit dem Job-Beginn fest (nie geraten); 1 mm gab es bis v1.1.48.
+                            pre_h = job.get("object_height_mm") or 0.0
                             if unassigned:
                                 await _assign_slot_for_height(job, pre_h)
                             elif job.get("object_height_mm"):
@@ -2061,6 +2109,11 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                     if state != "FINISH":
                         _log(f"Druck fertig erkannt ({state} {pct}%, max {max_pct}%)")
                     _set_bed("printed")
+                    # Spätestens jetzt ein Fach: Ein kurzer Druck ohne Restzeit-Meldung kam
+                    # bis v1.1.48 mit „1-0" hier an, und der Arm legte in Fach 0 ab. Ohne
+                    # freies Fach wartet die Platte im Drucker (wie bei „Regal voll").
+                    if job.get("slot") in (None, "", "1-0"):
+                        await _assign_slot_for_height(job, job.get("object_height_mm") or 0.0)
                     # Festes Zeitlimit: Eine Kamera, die nicht antwortet, hielt bis v1.1.44
                     # die ganze Farm an (der Auswurf wartete auf den Schnappschuss).
                     try:
@@ -2249,8 +2302,11 @@ def _farm_printer(geom: dict = None):
     try:
         geom = geom or _farm.get("geometry") or _load_farm_geometry()
         return _farm_printer_of(_motion.printer_list(geom), _farm.get("bambu_id"))
-    except Exception:
-        return None
+    except storage.BrokenFile:
+        raise
+    except Exception as e:
+        # None hieße stillschweigend „erster Drucker" — bei zweien der falsche.
+        raise RuntimeError(f"Drucker-Geometrie nicht lesbar ({e})") from e
 
 
 def _assert_printer_geometry(bambu_id) -> None:
@@ -2320,6 +2376,18 @@ def _macro_to_op(val: str, rack_num: str, slot_num: str, stack_rack: str, stack_
     if kind == "store":
         return ("store", int(rack_num), int(slot_num))
     return (kind, 1, 1) if kind else None
+
+
+def _assert_store_slot(job: dict) -> None:
+    """Vor dem Einlagern: Hat der Job ein echtes Fach? Bis v1.1.48 legte der Arm auch
+    nach „1-0" (Platzhalter ohne Fach) ab. Dann lieber: Platte bleibt im Greifer, der
+    Job endet als Fehler, das Greif-Tor hält den nächsten an."""
+    slot = str(job.get("slot") or "")
+    data = _rack_data() or {}
+    if slot in ("", "1-0") or slot not in (data.get("slots") or {}):
+        raise RuntimeError(f"Kein gültiges Ablagefach ({slot or 'keins'}) — Platte bleibt im Greifer")
+    if int(slot.split("-")[1]) == _rack_logic.magazine_slot_of(data):
+        raise RuntimeError(f"Fach {slot} ist das Magazin — Platte bleibt im Greifer")
 
 
 def _book_op(op: Optional[str], job: dict, rack=None, slot=None) -> None:
@@ -2422,7 +2490,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         _log(f"✓ Bedingung erfüllt ({text})")
 
     rack_num, slot_num = _slot_vars(job["slot"])
-    stack_rack, stack_slot = _stack_vars()
+    stack_rack, stack_slot = _stack_vars_lazy(step.get("value"))
     val = _subst(step.get("value"), rack_num, slot_num, stack_rack, stack_slot)
     t = step.get("type", "")
 
@@ -2479,6 +2547,8 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             await _printer_gate(device, "Platte einlegen", need_bed_empty=True)
         elif kind == "eject":
             await _printer_gate(device, "Auswerfen")
+        elif kind == "store":
+            _assert_store_slot(job)
         # Opt-in: bekannte Drucker-/Regal-Macros können als Printloom-G-code laufen
         # (geometry.use_gcode[op] = true). Standard aus → Geräte-Macro wie bisher.
         # Die Magazin-/Fach-Buchhaltung unten prüft weiter val (Macro-Name, unverändert).
@@ -2492,8 +2562,21 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                     send_val = _motion.build_op(geom, op_used, rack=op_map[1], slot=op_map[2],
                                                 printer=_farm_printer(geom))
         except Exception as e:
+            # Bis v1.1.48 fuhr dann still das Geräte-Macro: eine ANDERE Bewegung als die
+            # eingemessene. Nur wenn diese Op gar keinen Printloom-G-code nutzt, ist das
+            # Macro richtig; sonst anhalten.
+            uses = False
+            try:
+                g2 = _farm.get("geometry") or _load_farm_geometry()
+                uses = bool(op_map and _motion.op_uses_gcode(g2, op_map[0], _farm_printer(g2)))
+            except Exception as e2:
+                logger.warning(f"use_gcode nicht prüfbar: {e2}")
+                uses = True
+            if uses:
+                _log(f"⚠ Printloom-G-code für {val!r} nicht erzeugbar: {e}")
+                raise RuntimeError(f"Bewegung {val!r} nicht erzeugbar ({e}) — Geometrie prüfen")
             send_val, op_used = val, None
-            logger.warning(f"use_gcode-Auswertung fehlgeschlagen ({e}) — nutze Macro {val!r}")
+            logger.warning(f"use_gcode-Auswertung fehlgeschlagen ({e}) — Geräte-Macro {val!r}")
         _log(f"▶ {val}" + (f"  →  Printloom-G-code ({op_used})" if op_used else ""))
         await _do_macro(send_val)
         _book_op(kind, job, stack_rack, stack_slot)
@@ -2514,6 +2597,8 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             await _printer_gate(device, "Platte einlegen", need_bed_empty=True)
         elif op == "eject":
             await _printer_gate(device, "Auswerfen")
+        elif is_store:
+            _assert_store_slot(job)
         if is_grab:
             # Erst NACH _plate_ready_skip: Dort hält der Greifer die Platte zu Recht.
             await _gripper_gate("Platte holen")
@@ -3169,6 +3254,15 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             job_start_kwh  = await _read_energy_kwh(bambu_id)   # plug energy counter (3.1)
 
             try:
+                # Höhe VOR jeder Bewegung: Ohne Höhe gibt es kein passendes Fach. Bis
+                # v1.1.48 galt dann 1 mm (ein Fach), und ein hohes Teil landete in einem
+                # zu niedrigen Fach. Noch hat sich nichts bewegt → Job-Fehler, weiter.
+                if not (job.get("object_height_mm") or 0) > 0:
+                    h, lh = await _job_height(job)
+                    if h <= 0:
+                        await _notify(f"❌ Printloom — Höhe nicht ermittelbar\n{job['fileName']}")
+                        raise RuntimeError("Höhe nicht ermittelbar — nicht gedruckt")
+                    _set_job(job["id"], {"object_height_mm": h, **({"layerHeightMm": lh} if lh else {})})
                 # First Start runs exactly ONCE before the first job's cycle
                 # (one-time homing + Z200). `seq_new` = First Start, `seq_next` = cycle.
                 if not first_start_done:
@@ -3408,7 +3502,7 @@ class JobIn(BaseModel):
 
 
 class EnqueueRequest(BaseModel):
-    id: int
+    id: Optional[int] = None   # None = der Server vergibt die nächste freie ID
     fileId: int
     fileName: str
     slot: str
@@ -3598,6 +3692,8 @@ async def start_farm(req: StartRequest):
     # Streng: Eine kaputte Sequenz-, Einstellungs- oder Regal-Datei verweigert den
     # Start (503 DATEI_UNLESBAR), statt still mit Vorgaben zu fahren.
     seq_data = _read_checked(SEQ_PATH, {"seq_new": [], "seq_next": []})
+    if not rack_store.exists():
+        raise HTTPException(400, "Regal nicht eingerichtet (Setup-Assistent)")
     rack_store.load()
     saved_ver = seq_data.get("schema_version", "—")
     if saved_ver != SEQ_SCHEMA_VERSION:
@@ -3669,13 +3765,29 @@ async def start_farm(req: StartRequest):
     return {"success": True, "message": "Auto Farm gestartet", "job_count": job_count}
 
 
+async def _job_height(job: dict) -> tuple:
+    """(Höhe mit Zuschlag, Schichthöhe) aus der Datei des Jobs, plattengenau.
+    (0.0, 0.0), wenn nichts ermittelbar ist. Eine Stelle für Einreihen und Job-Beginn."""
+    db = SessionLocal()
+    try:
+        f = db.query(UploadedFile).filter(UploadedFile.id == job.get("fileId")).first()
+        path, ftype = (f.file_path, f.file_type) if f else (None, None)
+    finally:
+        db.close()
+    if not path or not os.path.exists(path) or ftype not in (".3mf", ".gcode"):
+        return 0.0, 0.0
+    margin = (_rack_data() or {}).get("height_margin_pct", 15.0)
+    result = await asyncio.get_running_loop().run_in_executor(
+        None, print_file.object_height, path, ftype, job.get("plate"), margin)
+    lh = result["layer_height_mm"] if result.get("layer_count", 0) > 0 and result.get("layer_height_mm", 0) > 0 else 0.0
+    return float(result.get("computed_height_mm") or 0.0), float(lh)
+
+
 @router.post("/enqueue")
 async def enqueue_job(job: EnqueueRequest):
     """Add a job to the running farm's queue."""
     if not _farm["running"]:
         raise HTTPException(400, "Farm nicht aktiv — erst starten")
-    if any(j["id"] == job.id for j in _farm["jobs"]):
-        raise HTTPException(409, "Job bereits in der Warteschlange")
 
     # Analyze height server-side so runtime slot assignment has clearance data.
     # The slot is forced to "1-0" so the print picks a real free slot at start time
@@ -3683,26 +3795,24 @@ async def enqueue_job(job: EnqueueRequest):
     layer_h = job.layerHeightMm or 0.0
     obj_h   = job.object_height_mm
     try:
-        db = SessionLocal()
-        try:
-            f = db.query(UploadedFile).filter(UploadedFile.id == job.fileId).first()
-        finally:
-            db.close()
-        if f and os.path.exists(f.file_path) and f.file_type in (".3mf", ".gcode"):
-            # Plattengenau: Multi-Plate-Jobs bekommen die Höhe IHRER Platte,
-            # nicht die der ersten (falsche Fach-Reservierung sonst).
-            result = await asyncio.get_running_loop().run_in_executor(
-                None, print_file.object_height, f.file_path, f.file_type, job.plate,
-                rack_store.load().get("height_margin_pct", 15.0))
-            if result["computed_height_mm"] > 0:
-                obj_h = result["computed_height_mm"]
-            if result.get("layer_count", 0) > 0 and result.get("layer_height_mm", 0) > 0:
-                layer_h = result["layer_height_mm"]
-    except Exception as e:
+        h, lh = await _job_height({"fileId": job.fileId, "plate": job.plate})
+        if h > 0:
+            obj_h = h
+        if lh > 0:
+            layer_h = lh
+    except (OSError, ValueError) as e:
         logger.warning(f"enqueue height analysis failed for file {job.fileId}: {e}")
 
+    # Eindeutige ID: Prüfen und anhängen OHNE await dazwischen. Bis v1.1.48 stand die
+    # Prüfung vor der Höhen-Analyse (await): Zwei gleichzeitige Aufrufe (Plugin +
+    # Bibliothek) sahen beide „frei" und legten zwei Jobs mit derselben ID an.
+    new_id = job.id
+    if new_id is None:
+        new_id = max([int(j.get("id") or 0) for j in _farm["jobs"]] or [0]) + 1
+    elif any(j["id"] == new_id for j in _farm["jobs"]):
+        raise HTTPException(409, "Job bereits in der Warteschlange")
     _farm["jobs"].append({
-        "id":               job.id,
+        "id":               new_id,
         "fileId":           job.fileId,
         "fileName":         job.fileName,
         "slot":             "1-0",  # sentinel → real slot chosen at print start
@@ -3719,7 +3829,7 @@ async def enqueue_job(job: EnqueueRequest):
         "tag":              job.tag or "",
     })
     _log(f"[+] {job.fileName}{f' (Platte {job.plate})' if job.plate else ''} → Fach wird bei Ausführung zugewiesen")
-    return {"success": True}
+    return {"success": True, "id": new_id}
 
 
 async def add_library_jobs(file_id: int, file_name: str, units: list) -> list:
@@ -3731,14 +3841,12 @@ async def add_library_jobs(file_id: int, file_name: str, units: list) -> list:
     Für das OrcaSlicer-Plugin. Die Bibliothek macht dasselbe noch im Browser
     (FileLibrary.jsx) — die Jobs sehen in beiden Fällen gleich aus."""
     if _farm["running"]:
-        next_id = max([int(j.get("id") or 0) for j in _farm["jobs"]] or [0]) + 1
         ids = []
         for plate, total, name in units:
-            await enqueue_job(EnqueueRequest(
-                id=next_id, fileId=file_id, fileName=file_name, slot="1-0", amsMap="",
+            r = await enqueue_job(EnqueueRequest(
+                id=None, fileId=file_id, fileName=file_name, slot="1-0", amsMap="",
                 plate=plate, plateTotal=total, plateName=name))
-            ids.append(next_id)
-            next_id += 1
+            ids.append(r["id"])
         return ids
     jobs = list(_read_checked(QUEUE_PATH, {"jobs": []}).get("jobs", []))
     next_id = max([int(j.get("id") or 0) for j in jobs] or [0]) + 1

@@ -41,6 +41,10 @@ def _gcode(g):
     for op in ALLE_OPS:
         for rack in (1, 2, 3):
             for slot in (1, 6, 7):
+                # Einlagern/Anfahren ins Magazin-Fach gibt es nicht (seit v1.1.49 ein
+                # Fehler in build_op); verglichen wird nur, was gefahren werden kann.
+                if op in ("store", "approach") and slot == motion.magazine_slot(motion.merge_defaults(g)):
+                    continue
                 out[(op, rack, slot)] = motion.build_op(
                     g, op, rack=rack, slot=slot, check=False)
     return out

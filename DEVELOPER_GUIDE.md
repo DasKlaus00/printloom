@@ -185,6 +185,7 @@ oder Zusagen bricht**, nicht die Menge an Code:
 | `test_arm_belegung.py`   | Farm, Stresstest und Handfahrten bewegen den Arm nie gleichzeitig |
 | `test_drucker_tore.py`   | Vor Einlegen, Auswerfen, Greifen und Senden: Drucker frei, Bett leer, Greifer leer — sonst Pause; Buchung über Macro und Op |
 | `test_druckfehler_ablauf.py` | FAILED nur ohne Druck wiederholen, übersprungene Drucke werden gestoppt, Hänger beenden den Job sauber |
+| `test_echtes_fach.py`    | Höhe nie geraten, nur echte Fächer (nie „1-0“, nie Magazin), keine geratene Plattenquelle, eindeutige Job-IDs |
 | `test_broken_files.py`   | Kaputte Datendatei: nichts wird überschrieben, Start verweigert, Meldung und bewusstes Zurücksetzen |
 | `test_parallel_gruppe.py` | ∥-Gruppen in Reihenfolge mit Abbruch, Hänger nie optional, ⏱ nur für Ungefährliches (gleiche Regel wie der Editor), Startprüfung der Sequenz |
 | `test_drucker_sperren.py` / `test_printer_guard.py` | Bett, Kalibrierung, AMS, Direktdruck nur ohne Notaus/Farm und bei frischem, freiem Druckerstatus |

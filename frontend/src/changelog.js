@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.49',
+    de: [
+      'JEDE PLATTE BEKOMMT EIN ECHTES FACH: Die Höhe eines Drucks kommt aus der Datei, plattengenau, und zwar bevor sich etwas bewegt. Ist sie nicht ermittelbar, wird der Job nicht gedruckt (Meldung, nächster Job). Bisher galt dann 1 mm, und ein hohes Teil landete in einem zu niedrigen Fach.',
+      'Der Sicherheitszuschlag auf die Höhe gilt jetzt auch für die Höhe, die der Drucker beim Start meldet. Bisher fehlte er dort, und das Fach konnte zu knapp sein.',
+      'Spätestens beim Druckende hat jede Platte ein Fach; gibt es keins, wartet sie im Drucker. Bisher konnte ein kurzer Druck ohne Restzeit-Meldung ohne Fach enden, und der Arm legte in „Fach 0“ ab.',
+      'Abgelegt wird nur in Fächer, die es gibt: nie ins Magazin, nie in ein Regal, das nicht eingerichtet ist. Sonst bleibt die Platte im Greifer, und der Job endet mit Fehler.',
+      'Keine geratenen Werte mehr: Ohne Regal-Daten greift die Farm nicht „aus Regal 1, Fach 7“, und lässt sich die eingemessene Bewegung nicht erzeugen, fährt sie nicht still das Geräte-Makro. Kaputte Fachdaten heißen nicht mehr „Regal voll“, sondern nennen den Fehler.',
+      'Werden zwei Drucke gleichzeitig eingereiht (Bibliothek und OrcaSlicer), bekommen sie verschiedene Nummern. Bisher konnten zwei Jobs dieselbe Nummer haben.',
+    ],
+    en: [
+      'EVERY PLATE GETS A REAL SLOT: a print’s height comes from the file, per plate, before anything moves. If it cannot be determined, the job is not printed (message, next job). Until now it counted as 1 mm, and a tall part ended up in a slot that was too low.',
+      'The safety margin on the height now also applies to the height the printer reports at the start. It was missing there, and the slot could be too tight.',
+      'By the end of the print at the latest every plate has a slot; if there is none, it waits in the printer. Until now a short print without a remaining-time report could end without a slot, and the arm stored it in “slot 0”.',
+      'Plates are only stored in slots that exist: never in the magazine, never in a rack that is not set up. Otherwise the plate stays in the gripper and the job ends with an error.',
+      'No more guessed values: without rack data the farm does not pick “from rack 1, slot 7”, and if the calibrated move cannot be generated it does not silently run the device macro instead. Broken slot data no longer reads “rack full” but names the error.',
+      'If two prints are queued at the same moment (library and OrcaSlicer), they get different numbers. Until now two jobs could share a number.',
+    ],
+  },
+  {
     version: '1.1.48',
     de: [
       'KAPUTTE DATEIEN ÜBERSCHREIBEN NICHTS MEHR: Ist eine Datendatei unlesbar (Regal-Belegung, Warteschlange, Sequenzen, Geometrie, Einstellungen, eigene Filamente), meldet Printloom das jetzt in der Kopfzeile, statt still die Vorgaben zu nehmen. Bisher schrieb das nächste Speichern die Vorgaben über die echten Daten; beim Regal hieß das: Platten liegen im Regal, Printloom hält es für leer.',
