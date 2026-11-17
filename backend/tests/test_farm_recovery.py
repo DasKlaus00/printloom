@@ -285,3 +285,98 @@ def test_hms_historie_leeren(state):
     autofarm._record_hms("c", "fatal", "x")
     asyncio.run(autofarm.clear_hms_history())
     assert asyncio.run(autofarm.get_hms_history())["items"] == []
+
+
+# ── Printloom vergisst keine Platte (seit v1.1.47) ───────────────────────────────
+import re  # noqa: E402
+import inspect  # noqa: E402
+
+
+@pytest.fixture
+def bett(monkeypatch):
+    monkeypatch.setitem(autofarm._farm, "bed", "empty")
+    monkeypatch.setitem(autofarm._farm, "_current_job_name", "")
+    monkeypatch.setitem(autofarm._farm, "_current_job_slot", "")
+
+
+def test_jeder_set_arm_wert_ist_bekannt():
+    werte = set(re.findall(r'_set_arm\("(\w+)"', inspect.getsource(autofarm)))
+    assert werte and werte <= set(autofarm.ARM_STATES), werte - set(autofarm.ARM_STATES)
+
+
+def test_unbekannter_greifer_wert_wird_unbekannt(state, bett):
+    autofarm._set_arm("full", "1-7")
+    assert autofarm._farm["arm"]["holding"] == "unknown"
+    autofarm._farm["recovery"] = autofarm._load_recovery()
+    assert "unbekannt" in asyncio.run(autofarm.get_recovery())["arm_hint"]
+
+
+def test_stopp_mit_platte_im_greifer_bleibt_bergbar(state, bett):
+    autofarm._farm["arm"] = {"holding": "printed", "from": "", "job_id": 3}
+    autofarm._farm["running"] = False          # wie im finally
+    autofarm._settle_after_run()
+    assert autofarm._load_recovery() is not None
+    assert autofarm._farm["recovery"] is not None          # Hinweis sofort, ohne Neustart
+    assert _saved(state)["arm"]["holding"] == "printed"
+
+
+def test_stopp_mit_druck_im_drucker_bleibt_bergbar(state, bett):
+    autofarm._farm["bed"] = "printing"
+    autofarm._settle_after_run()
+    r = asyncio.run(autofarm.get_recovery())
+    assert r["pending"] and r["bed"] == "printing" and "Druckbett" in r["bed_hint"]
+
+
+def test_sauberes_ende_raeumt_auf(state, bett):
+    autofarm._settle_after_run()
+    assert autofarm._load_recovery() is None
+
+
+def test_nur_quittieren_behaelt_die_platte(state, bett, monkeypatch):
+    autofarm._set_arm("printed")
+    autofarm._farm["recovery"] = autofarm._load_recovery()
+    r = asyncio.run(autofarm.dismiss_recovery({"arm_cleared": False}))
+    assert r["pending"] is True
+    assert _saved(state)["arm"]["holding"] == "printed"
+    assert asyncio.run(autofarm.get_recovery())["pending"] is True
+    # Start verweigert, bis die Platte bestätigt abgenommen ist.
+    from fastapi import HTTPException
+    monkeypatch.setattr(autofarm, "_read_config", lambda path, default: {
+        **default, "schema_version": autofarm.SEQ_SCHEMA_VERSION,
+        "seq_new": [], "seq_next": [{"type": "send_file"}, {"type": "wait_print"}]})
+    monkeypatch.setattr(autofarm, "_assert_printer_geometry", lambda bid: None)
+    monkeypatch.setattr(autofarm, "_assert_released", lambda: None)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(autofarm.start_farm(autofarm.StartRequest(bambu_id=1, jobs=[])))
+    assert e.value.status_code == 409 and "Platte" in e.value.detail
+
+
+def test_platte_abgenommen_gibt_start_frei(state, bett):
+    autofarm._set_arm("printed")
+    autofarm._farm["bed"] = "printed"
+    asyncio.run(autofarm.dismiss_recovery({"arm_cleared": True, "bed_cleared": True}))
+    assert autofarm._plate_left() is False
+    assert autofarm._load_recovery() is None
+
+
+def test_force_reset_vergisst_die_platte_nicht(state, bett, monkeypatch):
+    monkeypatch.setattr(autofarm, "_task", None)
+    autofarm._set_arm("empty", "1-7", 4)
+    asyncio.run(autofarm.force_reset())
+    assert autofarm._farm["arm"]["holding"] == "empty"
+    assert autofarm._farm["recovery"] is not None
+
+
+def test_neustart_stellt_das_druckbett_wieder_her(state, bett):
+    autofarm._farm["bed"] = "printed"
+    autofarm._persist_state()
+    autofarm._farm["bed"] = "empty"            # „Neustart": Speicher leer
+    autofarm._init_recovery()
+    assert autofarm._farm["bed"] == "printed"
+
+
+def test_laufender_job_steht_im_gesicherten_zustand(state, bett):
+    autofarm._farm["_current_job_name"] = "teil.3mf"
+    autofarm._farm["_current_job_slot"] = "1-3"
+    autofarm._persist_state()
+    assert _saved(state)["job_name"] == "teil.3mf" and _saved(state)["slot"] == "1-3"

@@ -789,6 +789,7 @@ function AutoFarm({ setCurrentPage } = {}) {
   const rackDataRef = useRef(null)
 
   const running  = farmStatus?.running  ?? false
+  const [recoveryPing, setRecoveryPing] = useState(0)
   const paused   = farmStatus?.paused   ?? false
   const farmLog  = farmStatus?.log      ?? []
   // Use current_job_id from backend; fall back to finding any active job
@@ -1643,6 +1644,8 @@ function AutoFarm({ setCurrentPage } = {}) {
       showFeedback(tr('Auto Farm gestartet'))
     } catch (e) {
       showFeedback(e.response?.data?.detail ?? e.message, false)
+      // Abgelehnt, weil noch eine Platte im Greifer/Drucker liegt: Hinweis neu laden.
+      if (e.response?.status === 409) setRecoveryPing(n => n + 1)
     }
   }
 
@@ -1813,7 +1816,7 @@ function AutoFarm({ setCurrentPage } = {}) {
 
       {/* Unterbrochener Lauf (Neustart/Update mitten im Zyklus) — ganz oben, weil
           es beantwortet werden muss, bevor irgendetwas wieder losfährt. */}
-      <RecoveryBanner onDismissed={() => load()} />
+      <RecoveryBanner onDismissed={() => load()} reloadKey={`${running}-${recoveryPing}`} />
 
       {/* Mehrere Drucker + Arm-Status — nur mit eingerichtetem Farm-Layout */}
       <PrinterOverview />

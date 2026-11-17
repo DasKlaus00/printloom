@@ -62,6 +62,11 @@ def _klipper(db: Session, bewegt: bool = False) -> Device:
             # Eine Handfahrt in der Pause verschiebt den Arm: Die Farm referenziert
             # vor ihrer nächsten Bewegung, statt von der alten Position auszugehen.
             autofarm.mark_position_unknown("Handfahrt während Pause")
+            # Und ob die Hand eine Platte geholt oder abgelegt hat, weiß Printloom
+            # nicht: Greifer „unbekannt", das Greif-Tor fragt vor dem nächsten Griff.
+            arm = autofarm._farm.get("arm") or {}
+            if arm.get("holding") != "unknown":
+                autofarm._set_arm("unknown", arm.get("from", ""), arm.get("job_id"))
     return klipper
 
 

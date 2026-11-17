@@ -710,6 +710,14 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
     if not print_ok:
         raise HTTPException(status_code=502, detail="Druckstart fehlgeschlagen (project_file)")
 
+    # Der Direktdruck belegt das Druckbett. Ohne diese Buchung startete die Farm danach
+    # und legte die nächste Platte auf den fertigen Druck (bis v1.1.46). Gilt für den
+    # Drucker der Farm (oder, solange sie noch keinen hatte, für jeden).
+    from app.routers import autofarm
+    if autofarm._farm.get("bambu_id") in (None, device.id):
+        autofarm._set_bed("printing")
+        autofarm._farm["recovery"] = autofarm._load_recovery()
+
     return {
         "success": True,
         "message": f"'{file.original_filename}' gestartet (AMS: {ams_mapping})",

@@ -107,9 +107,12 @@ def test_handfahrt_bei_pausierter_farm_markiert_position_unbekannt(monkeypatch):
         gesendet.append(script)
         return False
     monkeypatch.setattr(control, "_fire_moonraker_script", merken)
+    monkeypatch.setitem(af._farm, "arm", {"holding": "none", "from": "", "job_id": None})
     asyncio.run(control.send_klipper_gcode({"gcode": "G28"}, FakeDB()))
     assert gesendet
     assert af._farm["needs_home"] is True
+    # Ob die Hand eine Platte geholt hat, weiß niemand: Das Greif-Tor fragt nach.
+    assert af._farm["arm"]["holding"] == "unknown"
 
 
 def test_ohne_ablauf_ist_der_arm_frei():

@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.47',
+    de: [
+      'PRINTLOOM VERGISST KEINE PLATTE MEHR: Was im Greifer und auf dem Druckbett liegt, bleibt nach einem Stopp, nach „Zurücksetzen“ und nach einem Neustart gespeichert. Bisher setzte jedes Ende des Laufs den Greifer auf „leer“, und der nächste Start griff mit voller Hand.',
+      'Die Farm startet erst, wenn bestätigt ist, dass Greifer und Druckbett leer sind. Liegt laut letztem Stand noch etwas darin, erscheint auf der Auto-Farm-Seite sofort der Hinweis (nicht erst nach einem Neustart): nachsehen, dann „Platte ist abgenommen“ bzw. „Druckbett ist leer“ bestätigen. „Nur quittieren“ lässt den Hinweis in Kurzform stehen.',
+      'Auch ein Direktdruck aus der Bibliothek zählt: Danach gilt das Druckbett als belegt, bis du die Platte abgenommen und bestätigt hast. Bisher hätte die Farm die nächste Platte auf den fertigen Druck gelegt.',
+      'Fährst du den Arm in einer Farm-Pause von Hand, gilt der Greifer-Inhalt als unbekannt: Vor dem nächsten Griff fragt die Farm nach.',
+      'Der Hinweis nach einem Abbruch nennt jetzt Job und Fach, auch das Druckbett, und sagt bei unbekanntem Greifer-Inhalt „nachsehen“ statt „leer“. Der Stresstest meldet eine Platte im Greifer richtig.',
+    ],
+    en: [
+      'PRINTLOOM NO LONGER FORGETS A PLATE: what is in the gripper and on the build plate stays saved after a stop, after “Reset” and after a restart. Until now every end of a run set the gripper to “empty”, and the next start reached out with a full hand.',
+      'The farm only starts once it is confirmed that gripper and build plate are empty. If, according to the last state, something is still there, the Auto Farm page shows the notice right away (not only after a restart): check, then confirm “Plate removed” or “Build plate is empty”. “Only dismiss” keeps a short version of the notice.',
+      'A direct print from the library counts too: afterwards the build plate counts as occupied until you have removed the plate and confirmed. Until now the farm would have put the next plate onto the finished print.',
+      'If you move the arm by hand while the farm is paused, the gripper contents count as unknown: the farm asks before the next pick-up.',
+      'The notice after an interruption now names the job and slot, shows the build plate too, and says “check” instead of “empty” when the gripper contents are unknown. The stress test reports a plate in the gripper correctly.',
+    ],
+  },
+  {
     version: '1.1.46',
     de: [
       'VORZIEHEN (⏱) NUR NOCH FÜR UNGEFÄHRLICHE SCHRITTE: warten, OTTOeject homen oder parken, vor den Drucker fahren. Bisher ließ sich fast jeder Schritt vorziehen; ein ⏱ an „Auswerfen“ fuhr ~1 Minute vor Druckende in den laufenden Druck. Hattest du ⏱ an einem anderen Schritt, läuft er jetzt an seiner Stelle nach dem Druckende (das Log sagt es einmal), und der Editor bietet den Haken dort nicht mehr an.',

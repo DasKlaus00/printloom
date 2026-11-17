@@ -358,6 +358,10 @@ def _record_event(etype: str, job: str = "", detail: str = ""):
 
 # Was der Greifer hält: "none" | "empty" (leere Platte) | "printed" (fertiger Druck)
 _ARM_EMPTY = {"holding": "none", "from": "", "job_id": None}
+# Was hält der Greifer? none = nichts · empty = leere Platte · printed = fertiger
+# Druck · unknown = niemand weiß es (Handfahrt in der Pause, unbekannter Wert):
+# nachsehen. Unbekannt ist nicht leer.
+ARM_STATES = ("none", "empty", "printed", "unknown")
 # empty = frei · plate = leere Platte eingelegt · printing = Druck gestartet ·
 # printed = fertiger Druck liegt noch im Drucker
 BED_STATES = ("empty", "plate", "printing", "printed")
@@ -409,7 +413,8 @@ def _load_recovery() -> dict | None:
     if not isinstance(s, dict):
         return None
     arm = s.get("arm") or {}
-    if not s.get("running") and arm.get("holding", "none") == "none":
+    if (not s.get("running") and arm.get("holding", "none") == "none"
+            and (s.get("bed") or "empty") == "empty"):
         return None
     return s
 
@@ -425,8 +430,37 @@ def _set_bed(state: str) -> None:
 def _set_arm(holding: str, from_slot: str = "", job_id=None):
     """Greifer-Zustand mitschreiben — nach einem Abbruch ist das die einzige
     Information darüber, ob noch eine Platte am Arm hängt."""
+    if holding not in ARM_STATES:
+        # Bis v1.1.46 buchte der Stresstest „full"; der Hinweis nach einem Abbruch
+        # sagte dann „Der Greifer war leer". Unbekannte Werte sind „unbekannt".
+        logger.warning(f"Unbekannter Greifer-Zustand {holding!r} — gespeichert als 'unknown'")
+        holding = "unknown"
     _farm["arm"] = {"holding": holding, "from": from_slot or "", "job_id": job_id}
     _persist_state()
+
+
+def _settle_after_run() -> None:
+    """Ende eines Farm-Laufs (Stopp, Fehler, Ende): Platte nicht vergessen.
+
+    Bis v1.1.46 setzte jedes Ende den Greifer auf „leer" und löschte den Zustand:
+    Nach einem Stopp mit Platte am Arm wusste niemand mehr davon, und der nächste
+    Start griff mit voller Hand. Jetzt bleibt es stehen, und der Hinweis erscheint
+    sofort (nicht erst nach einem Neustart). `running` ist hier schon False."""
+    if _plate_left():
+        _persist_state()
+        _farm["recovery"] = _load_recovery()
+        _log("✋ Laut letztem Stand liegt noch eine Platte im Greifer oder Drucker — "
+             "vor dem nächsten Start im Hinweis bestätigen")
+    else:
+        _clear_state()           # sauberes Ende → nichts zu bergen
+    _farm["_current_job_name"] = ""
+    _farm["_current_job_slot"] = ""
+
+
+def _plate_left() -> bool:
+    """Liegt laut letztem Stand noch irgendwo eine Platte (Greifer oder Druckbett)?"""
+    holding = (_farm.get("arm") or {}).get("holding", "none")
+    return holding not in ("none", "", None) or (_farm.get("bed") or "empty") != "empty"
 
 
 def mark_position_unknown(reason: str = ""):
@@ -497,6 +531,8 @@ def _init_recovery():
         return
     _farm["recovery"] = rec
     _farm["arm"] = rec.get("arm") or dict(_ARM_EMPTY)
+    bed = rec.get("bed") or "empty"
+    _farm["bed"] = bed if bed in BED_STATES else "printing"   # unbekannt ≠ leer
     _farm["needs_home"] = True      # Position nach dem Abbruch unbekannt
     logger.warning("Unterbrochener Farm-Lauf gefunden: %s (Schritt: %s)",
                    rec.get("job_name") or "?", rec.get("step_label") or "?")
@@ -761,6 +797,9 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
         # Reserve actual slot as 'printing' + store height for clearance blocking
         _rack_update(new_slot, "printing", job.get("fileName", ""), object_height_mm=height_mm)
         _set_job(job["id"], {"slot": new_slot, "object_height_mm": height_mm})
+        if _farm.get("current_job_id") == job.get("id"):
+            _farm["_current_job_slot"] = new_slot
+            _persist_state()
         boeden = _slots_needed(height_mm, slot_h)
         _log(f"📏 Objekt {height_mm:.0f}mm → Fach {new_slot} reserviert ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
         return
@@ -1180,7 +1219,8 @@ async def _gripper_gate(what: str) -> None:
     holding = (_farm.get("arm") or {}).get("holding", "none")
     if holding in ("none", "", None):
         return
-    text = {"empty": "eine leere Platte", "printed": "eine fertige Platte"}.get(holding, holding)
+    text = {"empty": "eine leere Platte", "printed": "eine fertige Platte"}.get(
+        holding, "vielleicht eine Platte (Inhalt unbekannt)")
     await _hold_until_resumed(
         f"{what}: Der Greifer hält laut Printloom noch {text} — abnehmen, dann fortsetzen",
         f"⏸ Printloom — {what} angehalten\nGreifer hält noch {text}")
@@ -3041,6 +3081,8 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                         _log("⏸ Warteschlange leer — warte auf neue Jobs…")
                 _farm["current_job_id"] = None
                 _farm["current_job_idx"] = -1
+                _farm["_current_job_name"] = ""
+                _farm["_current_job_slot"] = ""
                 await asyncio.sleep(2)
                 continue
 
@@ -3085,6 +3127,10 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             cur_slot = job["slot"]
             _log(f"── Job: {job['fileName']} ──")
 
+            # Name und Fach stehen im gesicherten Zustand: Bricht die App ab, sagt der
+            # Hinweis danach, welcher Job wo stand (bis v1.1.46 immer leer).
+            _farm["_current_job_name"] = job.get("fileName") or ""
+            _farm["_current_job_slot"] = job.get("slot") or ""
             _set_job(job["id"], {"status": "running"})
             job_started_at = datetime.now()   # wall-clock for the per-file history (B.2)
             job_start_kwh  = await _read_energy_kwh(bambu_id)   # plug energy counter (3.1)
@@ -3280,8 +3326,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
         _farm["seq_step_label"] = ""
         _farm["_last_gcode_time"] = None
         # stop_reason intentionally kept — frontend reads it once after running→False
-        _farm["arm"] = dict(_ARM_EMPTY)
-        _clear_state()               # sauberes Ende → nichts zu bergen
+        _settle_after_run()
         _record_event("farm_stop", "", _farm.get("stop_reason") or "")
         _log("═══ Auto Farm beendet ═══")
 
@@ -3521,6 +3566,11 @@ async def start_farm(req: StartRequest):
     # v1.1.9 gibt es mehrere; ein Gerät ohne eigenen Block würde sonst still die
     # Koordinaten des ersten Druckers fahren — also gegen den falschen Drucker.
     _assert_printer_geometry(req.bambu_id)
+    if _plate_left():
+        # Bis v1.1.46 setzte der Start Greifer und Bett einfach auf leer.
+        _farm["recovery"] = _load_recovery() or _farm.get("recovery")
+        raise HTTPException(409, "Laut letztem Stand liegt noch eine Platte im Greifer oder "
+                                 "Drucker — nachsehen und im Hinweis bestätigen")
     await _assert_arm_idle_for_start()
     await _assert_printer_idle_for_start(req.bambu_id)
 
@@ -3544,12 +3594,8 @@ async def start_farm(req: StartRequest):
         # Startwerte über dieselbe Funktion, die sie später nachzieht — sonst laufen
         # Schnappschuss und Nachziehen mit der Zeit auseinander (siehe _live_settings).
         **_live_settings(_settings),
-        # Ein neuer Lauf beginnt mit leerem Greifer; ein unterbrochener Lauf ist
-        # damit erledigt (der Nutzer startet ja bewusst neu). Position gilt aber
-        # weiter als unbekannt → die erste Bewegung referenziert (needs_home).
-        "arm":                dict(_ARM_EMPTY),
-        # Annahme beim Start: Bett leer (wer neu startet, hat die Anlage im Blick).
-        "bed":                "empty",
+        # Greifer und Druckbett bleiben, wie sie sind (Start nur, wenn beide leer
+        # bestätigt sind, siehe oben). Ein quittierter Hinweis ist damit erledigt.
         "recovery":           None,
     })
     _farm.pop("_conn_skip_logged", None)
@@ -3850,13 +3896,16 @@ async def force_reset():
         "started_at":       None,
         "_last_gcode_time": None,
         "_plate_ready": False,
-        "arm":              dict(_ARM_EMPTY),
-        "recovery":         None,
         "needs_home":       True,   # Position nach dem Force-Reset unbekannt
         "_in_first_start": False,
     })
     _task = None
-    _log("⚠ Farm-State force-reset")
+    # Greifer und Druckbett bleiben (bis v1.1.46 auf „leer" gesetzt): Ein Reset
+    # ändert nichts daran, was physisch im Greifer oder Drucker liegt.
+    _persist_state()
+    _farm["recovery"] = _load_recovery() if _plate_left() else None
+    _log("⚠ Farm-State force-reset" + (" — Platte laut letztem Stand noch im Greifer/Drucker"
+                                       if _plate_left() else ""))
     return {"success": True}
 
 
@@ -4016,7 +4065,7 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
                 _magazine_take(m["from_rack"])
             else:
                 _rack_update(m["from"], "free", empty_plate=False)
-            _set_arm("full", m["from"])
+            _set_arm("empty", m["from"])
 
             for op in umweg:
                 _stress["step"] = f"{m['from']} → Drucker ({op})"
@@ -4025,7 +4074,7 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
                 # Zwischen Auflegen und Herunternehmen liegt die Platte WIRKLICH auf
                 # dem Bett — den Arm so lange als leer führen, sonst sucht eine
                 # Bergung nach einer Platte, die nicht am Greifer hängt.
-                _set_arm("none" if op in ("place", "load") else "full",
+                _set_arm("none" if op in ("place", "load") else "empty",
                          "" if op in ("place", "load") else m["from"])
             _stress["step"] = f"{m['from']} → {m['to']}"
 
@@ -4242,11 +4291,17 @@ async def get_recovery():
     arm = rec.get("arm") or {}
     holding = arm.get("holding", "none")
     hint = {
+        "none":    "Der Greifer war leer",
         "empty":   "Im Greifer hängt eine LEERE Platte" + (f" (aus Fach {arm.get('from')})" if arm.get("from") else ""),
         "printed": "Im Greifer hängt eine Platte mit einem FERTIGEN Druck",
-    }.get(holding, "Der Greifer war leer")
+    }.get(holding, "Greifer-Inhalt unbekannt — bitte nachsehen")
+    bed = rec.get("bed") or "empty"
     return {
         "pending": True,
+        "interrupted": bool(rec.get("running")),
+        "bed": bed,
+        "bed_hint": ("Druckbett leer" if bed == "empty"
+                     else f"Auf dem Druckbett liegt laut Printloom {_BED_TEXT.get(bed, 'etwas')}"),
         "job": rec.get("job_name") or "",
         "slot": rec.get("slot") or "",
         "step": rec.get("step_label") or "",
@@ -4263,18 +4318,27 @@ async def get_recovery():
 
 @router.post("/recovery/dismiss")
 async def dismiss_recovery(body: dict = None):
-    """Unterbrochenen Lauf quittieren. `arm_cleared` = der Greifer ist wieder leer
-    (der Nutzer hat die Platte abgenommen)."""
+    """Hinweis quittieren. `arm_cleared` = Greifer ist leer, `bed_cleared` = Druckbett
+    ist leer (beides vom Nutzer bestätigt, Vorgabe True). Gelöscht wird nur, was
+    bestätigt ist; bleibt etwas übrig, bleibt der Hinweis stehen. Bis v1.1.46 löschte
+    „Nur quittieren (Platte hängt noch)" trotzdem alles."""
     body = body or {}
-    _farm["recovery"] = None
     if body.get("arm_cleared", True):
         _farm["arm"] = dict(_ARM_EMPTY)
+    if body.get("bed_cleared", True):
+        _farm["bed"] = "empty"
     # Position gilt nach einem Abbruch immer als unbekannt → vor der nächsten
     # Bewegung wird referenziert.
     _farm["needs_home"] = True
+    if _plate_left():
+        _persist_state()
+        _farm["recovery"] = _load_recovery()
+        _log("↩ Hinweis quittiert — laut letztem Stand liegt noch eine Platte im Greifer/Drucker.")
+        return {"success": True, "pending": True}
+    _farm["recovery"] = None
     _clear_state()
     _log("↩ Unterbrochener Lauf quittiert — vor der nächsten Bewegung wird referenziert.")
-    return {"success": True}
+    return {"success": True, "pending": False}
 
 
 @router.get("/hms-history")

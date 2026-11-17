@@ -1427,6 +1427,14 @@ const EN_STRINGS = {
   // Notaus-Baustein in der Kopfzeile (seit v1.1.43)
   'Fortsetzen': 'Resume',
   'Notaus: Arm sofort anhalten': 'Emergency stop: halt the arm immediately',
+  // Platte nicht vergessen (seit v1.1.47)
+  'Greifer-Inhalt unbekannt — bitte nachsehen': 'Gripper contents unknown — please check',
+  'Druckbett leer': 'Build plate empty',
+  'Auf dem Druckbett liegt laut Printloom eine leere Platte': 'According to Printloom there is an empty plate on the bed',
+  'Auf dem Druckbett liegt laut Printloom ein fertiger Druck': 'According to Printloom there is a finished print on the bed',
+  'Auf dem Druckbett liegt laut Printloom ein (laufender oder abgebrochener) Druck': 'According to Printloom there is a (running or cancelled) print on the bed',
+  'Druckbett ist leer — bestätigen': 'Build plate is empty — confirm',
+  'Laut letztem Stand liegt noch eine Platte im Greifer oder Drucker': 'According to the last state there is still a plate in the gripper or printer',
   // Startprüfung der Sequenz (seit v1.1.46)
   'Unbekannte Schritt-Art „{0}“ in „{1}“': 'Unknown step type “{0}” in “{1}”',
   'Schritt „{0}“: {1} ist keine Zahl ({2})': 'Step “{0}”: {1} is not a number ({2})',
