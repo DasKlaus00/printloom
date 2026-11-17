@@ -341,9 +341,10 @@ def test_nur_quittieren_behaelt_die_platte(state, bett, monkeypatch):
     assert asyncio.run(autofarm.get_recovery())["pending"] is True
     # Start verweigert, bis die Platte bestätigt abgenommen ist.
     from fastapi import HTTPException
-    monkeypatch.setattr(autofarm, "_read_config", lambda path, default: {
+    monkeypatch.setattr(autofarm, "_read_checked", lambda path, default, expect=dict: {
         **default, "schema_version": autofarm.SEQ_SCHEMA_VERSION,
         "seq_new": [], "seq_next": [{"type": "send_file"}, {"type": "wait_print"}]})
+    monkeypatch.setattr(autofarm.rack_store, "load", lambda: {})
     monkeypatch.setattr(autofarm, "_assert_printer_geometry", lambda bid: None)
     monkeypatch.setattr(autofarm, "_assert_released", lambda: None)
     with pytest.raises(HTTPException) as e:

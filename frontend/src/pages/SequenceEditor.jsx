@@ -689,6 +689,8 @@ function SequenceEditor() {
   const [nextSteps, setNextSteps] = useState(DEFAULT_SEQ_NEXT)
   const [importErr, setImportErr] = useState(null)
   const [loaded,    setLoaded]    = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [reloadTick, setReloadTick] = useState(0)
   const [isMagnet,  setIsMagnet]  = useState(false)
   const importRef = React.useRef()
   const saveRef   = React.useRef(null)
@@ -736,10 +738,12 @@ function SequenceEditor() {
           autofarmService.saveSequences({ seq_new: sNew, seq_next: sNext })
             .catch(() => {})
         }
+        setLoaded(true)
       })
-      .catch(() => {})
-      .finally(() => setLoaded(true))
-  }, [])
+      // Nur nach Erfolg „geladen": Bis v1.1.47 speicherte der Editor nach einem
+      // Ladefehler die Vorgabe-Sequenzen über die echten.
+      .catch(e => setLoadError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
+  }, [reloadTick])
 
   useEffect(() => {
     if (!loaded) return
@@ -807,6 +811,15 @@ function SequenceEditor() {
 
   return (
     <div className="space-y-6">
+      {loadError && (
+        <div className="rounded-lg border border-red-700 bg-red-950 px-4 py-2 flex flex-wrap items-center gap-3" role="alert">
+          <span className="text-[12px] text-red-200 flex-1">
+            {tr('Sequenzen nicht geladen: {0}. Nichts wird gespeichert, bis sie geladen sind.', loadError)}
+          </span>
+          <button onClick={() => { setLoadError(''); setReloadTick(n => n + 1) }}
+            className="btn btn-secondary btn-sm text-[11px]">{tr('Erneut laden')}</button>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Sequenz-Editor')}</h2>

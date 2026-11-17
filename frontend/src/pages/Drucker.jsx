@@ -917,6 +917,8 @@ export default function Drucker() {
   // Farm oder Stresstest haben den Arm: Fahrknöpfe sperren (das Backend lehnt mit
   // 409 ab, die Sperre hier spart den Klick ins Leere und sagt, warum).
   const lock = useMotionLock()
+  // Ladefehler bei Geometrie, Regal oder Geräten: dann wird NICHTS gespeichert.
+  const [loadError, setLoadError] = useState('')
   const armBusy = jog.busy || !!lock.arm
   const blocked = (reason) => { setJog({ busy: false, msg: reason, err: true }); return true }
   const [lastScript, setLastScript] = useState('')
@@ -1142,7 +1144,10 @@ export default function Drucker() {
         setUseGcode(ug)
       }
       if (g.gcode_override) setGcodeOverride({ ...g.gcode_override })
-    }).catch(() => {}).finally(() => { hydrated.current = true })
+      // Erst nach Erfolg darf gespeichert werden. Bis v1.1.47 auch nach einem
+      // Ladefehler: Dann schrieb der Tab die Vorgabe-Geometrie über die eingemessene.
+      hydrated.current = true
+    }).catch(e => setLoadError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
   }, [])
   useEffect(() => {
     // Erst speichern, wenn ALLES geladen ist: Geometrie, Regalzahl und Geräteliste.
@@ -1168,7 +1173,7 @@ export default function Drucker() {
         magazine_counts: Array.isArray(d.magazine_counts) ? d.magazine_counts : [],
       })
       setRackReady(true)
-    }).catch(() => setRackReady(true))
+    }).catch(e => setLoadError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
     load()
     window.addEventListener('printloom:rackConfigSaved', load)
     return () => window.removeEventListener('printloom:rackConfigSaved', load)
@@ -1180,10 +1185,12 @@ export default function Drucker() {
   // anlegt, soll ihn hier sofort sehen.
   useEffect(() => {
     const load = () => deviceService.listDevices()
-      .then(r => setDevices((r?.data || []).filter(d => d.device_type === 'bambu_lab')
-        .map(d => ({ id: d.id, name: d.name, model: d.model || '' }))))
-      .catch(() => {})
-      .finally(() => setDevicesReady(true))
+      .then(r => {
+        setDevices((r?.data || []).filter(d => d.device_type === 'bambu_lab')
+          .map(d => ({ id: d.id, name: d.name, model: d.model || '' })))
+        setDevicesReady(true)
+      })
+      .catch(e => setLoadError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
     load()
     deviceService.listModels().then(r => setModels(r.data?.models || [])).catch(() => {})
     window.addEventListener('printloom:devicesChanged', load)
@@ -1360,6 +1367,11 @@ export default function Drucker() {
 
       {/* ── Werkzeuge: Referenzfahrt, Tempo, direkter G-code, Bett ── */}
       <div className="card p-3 space-y-2">
+        {loadError && (
+          <p role="alert" className="text-[12px] px-3 py-2 rounded border border-red-700 bg-red-950 text-red-300">
+            ⚠ {tr('Nicht geladen: {0}. Änderungen hier werden nicht gespeichert — Seite neu laden.', loadError)}
+          </p>
+        )}
         {(lock.arm || lock.printer) && (
           <p role="status" className="text-[12px] px-3 py-2 rounded border border-amber-700 bg-amber-950 text-amber-300">
             ⚠ {lock.arm || lock.printer}

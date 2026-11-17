@@ -181,7 +181,10 @@ function FarmSettings() {
         if (browserTz && !storedTz) {
           autofarmService.saveSettings({ timezone: browserTz }).catch(() => {})
         }
-      }).catch(() => {}).finally(() => setLoaded(true))
+        // Erst nach erfolgreichem Laden speichern dürfen (bis v1.1.47 auch nach einem
+        // Ladefehler — dann gingen die Vorgaben über die echten Einstellungen).
+        setLoaded(true)
+      }).catch(e => console.warn('Laden fehlgeschlagen:', e?.message || e))
     autofarmService.getHomingFileInfo()
       .then(r => setHomingFile(r.data)).catch(() => {})
   }, [])
@@ -366,6 +369,7 @@ function RegalKonfiguration() {
   const [magazineSlot,   setMagazineSlot]   = useState(7)
   const [magazineCounts, setMagazineCounts] = useState([6, 6, 6])
   const [saving,         setSaving]         = useState(false)
+  const [rackLoaded,     setRackLoaded]     = useState(false)
   const [status,         setStatus]         = useState(null)
 
   const load = async () => {
@@ -381,7 +385,12 @@ function RegalKonfiguration() {
       // Fest konfigurierte Sollzahl je Magazin (nicht der schwankende Live-Bestand).
       const defs = d.magazine_defaults ?? d.magazine_counts ?? []
       setMagazineCounts(defs.length ? defs : Array(d.num_racks ?? 3).fill(4))
-    } catch {}
+      setRackLoaded(true)
+    } catch (e) {
+      // „Speichern" bleibt gesperrt: Es schriebe sonst die Vorgaben dieses Formulars
+      // über das echte Regal (bis v1.1.47 möglich).
+      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
+    }
   }
   useEffect(() => { load() }, [])
 
@@ -495,7 +504,7 @@ function RegalKonfiguration() {
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={save} disabled={saving} className="btn btn-secondary btn-sm">{tr('Speichern')}</button>
+        <button onClick={save} disabled={saving || !rackLoaded} className="btn btn-secondary btn-sm">{tr('Speichern')}</button>
         {status && <span className={`text-[11px] font-mono ${status.ok ? 'text-emerald-400' : 'text-red-400'}`}>{status.msg}</span>}
       </div>
     </div>

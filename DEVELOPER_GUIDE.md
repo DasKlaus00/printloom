@@ -136,6 +136,12 @@ im Image. Die App liest es für „v1.1.x verfügbar" und meldet „wird gebaut"
   Anfragen und WebSockets fremder Seiten: über https per `Sec-Fetch-Site`, über
   http per `Origin`. Ein GET darf nichts ändern und nicht ins Internet gehen —
   alles mit Nebenwirkung ist POST.
+- Datendateien, die Hardware oder Nutzerarbeit betreffen (Regal, Warteschlange,
+  Sequenzen, Geometrie, Einstellungen, Filamente), streng lesen:
+  `storage.read_json_checked` → bei kaputter Datei `BrokenFile` (503 `DATEI_UNLESBAR`,
+  System → Datenspeicher), nie still die Vorgabe. `read_json` mit Vorgabe nur für
+  Unkritisches (Statistik, Log). Seiten speichern erst nach erfolgreichem Laden
+  (Wächter `loadGuard.test.js`).
 - Windows-Checkout: Dateien mit CRLF (autocrlf), `.sh` immer LF (`.gitattributes`).
 
 ---
@@ -179,6 +185,7 @@ oder Zusagen bricht**, nicht die Menge an Code:
 | `test_arm_belegung.py`   | Farm, Stresstest und Handfahrten bewegen den Arm nie gleichzeitig |
 | `test_drucker_tore.py`   | Vor Einlegen, Auswerfen, Greifen und Senden: Drucker frei, Bett leer, Greifer leer — sonst Pause; Buchung über Macro und Op |
 | `test_druckfehler_ablauf.py` | FAILED nur ohne Druck wiederholen, übersprungene Drucke werden gestoppt, Hänger beenden den Job sauber |
+| `test_broken_files.py`   | Kaputte Datendatei: nichts wird überschrieben, Start verweigert, Meldung und bewusstes Zurücksetzen |
 | `test_parallel_gruppe.py` | ∥-Gruppen in Reihenfolge mit Abbruch, Hänger nie optional, ⏱ nur für Ungefährliches (gleiche Regel wie der Editor), Startprüfung der Sequenz |
 | `test_drucker_sperren.py` / `test_printer_guard.py` | Bett, Kalibrierung, AMS, Direktdruck nur ohne Notaus/Farm und bei frischem, freiem Druckerstatus |
 | `test_online.py`         | OHNE Zustimmung + Schalter geht KEIN Request nach außen |

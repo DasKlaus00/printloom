@@ -132,13 +132,16 @@ def _normalize(data: dict) -> bool:
     # `max_plates` als Ausgangswert — der Nutzer setzt seine echte Zahl danach.
     seed = int(data.get("max_plates", DEFAULT_MAGAZINE_DEFAULT)) or DEFAULT_MAGAZINE_DEFAULT
     defs = data.get("magazine_defaults")
-    defs = [max(0, int(c)) for c in defs] if isinstance(defs, list) else []
+    defs = [_count(c, seed) for c in defs] if isinstance(defs, list) else []
     data["magazine_defaults"] = (defs + [seed] * nr)[:nr]
     # Live-Bestand je Rack; bei geänderter Rack-Zahl auf die Sollwerte auffüllen.
-    if "magazine_counts" not in data:
+    if not isinstance(data.get("magazine_counts"), list):
         data["magazine_counts"] = list(data["magazine_defaults"])
     else:
-        counts = [max(0, int(c)) for c in data["magazine_counts"]]
+        # Ein ungültiger Bestand (null, Text) zählt als 0: Die Farm meldet dann
+        # „Magazin leer", statt ins Leere zu greifen oder abzustürzen (bis v1.1.47
+        # machte ein einziges null die ganze Regal-Datei „unlesbar").
+        counts = [_count(c, 0) for c in data["magazine_counts"]]
         counts += [data["magazine_defaults"][i] for i in range(len(counts), nr)]
         data["magazine_counts"] = counts[:nr]
     if _migrate_empty_plates(data):
@@ -146,27 +149,54 @@ def _normalize(data: dict) -> bool:
     return changed
 
 
+def _count(value, fallback: int) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        logger.warning(f"rack_slots.json: ungültige Platten-Zahl {value!r} — nehme {fallback}")
+        return fallback
+
+
 def load() -> dict:
-    """Normalisierter Regal-Zustand. Ohne (lesbare) Datei: die Vorgabe."""
+    """Normalisierter Regal-Zustand. Ohne Datei: die Vorgabe. Mit kaputter Datei:
+    storage.BrokenFile. Bis v1.1.47 kam dann still ein Standard-Regal zurück, und
+    das nächste Speichern (jede Fach-Änderung der Farm) überschrieb die echte
+    Belegung damit: Platten lagen im Regal, das Regal galt als leer."""
     with _lock:
-        if os.path.exists(SLOTS_PATH):
-            data = storage.read_json(SLOTS_PATH, None)
-            if isinstance(data, dict):
-                try:
-                    if _normalize(data):
-                        save(data)
-                    return data
-                except Exception as e:
-                    logger.warning(f"rack_slots.json unlesbar: {e}")
-        return default_data()
+        if not os.path.exists(SLOTS_PATH):
+            return default_data()
+        data = storage.read_json_checked(SLOTS_PATH, None, expect=dict)
+        try:
+            changed = _normalize(data)
+        except (TypeError, ValueError, AttributeError) as e:
+            raise storage.BrokenFile(SLOTS_PATH, f"Aufbau unlesbar ({e})")
+        if changed:
+            save(data)
+        return data
 
 
 def save(data: dict) -> None:
+    """Schreibfehler gehen an den Aufrufer: Ein still verlorenes Speichern hieße,
+    die nächste Ablage geht in ein Fach, das schon belegt ist."""
     with _lock:
-        try:
-            storage.write_json(SLOTS_PATH, data)
-        except Exception as e:
-            logger.error(f"rack_slots.json save failed: {e}")
+        storage.write_json(SLOTS_PATH, data)
+
+
+def ensure_file() -> None:
+    """Fehlt die Regal-Datei, einmal die Vorgabe anlegen: Dann sehen Oberfläche und
+    Farm dasselbe Regal (vorher zeigte load() ein Standard-Regal, die Farm {})."""
+    with _lock:
+        if not os.path.exists(SLOTS_PATH):
+            storage.write_json(SLOTS_PATH, default_data())
+
+
+def reset_broken() -> str:
+    """Kaputte Regal-Datei sichern und durch die Vorgabe ersetzen (nur auf ausdrückliche
+    Anweisung, System → Datenspeicher). → Pfad der Sicherungskopie."""
+    with _lock:
+        backup = storage.backup_broken(SLOTS_PATH)
+        storage.write_json(SLOTS_PATH, default_data())
+        return backup
 
 
 def exists() -> bool:

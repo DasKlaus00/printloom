@@ -25,11 +25,12 @@ Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 | **Farm** | Dauerbetrieb, höhenbasierte Fachwahl, Druckbett-Merker und Prüfung vor jedem Einfahren (Drucker frei, Bett leer, Greifer leer), Fehlerklassen mit eigener Strategie, Bergung nach Druckfehler, Zustand (auch Platte in Greifer und Drucker) übersteht Stopp, Reset und Neustart, Start erst nach Bestätigung, Betriebszeiten, Einstellungen wirken live |
 | **Kosten** | Strom (Smart-Plug) + Maschinenstunde + Material aus dem G-code-Header |
 | **Oberfläche** | Startseite und Auto-Farm frei konfigurierbar; Hell/Dunkel/System |
+| **Daten** | Kaputte Datendateien werden gemeldet (Kopfzeile, System → Datenspeicher) statt still durch Vorgaben ersetzt; Seiten speichern erst nach erfolgreichem Laden |
 | **Online** | Alles Opt-in: Update-Prüfung, Hinweise, Bibliothek. Diagnose-ZIP ohne Geheimnisse und Adressen |
 | **Sicherheit** | Keine eigene Anmeldung (Reverse-Proxy davor). Kein CORS, schreibende Anfragen fremder Seiten gesperrt (auch über http), nur Heimnetz-Adressen (gegen DNS-Rebinding), kein Einbetten in fremde Seiten, Windows-Update nur aus dem eigenen Release, Backup ohne Zugangsdaten (auf Wunsch verschlüsselt mit) |
 | **Auslieferung** | Docker (amd64/arm64), native Windows-App, native Linux. Version im Image, Update aus der Oberfläche über den Docker-Socket, Promote-Workflow Beta → Stabil |
 | **Slicer** | OrcaSlicer-Plugin (ab Orca 2.5): Farm-Check nach dem Slicen, Senden in die Warteschlange, Drucker und AMS im Geräte-Tab, Farm-Tab |
-| **Qualität** | 961 Backend-, 53 Plugin- und 79 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
+| **Qualität** | 981 Backend-, 53 Plugin- und 81 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
 
 ---
 

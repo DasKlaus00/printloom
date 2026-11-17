@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
    zählt nicht: Dort hat jemand begründet, warum nichts zu tun ist.
 
    BASELINE darf nur sinken, nie steigen. */
-const BASELINE = 107   // Stand 17.11.2026 (v1.1.43)
+const BASELINE = 97   // Stand 17.11.2026 (v1.1.48)
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const SRC = path.resolve(HERE, '..')

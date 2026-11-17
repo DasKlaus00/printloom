@@ -90,7 +90,15 @@ def _build_homing_3mf() -> bytes:
     return _build_3mf(_HOMING_GCODE)
 
 def _read_config(path: str, default):
+    """Tolerant: für den laufenden Zyklus (Einstellungen je Schritt). Eine kaputte
+    Datei darf eine laufende Farm nicht mitten in einer Bewegung anhalten."""
     return storage.read_json(path, default)
+
+
+def _read_checked(path: str, default, expect=dict):
+    """Streng: für Endpunkte und den Start. Kaputt → storage.BrokenFile (main.py
+    antwortet 503 DATEI_UNLESBAR), nie still die Vorgabe."""
+    return storage.read_json_checked(path, default, expect=expect)
 
 def _write_config(path: str, data):
     storage.write_json(path, data)
@@ -601,15 +609,29 @@ def _rack_update(slot: str, status: str, file_name: str = None, object_height_mm
     try:
         rack_store.update_slot(slot, status, file_name, object_height_mm, empty_plate)
     except Exception as e:
-        logger.warning(f"rack slot update failed: {e}")
+        # Bis v1.1.47 nur eine Warnung: Dann stimmte der Fach-Zustand nicht, und die
+        # nächste Ablage ging in ein belegtes Fach. Jetzt hält die Farm an.
+        logger.error(f"rack slot update failed: {e}")
+        _pause_for_file(f"Fach {slot} konnte nicht gespeichert werden ({e})")
 
 
 def _rack_data() -> dict:
     """Regal-Zustand ({} ohne Regal-Datei) — für Platten-Quelle und Fachwahl."""
     try:
         return rack_store.load() if rack_store.exists() else {}
-    except Exception:
+    except storage.BrokenFile as e:
+        # Bis v1.1.47 still {}: Die Farm hielt das Regal für leer und wählte Fächer,
+        # in denen Platten liegen. Jetzt: anhalten und melden.
+        _pause_for_file(str(e))
         return {}
+
+
+def _pause_for_file(reason: str) -> None:
+    """Farm anhalten, weil eine Datendatei nicht stimmt (nur wenn sie läuft)."""
+    _log(f"🛑 {reason} — Farm pausiert (System → Datenspeicher)")
+    if _farm.get("running") and not _farm.get("paused"):
+        _farm["paused"] = True
+        _farm["error"] = f"{reason} — System → Datenspeicher prüfen, dann fortsetzen"
 
 
 # Dünne Wrapper um die reine Platten-Quellen-Logik (app/services/rack_logic.py):
@@ -2196,7 +2218,9 @@ def _load_farm_geometry() -> dict:
     """Gespeicherte Drucker-Geometrie (Drucker-Tab) lesen, Defaults aufgefüllt.
     Regalzahl/Fächer/Magazin-Fach global aus der Rack-Konfiguration überlagern.
     Ohne Datei → Defaults ohne use_gcode → Farm fährt wie bisher die Geräte-Macros."""
-    g = _motion.merge_defaults(storage.read_json(GEOMETRY_PATH, None))
+    # Streng: Bei kaputter Datei fiele die Farm still auf die Geräte-Macros zurück
+    # (andere Bewegung als eingemessen). → BrokenFile, die Farm pausiert.
+    g = _motion.merge_defaults(storage.read_json_checked(GEOMETRY_PATH, None, expect=dict))
     try:
         _motion.apply_rack_config(g, rack_store.load())
     except Exception:
@@ -2841,7 +2865,13 @@ def _read_sequences() -> Optional[dict]:
     veraltetem Schema (das Starten verweigert so etwas, ein Nachladen darf es nicht
     durch die Hintertür hereinlassen) und bei einem leeren Zyklus — eine leere Liste
     ist eher ein halbfertiger Speichervorgang als ein Wunsch."""
-    d = _read_config(SEQ_PATH, {})
+    try:
+        d = _read_checked(SEQ_PATH, {})
+    except storage.BrokenFile as e:
+        if not _farm.get("_seq_broken_logged"):
+            _farm["_seq_broken_logged"] = True
+            _log(f"⚠ {e} — fahre mit der Sequenz weiter, mit der dieser Lauf begann")
+        return None
     if not isinstance(d, dict) or d.get("schema_version") != SEQ_SCHEMA_VERSION:
         return None
     seq_next = d.get("seq_next") or []
@@ -2961,7 +2991,10 @@ async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
         _refresh_live_settings()
         try:
             _farm["geometry"] = _load_farm_geometry()
-        except Exception:
+        except storage.BrokenFile:
+            raise                    # → _run_farm pausiert und wiederholt den Job
+        except Exception as e:
+            logger.warning(f"Geometrie nicht geladen: {e}")
             _farm["geometry"] = None
 
         label = " + ".join(s.get("label", s.get("type", "?")) for s in group)
@@ -3208,6 +3241,20 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 _farm["error"] = None
                 await _notify(f"➡️ Printloom — weiter nach Druckfehler\n{job['fileName']}\n"
                               "Platte eingelagert, nächster Job startet.")
+
+            except storage.BrokenFile as e:
+                # Eine Datendatei (Regal, Geometrie, …) ist unlesbar. Kein Job-Fehler und
+                # kein Farm-Ende: anhalten, melden, nach dem Fortsetzen derselbe Job.
+                _pause_for_file(str(e))
+                await _notify(f"🛑 Printloom — Datei unlesbar\n{e}")
+                while _farm["paused"] and not _farm["stopping"]:
+                    await asyncio.sleep(0.5)
+                if _farm["stopping"]:
+                    break
+                _farm["error"] = None
+                _resume_after_move_timeout(job, cur_slot, job_started_at)
+                cur_slot = None
+                continue
 
             except _MoveTimeout as e:
                 # Hängende Bewegung (Phase 3.3): Der Arm steht an unbekannter Stelle,
@@ -3548,7 +3595,10 @@ async def start_farm(req: StartRequest):
         raise HTTPException(409, "Stresstest läuft — erst stoppen")
 
     # Validate sequences BEFORE touching farm state
-    seq_data = _read_config(SEQ_PATH, {"seq_new": [], "seq_next": []})
+    # Streng: Eine kaputte Sequenz-, Einstellungs- oder Regal-Datei verweigert den
+    # Start (503 DATEI_UNLESBAR), statt still mit Vorgaben zu fahren.
+    seq_data = _read_checked(SEQ_PATH, {"seq_new": [], "seq_next": []})
+    rack_store.load()
     saved_ver = seq_data.get("schema_version", "—")
     if saved_ver != SEQ_SCHEMA_VERSION:
         raise HTTPException(
@@ -3560,7 +3610,7 @@ async def start_farm(req: StartRequest):
     if seq_problems:
         raise HTTPException(400, "Sequenz nicht startklar: " + "; ".join(p["message"] for p in seq_problems))
 
-    _settings = _read_config(SETTINGS_PATH, _DEFAULT_SETTINGS)
+    _settings = {**_DEFAULT_SETTINGS, **_read_checked(SETTINGS_PATH, {})}
 
     # Fährt die Farm App-G-code, muss sie den Block DIESES Druckers haben. Seit
     # v1.1.9 gibt es mehrere; ein Gerät ohne eigenen Block würde sonst still die
@@ -3600,6 +3650,7 @@ async def start_farm(req: StartRequest):
     })
     _farm.pop("_conn_skip_logged", None)
     _farm.pop("_prep_warned", None)
+    _farm.pop("_seq_broken_logged", None)
 
     _farm.pop("_no_slot_logged", None)   # „Regal voll"-Log-Dedup nicht über Läufe schleppen
     _farm.pop("_settings_mtime", None)   # nächster Durchlauf liest die Einstellungen frisch
@@ -3689,7 +3740,7 @@ async def add_library_jobs(file_id: int, file_name: str, units: list) -> list:
             ids.append(next_id)
             next_id += 1
         return ids
-    jobs = list(_read_config(QUEUE_PATH, {"jobs": []}).get("jobs", []))
+    jobs = list(_read_checked(QUEUE_PATH, {"jobs": []}).get("jobs", []))
     next_id = max([int(j.get("id") or 0) for j in jobs] or [0]) + 1
     ids = []
     for plate, total, name in units:
@@ -4375,7 +4426,7 @@ async def dry_run(payload: dict = None):
     except (TypeError, ValueError):
         height = 40.0
 
-    seq_data = _read_config(SEQ_PATH, {"seq_new": [], "seq_next": []})
+    seq_data = _read_checked(SEQ_PATH, {"seq_new": [], "seq_next": []})
     geom = _load_farm_geometry()
     rack_data = _rack_data()
     check = _geometry_check.check_geometry(geom)
@@ -4477,7 +4528,7 @@ async def dry_run(payload: dict = None):
 
 @router.get("/sequences")
 async def get_sequences():
-    data = _read_config(SEQ_PATH, {})
+    data = _read_checked(SEQ_PATH, {})
     # Schema version mismatch → return empty so frontend resets to new defaults
     if data.get("schema_version") != SEQ_SCHEMA_VERSION:
         return {"seq_new": [], "seq_next": []}
@@ -4487,12 +4538,13 @@ async def get_sequences():
 async def save_sequences(payload: SequencesPayload):
     data = payload.model_dump()
     data["schema_version"] = SEQ_SCHEMA_VERSION
+    _read_checked(SEQ_PATH, {})        # kaputte Datei nicht still überschreiben
     _write_config(SEQ_PATH, data)
     return {"success": True}
 
 @router.get("/settings")
 async def get_settings():
-    s = dict(_read_config(SETTINGS_PATH, _DEFAULT_SETTINGS))
+    s = {**_DEFAULT_SETTINGS, **_read_checked(SETTINGS_PATH, {})}
     # Immer einen normalisierten 7-Tage-Plan mitliefern (migriert alte Configs),
     # damit das Frontend nicht selbst migrieren muss.
     s["operating_schedule"] = _operating_schedule(s)
@@ -4507,7 +4559,9 @@ async def save_settings(payload: SettingsPayload):
     # der Rest bleibt erhalten. Sonst setzt das Speichern eines Teilbereichs
     # (z. B. Farm-Einstellungen) die anderen (Preise, Fehlerstrategie,
     # Betriebszeiten) auf Default zurück.
-    current = _read_config(SETTINGS_PATH, dict(_DEFAULT_SETTINGS))
+    # Streng: Bei kaputter Datei mischte das Speichern die Eingabe bis v1.1.47 in die
+    # Vorgaben und schrieb das zurück; alle anderen Einstellungen waren weg.
+    current = {**_DEFAULT_SETTINGS, **_read_checked(SETTINGS_PATH, {})}
     current.update(payload.model_dump(exclude_unset=True))
     _write_config(SETTINGS_PATH, current)
     return {"success": True}
@@ -4517,11 +4571,12 @@ async def get_queue():
     # Return live in-memory state when running so _id in frontend stays ahead of all known IDs
     if _farm["running"] and _farm.get("jobs"):
         return _farm["jobs"]
-    data = _read_config(QUEUE_PATH, {"jobs": []})
+    data = _read_checked(QUEUE_PATH, {"jobs": []})
     return data.get("jobs", [])
 
 @router.put("/queue")
 async def save_queue(payload: QueuePayload):
+    _read_checked(QUEUE_PATH, {"jobs": []})   # kaputte Datei nicht still überschreiben
     _write_config(QUEUE_PATH, payload.model_dump())
     return {"success": True}
 

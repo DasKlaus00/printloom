@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.48',
+    de: [
+      'KAPUTTE DATEIEN ÜBERSCHREIBEN NICHTS MEHR: Ist eine Datendatei unlesbar (Regal-Belegung, Warteschlange, Sequenzen, Geometrie, Einstellungen, eigene Filamente), meldet Printloom das jetzt in der Kopfzeile, statt still die Vorgaben zu nehmen. Bisher schrieb das nächste Speichern die Vorgaben über die echten Daten; beim Regal hieß das: Platten liegen im Regal, Printloom hält es für leer.',
+      'Unter System → Datenspeicher steht, welche Datei es betrifft. „Zurücksetzen“ ersetzt sie durch die Vorgabe und legt die kaputte Fassung als Kopie daneben (…broken-Datum). Das geht nur bei kaputten Dateien und nur, wenn die Farm steht.',
+      'Läuft die Farm und eine Datei wird unlesbar, pausiert sie mit Meldung und macht nach dem Fortsetzen mit demselben Job weiter. Die Farm startet nicht, solange eine Datei unlesbar ist.',
+      'SPEICHERN ERST NACH ERFOLGREICHEM LADEN: Auto Farm (Warteschlange), Sequenz-Editor, Drucker-Tab, Regal-Konfiguration und Projekte speichern nur noch, wenn ihre Daten wirklich geladen sind. War das Backend beim Öffnen kurz weg, schrieben sie bisher die leere Liste oder die Vorgaben zurück. Jetzt steht ein Hinweis mit „Erneut laden“ da.',
+      'Die Auto-Farm-Seite schreibt die Farm-Einstellungen nicht mehr zurück (sie hat dafür keine Eingabe) und liest sie vor dem Start frisch.',
+      'Ein ungültiger Platten-Bestand im Magazin (etwa leer gelassen) zählt als 0 statt die ganze Regal-Datei unlesbar zu machen.',
+    ],
+    en: [
+      'BROKEN FILES NO LONGER OVERWRITE ANYTHING: if a data file is unreadable (rack occupancy, queue, sequences, geometry, settings, custom filaments), Printloom now reports it in the header instead of quietly using the defaults. Until now the next save wrote the defaults over the real data; for the rack that meant plates in the rack while Printloom thought it was empty.',
+      'System → Data storage shows which file is affected. “Reset” replaces it with the default and keeps the broken version as a copy next to it (…broken-date). This only works for broken files and only while the farm is stopped.',
+      'If a file becomes unreadable while the farm runs, the farm pauses with a message and continues with the same job after you resume. The farm does not start while a file is unreadable.',
+      'SAVING ONLY AFTER SUCCESSFUL LOADING: Auto Farm (queue), sequence editor, Printer tab, rack configuration and projects only save once their data has really loaded. If the backend was briefly away when opening them, they used to write back the empty list or the defaults. Now a notice with “Reload” appears.',
+      'The Auto Farm page no longer writes the farm settings back (it has no input for them) and reads them afresh before starting.',
+      'An invalid plate count in a magazine (for example left empty) counts as 0 instead of making the whole rack file unreadable.',
+    ],
+  },
+  {
     version: '1.1.47',
     de: [
       'PRINTLOOM VERGISST KEINE PLATTE MEHR: Was im Greifer und auf dem Druckbett liegt, bleibt nach einem Stopp, nach „Zurücksetzen“ und nach einem Neustart gespeichert. Bisher setzte jedes Ende des Laufs den Greifer auf „leer“, und der nächste Start griff mit voller Hand.',

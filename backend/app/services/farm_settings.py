@@ -66,5 +66,11 @@ DEFAULTS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": True,
 
 
 def read() -> dict:
+    """Tolerant (Direktdruck, Anzeige): kaputt → Vorgaben."""
     data = storage.read_json(PATH, None)
     return data if isinstance(data, dict) else dict(DEFAULTS)
+
+
+def read_checked() -> dict:
+    """Streng (vor dem Schreiben): kaputt → storage.BrokenFile."""
+    return {**DEFAULTS, **storage.read_json_checked(PATH, {}, expect=dict)}

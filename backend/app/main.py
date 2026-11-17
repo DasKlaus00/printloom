@@ -34,6 +34,14 @@ _appsettings.init_camera_default()
 # Initialize database
 init_db()
 
+# Regal-Datei einmal anlegen: Ohne sie zeigte die Oberfläche ein Standard-Regal,
+# während die Farm {} sah.
+from app.services import rack_store as _rack_store  # noqa: E402
+try:
+    _rack_store.ensure_file()
+except OSError as _e:
+    logging.getLogger(__name__).error(f"Regal-Datei nicht angelegt: {_e}")
+
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
@@ -163,6 +171,21 @@ app.include_router(slicer.router,        prefix="/api/slicer",          tags=["O
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+# Eine kaputte Datendatei (Regal, Warteschlange, Sequenzen, …) beantwortet jeder
+# Endpunkt gleich, statt Vorgaben auszuliefern oder sie beim Speichern über die
+# echten Daten zu schreiben. Die Oberfläche übersetzt DATEI_UNLESBAR und verweist
+# auf System → Datenspeicher.
+from app.services.storage import BrokenFile as _BrokenFile  # noqa: E402
+
+
+@app.exception_handler(_BrokenFile)
+async def _broken_file_handler(request: Request, exc: _BrokenFile):
+    import os as _os
+    logging.getLogger("app.storage").error(f"{request.url.path}: {exc}")
+    return JSONResponse(status_code=503, content={
+        "detail": "DATEI_UNLESBAR", "file": _os.path.basename(exc.path), "reason": exc.reason})
 
 # Serve static frontend files (zentral aufgelöst: Docker=/app/frontend/dist,
 # nativ=Bundle, Dev=frontend/dist)

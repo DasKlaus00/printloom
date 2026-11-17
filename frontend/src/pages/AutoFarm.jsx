@@ -747,7 +747,7 @@ function AutoFarm({ setCurrentPage } = {}) {
   const [minPrintMinutes, setMinPrintMinutes] = useState(0)
   const [useAms,          setUseAms]          = useState(true)
   const [exactColorOnly,  setExactColorOnly]  = useState(false)   // 1.4: nur exakte Farbe (read-only; gesetzt in Configuration)
-  const [settingsLoaded,  setSettingsLoaded]  = useState(false)
+  const [queueError,      setQueueError]      = useState('')
   const [queueLoaded,     setQueueLoaded]     = useState(false)
   const [homingFile,      setHomingFile]      = useState(null)   // {configured, file_id, filename}
   const [homingSetupBusy, setHomingSetupBusy] = useState(false)
@@ -783,7 +783,6 @@ function AutoFarm({ setCurrentPage } = {}) {
   const dashLoadedRef = useRef(false)
   const prevRunningRef = useRef(false)
   const pollTimerRef = useRef(null)
-  const settingsSaveRef = useRef(null)
   const queueSaveRef    = useRef(null)
   const runningRef  = useRef(false)
   const rackDataRef = useRef(null)
@@ -1034,33 +1033,41 @@ function AutoFarm({ setCurrentPage } = {}) {
     return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current) }
   }, [running, pageActive])
 
+  // Farm-Einstellungen nur LESEN: Diese Seite hat keine Eingabe dafür (die stehen in
+  // der Konfiguration). Bis v1.1.47 schrieb ein Effekt sie nach jedem Laden zurück,
+  // nach einem Ladefehler also die Vorgaben über die echten Werte.
+  const loadSettings = useCallback(() => autofarmService.getSettings()
+    .then(r => {
+      setPollInterval(Math.max(1, r.data.poll_interval ?? 20))
+      setMinPrintMinutes(r.data.min_print_minutes ?? 0)
+      setUseAms(r.data.use_ams ?? true)
+      setExactColorOnly(!!r.data.exact_color_only)
+      return r.data
+    }), [])
   useEffect(() => {
-    autofarmService.getSettings()
-      .then(r => {
-        setPollInterval(Math.max(1, r.data.poll_interval ?? 20))
-        setMinPrintMinutes(r.data.min_print_minutes ?? 0)
-        setUseAms(r.data.use_ams ?? true)
-        setExactColorOnly(!!r.data.exact_color_only)
-      })
-      .catch(() => {})
-      .finally(() => setSettingsLoaded(true))
+    loadSettings().catch(e => console.warn('Farm-Einstellungen nicht geladen:', e?.message || e))
     autofarmService.getHomingFileInfo()
       .then(r => setHomingFile(r.data))
       .catch(() => {})
-  }, [])
+  }, [loadSettings])
 
-  useEffect(() => {
-    autofarmService.getQueue()
+  // Gespeichert wird die Warteschlange erst, NACHDEM sie geladen ist. Bis v1.1.47
+  // galt sie auch nach einem Ladefehler als geladen, und 800 ms später speicherte
+  // die Seite die leere Liste über die echte Warteschlange.
+  const loadQueue = useCallback(() => {
+    setQueueError('')
+    return autofarmService.getQueue()
       .then(r => {
         const loaded = (r.data ?? []).map(j => ({ ...j, heightLoading: false, progress: j.progress ?? 0, remaining: j.remaining ?? 0 }))
         if (loaded.length) {
           _id = Math.max(...loaded.map(j => j.id)) + 1
           setJobs(loaded)
         }
+        setQueueLoaded(true)
       })
-      .catch(() => {})
-      .finally(() => setQueueLoaded(true))
+      .catch(e => setQueueError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
   }, [])
+  useEffect(() => { loadQueue() }, [loadQueue])
 
   // Jobs are added from the Datei-Bibliothek now — reload the queue when it
   // signals a change or when the tab regains focus, unless the farm is running.
@@ -1094,16 +1101,6 @@ function AutoFarm({ setCurrentPage } = {}) {
       document.removeEventListener('visibilitychange', onFocus)
     }
   }, [fetchStatus]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!settingsLoaded) return
-    clearTimeout(settingsSaveRef.current)
-    settingsSaveRef.current = setTimeout(() => {
-      autofarmService.saveSettings({ poll_interval: pollInterval, min_print_minutes: minPrintMinutes, use_ams: useAms })
-        .catch(() => {})
-    }, 600)
-    return () => clearTimeout(settingsSaveRef.current)
-  }, [pollInterval, minPrintMinutes, useAms, settingsLoaded])
 
   useEffect(() => {
     if (!queueLoaded || running) return
@@ -1592,6 +1589,13 @@ function AutoFarm({ setCurrentPage } = {}) {
   /* ── Farm control ────────────────────────────────────────── */
   const startFarm = async () => {
     if (!bambuId) return showFeedback(tr('Kein Bambu Lab Gerät konfiguriert'), false)
+    if (!queueLoaded) return showFeedback(tr('Warteschlange nicht geladen — erst neu laden'), false)
+    // Frisch lesen: In der Konfiguration können sich Takt, Mindestdruckzeit und AMS
+    // seit dem Öffnen dieser Seite geändert haben.
+    let fresh
+    try { fresh = await loadSettings() } catch (e) {
+      return showFeedback(e.response?.data?.detail ?? e.message, false)
+    }
 
     const preflightErrors = await checkPreflight(bambuId, tr)
     if (preflightErrors.length) return showFeedback(preflightErrors[0], false)
@@ -1629,9 +1633,9 @@ function AutoFarm({ setCurrentPage } = {}) {
     try {
       await autofarmService.start({
         bambu_id:          bambuId,
-        use_ams:           useAms,
-        poll_interval:     pollInterval,
-        min_print_minutes: minPrintMinutes,
+        use_ams:           fresh.use_ams ?? true,
+        poll_interval:     Math.max(1, fresh.poll_interval ?? 20),
+        min_print_minutes: fresh.min_print_minutes ?? 0,
         jobs: pending.map(j => ({
           id: j.id, fileId: j.fileId, fileName: j.fileName, slot: '1-0',
           status: 'pending', amsMap: j.amsMap ?? '',
@@ -1817,6 +1821,15 @@ function AutoFarm({ setCurrentPage } = {}) {
       {/* Unterbrochener Lauf (Neustart/Update mitten im Zyklus) — ganz oben, weil
           es beantwortet werden muss, bevor irgendetwas wieder losfährt. */}
       <RecoveryBanner onDismissed={() => load()} reloadKey={`${running}-${recoveryPing}`} />
+
+      {queueError && (
+        <div className="rounded-lg border border-red-700 bg-red-950 px-4 py-2 flex flex-wrap items-center gap-3" role="alert">
+          <span className="text-[12px] text-red-200 flex-1">
+            {tr('Warteschlange nicht geladen: {0}. Nichts wird gespeichert, bis sie geladen ist.', queueError)}
+          </span>
+          <button onClick={loadQueue} className="btn btn-secondary btn-sm text-[11px]">{tr('Erneut laden')}</button>
+        </div>
+      )}
 
       {/* Mehrere Drucker + Arm-Status — nur mit eingerichtetem Farm-Layout */}
       <PrinterOverview />

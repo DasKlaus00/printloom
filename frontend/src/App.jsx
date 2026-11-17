@@ -170,6 +170,17 @@ function App() {
   const [clock,           setClock]           = useState(() => new Date())
   // Server meldet eine andere Version, Neuladen half aber nicht → Cache klemmt.
   const [stuckVersion,    setStuckVersion]    = useState(null)
+  // Unlesbare Datendateien (seit v1.1.48): einmal beim Start und nach jeder Meldung
+  // eines Aufrufs (api.js wirft dann „printloom:brokenFile") neu fragen.
+  const [brokenFiles, setBrokenFiles] = useState([])
+  useEffect(() => {
+    const check = () => systemService.dataFiles()
+      .then(r => setBrokenFiles((r.data?.files || []).filter(f => f.broken).map(f => f.file)))
+      .catch(e => console.warn('Datenspeicher nicht geprüft:', e?.message || e))
+    check()
+    window.addEventListener('printloom:brokenFile', check)
+    return () => window.removeEventListener('printloom:brokenFile', check)
+  }, [])
   // Seitenleiste: eingeklappt (je Gerät gemerkt) und — auf schmalen Bildschirmen — aufgeklappt.
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try { return localStorage.getItem('ottomat3d_nav_compact') === '1' } catch { return false }
@@ -459,6 +470,20 @@ function App() {
       {/* Der Server läuft auf einer anderen Version als dieser Tab, und Neuladen
           hat daran nichts geändert — dann liegt das alte Frontend im Browser-Cache.
           Lieber einmal klar sagen, was zu tun ist, als endlos weiter neu zu laden. */}
+      {/* Unlesbare Datendatei (seit v1.1.48): Printloom ersetzt sie nicht mehr still
+          durch die Vorgabe — also muss man davon erfahren, auf jeder Seite. */}
+      {brokenFiles.length > 0 && (
+        <div className="bg-red-950 border-b border-red-700 px-5 py-2 flex flex-wrap items-center gap-3 flex-shrink-0" role="alert">
+          <span className="text-red-400 text-sm">⚠</span>
+          <p className="text-red-200 text-[13px] flex-1">
+            {tr('Datendatei unlesbar: {0}. Printloom hat nichts überschrieben und die Farm startet nicht, bis das geklärt ist.', brokenFiles.join(', '))}
+          </p>
+          <button onClick={() => setCurrentPage('system')} className="btn btn-danger btn-sm text-[11px]">
+            {tr('Zum Datenspeicher')}
+          </button>
+        </div>
+      )}
+
       {stuckVersion && (
         <div className="bg-amber-900 border-b border-amber-700 px-5 py-2 flex items-center gap-3 flex-shrink-0">
           <span className="text-amber-400 text-sm">⚠</span>

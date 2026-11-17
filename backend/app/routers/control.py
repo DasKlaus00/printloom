@@ -452,7 +452,7 @@ def _load_geometry() -> dict:
     """Gespeicherte Geometrie — die EINZIGE Quelle für alle X-Positionen, in der vollen
     Form (ein Block je Drucker/Regal, absolute Werte): so liest die Oberfläche genau
     die Zahlen, die auch gefahren werden."""
-    g = _motion.merge_defaults(_storage.read_json(GEOMETRY_PATH, None))
+    g = _motion.merge_defaults(_storage.read_json_checked(GEOMETRY_PATH, None, expect=dict))
     g = _motion.apply_rack_config(g, _rack_config())
     return _motion.expand(_motion.apply_layout(g, None))
 
@@ -481,6 +481,9 @@ async def put_ottoeject_geometry(geometry: dict):
     sofort zeigt, statt sie stillschweigend zu übernehmen. Gesendet wird eine
     fehlerhafte Bewegung ohnehin nicht (siehe /ottoeject/op)."""
     merged = _motion.merge_defaults(geometry)
+    # Eine kaputte Datei nicht still überschreiben (BrokenFile → 503): Die Oberfläche
+    # hätte sonst nur Vorgaben gezeigt, und „Speichern" machte sie endgültig.
+    _storage.read_json_checked(GEOMETRY_PATH, None, expect=dict)
     _storage.write_json(GEOMETRY_PATH, merged)
     return {"success": True, "geometry": merged,
             "check": _geometry_check.check_geometry(_load_geometry())}

@@ -172,7 +172,7 @@ def load() -> dict:
     den Werten im Drucker-Tab abweichen kann."""
     from app.services import ottoeject_motion as motion
     from app.services import rack_store
-    geometry = motion.merge_defaults(storage.read_json(GEOMETRY_PATH, None))
+    geometry = motion.merge_defaults(storage.read_json_checked(GEOMETRY_PATH, None, expect=dict))
     return sync_from_geometry(storage.read_json(LAYOUT_PATH, None), geometry,
                               rack_store.load(), _bambu_devices())
 

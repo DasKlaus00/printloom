@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { tr } from './i18n'
 
 // Ohne Default-Timeout wartet axios UNBEGRENZT. Steht das Backend kurz (Update,
 // überlastet, Netz weg), blieb die Oberfläche für immer im Ladezustand hängen —
@@ -10,6 +11,18 @@ const DEFAULT_TIMEOUT_MS = 45000
 const NO_TIMEOUT = 0            // axios: 0 = unbegrenzt
 
 const api = axios.create({ baseURL: '/api', timeout: DEFAULT_TIMEOUT_MS })
+
+// Kaputte Datendatei (Backend: 503 DATEI_UNLESBAR, seit v1.1.48). EINE Stelle für
+// alle Aufrufe: die Meldung übersetzt, und die Kopfzeile erfährt davon.
+api.interceptors.response.use(r => r, (error) => {
+  const d = error?.response?.data
+  if (d && d.detail === 'DATEI_UNLESBAR') {
+    d.code = d.detail
+    d.detail = tr('Datei {0} ist unlesbar — Printloom hat nichts überschrieben (System → Datenspeicher)', d.file || '?')
+    window.dispatchEvent(new CustomEvent('printloom:brokenFile', { detail: { file: d.file } }))
+  }
+  return Promise.reject(error)
+})
 
 // Nach einem Auto-Reload (Update → Container gerade neu gestartet) kann
 // die erste Geräteabfrage ins noch nicht bereite Backend laufen — vorher blieb die
@@ -171,6 +184,9 @@ export const rackManagerService = {
 }
 
 export const systemService = {
+  // Datenspeicher: unlesbare Dateien melden und bewusst zurücksetzen (seit v1.1.48).
+  dataFiles:        () => api.get('/system/data-files'),
+  resetDataFile:    (key) => api.post(`/system/data-files/${key}/reset`),
   // force=true = einmalige Prüfung auf ausdrücklichen Knopfdruck, auch wenn die
   // automatische „Update-Prüfung im Internet" ausgeschaltet ist. Das ist ein POST,
   // damit keine fremde Seite die Anfrage ins Internet auslösen kann.

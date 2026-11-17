@@ -40,9 +40,9 @@ function Projekt() {
       .then(([fr, pr]) => {
         setFiles((fr.data.files ?? []).filter(f => ['.3mf', '.gcode'].includes(f.file_type)))
         if (pr) setProjects(Array.isArray(pr.data?.projects) ? pr.data.projects : [])
+        setLoaded(true)   // nur nach Erfolg: sonst speicherte die Seite eine leere Liste
       })
-      .catch(() => {})
-      .finally(() => setLoaded(true))
+      .catch(e => console.warn('Laden fehlgeschlagen:', e?.message || e))
   }, [])
   useAutoRefresh(reloadAll, 0)
 

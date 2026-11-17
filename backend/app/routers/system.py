@@ -526,6 +526,74 @@ def _backup_files() -> list:
     ]
 
 
+# ─── Datenspeicher: kaputte Dateien melden und bewusst zurücksetzen ──────────
+# Seit v1.1.48 ersetzt Printloom eine unlesbare Datei nicht mehr still durch die
+# Vorgabe (storage.read_json_checked). Hier sieht man, welche es betrifft, und setzt
+# sie auf ausdrücklichen Wunsch zurück; die kaputte Fassung bleibt als Kopie liegen.
+
+def _data_files() -> list:
+    """(Pfad, Schlüssel) — dieselbe Liste wie das Backup, dazu die Warteschlange."""
+    from app.routers import autofarm
+    return _backup_files() + [(autofarm.QUEUE_PATH, "queue")]
+
+
+# Erwarteter Typ je Datei (None = jedes JSON) und die Vorgabe beim Zurücksetzen.
+# Nur Dateien mit Vorgabe lassen sich zurücksetzen; der Rest wird nur gemeldet.
+def _data_file_rules() -> dict:
+    from app.routers import autofarm
+    from app.services import farm_settings, rack_store
+    return {
+        "rack_slots": (dict, rack_store.default_data),
+        "settings":   (dict, lambda: dict(farm_settings.DEFAULTS)),
+        "sequences":  (dict, lambda: {"schema_version": autofarm.SEQ_SCHEMA_VERSION,
+                                      "seq_new": [], "seq_next": []}),
+        "geometry":   (dict, lambda: {}),
+        "queue":      (dict, lambda: {"jobs": []}),
+        "filaments":  (list, lambda: []),
+    }
+
+
+def _file_state(path: str, key: str) -> dict:
+    import glob
+    expect = (_data_file_rules().get(key) or (None, None))[0]
+    broken, reason = False, None
+    if os.path.exists(path):
+        try:
+            storage.read_json_checked(path, None, expect=expect)
+        except storage.BrokenFile as e:
+            broken, reason = True, e.reason
+    backups = sorted(glob.glob(glob.escape(path) + ".broken-*"))
+    return {"key": key, "file": os.path.basename(path), "broken": broken, "reason": reason,
+            "backup": os.path.basename(backups[-1]) if backups else None,
+            "resettable": key in _data_file_rules()}
+
+
+@router.get("/data-files")
+async def data_files():
+    files = [_file_state(p, k) for p, k in _data_files()]
+    return {"files": files, "broken": sum(1 for f in files if f["broken"])}
+
+
+@router.post("/data-files/{key}/reset")
+async def reset_data_file(key: str):
+    """Eine UNLESBARE Datei sichern (…broken-<Zeit>) und durch die Vorgabe ersetzen.
+    Nur bei Stillstand, und nur, wenn sie wirklich kaputt ist: Eine lesbare Datei
+    setzt dieser Weg nie zurück (sonst wäre er ein Knopf zum Löschen)."""
+    from app.routers import autofarm
+    if autofarm._farm.get("running") or autofarm._stress.get("running"):
+        raise HTTPException(409, "Auto Farm oder Stresstest läuft — erst stoppen")
+    path = next((p for p, k in _data_files() if k == key), None)
+    rules = _data_file_rules().get(key)
+    if not path or not rules:
+        raise HTTPException(404, "Für diese Datei gibt es kein Zurücksetzen")
+    if not _file_state(path, key)["broken"]:
+        raise HTTPException(400, "Die Datei ist lesbar — kein Zurücksetzen nötig")
+    backup = storage.backup_broken(path)
+    storage.write_json(path, rules[1]())
+    logger.warning(f"Datendatei {key} zurückgesetzt, Kopie: {backup}")
+    return {"success": True, "backup": os.path.basename(backup)}
+
+
 # ─── Diagnose-Paket (Support) ────────────────────────────────────────────────
 # Anders als das Backup enthält das Diagnose-Paket ABSICHTLICH KEINE Zugangsdaten:
 # es ist zum Verschicken gedacht. Alles, was nach Geheimnis aussieht, wird anhand des

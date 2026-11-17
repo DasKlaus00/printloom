@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { systemService, healthService, pushService } from '../services/api'
 import SetupHealth from '../components/SetupHealth'
 import OnlineServices from '../components/OnlineServices'
+import DataFiles from '../components/DataFiles'
 import { pushSupported, pushUnsupportedReason, isSubscribed, syncSubscription, subscribe as pushSubscribe, unsubscribe as pushUnsubscribe } from '../services/push'
 import { VERSION } from '../version'
 import { THEMES, getTheme, applyTheme } from '../services/theme'
@@ -373,6 +374,8 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
 
       {/* Online-Dienste — Opt-in, standardmäßig alles aus */}
       <OnlineServices setCurrentPage={setCurrentPage} />
+
+      <DataFiles />
 
       {/* Release channel — kompakter Toggle Latest ↔ Beta */}
       <div className="card p-4 space-y-3">

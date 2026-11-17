@@ -155,7 +155,9 @@ class CustomFilament(BaseModel):
 
 
 def _load_custom() -> list:
-    return storage.read_json(CUSTOM_PATH, default=[])
+    # Streng: Bei kaputter Datei speicherten Hinzufügen/Lernen bis v1.1.47 [neu] und
+    # alle eigenen Filamente waren weg.
+    return storage.read_json_checked(CUSTOM_PATH, default=[], expect=list)
 
 
 def _save_custom(data: list):

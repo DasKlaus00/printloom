@@ -1427,6 +1427,23 @@ const EN_STRINGS = {
   // Notaus-Baustein in der Kopfzeile (seit v1.1.43)
   'Fortsetzen': 'Resume',
   'Notaus: Arm sofort anhalten': 'Emergency stop: halt the arm immediately',
+  // Kaputte Dateien und Ladefehler (seit v1.1.48)
+  'Datendatei unlesbar: {0}. Printloom hat nichts überschrieben und die Farm startet nicht, bis das geklärt ist.': 'Data file unreadable: {0}. Printloom has not overwritten anything, and the farm will not start until this is resolved.',
+  'Zum Datenspeicher': 'Go to data storage',
+  'Datei zurücksetzen?': 'Reset file?',
+  '„{0}“ wird durch die Vorgabe ersetzt. Die kaputte Fassung bleibt als Kopie liegen ({0}.broken-…). Was darin stand, ist danach in Printloom weg.': '“{0}” is replaced by the default. The broken version is kept as a copy ({0}.broken-…). Whatever it contained is gone from Printloom afterwards.',
+  'Zurückgesetzt, Kopie: {0}': 'Reset, copy: {0}',
+  'Datenspeicher': 'Data storage',
+  'Alle Datendateien sind lesbar.': 'All data files are readable.',
+  'unlesbar: {0}': 'unreadable: {0}',
+  'Zurücksetzen (Kopie bleibt)': 'Reset (copy is kept)',
+  'Aus einem Backup einspielen': 'Restore from a backup',
+  'Warteschlange nicht geladen — erst neu laden': 'Queue not loaded — reload it first',
+  'Warteschlange nicht geladen: {0}. Nichts wird gespeichert, bis sie geladen ist.': 'Queue not loaded: {0}. Nothing is saved until it has loaded.',
+  'Erneut laden': 'Reload',
+  'Nicht geladen: {0}. Änderungen hier werden nicht gespeichert — Seite neu laden.': 'Not loaded: {0}. Changes here are not saved — reload the page.',
+  'Sequenzen nicht geladen: {0}. Nichts wird gespeichert, bis sie geladen sind.': 'Sequences not loaded: {0}. Nothing is saved until they have loaded.',
+  'Datei {0} ist unlesbar — Printloom hat nichts überschrieben (System → Datenspeicher)': 'File {0} is unreadable — Printloom has not overwritten anything (System → Data storage)',
   // Platte nicht vergessen (seit v1.1.47)
   'Greifer-Inhalt unbekannt — bitte nachsehen': 'Gripper contents unknown — please check',
   'Druckbett leer': 'Build plate empty',
