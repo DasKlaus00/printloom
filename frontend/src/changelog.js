@@ -4,6 +4,27 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.50',
+    de: [
+      'REGAL-EINGABEN LÖSCHEN NICHTS MEHR: Wer die Zahl der Regale oder Fächer verkleinert, über Fächer, in denen etwas liegt, bekommt eine Meldung mit den Fächern („erst im Rack Manager leeren“). Bisher wurden sie still gelöscht; die Platte lag weiter im Regal, und Printloom legte später darauf ab.',
+      'EINE NEUE SOLLZAHL SETZT DEN MAGAZIN-BESTAND NICHT MEHR ZURÜCK. Bisher hieß jede geänderte Platten-Zahl „Magazin frisch bestückt“, und der Arm konnte ins leere Magazin greifen. Auffüllen geht über „Magazin auffüllen“; sinkt die Sollzahl unter den Bestand, wird der Bestand gekappt.',
+      'Leere oder ungültige Felder in den Regal-Formularen (Konfiguration, Rack Manager, Setup, Magazin-Zähler in der Auto Farm) werden gemeldet und nicht gespeichert. Bisher wurde aus einem geleerten Feld still 0. Komma-Dezimal (52,5) wird verstanden.',
+      'Das Magazin-Fach muss über den Lagerfächern liegen und ist nie Ablageziel, auch bei älteren Anlagen, die es anders gespeichert haben.',
+      'Den Regal-Aufbau (Regale, Fächer, Höhe, Magazin-Fach) kann man während Farm oder Stresstest nicht ändern; Zuschlag und Toleranz schon.',
+      'SETUP-ASSISTENT AUF EINER BESTEHENDEN ANLAGE: Er fragt jetzt, bevor er den Magazin-Bestand setzt, alle Regale auf denselben Fach-Abstand stellt, eingemessene Drucker-Positionen durch die Vorlage ersetzt oder Tür-Schritte entfernt. Der Schritt „Komponenten“ lässt sich überspringen, und ein Fehler beim Speichern des Regals wird gezeigt statt übergangen.',
+      'Beim Einspielen eines Profils steht, welcher Teil warum nicht übernommen wurde.',
+    ],
+    en: [
+      'RACK INPUTS NO LONGER DELETE ANYTHING: reducing the number of racks or slots over slots that hold something now shows a message naming them (“empty them in the Rack Manager first”). Until now they were deleted silently; the plate stayed in the rack and Printloom later stored onto it.',
+      'A NEW TARGET COUNT NO LONGER RESETS THE MAGAZINE STOCK. Until now every changed plate count meant “magazine freshly loaded”, and the arm could reach into an empty magazine. Refill via “Refill magazine”; if the target drops below the stock, the stock is capped.',
+      'Empty or invalid fields in the rack forms (configuration, Rack Manager, setup, magazine counter in Auto Farm) are reported and not saved. Until now an emptied field quietly became 0. Decimal commas (52,5) are understood.',
+      'The magazine slot must lie above the storage slots and is never a storage target, also on older installations that saved it differently.',
+      'The rack layout (racks, slots, height, magazine slot) cannot be changed while the farm or the stress test runs; margin and tolerance can.',
+      'SETUP WIZARD ON AN EXISTING INSTALLATION: it now asks before setting the magazine stock, setting all racks to the same slot spacing, replacing calibrated printer positions with the template or removing door steps. The “Components” step can be skipped, and an error saving the rack is shown instead of skipped over.',
+      'When applying a profile, you now see which part was not applied and why.',
+    ],
+  },
+  {
     version: '1.1.49',
     de: [
       'JEDE PLATTE BEKOMMT EIN ECHTES FACH: Die Höhe eines Drucks kommt aus der Datei, plattengenau, und zwar bevor sich etwas bewegt. Ist sie nicht ermittelbar, wird der Job nicht gedruckt (Meldung, nächster Job). Bisher galt dann 1 mm, und ein hohes Teil landete in einem zu niedrigen Fach.',

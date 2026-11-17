@@ -741,6 +741,10 @@ def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optio
                         _rack_logic.slot_has_plate(r, s + needed, slots, mag, taken),
                         slot_h, tol, pct):
                     continue
+                # Nie ins Magazin-Fach: Ältere Anlagen können es innerhalb der Fächer
+                # gespeichert haben (seit v1.1.50 verbietet apply_config das).
+                if mag and any(s + i == mag for i in range(needed)):
+                    continue
                 if all(
                     slots.get(f"{r}-{s+i}", {}).get("status", "free") in ("free", "ready")
                     and f"{r}-{s+i}" not in taken

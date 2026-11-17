@@ -213,32 +213,96 @@ def edit():
         save(data)
 
 
+# Grenzen der Regal-Eingaben — EINE Quelle: apply_config klemmt damit, und die
+# Oberfläche bekommt sie über GET /api/rack-manager/ (limits) für ihre Formulare.
+LIMITS = {
+    "num_racks":         (1, 10),
+    "slots_per_rack":    (1, 20),
+    "slot_height_mm":    (1.0, 500.0),
+    "slot_tolerance_mm": (0.0, 100.0),
+    "slot_stacked_pct":  (0.0, 100.0),
+    "height_margin_pct": (0.0, 100.0),
+    "max_plates":        (1, 200),
+    "magazine_count":    (0, 200),
+}
+
+
+class RackShrinkConflict(ValueError):
+    """Verkleinern würde Fächer löschen, in denen etwas liegt."""
+
+    def __init__(self, slots: list):
+        super().__init__("Belegte Fächer würden wegfallen: " + ", ".join(slots))
+        self.slots = slots
+
+
+def _number(body: dict, key: str, cast=float):
+    """Zahl aus der Eingabe, geklemmt auf LIMITS. Leer oder Text → ValueError mit
+    Feldname (bis v1.1.49 ein int()-Absturz, oder aus „" wurde 0)."""
+    v = body.get(key)
+    if isinstance(v, str):
+        v = v.strip().replace(",", ".")
+    try:
+        n = cast(float(v))
+    except (TypeError, ValueError):
+        raise ValueError(f"{key}: keine Zahl ({body.get(key)!r})")
+    lo, hi = LIMITS.get(key, (None, None))
+    if lo is not None:
+        n = max(cast(lo), min(cast(hi), n))
+    return n
+
+
+def _counts(values: list, key: str) -> list:
+    """Platten-Zahlen je Magazin; ein leeres oder ungültiges Feld → ValueError."""
+    out = []
+    for i, v in enumerate(values):
+        try:
+            out.append(_number({"magazine_count": v}, "magazine_count", int))
+        except ValueError:
+            raise ValueError(f"{key}[{i + 1}]: keine Zahl ({v!r})")
+    return out
+
+
+def _slot_in_use(s) -> bool:
+    if not isinstance(s, dict):
+        return False
+    return (s.get("status", "free") not in ("free", "ready") or bool(s.get("empty_plate"))
+            or bool(s.get("object_height_mm")))
+
+
 def apply_config(data: dict, body: dict) -> dict:
     """Regal-Einstellungen aus `body` übernehmen (geklemmt) und das Fach-Raster
     nachziehen. Dieselbe Funktion für die Regalverwaltung und den Profil-Import —
     vorher hatte der Import eine eigene, kürzere Fassung, die u. a. das Magazin-Fach
-    nicht kannte: ein Profil sagte also nicht, ob es überhaupt ein Magazin gibt."""
+    nicht kannte: ein Profil sagte also nicht, ob es überhaupt ein Magazin gibt.
+
+    Seit v1.1.50:
+    - Verkleinern über belegte Fächer → RackShrinkConflict (bis dahin wurden sie still
+      gelöscht: Die Platte lag noch im Regal, Printloom wusste nichts mehr davon).
+    - Ungültige Zahl → ValueError mit Feldname.
+    - Das Magazin-Fach muss über den Lagerfächern liegen (sonst wäre es Ablageziel).
+    - Eine neue Sollzahl setzt den Live-Bestand NICHT zurück; das tut nur
+      `reset_counts: true` (bzw. „Magazin auffüllen"). Sinkt sie darunter, wird gekappt."""
     if "num_racks" in body:
-        data["num_racks"] = max(1, min(10, int(body["num_racks"])))
+        data["num_racks"] = _number(body, "num_racks", int)
     if "slots_per_rack" in body:
-        data["slots_per_rack"] = max(1, min(20, int(body["slots_per_rack"])))
+        data["slots_per_rack"] = _number(body, "slots_per_rack", int)
     if "slot_height_mm" in body:
-        data["slot_height_mm"] = max(1.0, float(body["slot_height_mm"]))
+        data["slot_height_mm"] = _number(body, "slot_height_mm")
     if "slot_tolerance_mm" in body:
-        data["slot_tolerance_mm"] = max(0.0, min(100.0, float(body["slot_tolerance_mm"])))
+        data["slot_tolerance_mm"] = _number(body, "slot_tolerance_mm")
     if "slot_stacked_pct" in body:
-        data["slot_stacked_pct"] = max(0.0, min(100.0, float(body["slot_stacked_pct"])))
+        data["slot_stacked_pct"] = _number(body, "slot_stacked_pct")
     if "stack_rack" in body:
-        data["stack_rack"] = max(1, int(body["stack_rack"]))
+        data["stack_rack"] = max(1, _number(body, "stack_rack", int))
     if "stack_slot" in body:
-        data["stack_slot"] = max(1, int(body["stack_slot"]))
+        data["stack_slot"] = max(1, _number(body, "stack_slot", int))
     if "max_plates" in body:
-        data["max_plates"] = max(1, int(body["max_plates"]))
+        data["max_plates"] = _number(body, "max_plates", int)
     if "height_margin_pct" in body:
-        data["height_margin_pct"] = max(0.0, min(100.0, float(body["height_margin_pct"])))
+        data["height_margin_pct"] = _number(body, "height_margin_pct")
     if "magazine_slot" in body:
         # 0 = KEIN Magazin (alle Fächer lagern; leere Platten werden manuell eingelegt).
-        data["magazine_slot"] = max(0, int(body["magazine_slot"]))
+        data["magazine_slot"] = max(0, _number(body, "magazine_slot", int))
         if data["magazine_slot"]:
             data["stack_slot"] = data["magazine_slot"]  # keep in sync
             # Mit Magazin gibt es keine Fach-Markierungen (der Nachschub kommt aus dem
@@ -252,18 +316,28 @@ def apply_config(data: dict, body: dict) -> dict:
             # Frisch auf „alle Fächer = Lagerfächer" umgestellt: NICHTS aus dem
             # Magazin-Zähler erfinden. Der Nutzer markiert selbst, wo Platten liegen.
             data["empty_plates_migrated"] = True
-    # Sollwerte je Magazin. Werden sie gesetzt, gilt der Live-Bestand als frisch
-    # bestückt („so viele Platten liegen im Magazin").
+    # Sollwerte je Magazin. Bis v1.1.49 setzte jede neue Sollzahl auch den Live-Bestand
+    # („frisch bestückt") — wer nur die Zahl korrigierte, hatte danach einen Bestand,
+    # der nicht stimmt, und der Arm griff ins leere Magazin.
     if isinstance(body.get("magazine_defaults"), list):
-        defs = [max(0, int(c)) for c in body["magazine_defaults"]]
-        data["magazine_defaults"] = defs
-        data["magazine_counts"] = list(defs)
+        data["magazine_defaults"] = _counts(body["magazine_defaults"], "magazine_defaults")
     if isinstance(body.get("magazine_counts"), list):
-        data["magazine_counts"] = [max(0, int(c)) for c in body["magazine_counts"]]
+        data["magazine_counts"] = _counts(body["magazine_counts"], "magazine_counts")
+    if body.get("reset_counts") is True:
+        data["magazine_counts"] = list(data.get("magazine_defaults") or [])
 
     nr = int(data.get("num_racks", DEFAULT_NUM_RACKS))
     spr = int(data.get("slots_per_rack", DEFAULT_SLOTS_PER_RACK))
+    mag = int(data.get("magazine_slot") or 0)
+    if mag and mag <= spr:
+        raise ValueError(f"magazine_slot: Das Magazin-Fach ({mag}) muss über den Lagerfächern "
+                         f"liegen (> {spr}) oder 0 sein (kein Magazin)")
     existing = data.get("slots", {})
+    weg = sorted(k for k, s in existing.items()
+                 if _slot_in_use(s) and k not in
+                 {f"{r}-{s2}" for r in range(1, nr + 1) for s2 in range(1, spr + 1)})
+    if weg:
+        raise RackShrinkConflict(weg)
     data["slots"] = {f"{r}-{s}": existing.get(f"{r}-{s}", default_slot())
                      for r in range(1, nr + 1) for s in range(1, spr + 1)}
     # Magazin-Arrays an die (evtl. neue) Rack-Zahl anpassen.
@@ -271,7 +345,13 @@ def apply_config(data: dict, body: dict) -> dict:
     defs = (defs + [DEFAULT_MAGAZINE_DEFAULT] * nr)[:nr]
     data["magazine_defaults"] = defs
     cnts = [max(0, int(c)) for c in data.get("magazine_counts", [])]
-    data["magazine_counts"] = (cnts + [defs[i] for i in range(len(cnts), nr)])[:nr]
+    cnts = (cnts + [defs[i] for i in range(len(cnts), nr)])[:nr]
+    # Sinkt in DIESER Eingabe die Sollzahl, wird der Bestand darauf gekappt. Sonst
+    # bleibt er, wie er ist — auch über der Sollzahl, wenn der Nutzer ihn so
+    # eingetragen hat (ein stilles Kappen wäre wieder eine Änderung ohne Auftrag).
+    if isinstance(body.get("magazine_defaults"), list) and not isinstance(body.get("magazine_counts"), list):
+        cnts = [min(c, defs[i]) for i, c in enumerate(cnts)]
+    data["magazine_counts"] = cnts
     return data
 
 

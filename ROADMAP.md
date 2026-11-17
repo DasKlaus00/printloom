@@ -20,7 +20,7 @@ Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 | **Drucker** | EIN Bambu Lab pro Zyklus. Persistente MQTT-Verbindung, FTP-Upload, Modelle X1/X1C/X1E, P1P/P1S, A1/A1 mini, H2D; Drucker-Einstellungen + Kalibrierung aus Printloom |
 | **OTTOeject** | Printloom erzeugt den G-code selbst; Achsprüfung vor dem Senden; Sequenz-Editor mit Einzelschritt-Test; Stresstest mit und ohne Drucker; Notaus-Knopf auf jeder Seite, sperrt jede Bewegung (auch das Aufräumen) bis „Betrieb fortsetzen“ mit erfolgreichem Klipper-Neustart; nur ein Ablauf bewegt den Arm (Farm, Stresstest oder Handfahrt); Drucker-Befehle nur bei frisch bestätigt freiem Drucker |
 | **Greifer** | Standard (seitlich klemmend) und Magnet-Greifer (seit v1.1.21, eigene Wege, Abkühlen als Sequenz-Schritt) |
-| **Regal** | 1–10 Regale × 1–20 Fächer; alle Fächer = Lager oder oberstes Fach = Magazin |
+| **Regal** | 1–10 Regale × 1–20 Fächer; alle Fächer = Lager oder Magazin-Fach über den Lagerfächern; Verkleinern nur über leere Fächer, Bestand nur auf Wunsch aufgefüllt |
 | **Einrichten** | Setup-Assistent inkl. geführter Erstkalibrierung, jederzeit wieder aufrufbar (System) |
 | **Farm** | Dauerbetrieb, höhenbasierte Fachwahl, Druckbett-Merker und Prüfung vor jedem Einfahren (Drucker frei, Bett leer, Greifer leer), Fehlerklassen mit eigener Strategie, Bergung nach Druckfehler, Zustand (auch Platte in Greifer und Drucker) übersteht Stopp, Reset und Neustart, Start erst nach Bestätigung, Betriebszeiten, Einstellungen wirken live |
 | **Kosten** | Strom (Smart-Plug) + Maschinenstunde + Material aus dem G-code-Header |
@@ -30,7 +30,7 @@ Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 | **Sicherheit** | Keine eigene Anmeldung (Reverse-Proxy davor). Kein CORS, schreibende Anfragen fremder Seiten gesperrt (auch über http), nur Heimnetz-Adressen (gegen DNS-Rebinding), kein Einbetten in fremde Seiten, Windows-Update nur aus dem eigenen Release, Backup ohne Zugangsdaten (auf Wunsch verschlüsselt mit) |
 | **Auslieferung** | Docker (amd64/arm64), native Windows-App, native Linux. Version im Image, Update aus der Oberfläche über den Docker-Socket, Promote-Workflow Beta → Stabil |
 | **Slicer** | OrcaSlicer-Plugin (ab Orca 2.5): Farm-Check nach dem Slicen, Senden in die Warteschlange, Drucker und AMS im Geräte-Tab, Farm-Tab |
-| **Qualität** | 999 Backend-, 53 Plugin- und 81 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
+| **Qualität** | 1013 Backend-, 53 Plugin- und 92 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
 
 ---
 

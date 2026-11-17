@@ -40,6 +40,8 @@ def get_all():
     no_mag = rack_logic.magazine_slot_of(data) <= 0
     empty_plates = [f"{r}-{s}" for r, s in rack_logic.marked_empty_plates(data)]
     return {
+        # Grenzen der Eingaben (dieselben, mit denen apply_config klemmt).
+        "limits":             rack_store.LIMITS,
         "num_racks":          nr,
         "slots_per_rack":     spr,
         "num_slots":          nr * spr,
@@ -65,8 +67,20 @@ def get_all():
 
 @router.put("/config")
 def update_config(body: dict):
-    with rack_store.edit() as data:
-        rack_store.apply_config(data, body)
+    # Aufbau (Regale, Fächer, Höhe, Magazin-Fach) nicht während Farm oder Stresstest:
+    # Die Fachwahl des laufenden Jobs rechnet mit dem alten Raster.
+    struktur = {"num_racks", "slots_per_rack", "slot_height_mm", "magazine_slot"}
+    if struktur & set(body or {}):
+        from app.routers import autofarm
+        if autofarm._farm.get("running") or autofarm._stress.get("running"):
+            raise HTTPException(409, "Auto Farm oder Stresstest läuft — Regal-Aufbau erst nach dem Stopp ändern")
+    try:
+        with rack_store.edit() as data:
+            rack_store.apply_config(data, body)
+    except rack_store.RackShrinkConflict as e:
+        raise HTTPException(409, detail={"detail": str(e), "slots": e.slots})
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return {
         "success":           True,
         "num_racks":         data["num_racks"],

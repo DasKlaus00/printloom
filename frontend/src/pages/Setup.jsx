@@ -4,6 +4,9 @@ import { useLanguage, setLanguage, availableLanguages, trProblem } from '../serv
 import { TIMEZONES } from './Configuration'
 import { PRINTERS } from '../services/printers'
 import SetupHealth from '../components/SetupHealth'
+import { confirmDialog } from '../services/confirm'
+import { rackSaveError } from '../services/rackForm'
+import { isExistingInstall, hasMixedSlotGaps, printerBlockIsCalibrated } from '../services/setupGuard'
 import RackPreview from '../components/RackPreview'
 import FirstCalibration from '../components/FirstCalibration'
 import { COMPONENT_GROUPS, derivedConfig, loadComponents, saveComponents,
@@ -117,6 +120,7 @@ export default function Setup({ setCurrentPage }) {
   const [pitch, setPitch] = useState(55)      // gemessener Z-Abstand Fach→Fach (slot_gap+30)
   const [magSlot, setMagSlot] = useState(7)   // 0 = kein Magazin
   const [rSaving, setRSaving] = useState(false)
+  const [rErr, setRErr]       = useState(null)
 
   // Step 5 — homing, Achsgrenzen, Trockenlauf
   const [homing, setHoming]   = useState(null)
@@ -263,12 +267,25 @@ export default function Setup({ setCurrentPage }) {
     try {
       saveComponents(components)
       const racks = +nr || 3
+      // Auf einer bestehenden Anlage den Live-Bestand nur auf Nachfrage auffüllen
+      // (bis v1.1.49 setzte jeder Durchlauf ihn still auf die Vorgabe).
+      const [devs, rack] = await Promise.all([
+        deviceService.listDevices().then(r => r.data).catch(() => []),
+        rackManagerService.getAll().then(r => r.data).catch(() => null),
+      ])
+      const existing = isExistingInstall(devs, rack)
+      const refill = !existing || await confirmDialog({
+        title: tr('Magazin jetzt voll bestückt?'),
+        message: tr('Soll der Bestand jedes Magazins auf {0} Platten gesetzt werden? „Abbrechen" lässt den heutigen Bestand stehen.', cfg.plates_per_rack),
+        confirmLabel: tr('Bestand setzen'), danger: false,
+      })
       await rackManagerService.updateConfig({
         num_racks: racks,
         slots_per_rack: cfg.slots_per_rack,
         slot_height_mm: cfg.slot_height_mm,
         magazine_slot: cfg.magazine_slot,
         magazine_defaults: Array(racks).fill(cfg.plates_per_rack),
+        ...(refill ? { reset_counts: true } : {}),
       })
       // slot_gap + Halterung sitzen in der Geometrie → lesen, patchen, zurückschreiben
       // (putGeometry ersetzt die Datei, deshalb nie blind ein Teilobjekt senden).
@@ -280,7 +297,7 @@ export default function Setup({ setCurrentPage }) {
       window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
       next()
     } catch (e) {
-      setCErr(e.response?.data?.detail ?? e.message)
+      setCErr(rackSaveError(e))
     } finally { setCSaving(false) }
   }
 
@@ -296,7 +313,12 @@ export default function Setup({ setCurrentPage }) {
     const g = (await controlService.getGeometry())?.data?.geometry
     if (!g) return
     const rg = { ...(g.rack_geo || {}) }
-    for (const k of Object.keys(rg)) rg[k] = { ...rg[k], slot_gap: gap }
+    const same = !hasMixedSlotGaps(g) || await confirmDialog({
+      title: tr('Fach-Abstand für alle Regale?'),
+      message: tr('Die Regale haben verschiedene Fach-Abstände (im Drucker-Tab eingestellt). Sollen alle auf denselben Wert gesetzt werden?'),
+      confirmLabel: tr('Alle gleich setzen'),
+    })
+    if (same) for (const k of Object.keys(rg)) rg[k] = { ...rg[k], slot_gap: gap }
     await controlService.putGeometry({
       ...g, ...(extra || {}), rack_geo: rg, storage: { ...(g.storage || {}), slot_gap: gap },
     })
@@ -317,7 +339,12 @@ export default function Setup({ setCurrentPage }) {
         const off = (Math.max(1, +(cur.racks || 1)) - 1) * (+(cur.storage?.rack_x_gap) || 0)
         const abs = (p) => ({ ...p, x: Math.round((p.x + off) * 10) / 10 })
         const first = (Array.isArray(cur.printers) && cur.printers[0]) || {}
-        await controlService.putGeometry({
+        const replace = !printerBlockIsCalibrated(first, abs(preset.eject)) || await confirmDialog({
+          title: tr('Vorlage übernehmen?'),
+          message: tr('Eingemessene Positionen von „{0}" durch die Vorlage ersetzen?', first.name || preset.name),
+          confirmLabel: tr('Ersetzen'),
+        })
+        if (replace) await controlService.putGeometry({
           ...cur,
           printer_id: preset.id, printer_name: preset.name, enclosed: preset.enclosed,
           printers: [{
@@ -332,7 +359,11 @@ export default function Setup({ setCurrentPage }) {
     }
     // Offener Drucker → Tür-Schritte aus den Sequenzen nehmen (sie würden „keine
     // Tür konfiguriert" fahren und nur Zeit kosten).
-    if (!m.enclosed) {
+    if (!m.enclosed && await confirmDialog({
+      title: tr('Tür-Schritte entfernen?'),
+      message: tr('Der Drucker hat keine Tür. Sollen die Tür-Schritte aus den Sequenzen entfernt werden?'),
+      confirmLabel: tr('Entfernen'), danger: false,
+    })) {
       try {
         const d = (await autofarmService.getSequences())?.data || {}
         const strip = (arr) => (Array.isArray(arr) ? arr : []).filter(
@@ -415,10 +446,11 @@ export default function Setup({ setCurrentPage }) {
       // Fach-Abstand in die Geometrie (read-modify-write, s. applyComponents)
       await writeSlotGap(pitchToGap(pitch))
       window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
+      setRErr(null)
       next()
     } catch (e) {
-      // non-fatal — let the user proceed
-      next()
+      // Bis v1.1.49 ging der Assistent still weiter, als wäre gespeichert worden.
+      setRErr(rackSaveError(e))
     } finally { setRSaving(false) }
   }
 
@@ -586,6 +618,8 @@ export default function Setup({ setCurrentPage }) {
             {cErr && <p className="text-xs text-red-400">{cErr}</p>}
             <div className="flex justify-between pt-2">
               <button onClick={prev} className="btn-secondary text-sm">{tr('← Zurück')}</button>
+              <button onClick={next} className="btn-ghost text-sm ml-auto mr-2"
+                title={tr('Nichts ändern — Regal und Geometrie bleiben, wie sie sind')}>{tr('Überspringen')}</button>
               <button onClick={applyComponents} disabled={cSaving} className="btn-primary text-sm disabled:opacity-50">
                 {cSaving ? tr('Speichere…') : tr('Übernehmen →')}
               </button>
@@ -777,6 +811,7 @@ export default function Setup({ setCurrentPage }) {
               </label>
             </div>
             <RackPreview numRacks={nr} slotsPerRack={spr} slotHeightMm={h} />
+            {rErr && <p className="text-xs text-red-400">{rErr}</p>}
             <div className="flex justify-between pt-2">
               <button onClick={prev} className="btn-secondary text-sm">{tr('← Zurück')}</button>
               <button onClick={saveRack} disabled={rSaving} className="btn-primary text-sm disabled:opacity-50">

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { rackManagerService } from '../services/api'
+import { parseRackForm, rackSaveError } from '../services/rackForm'
 import { useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
@@ -167,18 +168,19 @@ function RackManager() {
   }
 
   const handleSave = async () => {
+    // Geprüft statt Number(): Ein geleertes Feld wurde bis v1.1.49 still 0.
+    const { body, errors } = parseRackForm({
+      num_racks: numRacks, slots_per_rack: slotsPerRack, slot_height_mm: slotH, slot_tolerance_mm: slotTol,
+    }, data?.limits || {})
+    const bad = Object.entries(errors)
+    if (bad.length) return showFeedback(bad.map(([k, v]) => `${k}: ${v}`).join(' · '), false)
     setSaving(true)
     try {
-      await rackManagerService.updateConfig({
-        num_racks:      Number(numRacks),
-        slots_per_rack: Number(slotsPerRack),
-        slot_height_mm: Number(slotH),
-        slot_tolerance_mm: Number(slotTol),
-      })
+      await rackManagerService.updateConfig(body)
       await load()
       showFeedback(tr('Gespeichert'))
-    } catch {
-      showFeedback(tr('Speichern fehlgeschlagen'), false)
+    } catch (e) {
+      showFeedback(rackSaveError(e), false)
     } finally {
       setSaving(false)
     }

@@ -247,7 +247,9 @@ function Profiles() {
     try {
       const r = await profileService.import(profile)
       const applied = Object.entries(r.data.applied).filter(([, v]) => v).map(([k]) => tr(SECTION_LABELS[k] || k))
-      setMsg(tr('„{0}" angewendet: {1}. Sequenzen werden erst beim nächsten Auto-Farm-Start ausgeführt.', profile.name, applied.join(', ') || '—'))
+      const errs = Object.entries(r.data.errors || {}).map(([k, v]) => `${tr(SECTION_LABELS[k] || k)}: ${v}`)
+      setMsg(tr('„{0}" angewendet: {1}. Sequenzen werden erst beim nächsten Auto-Farm-Start ausgeführt.', profile.name, applied.join(', ') || '—')
+             + (errs.length ? ' ' + tr('Nicht übernommen: {0}', errs.join('; ')) : ''))
       setPreview(null)
     } catch (e) {
       setErr(e.response?.data?.detail ?? e.message)

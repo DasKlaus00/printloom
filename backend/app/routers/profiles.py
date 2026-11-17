@@ -43,9 +43,10 @@ async def import_profile(profile: dict):
     if profile.get("schema") != profiles.SCHEMA:
         raise HTTPException(400, f"Unbekanntes Profil-Schema: {profile.get('schema')}")
     applied = profiles.apply_profile(profile)
+    errors = applied.pop("_errors", {})
     if not any(applied.values()):
-        raise HTTPException(400, "Profil enthielt keine anwendbaren Daten")
-    return {"success": True, "applied": applied}
+        raise HTTPException(400, "; ".join(errors.values()) or "Profil enthielt keine anwendbaren Daten")
+    return {"success": True, "applied": applied, "errors": errors}
 
 
 @router.get("/local")

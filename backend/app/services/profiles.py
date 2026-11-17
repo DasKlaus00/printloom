@@ -109,7 +109,8 @@ def _apply_settings(incoming) -> bool:
         return False
     # Zusammenführen: Was das Profil nicht nennt (z. B. weil es aus einer älteren
     # Version stammt), bleibt, wie es ist — statt auf die Vorgabe zurückzufallen.
-    current = dict(farm_settings.read())
+    # Streng: Eine kaputte Einstellungs-Datei nicht mit dem Profil zusammenmischen.
+    current = farm_settings.read_checked()
     current.update(validated)
     storage.write_json(farm_settings.PATH, current)
     return True
@@ -124,18 +125,24 @@ def _apply_rack_config(incoming) -> bool:
     try:
         with rack_store.edit() as data:
             rack_store.apply_config(data, body)
-    except (TypeError, ValueError):
-        return False
+    except (TypeError, ValueError) as e:
+        # Grund statt nur False (u. a. RackShrinkConflict: belegte Fächer fielen weg).
+        return str(e)
     return True
 
 
 def apply_profile(profile: dict) -> dict:
-    """Profil prüfen und einspielen. → welche Abschnitte übernommen wurden."""
-    return {
+    """Profil prüfen und einspielen. → welche Abschnitte übernommen wurden (True/False);
+    unter "_errors" der Grund je Abschnitt, der abgelehnt wurde."""
+    rack = _apply_rack_config(profile.get("rack_config"))
+    out = {
         "sequences":   _apply_sequences(profile.get("sequences")),
-        "rack_config": _apply_rack_config(profile.get("rack_config")),
+        "rack_config": rack is True,
         "settings":    _apply_settings(profile.get("settings")),
     }
+    if isinstance(rack, str):
+        out["_errors"] = {"rack_config": rack}
+    return out
 
 
 # ── Lokale Profil-Bibliothek (db/profiles.json) ─────────────────────────────

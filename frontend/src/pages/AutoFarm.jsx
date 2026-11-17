@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService, systemService } from '../services/api'
+import { parseNumber, rackSaveError } from '../services/rackForm'
 import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout, GRID_VERSION } from '../components/DashboardGrid'
 import { parseSlotKey, slotsNeeded, autoSlot, checkClearance, slotTolerance } from '../services/rackUtils'
 import { amsMissing, colorDist, amsAutoMap, EXACT_COLOR_THRESHOLD, AMS_COLOR_THRESHOLD } from '../services/amsUtils'
@@ -1412,7 +1413,14 @@ function AutoFarm({ setCurrentPage } = {}) {
   //    Auffüllen einzelner Magazine, ohne den Umweg über die Konfiguration). ──
   const [magEdit, setMagEdit] = useState({})
   const saveMagCount = async (ri, v) => {
-    const n = Math.max(0, parseInt(v, 10) || 0)
+    // Geprüft statt parseInt(v) || 0: Ein geleertes Feld hieß bis v1.1.49 „Magazin leer".
+    const parsed = parseNumber(v, 'magazine_count', rackDataRef.current?.limits || {})
+    if (parsed.error) {
+      showFeedback(tr('Magazin R{0}: {1}', ri + 1, parsed.error), false)
+      setMagEdit(m => { const x = { ...m }; delete x[ri]; return x })
+      return
+    }
+    const n = parsed.value
     const cur = rackDataRef.current?.magazine_counts ?? []
     if (n === (cur[ri] ?? 0)) { setMagEdit(m => { const x = { ...m }; delete x[ri]; return x }); return }
     const counts = Array.from({ length: numRacks }, (_, i) => (i === ri ? n : (cur[i] ?? 0)))
@@ -1421,8 +1429,8 @@ function AutoFarm({ setCurrentPage } = {}) {
       setRackData(d => d ? { ...d, magazine_counts: counts, magazine_count: counts.reduce((a, b) => a + b, 0) } : d)
       window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
       showFeedback(tr('Magazin R{0}: {1} Platten', ri + 1, n))
-    } catch {
-      showFeedback(tr('Magazin-Zähler speichern fehlgeschlagen'), false)
+    } catch (e) {
+      showFeedback(rackSaveError(e) || tr('Magazin-Zähler speichern fehlgeschlagen'), false)
     }
     setMagEdit(m => { const x = { ...m }; delete x[ri]; return x })
   }
@@ -1656,23 +1664,6 @@ function AutoFarm({ setCurrentPage } = {}) {
   const stopFarm = async () => {
     try { await autofarmService.stop(); await fetchStatus() }
     catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
-  }
-
-  const saveRackConfig = async () => {
-    try {
-      await rackManagerService.updateConfig({
-        num_racks: +rackCfgNr, slots_per_rack: +rackCfgSpr, slot_height_mm: +rackCfgH,
-        stack_rack: +stackRack, stack_slot: +stackSlot,
-        max_plates: +maxPlates,
-        height_margin_pct: +heightMarginPct,
-      })
-      const r = await rackManagerService.getAll()
-      setRackData(r.data)
-      setRackCfgNr(r.data.num_racks); setRackCfgSpr(r.data.slots_per_rack); setRackCfgH(r.data.slot_height_mm)
-      setStackRack(r.data.stack_rack ?? 1); setStackSlot(r.data.stack_slot ?? 7)
-      setMaxPlates(r.data.max_plates ?? 4)
-      showFeedback(tr('Regal gespeichert'))
-    } catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
   }
 
   const forceReset = async () => {

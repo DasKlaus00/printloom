@@ -121,3 +121,21 @@ describe('checkClearance', () => {
     expect(res.ok).toBe(false)
   })
 })
+
+describe('autoSlot: Magazin-Fach ist nie Ablageziel', () => {
+  // Ältere Anlagen: Magazin-Fach 7 INNERHALB von 7 Fächern (seit v1.1.50 vom
+  // Backend abgelehnt, gespeichert kann es noch sein). Identisch zum Backend-Test.
+  const slots = {}
+  for (let r = 1; r <= 3; r++) for (let s = 1; s <= 7; s++) slots[`${r}-${s}`] = { status: 'free' }
+  const rack = { num_racks: 3, slots_per_rack: 7, magazine_slot: 7, slot_height_mm: 50, slots }
+  it('legt nie ins Magazin-Fach', () => {
+    const slot = autoSlot([], rack, 40, 50)
+    expect(slot).toBeTruthy()
+    expect(slot.endsWith('-7')).toBe(false)
+  })
+  it('auch der Vorschau-Rückfall (erstes freies Fach) nimmt nie das Magazin', () => {
+    const belegt = { ...slots }
+    for (let r = 1; r <= 3; r++) for (let s = 1; s <= 6; s++) belegt[`${r}-${s}`] = { status: 'done' }
+    expect(autoSlot([], { ...rack, slots: belegt }, 40, 50)).toBe('1-0')   // '1-0' = kein Fach
+  })
+})

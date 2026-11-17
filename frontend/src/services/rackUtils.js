@@ -123,6 +123,9 @@ export function autoSlot(jobs, rackData, heightMm, slotH) {
       // Liegt über dem obersten belegten Fach schon eine Platte, passt nur noch
       // der Stapel-Anteil der Fachhöhe (identisch zum Backend, sonst zeigt die
       // Vorschau ein anderes Fach als die Farm nimmt).
+      // Nie ins Magazin-Fach (identisch zum Backend): ältere Anlagen können es
+      // innerhalb der Fächer gespeichert haben.
+      if (mag && s <= mag && mag <= s + needed - 1) continue
       if (heightMm > heightLimit(needed, sh, tol,
                                  slotHasPlate(r, s + needed, rSlots, mag, taken), pct)) continue
       if (Array.from({ length: needed }, (_, i) => isFree(r, s + i)).every(Boolean))
@@ -136,6 +139,7 @@ export function autoSlot(jobs, rackData, heightMm, slotH) {
     for (let s = 1; s <= spr; s++) {
       const k = `${r}-${s}`
       if (!(k in rSlots) || !available(rSlots[k].status) || taken.has(k)) continue
+      if (mag && s === mag) continue   // auch im Rückfall nie das Magazin-Fach
       if (heightMm > heightLimit(needed, sh, tol,
                                  slotHasPlate(r, s + needed, rSlots, mag, taken), pct)) continue
       return k

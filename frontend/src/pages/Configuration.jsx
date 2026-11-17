@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { deviceService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
 import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
+import { parseRackForm, rackSaveError } from '../services/rackForm'
 
 /* Häufige Zeitzonen für die Auswahl (IANA). Die erkannte Browser-Zone wird bei
    Bedarf vorangestellt, damit sie immer wählbar ist. */
@@ -370,6 +371,7 @@ function RegalKonfiguration() {
   const [magazineCounts, setMagazineCounts] = useState([6, 6, 6])
   const [saving,         setSaving]         = useState(false)
   const [rackLoaded,     setRackLoaded]     = useState(false)
+  const [rackLimits,     setRackLimits]     = useState({})
   const [status,         setStatus]         = useState(null)
 
   const load = async () => {
@@ -385,6 +387,7 @@ function RegalKonfiguration() {
       // Fest konfigurierte Sollzahl je Magazin (nicht der schwankende Live-Bestand).
       const defs = d.magazine_defaults ?? d.magazine_counts ?? []
       setMagazineCounts(defs.length ? defs : Array(d.num_racks ?? 3).fill(4))
+      setRackLimits(d.limits || {})
       setRackLoaded(true)
     } catch (e) {
       // „Speichern" bleibt gesperrt: Es schriebe sonst die Vorgaben dieses Formulars
@@ -405,23 +408,24 @@ function RegalKonfiguration() {
     })
   }
 
+  // Eine Prüfung für alle Regal-Formulare (services/rackForm). Bis v1.1.49 wurde aus
+  // einem geleerten Feld still 0. Die Sollzahl setzt den Bestand nicht mehr zurück;
+  // auffüllen geht über „Magazin auffüllen".
+  const form = parseRackForm({
+    num_racks: nr, slots_per_rack: spr, slot_height_mm: h, height_margin_pct: margin,
+    slot_stacked_pct: stackedPct, magazine_slot: magazineSlot, magazine_defaults: magazineCounts,
+  }, rackLimits)
+  const formErrors = Object.entries(form.errors)
   const save = async () => {
+    if (formErrors.length) return
     setSaving(true); setStatus(null)
     try {
-      await rackManagerService.updateConfig({
-        num_racks:        +nr,
-        slots_per_rack:   +spr,
-        slot_height_mm:   +h,
-        height_margin_pct: +margin,
-        slot_stacked_pct: +stackedPct,
-        magazine_slot:    +magazineSlot,
-        magazine_defaults: magazineCounts.map(Number),
-      })
+      await rackManagerService.updateConfig(form.body)
       await load()
       setStatus({ ok: true, msg: tr('Regal gespeichert.') })
       window.dispatchEvent(new CustomEvent('printloom:rackConfigSaved'))
     } catch (e) {
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
+      setStatus({ ok: false, msg: rackSaveError(e) })
     } finally { setSaving(false) }
   }
 
@@ -504,7 +508,10 @@ function RegalKonfiguration() {
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={save} disabled={saving || !rackLoaded} className="btn btn-secondary btn-sm">{tr('Speichern')}</button>
+        <button onClick={save} disabled={saving || !rackLoaded || formErrors.length > 0} className="btn btn-secondary btn-sm">{tr('Speichern')}</button>
+         {formErrors.length > 0 && (
+           <span className="text-[11px] text-red-400">{formErrors.map(([k, v]) => `${k}: ${v}`).join(' · ')}</span>
+         )}
         {status && <span className={`text-[11px] font-mono ${status.ok ? 'text-emerald-400' : 'text-red-400'}`}>{status.msg}</span>}
       </div>
     </div>
