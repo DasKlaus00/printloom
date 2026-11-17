@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.75',
+    de: [
+      'WINDOWS-UPDATE PRÜFT DEN DOWNLOAD: Die Windows-App startet einen heruntergeladenen Installer nur, wenn seine Prüfsumme zu der passt, die GitHub für das Release meldet. Ein abgebrochener oder veränderter Download bleibt liegen, statt zu laufen.',
+      'NATIVE LINUX-INSTALLATION: install-native.sh und update-native.sh entpacken das Frontend nur noch mit passender Prüfsumme. Meldung bei Abweichung: „Prüfsumme fehlt oder falsch — läuft der Build noch?“',
+      'Die Windows-App bringt ein festes, geprüftes ffmpeg (9.0.2) für die Drucker-Kamera mit statt des jeweils neuesten ungeprüften.',
+      'System-Seite (Beta im Docker): zeigt den Digest des installierten Images — den braucht der Schritt „Beta → Stabil“, damit genau das getestete Image stabil wird.',
+    ],
+    en: [
+      'WINDOWS UPDATE CHECKS THE DOWNLOAD: the Windows app only starts a downloaded installer if its checksum matches the one GitHub reports for the release. An interrupted or altered download stays where it is instead of running.',
+      'NATIVE LINUX INSTALL: install-native.sh and update-native.sh only unpack the frontend with a matching checksum. On mismatch: “checksum missing or wrong — is the build still running?”',
+      'The Windows app ships a fixed, verified ffmpeg (9.0.2) for the printer camera instead of whatever was newest and unverified.',
+      'System page (beta in Docker): shows the digest of the installed image — the “beta → stable” step needs it so exactly the tested image becomes stable.',
+    ],
+  },
+  {
     version: '1.1.74',
     de: [
       'UPDATE IM DOCKER BEHÄLT, WAS DU EINGESTELLT HAST: Der Update-Helfer übernimmt nur noch die eigenen Einstellungen des Containers (Umgebung, Labels, Befehl) statt alles vom alten Image. Bisher konnte der neue Container das alte Versions-Label tragen und so die alte Version anzeigen. Benannte Volumes (Docker Compose v2), zusätzliche Hosts, Log-Einstellungen, Geräte, Rechte und Speichergrenzen werden jetzt mitgenommen.',

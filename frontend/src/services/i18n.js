@@ -1903,6 +1903,7 @@ const EN_STRINGS = {
   'Änderungen übernehmen': 'Apply changes',
   'Druckdateien ablegen, prüfen und in die Warteschlange legen.': 'Store print files, check them and put them in the queue.',
   'Farbe unbekannt': 'Color unknown',
+  'Installiertes Image: {0}': 'Installed image: {0}',
   'Der Build für v{0} ist fehlgeschlagen — es gibt dafür kein Image. Die installierte Version läuft weiter.': 'The build for v{0} failed — there is no image for it. The installed version keeps running.',
   'Preise nicht geladen.': 'Prices not loaded.',
   'Maschine': 'Machine',

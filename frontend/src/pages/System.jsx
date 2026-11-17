@@ -531,6 +531,13 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
           )
         })()}
 
+        {/* Für Promote (Beta → Stabil): genau dieses Image wird stabil (seit v1.1.75). */}
+        {info?.installed_digest && (
+          <p className="text-[11px] text-surface-500 font-mono select-all">
+            {tr('Installiertes Image: {0}', info.installed_digest)}
+          </p>
+        )}
+
         {/* GitHub hat schon eine neuere Version, das Image dazu ist noch im Bau.
             Vorher hieß es in dieser Zeit „App ist aktuell" — und man wartete. */}
         {info?.building && !info.error && !['done', 'running'].includes(phase) && (

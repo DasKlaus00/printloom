@@ -547,7 +547,8 @@ async def _trigger_update(body: "UpdateIn"):
             raise HTTPException(502, "Kein Installer-Asset im Release gefunden")
         await _assert_no_silent_downgrade(body, info)
         try:
-            res = await asyncio.to_thread(native_update.download_and_launch, url, asset)
+            res = await asyncio.to_thread(native_update.download_and_launch, url, asset,
+                                          info.get("sha256"))
         except ValueError as e:
             # Adresse oder Dateiname passen nicht zum eigenen Release: nichts geladen.
             raise HTTPException(400, f"Installer abgelehnt: {e}")

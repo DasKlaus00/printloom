@@ -17,23 +17,32 @@ $Py = Join-Path $Root ".venv-build\Scripts\python.exe"
 if (-not (Test-Path $Py)) { throw "Build-venv fehlt: $Py — siehe Kommentar oben." }
 
 $Version = (Get-Content (Join-Path $Root "backend\version.txt") -Raw).Trim()
+$Start = Get-Date
+# Seit v1.1.75 bricht jeder Schritt bei einem Fehler ab: Unter PS 5.1 stoppt
+# $ErrorActionPreference KEIN externes Programm — bis v1.1.74 lief der Build nach
+# einem kaputten Frontend weiter und packte das vorige dist ein.
 Write-Host "== Printloom Windows-Build v$Version ==" -ForegroundColor Cyan
 
 # 1) ffmpeg (einmalig; No-op, wenn vorhanden)
 Write-Host "-- ffmpeg holen --" -ForegroundColor Yellow
 & $Py "desktop\fetch_ffmpeg.py"
+if ($LASTEXITCODE -ne 0) { throw "ffmpeg holen fehlgeschlagen (Exit $LASTEXITCODE)." }
 
 # 2) Frontend bauen
 Write-Host "-- Frontend bauen --" -ForegroundColor Yellow
 Push-Location (Join-Path $Root "frontend")
+if (Test-Path "dist") { Remove-Item "dist" -Recurse -Force }
 npm run build
+$NpmExit = $LASTEXITCODE
 Pop-Location
+if ($NpmExit -ne 0) { throw "Frontend-Build fehlgeschlagen (Exit $NpmExit)." }
 
 # 3) PyInstaller-Bundle (One-File → dist\Printloom.exe)
 Write-Host "-- PyInstaller-Bundle --" -ForegroundColor Yellow
 if (Test-Path "build")  { Remove-Item "build"  -Recurse -Force }
 if (Test-Path "dist\Printloom.exe") { Remove-Item "dist\Printloom.exe" -Force }
 & $Py -m PyInstaller "desktop\printloom.spec" --noconfirm --distpath dist --workpath build
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller fehlgeschlagen (Exit $LASTEXITCODE)." }
 if (-not (Test-Path "dist\Printloom.exe")) { throw "PyInstaller-Bundle fehlgeschlagen." }
 
 # 4) Inno-Setup-Installer (falls iscc verfügbar)
@@ -47,7 +56,17 @@ if ($Iscc) {
   Write-Host "-- Installer bauen --" -ForegroundColor Yellow
   $isccPath = if ($Iscc -is [System.Management.Automation.CommandInfo]) { $Iscc.Source } else { $Iscc }
   & $isccPath "/DMyAppVersion=$Version" "desktop\installer.iss"
+  if ($LASTEXITCODE -ne 0) { throw "Inno Setup fehlgeschlagen (Exit $LASTEXITCODE)." }
+  $Setup = Join-Path $Root "desktop\Output\Printloom-Setup-$Version.exe"
+  if (-not (Test-Path $Setup) -or (Get-Item $Setup).LastWriteTime -lt $Start) {
+    throw "Installer fehlt oder stammt nicht aus diesem Lauf: $Setup"
+  }
+  # Pruefsumme daneben (sha256sum-Format); mit ins GitHub-Release hochladen. Die
+  # App vergleicht den Download damit (backend/app/services/native_update.py).
+  $Hash = (Get-FileHash -Algorithm SHA256 $Setup).Hash.ToLower()
+  [IO.File]::WriteAllText("$Setup.sha256", "$Hash  Printloom-Setup-$Version.exe`n")
   Write-Host "Installer: desktop\Output\Printloom-Setup-$Version.exe" -ForegroundColor Green
+  Write-Host "Pruefsumme: $Hash" -ForegroundColor Green
 } else {
   Write-Host "Inno Setup (iscc.exe) nicht gefunden — Installer uebersprungen." -ForegroundColor DarkYellow
   Write-Host "Bundle liegt unter dist\Printloom\ (portabel startbar via Printloom.exe)." -ForegroundColor DarkYellow

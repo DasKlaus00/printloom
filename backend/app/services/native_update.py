@@ -15,6 +15,7 @@ Installer erst auf ausdrücklichen Nutzer-Klick.
 from __future__ import annotations
 
 import logging
+import hashlib
 import os
 import re
 import sys
@@ -125,6 +126,7 @@ async def check(current: str, channel: str = "latest") -> dict:
         if asset:
             result["download_url"] = asset.get("browser_download_url")
             result["asset_name"] = asset.get("name")
+            result["sha256"] = await _sha256_for(rel.get("assets"), asset)
         elif result["update_available"]:
             result["error"] = f"Release {ver} hat kein {_asset_suffix()}-Installer-Asset"
     except Exception as e:
@@ -137,6 +139,36 @@ async def check(current: str, channel: str = "latest") -> dict:
 _TAG_RE = re.compile(r"v?\d+\.\d+\.\d+(-[\w.]+)?")
 _ASSET_RE = {".exe": re.compile(r"Printloom-Setup-\d+\.\d+\.\d+\.exe"),
              ".dmg": re.compile(r"Printloom-\d+\.\d+\.\d+\.dmg")}
+
+
+_HEX64 = re.compile(r"[0-9a-f]{64}")
+
+
+async def _sha256_for(assets, asset) -> Optional[str]:
+    """Erwartete SHA-256 des Installers (seit v1.1.75), oder None.
+
+    Zuerst das Feld `digest`, das GitHub selbst für jedes Asset berechnet. Fehlt es,
+    die Datei `<installer>.sha256` aus demselben Release (build_windows.ps1 schreibt
+    sie). Gelesen wird sie nur unter der Adresse des Installers + '.sha256' — also
+    aus dem eigenen Release, geprüft wie der Installer selbst."""
+    d = str(asset.get("digest") or "").lower()
+    if d.startswith("sha256:") and _HEX64.fullmatch(d[7:]):
+        return d[7:]
+    name, url = asset.get("name") or "", asset.get("browser_download_url") or ""
+    side = next((a for a in assets or [] if a.get("name") == f"{name}.sha256"), None)
+    if not side or side.get("browser_download_url") != f"{url}.sha256":
+        return None
+    try:
+        _check_download(url, name)   # Adresse des Installers muss stimmen
+        async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+            r = await client.get(f"{url}.sha256")
+        if r.status_code != 200:
+            return None
+        first = (r.text[:200].split() or [""])[0].lower()
+        return first if _HEX64.fullmatch(first) else None
+    except (ValueError, httpx.HTTPError) as e:
+        logger.warning("Prüfsumme zu %s nicht lesbar: %s", name, e)
+        return None
 
 
 def _check_download(download_url: str, asset_name: Optional[str]) -> str:
@@ -166,20 +198,35 @@ def _check_download(download_url: str, asset_name: Optional[str]) -> str:
     return name
 
 
-def download_and_launch(download_url: str, asset_name: Optional[str] = None) -> dict:
+def download_and_launch(download_url: str, asset_name: Optional[str] = None,
+                        sha256: Optional[str] = None) -> dict:
     """Installer herunterladen und starten. Der Installer schließt die laufende
-    App selbst (Inno „CloseApplications") und ersetzt die Dateien."""
+    App selbst (Inno „CloseApplications") und ersetzt die Dateien.
+
+    Mit `sha256` (aus check()) startet nur ein Download mit genau dieser Prüfsumme;
+    ein abgebrochener oder veränderter Download bleibt liegen statt zu laufen."""
     name = _check_download(download_url, asset_name)
     # Eigener, frisch angelegter Ordner: Eine schon liegende Datei gleichen Namens im
     # gemeinsamen Temp-Ordner kann so nicht untergeschoben werden.
     target = Path(tempfile.mkdtemp(prefix="printloom-update-")) / name
     # Ohne Authorization-Kopf: Die Release-Dateien sind öffentlich, und GitHub leitet
     # auf einen anderen Host weiter. Das Token geht nur an api.github.com (check()).
+    digest = hashlib.sha256()
     with httpx.stream("GET", download_url, follow_redirects=True, timeout=None) as r:
         r.raise_for_status()
         with open(target, "wb") as f:
             for chunk in r.iter_bytes(chunk_size=1 << 16):
+                digest.update(chunk)
                 f.write(chunk)
+    got = digest.hexdigest()
+    if sha256:
+        if got != sha256.lower():
+            target.unlink(missing_ok=True)
+            raise ValueError(f"Prüfsumme stimmt nicht ({got[:12]}… statt {sha256[:12]}…) — "
+                             "Installer nicht gestartet")
+    else:
+        # Übergang: ältere Releases haben keine Prüfsumme. Starten, aber vermerken.
+        logger.warning("Release ohne Prüfsumme — Installer %s ungeprüft (sha256 %s)", name, got)
     logger.info("Installer geladen: %s", target)
     _launch_installer(target)
     return {"success": True, "installer": str(target)}

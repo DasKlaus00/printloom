@@ -57,8 +57,19 @@ python3 -m venv .venv
 .venv/bin/pip install -r backend/requirements.txt
 
 # ── Fertiges Frontend laden (Zero 2 W & Co. können Vite nicht selbst bauen) ──
+# Nur entpacken, was zur Prüfsumme aus demselben Release passt (seit v1.1.75).
+fetch_dist() {
+  curl -fL "$DIST_URL" -o /tmp/printloom-dist.tar.gz
+  WANT=$(curl -fsL "$DIST_URL.sha256" 2>/dev/null | cut -d' ' -f1 || true)
+  HAVE=$(sha256sum /tmp/printloom-dist.tar.gz | cut -d' ' -f1)
+  if [ -z "$WANT" ] || [ "$WANT" != "$HAVE" ]; then
+    rm -f /tmp/printloom-dist.tar.gz
+    echo "Prüfsumme fehlt oder falsch — läuft der Build noch? In ein paar Minuten erneut versuchen." >&2
+    exit 1
+  fi
+}
 echo "-- Frontend-Build laden ($DIST_URL) --"
-curl -fL "$DIST_URL" -o /tmp/printloom-dist.tar.gz
+fetch_dist
 rm -rf frontend/dist
 mkdir -p frontend
 tar xzf /tmp/printloom-dist.tar.gz -C frontend

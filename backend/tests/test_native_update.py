@@ -100,10 +100,10 @@ def test_token_nur_an_github_api(geladen, monkeypatch):
     assert "Authorization" not in (call.get("headers") or {})
 
 
-def _check_liefert(monkeypatch, url, name="Printloom-Setup-1.1.42.exe"):
+def _check_liefert(monkeypatch, url, name="Printloom-Setup-1.1.42.exe", sha256=None):
     async def fake_check(current, channel="latest"):
         return {"current": current, "latest": "1.1.42", "update_available": True,
-                "download_url": url, "asset_name": name, "error": None}
+                "download_url": url, "asset_name": name, "error": None, "sha256": sha256}
     monkeypatch.setattr(native_update, "check", fake_check)
     monkeypatch.setattr(system.paths, "RUNTIME", "native")
 
@@ -123,3 +123,86 @@ def test_fremde_url_aus_der_pruefung_ergibt_400(monkeypatch, geladen):
     r = client.post("/api/system/update", json={})
     assert r.status_code == 400
     assert geladen["downloads"] == [] and geladen["started"] == []
+
+
+# ── Prüfsumme (seit v1.1.75) ────────────────────────────────────────────────
+import asyncio  # noqa: E402
+import hashlib  # noqa: E402
+
+import httpx  # noqa: E402
+
+INHALT_SHA = hashlib.sha256(b"MZ-installer").hexdigest()   # was _FakeStream liefert
+
+
+def test_passende_pruefsumme_startet(geladen):
+    native_update.download_and_launch(GOOD_URL, "Printloom-Setup-1.1.42.exe", INHALT_SHA)
+    assert len(geladen["started"]) == 1
+
+
+def test_falsche_pruefsumme_startet_nicht(geladen):
+    with pytest.raises(ValueError, match="Prüfsumme"):
+        native_update.download_and_launch(GOOD_URL, "Printloom-Setup-1.1.42.exe", "0" * 64)
+    assert geladen["started"] == []
+
+
+def test_falsche_pruefsumme_ueber_den_endpunkt_ergibt_400(monkeypatch, geladen):
+    _check_liefert(monkeypatch, GOOD_URL, sha256="f" * 64)
+    r = client.post("/api/system/update", json={})
+    assert r.status_code == 400 and "Prüfsumme" in r.text
+    assert geladen["started"] == []
+
+
+def test_ohne_pruefsumme_startet_mit_warnung(geladen, caplog):
+    native_update.download_and_launch(GOOD_URL, "Printloom-Setup-1.1.42.exe")
+    assert len(geladen["started"]) == 1
+    assert "ohne Prüfsumme" in caplog.text
+
+
+def _release(assets):
+    return [{"tag_name": "v1.1.42", "prerelease": False, "draft": False, "body": "",
+             "assets": assets}]
+
+
+def _mit_github(monkeypatch, releases, dateien=None):
+    """api.github.com liefert `releases`; Dateien unter github.com aus `dateien`."""
+    gesehen = []
+
+    def handler(request):
+        gesehen.append(str(request.url))
+        if request.url.host == "api.github.com":
+            return httpx.Response(200, json=releases)
+        text = (dateien or {}).get(str(request.url))
+        return httpx.Response(200, text=text) if text is not None else httpx.Response(404)
+    echt = httpx.AsyncClient
+    monkeypatch.setattr(native_update.httpx, "AsyncClient",
+                        lambda **kw: echt(transport=httpx.MockTransport(handler), **kw))
+    return gesehen
+
+
+def test_check_nimmt_den_digest_von_github(monkeypatch):
+    _mit_github(monkeypatch, _release([{
+        "name": "Printloom-Setup-1.1.42.exe", "browser_download_url": GOOD_URL,
+        "digest": "sha256:" + "AB" * 32}]))
+    r = asyncio.run(native_update.check("1.1.41"))
+    assert r["error"] is None and r["sha256"] == "ab" * 32
+
+
+def test_check_liest_sonst_die_sha256_datei(monkeypatch):
+    gesehen = _mit_github(monkeypatch, _release([
+        {"name": "Printloom-Setup-1.1.42.exe", "browser_download_url": GOOD_URL},
+        {"name": "Printloom-Setup-1.1.42.exe.sha256", "browser_download_url": GOOD_URL + ".sha256"},
+    ]), {GOOD_URL + ".sha256": INHALT_SHA + "  Printloom-Setup-1.1.42.exe\n"})
+    r = asyncio.run(native_update.check("1.1.41"))
+    assert r["sha256"] == INHALT_SHA
+    assert GOOD_URL + ".sha256" in gesehen
+
+
+def test_sha256_datei_von_anderer_adresse_wird_nicht_gelesen(monkeypatch):
+    fremd = "https://angreifer.example/x.sha256"
+    gesehen = _mit_github(monkeypatch, _release([
+        {"name": "Printloom-Setup-1.1.42.exe", "browser_download_url": GOOD_URL},
+        {"name": "Printloom-Setup-1.1.42.exe.sha256", "browser_download_url": fremd},
+    ]), {fremd: INHALT_SHA})
+    r = asyncio.run(native_update.check("1.1.41"))
+    assert r["sha256"] is None
+    assert fremd not in gesehen

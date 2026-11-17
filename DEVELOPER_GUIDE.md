@@ -101,15 +101,21 @@ git push -u printloom claude/<thema>
 5. Backend-Tests, Frontend-Tests, `npm run lint:ci`, `npm run build` — alles grün.
 
 **Stabil machen** — erst nach einem Test auf der echten Farm: GitHub → Actions →
-**„Promote (Beta → Stabil)"** → Version eingeben. Der Workflow setzt den Tag,
-spult `main` vor und taggt das getestete Beta-Image als `:latest` um (kein
-Neubau). Er läuft nur, wenn `promote.yml` schon auf `main` liegt — beim ersten
-Mal also noch von Hand:
+**„Promote (Beta → Stabil)"** → Version und Digest eingeben. Den Digest zeigt die
+System-Seite der getesteten Farm („Installiertes Image: sha256:…"). Der Workflow
+prüft, dass das Image zum beta-Commit genau dieses ist, taggt es als `:latest`,
+`:main`, `:X.Y.Z` und `:X.Y` um (kein Neubau) und setzt erst danach Tag und `main`.
 
-```bash
-git tag vX.Y.Z <beta-commit> && git push printloom vX.Y.Z
-git push printloom beta:main
-```
+Ein Push auf `main` baut kein `:latest` mehr. Der Hand-Rückfall
+(`git tag vX.Y.Z && git push printloom vX.Y.Z`, `git push printloom beta:main`)
+setzt deshalb nur Tag und Branch — `:latest` kommt allein über Promote.
+
+**Prüfsummen.** Das Native-Paket (`native-latest`/`native-beta`) liegt mit
+`.sha256` im Release; `install-native.sh` und `update-native.sh` entpacken nur bei
+passender Summe. Der Windows-Build schreibt `Printloom-Setup-X.Y.Z.exe.sha256`
+daneben; die App prüft den Download gegen den `digest`, den GitHub für jedes
+Release-Asset meldet, sonst gegen diese Datei. Fremde Actions sind auf Commit-SHAs
+festgelegt (Tag als Kommentar).
 
 **Versionsanzeige.** Die Version steht als Label `org.opencontainers.image.version`
 im Image. Die App liest es für „v1.1.x verfügbar" und meldet „wird gebaut", solange
