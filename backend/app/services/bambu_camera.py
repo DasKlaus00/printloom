@@ -158,7 +158,7 @@ def _raise_if_disabled() -> None:
     from app.services import appsettings
     if appsettings.camera_disabled():
         raise ConnectionError(
-            "Kamera in Printloom deaktiviert (System → Kamera) — Energiesparmodus")
+            appsettings.CAMERA_DISABLED_TEXT)
 
 
 def stop_all() -> None:

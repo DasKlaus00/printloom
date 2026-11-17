@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { TIMEZONES } from '../services/constants'
 import PageHeader from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { deviceService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
@@ -6,15 +7,6 @@ import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } 
 import { confirmDialog } from '../services/confirm'
 import { parseRackForm, rackSaveError } from '../services/rackForm'
 
-/* Häufige Zeitzonen für die Auswahl (IANA). Die erkannte Browser-Zone wird bei
-   Bedarf vorangestellt, damit sie immer wählbar ist. */
-export const TIMEZONES = [
-  'Europe/Berlin', 'Europe/Vienna', 'Europe/Zurich', 'Europe/London', 'Europe/Paris',
-  'Europe/Amsterdam', 'Europe/Madrid', 'Europe/Rome', 'Europe/Warsaw', 'Europe/Prague',
-  'Europe/Stockholm', 'Europe/Helsinki', 'Europe/Athens', 'Europe/Istanbul', 'Europe/Moscow',
-  'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-  'America/Sao_Paulo', 'Asia/Dubai', 'Asia/Kolkata', 'Asia/Shanghai', 'Asia/Tokyo', 'Australia/Sydney',
-]
 
 /* ─── Language & downloadable language packs ─────────────────────── */
 function LanguagePacks() {

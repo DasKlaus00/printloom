@@ -33,11 +33,14 @@ echo "== Printloom native install ($CHANNEL) → $DIR =="
 sudo apt-get update -y
 sudo apt-get install -y git python3 python3-venv python3-pip curl
 
-# Python-Version prüfen (Abhängigkeiten liefern fertige Wheels für 3.9–3.12).
+# Python-Version prüfen: Nur für 3.11/3.12 gibt es alle Abhängigkeiten als fertige
+# Wheels. Mit einer anderen Version kompiliert pip (pydantic-core braucht Rust) —
+# auf einem Pi Zero läuft das stundenlang und scheitert. Bis v1.1.76 nur eine Warnung.
 PYV=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
 case "$PYV" in
-  3.9|3.10|3.11|3.12) ;;
-  *) echo "WARNUNG: Python $PYV ist ungetestet (empfohlen: 3.11/3.12) — Installation kann fehlschlagen." ;;
+  3.11|3.12) ;;
+  *) echo "FEHLER: Python $PYV wird nicht unterstützt — nötig ist 3.11 oder 3.12 (Debian 12, Ubuntu 24.04, Raspberry Pi OS Bookworm)." >&2
+     exit 1 ;;
 esac
 
 # ── Repo holen / aktualisieren ───────────────────────────────────────────────
@@ -82,7 +85,7 @@ if [ "$WANT_FFMPEG" = "1" ] || { [ "$WANT_FFMPEG" = "auto" ] && [ "$MEMKB" -ge 7
   sudo apt-get install -y ffmpeg || echo "WARNUNG: ffmpeg-Installation fehlgeschlagen — Kamera bleibt aus."
 else
   echo "ffmpeg übersprungen (wenig RAM oder PRINTLOOM_FFMPEG=0)."
-  echo "→ In Printloom unter System → Kamera den Energiesparmodus aktivieren."
+  echo "→ In Printloom unter Konfiguration → Kameras den Energiesparmodus aktivieren."
 fi
 
 # ── systemd-Dienst ───────────────────────────────────────────────────────────

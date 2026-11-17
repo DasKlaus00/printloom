@@ -4,7 +4,7 @@ import { apiError } from '../services/apiError'
 import { deviceService, rackManagerService, autofarmService, controlService } from '../services/api'
 import { patchGeometry, saveGeometry } from '../services/geometryClient'
 import { useLanguage, setLanguage, availableLanguages, trProblem } from '../services/i18n'
-import { TIMEZONES } from './Configuration'
+import { TIMEZONES, SETUP_DONE_KEY } from '../services/constants'
 import { PRINTERS } from '../services/printers'
 import SetupHealth from '../components/SetupHealth'
 import { confirmDialog } from '../services/confirm'
@@ -15,7 +15,6 @@ import FirstCalibration from '../components/FirstCalibration'
 import { COMPONENT_GROUPS, derivedConfig, loadComponents, saveComponents,
          pitchToGap, gapToPitch, VENDOR_LABEL } from '../services/hardware'
 
-export const SETUP_DONE_KEY = 'ottomat3d_setup_done'
 
 const STEPS = ['Willkommen', 'Komponenten', 'Drucker', 'OTTOeject', 'Regal', 'Kalibrierung', 'Einmessen']
 

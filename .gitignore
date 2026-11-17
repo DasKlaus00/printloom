@@ -12,7 +12,10 @@ ENV/
 dist/
 build/
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
 # Alte serverspezifische Compose-Datei (bis v1.1.38 mit Watchtower-Token) — bleibt lokal.
 docker-compose.prod.yml
 .DS_Store
@@ -46,3 +49,9 @@ desktop/build/
 
 # Persönlicher Arbeitsstand für Claude Code (nicht ins Repo)
 CLAUDE.local.md
+
+# Private Arbeitsdateien von Alex (Pläne, Website-Entwurf, Testdrucke) — nie ins Repo.
+Dateien/
+odoo-connector-plan.md
+docs/website-brief.md
+/image.png

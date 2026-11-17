@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react'
-import { CHANGELOG } from '../changelog'
 import { VERSION } from '../version'
 import { useLanguage } from '../services/i18n'
 
@@ -38,9 +37,16 @@ export default function WhatsNew() {
       return
     }
     if (seen === VERSION) return
-    const list = CHANGELOG.filter(e => cmp(e.version, seen) > 0 && cmp(e.version, VERSION) <= 0)
-    if (list.length) setEntries(list.slice(0, 5))
-    else { try { localStorage.setItem(SEEN_KEY, VERSION) } catch { /* egal */ } }
+    // Den Changelog (über 200 kB) erst laden, wenn es wirklich etwas zu zeigen gibt —
+    // bis v1.1.76 steckte er in jedem Start-Bundle.
+    let alive = true
+    import('../changelog').then(({ CHANGELOG }) => {
+      if (!alive) return
+      const list = CHANGELOG.filter(e => cmp(e.version, seen) > 0 && cmp(e.version, VERSION) <= 0)
+      if (list.length) setEntries(list.slice(0, 5))
+      else { try { localStorage.setItem(SEEN_KEY, VERSION) } catch { /* egal */ } }
+    }).catch(e => console.warn('Changelog nicht geladen:', e?.message || e))
+    return () => { alive = false }
   }, [])
 
   if (!entries) return null

@@ -34,10 +34,10 @@ PRINTLOOM_CHANNEL=beta PRINTLOOM_PORT=8080 bash scripts/install-native.sh
 
 ## What the script does
 
-1. Installs `git`, `python3-venv`, `curl` via apt (Python 3.11/3.12 required — included in Debian 12 / Ubuntu 24.04).
+1. Installs `git`, `python3-venv`, `curl` via apt (Python 3.11/3.12 required — included in Debian 12 / Ubuntu 24.04; the script stops on any other version).
 2. Clones the repo to `~/printloom` and creates a Python virtualenv (all dependencies install as prebuilt wheels — nothing compiles).
 3. Downloads the **prebuilt frontend** from the rolling release asset (`native-latest` / `native-beta`) — low-memory devices cannot run the Vite build themselves.
-4. Installs `ffmpeg` only on devices with enough RAM (see table above). Without ffmpeg, disable the camera in *System → Camera* (power-saving mode).
+4. Installs `ffmpeg` only on devices with enough RAM (see table above). Without ffmpeg, disable the camera in *Configuration → Cameras* (power-saving mode).
 5. Creates and starts the `printloom` systemd service. On devices with < 700 MB RAM the service gets memory limits (`MemoryMax=380M`) so it can never starve other services (e.g. **Klipper** on the same machine — Printloom restarts instead).
 
 Data (devices, racks, sequences, queue, uploads) lives in
@@ -67,5 +67,5 @@ sudo systemctl disable --now printloom   # stop + remove from autostart
 
 - Use **Raspberry Pi OS Lite (64-bit)** — no desktop.
 - Enable zram swap: `sudo apt install zram-tools` (then set `PERCENT=150` in `/etc/default/zramswap` and restart the service).
-- Keep the camera disabled (*System → Camera*).
+- Keep the camera disabled (*Configuration → Cameras*).
 - If Klipper/Moonraker runs on the same device: expect a snappier UI on a Pi 4+ — the Zero 2 W works, but it is tight.

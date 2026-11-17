@@ -288,10 +288,10 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(404, "Gerät nicht gefunden")
-    # Global deaktiviert (System → Kamera): klare Meldung VOR Licht/Stream.
+    # Global deaktiviert (Konfiguration → Kameras): klare Meldung VOR Licht/Stream.
     from app.services import appsettings
     if appsettings.camera_disabled():
-        raise HTTPException(503, "Kamera in Printloom deaktiviert (System → Kamera) — Energiesparmodus")
+        raise HTTPException(503, appsettings.CAMERA_DISABLED_TEXT)
     if not _camera_enabled(db, device_id):
         raise HTTPException(503, CAMERA_OFF_FOR_DEVICE)
     settings = device_settings.get(db, device_id)
@@ -354,7 +354,7 @@ def camera_frame(device_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Gerät nicht gefunden")
     from app.services import appsettings
     if appsettings.camera_disabled():
-        raise HTTPException(503, "Kamera in Printloom deaktiviert (System → Kamera) — Energiesparmodus")
+        raise HTTPException(503, appsettings.CAMERA_DISABLED_TEXT)
     if not _camera_enabled(db, device_id):
         raise HTTPException(503, CAMERA_OFF_FOR_DEVICE)
     settings = device_settings.get(db, device_id)

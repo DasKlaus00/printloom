@@ -39,7 +39,8 @@ class ErrorBoundary extends Component {
 import Navigation from './components/Navigation'
 import ConfirmHost from './components/ConfirmHost'
 import Dashboard from './pages/Dashboard'           // Landing-Seite → eager
-import Setup, { SETUP_DONE_KEY } from './pages/Setup' // braucht SETUP_DONE_KEY beim Start
+import { SETUP_DONE_KEY } from './services/constants'
+import { PAGES, PAGE_TO_PATH, pageForPath, pageTitle } from './services/pages'
 
 /* Alle übrigen Seiten lazy: jede landet als eigener Chunk und wird erst beim
    ersten Aufruf geladen → deutlich kleineres Start-Bundle. */
@@ -55,7 +56,7 @@ const SequenceEditor  = React.lazy(() => import('./pages/SequenceEditor'))
 const Profiles        = React.lazy(() => import('./pages/Profiles'))
 const FileAnalyzer    = React.lazy(() => import('./pages/FileAnalyzer'))
 const AmsDiagnostics  = React.lazy(() => import('./pages/AmsDiagnostics'))
-const MobileView      = React.lazy(() => import('./pages/MobileView'))
+const Setup           = React.lazy(() => import('./pages/Setup'))
 const Projekt         = React.lazy(() => import('./pages/Projekt'))
 const History         = React.lazy(() => import('./pages/History'))
 const Library         = React.lazy(() => import('./pages/Library'))
@@ -73,55 +74,17 @@ import { tabTitle, farmTitleState } from './services/tabTitle'
 import { navCompact, NAV_KEY, NAV_AUTO_MAX } from './services/navState'
 import { VERSION } from './version'
 
-/* ── URL ↔ page-id mapping ──────────────────────────────────── */
-const PATH_TO_PAGE = {
-  '/':              'dashboard',
-  '/dashboard':     'dashboard',
-  '/files':         'files',
-  '/analyze':       'analyze',
-  '/diagnose':      'diagnose',
-  '/steuerung':     'steuerung',
-  '/autofarm':      'autofarm',
-  '/history':       'history',
-  '/bibliothek':    'library',
-  '/projekt':       'projekt',
-  '/rack':          'rack',
-  // „Farm-Layout" ist seit v1.1.8 Teil des Drucker-Tabs (eine Quelle für alle
-  // X-Positionen) — alte Lesezeichen landen dort.
-  '/layout':        'drucker',
-  '/drucker':       'drucker',
-  '/configuration': 'configuration',
-  '/filamente':     'filamente',
-  '/system':        'system',
-  '/sequence':      'sequence',
-  '/profiles':      'profiles',
-  '/setup':         'setup',
-  '/mobile':        'mobile',
-}
+/* Adressen, Titel und Seitenleiste kommen aus services/pages.js (eine Tabelle). */
+const pageFromPath = () => pageForPath(window.location.pathname)
 
-const PAGE_TO_PATH = {
-  dashboard:     '/dashboard',
-  files:         '/files',
-  analyze:       '/analyze',
-  diagnose:      '/diagnose',
-  steuerung:     '/steuerung',
-  autofarm:      '/autofarm',
-  history:       '/history',
-  library:       '/bibliothek',
-  projekt:       '/projekt',
-  rack:          '/rack',
-  drucker:       '/drucker',
-  configuration: '/configuration',
-  filamente:     '/filamente',
-  system:        '/system',
-  sequence:      '/sequence',
-  profiles:      '/profiles',
-  setup:         '/setup',
-  mobile:        '/mobile',
-}
-
-function pageFromPath() {
-  return PATH_TO_PAGE[window.location.pathname] ?? 'dashboard'
+// Seite → Komponente; welche Seiten es gibt, sagt services/pages.js (pages.test.js
+// prüft, dass jede dort genannte Seite hier eine Komponente hat).
+const PAGE_COMPONENTS = {
+  dashboard: Dashboard, files: FileLibrary, filamente: FilamentLibrary, analyze: FileAnalyzer,
+  diagnose: AmsDiagnostics, steuerung: Steuerung, autofarm: AutoFarm, history: History,
+  library: Library, projekt: Projekt, rack: RackManager, drucker: Drucker,
+  configuration: Configuration, system: System, sequence: SequenceEditor, profiles: Profiles,
+  setup: Setup,
 }
 
 /* ── Multi-target status pills (printer · klipper · server) ──── */
@@ -377,29 +340,9 @@ function App() {
   // Trigger lief der Status nur im 30-s-Takt.
   useEffect(() => { fetchTargets() }, [currentPage, fetchTargets])
 
-  const pageTitle = {
-    dashboard:     'Dashboard',
-    files:         'Datei-Bibliothek',
-    analyze:       'Datei-Analyse',
-    diagnose:      'AMS-Diagnose',
-    steuerung:     'Steuerung',
-    autofarm:      'Auto Farm',
-    history:       'Historie',
-    library:       'Bibliothek',
-    projekt:       'Projekt',
-    rack:          'Regal',
-    drucker:       'Drucker',
-    configuration: 'Konfiguration',
-    system:        'System',
-    sequence:      'Sequenz-Editor',
-    profiles:      'Profile',
-    setup:         'Setup-Assistent',
-    mobile:        'Mobile View',
-  }
-
   // Die Kopfzeile nennt die Seite nicht mehr (das tut die Überschrift der Seite,
   // wie in der Prüfplanung) — der Browser-Tab schon.
-  const currentTitle = tr(pageTitle[currentPage] ?? '')
+  const currentTitle = tr(pageTitle(currentPage))
   // Eine Stelle für den Tab-Titel (services/tabTitle.js), mit Fortschritt der Farm.
   const titleFarm = farmTitleState(farmStatus)
   useEffect(() => {
@@ -411,6 +354,13 @@ function App() {
   // (but hidden via CSS) so their state survives page switches. Der
   // PageActiveContext sagt der Seite, ob sie gerade sichtbar ist — versteckte
   // Seiten pausieren ihr Polling (usePageActive/useAutoRefresh).
+  // Seiten mit eigenen Props; alle anderen bekommen keine.
+  const pageProps = {
+    autofarm: { setCurrentPage },
+    library:  { setCurrentPage },
+    system:   { onUpdateAvailable: setUpdateAvailable, onUpdatePhase: setUpdateOverlay, setCurrentPage },
+    setup:    { setCurrentPage },
+  }
   const page = (id, Component, extraProps = {}) => {
     if (!visitedPages.has(id)) return null
     return (
@@ -423,15 +373,6 @@ function App() {
           </ErrorBoundary>
         </PageActiveContext.Provider>
       </div>
-    )
-  }
-
-  // MobileView renders standalone without nav/header
-  if (currentPage === 'mobile') {
-    return (
-      <Suspense fallback={<PageFallback />}>
-        <MobileView />
-      </Suspense>
     )
   }
 
@@ -526,23 +467,7 @@ function App() {
         <main className="flex-1 min-w-0 overflow-auto bg-surface-950">
           {/* Eine Breitenregel für alle Seiten (seit v1.1.69): volle Breite bis 1600 px. */}
           <div className="px-3 py-4 sm:px-6 sm:pt-5 sm:pb-14 max-w-[1600px]">
-            {page('dashboard',     Dashboard)}
-            {page('files',         FileLibrary)}
-            {page('filamente',     FilamentLibrary)}
-            {page('analyze',       FileAnalyzer)}
-            {page('diagnose',      AmsDiagnostics)}
-            {page('steuerung',     Steuerung)}
-            {page('autofarm',      AutoFarm, { setCurrentPage })}
-            {page('history',       History)}
-            {page('library',       Library, { setCurrentPage })}
-            {page('projekt',       Projekt)}
-            {page('rack',          RackManager)}
-            {page('drucker',       Drucker)}
-            {page('configuration', Configuration)}
-            {page('system',        System, { onUpdateAvailable: setUpdateAvailable, onUpdatePhase: setUpdateOverlay, setCurrentPage })}
-            {page('sequence',      SequenceEditor)}
-            {page('profiles',      Profiles)}
-            {page('setup',         Setup, { setCurrentPage })}
+{PAGES.map(p => page(p.id, PAGE_COMPONENTS[p.id], pageProps[p.id]))}
           </div>
         </main>
       </div>

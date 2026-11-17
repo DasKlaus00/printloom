@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.77',
+    de: [
+      'SCHNELLERER START: Das Start-Paket der Oberfläche ist etwa halb so groß (911 → 505 kB). „Was ist neu“, der Setup-Assistent und die Konfiguration laden erst, wenn man sie öffnet.',
+      'DIAGNOSE AUF DER SYSTEM-SEITE: AMS-Diagnose und Datei-Analyse sind jetzt über System → Diagnose erreichbar; vorher ging das nur über die Adresse.',
+      'Die alte Handy-Ansicht (/mobile) ist entfernt — die Startseite ist fürs Handy ausgelegt, alte Lesezeichen landen dort. Der Browser-Tab zeigt jetzt auch auf der Filament-Seite ihren Namen.',
+      'Kamera aus: Die Meldung nennt den richtigen Ort (Konfiguration → Kameras statt System → Kamera).',
+      'Native Linux-Installation bricht bei einer Python-Version ohne fertige Pakete (nicht 3.11/3.12) sofort mit klarer Meldung ab, statt stundenlang zu kompilieren. .env.example enthält nur noch Einträge, die tatsächlich wirken.',
+      'Geräte-Abfrage wiederholt nur noch bei Netz- oder Serverfehlern, nicht bei einer echten Ablehnung.',
+    ],
+    en: [
+      'FASTER START: the start bundle of the interface is about half the size (911 → 505 kB). “What’s new”, the setup wizard and the configuration only load when you open them.',
+      'DIAGNOSTICS ON THE SYSTEM PAGE: AMS diagnostics and file analysis are now reachable via System → Diagnostics; before, only by typing the address.',
+      'The old phone view (/mobile) is removed — the home page is designed for phones, old bookmarks land there. The browser tab now also shows the name of the filament page.',
+      'Camera off: the message names the right place (Configuration → Cameras instead of System → Camera).',
+      'Native Linux install stops right away with a clear message on a Python version without prebuilt packages (not 3.11/3.12) instead of compiling for hours. .env.example only lists entries that actually take effect.',
+      'The device query only retries on network or server errors, not on a real refusal.',
+    ],
+  },
+  {
     version: '1.1.76',
     de: [
       'AUFGERÄUMT: Vier Python-Pakete, die nirgends benutzt wurden, sind raus (kleineres Image und Windows-Paket). Ein Test meldet künftig jedes Paket, das niemand importiert.',

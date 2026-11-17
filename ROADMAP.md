@@ -30,7 +30,7 @@ Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 | **Sicherheit** | Keine eigene Anmeldung (Reverse-Proxy davor). Kein CORS, schreibende Anfragen fremder Seiten gesperrt (auch über http), nur Heimnetz-Adressen (gegen DNS-Rebinding), kein Einbetten in fremde Seiten, Windows-Update nur aus dem eigenen Release, Backup ohne Zugangsdaten (auf Wunsch verschlüsselt mit; beim Einspielen bleiben Zugangsdaten an ihre Adresse gebunden) |
 | **Auslieferung** | Docker (amd64/arm64), native Windows-App, native Linux. Version im Image, Update aus der Oberfläche über den Docker-Socket (nur bei Stillstand, meldet einen Fehlschlag), Backup einspielen nur bei Stillstand (Fach-Belegung bleibt), Promote-Workflow Beta → Stabil mit Digest des getesteten Images; Prüfsummen für Windows-Installer, Native-Paket und mitgeliefertes ffmpeg, Actions auf Commit-SHAs |
 | **Slicer** | OrcaSlicer-Plugin (ab Orca 2.5): Farm-Check nach dem Slicen, Senden in die Warteschlange (erst nach der Prüfung, mit Kollisionsgefahr nur in die Bibliothek), Drucker und AMS im Geräte-Tab, Farm-Tab |
-| **Qualität** | 1229 Backend-, 60 Plugin- und 197 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
+| **Qualität** | 1229 Backend-, 60 Plugin- und 201 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request. Wächter-Tests gegen neue stille `except: pass`, unbenutzte Pakete und verwaiste Übersetzungen; Start-Bundle ~500 kB (Changelog und selten genutzte Seiten laden bei Bedarf) |
 
 ---
 
@@ -88,9 +88,8 @@ Größtes offenes Versprechen und größter Umbau — mit eigenem Design-Schritt
 
 ## Laufend — beim Anfassen mitnehmen
 
-- **52 stille `except Exception: pass`** loggen und neue per Test verbieten.
-- **Start-Bundle 828 kB**: `changelog.js` (228 kB) und das englische Wörterbuch erst
-  bei Bedarf nachladen.
+- **52 stille `except Exception: pass`** loggen (neue verbietet schon ein Test).
+- **Englisches Wörterbuch** (~160 kB) erst bei Bedarf nachladen.
 - **Status über den WebSocket** statt 13 einzelner Timer.
 - **16 React-Warnungen** (`exhaustive-deps`) beheben.
 - **4–5 Playwright-Smoke-Tests** in die CI.

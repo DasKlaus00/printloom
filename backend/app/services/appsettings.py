@@ -62,6 +62,11 @@ def write_camera(cfg: dict) -> dict:
     return merged
 
 
+# Eine Stelle für die Meldung (bis v1.1.76 viermal kopiert und mit falschem Ort
+# „System → Kamera"; der Schalter liegt unter Konfiguration → Kameras).
+CAMERA_DISABLED_TEXT = "Kamera in Printloom deaktiviert (Konfiguration → Kameras) — Energiesparmodus"
+
+
 def camera_disabled() -> bool:
     """Fail-soft: bei Lesefehlern gilt die Kamera als AKTIV (kein Funktionsverlust)."""
     try:

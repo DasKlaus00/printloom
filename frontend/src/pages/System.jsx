@@ -419,6 +419,19 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
         </div>
       </div>
 
+      {/* Diagnose-Seiten ohne Platz in der Seitenleiste (seit v1.1.77 hier verlinkt; vorher
+          nur über die Adresse erreichbar). */}
+      <div className="card p-4 space-y-2">
+        <h2 className="text-[15px] font-semibold text-surface-100">{tr('Diagnose')}</h2>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setCurrentPage?.('diagnose')} className="btn-secondary text-sm">{tr('AMS-Diagnose')}</button>
+          <button onClick={() => setCurrentPage?.('analyze')} className="btn-secondary text-sm">{tr('Datei-Analyse')}</button>
+        </div>
+        <p className="text-[11px] text-surface-500">
+          {tr('AMS-Diagnose: was beim Senden an den Drucker passiert ist. Datei-Analyse: Inhalt einer Druckdatei (Filamente, Platten, Zeiten).')}
+        </p>
+      </div>
+
       {/* OrcaSlicer-Plugin — kommt vom Server, damit Plugin und Printloom zusammenpassen */}
       <div className="card p-4 space-y-2">
         <h2 className="text-[15px] font-semibold text-surface-100">{tr('OrcaSlicer-Plugin')}</h2>

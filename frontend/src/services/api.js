@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { SETUP_DONE_KEY } from './constants'
 import { tr } from './i18n'
 
 // Ohne Default-Timeout wartet axios UNBEGRENZT. Steht das Backend kurz (Update,
@@ -29,7 +30,7 @@ api.interceptors.response.use(r => r, (error) => {
 // Geräteliste dann leer, bis der Nutzer F5 drückte. Deshalb kurz nachfassen bei
 // FEHLER oder bei LEERER Antwort OBWOHL das Setup schon durch ist (dann ist „leer"
 // nicht echt). Eine frische Installation (kein Setup) liefert legitim leer → kein Retry.
-const _setupDone = () => { try { return !!localStorage.getItem('ottomat3d_setup_done') } catch { return false } }
+const _setupDone = () => { try { return !!localStorage.getItem(SETUP_DONE_KEY) } catch { return false } }
 async function _listDevices() {
   let last
   for (let i = 0; i < 4; i++) {
@@ -39,6 +40,11 @@ async function _listDevices() {
       last = r
     } catch (e) {
       last = e
+      // Nur Netzfehler und Server-Ausfälle (≥ 502: Container startet noch) nachfassen.
+      // Eine 4xx-Antwort ist eine echte Antwort — viermal fragen ändert sie nicht
+      // und verzögerte bis v1.1.76 nur die Fehlermeldung um drei Sekunden.
+      const status = e?.response?.status
+      if (status && status < 502) throw e
     }
     if (i < 3) await new Promise(res => setTimeout(res, 1000))
   }

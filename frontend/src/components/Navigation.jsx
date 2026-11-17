@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { navGroups } from '../services/pages'
 import { apiError } from '../services/apiError'
 import { useLanguage, setLanguage, availableLanguages } from '../services/i18n'
 import { fileService } from '../services/api'
@@ -8,12 +9,6 @@ const icons = {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
       <circle cx="19" cy="19" r="3" fill="currentColor" className="text-emerald-400"/>
-    </svg>
-  ),
-  live: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 7.76a6 6 0 0 0 0 8.49"/>
-      <path d="M20.07 4.93a10 10 0 0 1 0 14.14"/><path d="M3.93 4.93a10 10 0 0 0 0 14.14"/>
     </svg>
   ),
   history: (
@@ -37,23 +32,11 @@ const icons = {
       <line x1="17.5" y1="19" x2="20.5" y2="19"/><line x1="19" y1="17.5" x2="19" y2="20.5"/>
     </svg>
   ),
-  rack: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="3" width="20" height="4" rx="1"/>
-      <rect x="2" y="10" width="20" height="4" rx="1"/>
-      <rect x="2" y="17" width="20" height="4" rx="1"/>
-    </svg>
-  ),
   drucker: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="6 9 6 2 18 2 18 9"/>
       <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
       <rect x="6" y="14" width="12" height="8" rx="1"/>
-    </svg>
-  ),
-  calibration: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
     </svg>
   ),
   dashboard: (
@@ -85,30 +68,6 @@ const icons = {
       <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
     </svg>
   ),
-  analyze: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-      <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
-    </svg>
-  ),
-  simulator: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="8" width="5" height="9" rx="1"/>
-      <rect x="9.5" y="5" width="5" height="14" rx="1"/>
-      <rect x="17" y="8" width="5" height="9" rx="1"/>
-      <line x1="7" y1="12.5" x2="9.5" y2="12.5"/>
-      <line x1="14.5" y1="12.5" x2="17" y2="12.5"/>
-    </svg>
-  ),
-  diagnose: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 3H5a2 2 0 0 0-2 2v4"/><path d="M9 3h6"/><path d="M15 3h4a2 2 0 0 1 2 2v4"/>
-      <path d="M3 9v6"/><path d="M21 9v6"/>
-      <path d="M3 15v2a2 2 0 0 0 2 2h4"/><path d="M21 15v2a2 2 0 0 1-2 2h-4"/>
-      <path d="M9 21h6"/>
-      <path d="M12 8v4"/><path d="M10 12h4"/>
-    </svg>
-  ),
   profiles: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -136,27 +95,10 @@ const icons = {
    „Farm-Layout" war bis v1.1.7 ein eigener Tab mit einer ZWEITEN Stelle für
    dieselben X-Positionen; die Schienen-Ansicht steckt jetzt im Drucker-Tab. */
 function buildGroups(tr) {
-  return [
-    { label: null, pages: [
-      { id: 'dashboard',     label: tr('Dashboard'),        icon: 'dashboard'   },
-      { id: 'autofarm',      label: tr('Auto Farm'),        icon: 'autofarm'    },
-      { id: 'steuerung',     label: tr('Steuerung'),        icon: 'controls'    },
-      { id: 'history',       label: tr('Historie'),         icon: 'history'     },
-    ]},
-    { label: tr('Aufträge'), pages: [
-      { id: 'files',         label: tr('Datei-Bibliothek'), icon: 'files'       },
-      { id: 'projekt',       label: tr('Projekt'),          icon: 'projekt'     },
-      { id: 'library',       label: tr('Bibliothek'),       icon: 'library'     },
-    ]},
-    { label: tr('Einrichtung'), pages: [
-      { id: 'drucker',       label: tr('Drucker'),          icon: 'drucker'     },
-      { id: 'sequence',      label: tr('Sequenz-Editor'),   icon: 'sequence'    },
-      { id: 'profiles',      label: tr('Profile'),          icon: 'profiles'    },
-      { id: 'filamente',     label: tr('Filamente'),        icon: 'filamente'   },
-      { id: 'configuration', label: tr('Konfiguration'),    icon: 'config'      },
-      { id: 'system',        label: tr('System'),           icon: 'system'      },
-    ]},
-  ]
+  return navGroups().map(g => ({
+    label: g.label ? tr(g.label) : null,
+    pages: g.pages.map(p => ({ id: p.id, label: tr(p.title), icon: p.icon })),
+  }))
 }
 
 /* ─── Schnell-Upload ──────────────────────────────────────────────── */

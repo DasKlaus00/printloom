@@ -519,16 +519,9 @@ const EN_STRINGS = {
   'Update abgeschlossen': 'Update complete',
   'Seite wird neu geladen…': 'Reloading page…',
 
-  // ── MobileView ──
+  // ── Regal-Anzeigen ──
   '{0} mm Höhe': '{0} mm height',
-  'Entnommen': 'Removed',
-  'Rack-Übersicht · Mobile': 'Rack overview · Mobile',
   '{0} fertig': '{0} done',
-  '{0} Fächer gesamt': '{0} slots total',
-  'Job {0} läuft': 'Job {0} running',
-  'Keine Fächer konfiguriert': 'No slots configured',
-  'Auto-Refresh alle 5s': 'Auto-refresh every 5s',
-  'Jetzt aktualisieren': 'Refresh now',
 
   // ── AMS-Diagnose ──
   'Keine Schritte aufgezeichnet.': 'No steps recorded.',
@@ -1488,6 +1481,9 @@ const EN_STRINGS = {
   'Änderungen übernehmen': 'Apply changes',
   'Druckdateien ablegen, prüfen und in die Warteschlange legen.': 'Store print files, check them and put them in the queue.',
   'Farbe unbekannt': 'Color unknown',
+  'Kamera in Printloom deaktiviert (Konfiguration → Kameras) — Energiesparmodus': 'Camera disabled in Printloom (Configuration → Cameras) — power-saving mode',
+  'Diagnose': 'Diagnostics',
+  'AMS-Diagnose: was beim Senden an den Drucker passiert ist. Datei-Analyse: Inhalt einer Druckdatei (Filamente, Platten, Zeiten).': 'AMS diagnostics: what happened when sending to the printer. File analysis: contents of a print file (filaments, plates, times).',
   'Auto Farm': 'Auto Farm',
   'Installiertes Image: {0}': 'Installed image: {0}',
   'Der Build für v{0} ist fehlgeschlagen — es gibt dafür kein Image. Die installierte Version läuft weiter.': 'The build for v{0} failed — there is no image for it. The installed version keeps running.',
@@ -1496,7 +1492,6 @@ const EN_STRINGS = {
   '{0} Regale · {1} Fächer · Magazin-Fach {2} — Anzahl in Konfiguration → Allgemein → Regal-Konfiguration': '{0} racks · {1} slots · magazine slot {2} — count under Configuration → General → Rack configuration',
   'Fächer {0} sind belegt — erst unter Auto Farm → Regal leeren': 'Slots {0} are occupied — empty them under Auto Farm → Rack first',
   'Magazin leer — Bestand unter Auto Farm → Regal setzen': 'Magazine empty — set the stock under Auto Farm → Rack',
-  'Regal unter Konfiguration → Allgemein → Regal-Konfiguration einrichten': 'Set up the rack under Configuration → General → Rack configuration',
   'Noch kein Stromverbrauch erfasst — Smart-Steckdose unter Konfiguration → Allgemein → Energie & Kosten einrichten.': 'No power use recorded yet — set up a smart plug under Configuration → General → Energy & costs.',
   'Filamentpreis steht auf 0 — unter Konfiguration → Allgemein → Energie & Kosten eintragen.': 'Filament price is 0 — enter it under Configuration → General → Energy & costs.',
   'Kein Bambu Lab Gerät konfiguriert — bitte erst unter Konfiguration → Geräte einrichten': 'No Bambu Lab device configured — please set one up under Configuration → Devices first',

@@ -23,7 +23,7 @@ describe('Seitenkopf', () => {
   })
   it('jede Seite hat einen Kopf', () => {
     const ohne = fs.readdirSync(PAGES).filter(n => /\.jsx$/.test(n))
-      .filter(n => !['Setup.jsx', 'MobileView.jsx', 'RackManager.jsx', 'Diagnose.jsx'].includes(n))
+      .filter(n => !['Setup.jsx', 'RackManager.jsx', 'Diagnose.jsx'].includes(n))
       .filter(n => !/from '\.\.\/components\/PageHeader'/.test(fs.readFileSync(path.join(PAGES, n), 'utf8')))
     expect(ohne).toEqual([])
   })
