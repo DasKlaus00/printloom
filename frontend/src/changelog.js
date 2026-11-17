@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.55',
+    de: [
+      'KEIN DRUCKSTART NACH STOPP ODER NOTAUS: Kam Stopp oder Notaus, während eine Druckdatei noch hochgeladen wurde, startete der Drucker sie bisher trotzdem. Jetzt geht danach kein Startbefehl mehr raus, auch keine Bett-Fahrt.',
+      'PRINTLOOM WEISS, WAS AUF DEM BETT LIEGT: Nach dem Druckstart steht das Druckbett auf „Druck“. Bricht eine Fahrt mit Platte ab (Arm hängt, Klipper-Fehler, Notaus), gilt der Greifer als „unbekannt“ statt beim alten Stand zu bleiben, und vor dem Auswerfen muss der Greifer leer sein. Der nächste Start fragt dann nach, statt blind zuzugreifen.',
+      'STRESSTEST: Mit Drucker-Umweg wird das Druckbett mitgebucht. Der Start wird abgelehnt, solange laut letztem Stand noch eine Platte im Greifer oder Drucker liegt oder der Drucker druckt. Ein Halt unterwegs beendet den Test mit Meldung; bisher wartete er endlos auf ein „Fortsetzen“, das es dort nicht gibt.',
+      'NACH EINEM DRUCKFEHLER: Die Bergung sucht erst ein freies Fach, falls noch keins zugewiesen war. Ein Stopp oder ein hängender Arm während der Bergung wird nicht mehr als „Auswurf misslungen“ verbucht, und nach „Platte von Hand entnommen, fortsetzen“ gelten Greifer und Bett als leer.',
+      'KAPUTTE DATEI MITTEN IM LAUF: Ist eine Datendatei vor einem Schritt unlesbar, hält die Farm an und macht nach dem Fortsetzen genau dort weiter. Bisher begann sie den ganzen Job neu oder verwarf ihn nach dem Druckstart mit der falschen Meldung „Bewegung hing“.',
+      'EINREIHEN GANZ ODER GAR NICHT: Wird die Farm gestoppt, während ein neuer Job noch geprüft wird, landet er in der gespeicherten Warteschlange statt zu verschwinden. Bei Dateien mit mehreren Platten (OrcaSlicer-Plugin) wird keine eingereiht, wenn eine scheitert; bisher lag die erste schon in der Farm, und erneutes Senden druckte sie doppelt.',
+    ],
+    en: [
+      'NO PRINT START AFTER STOP OR EMERGENCY STOP: if stop or the emergency stop came while a print file was still uploading, the printer used to start it anyway. Now no start command goes out after that, and no bed move either.',
+      'PRINTLOOM KNOWS WHAT IS ON THE BED: after the print starts, the bed is booked as “print”. If a move with a plate is cut off (arm stuck, Klipper error, emergency stop), the gripper counts as “unknown” instead of keeping its old state, and the gripper must be empty before ejecting. The next start then asks instead of grabbing blindly.',
+      'STRESS TEST: with the printer detour, the bed is booked too. The start is refused while the last known state still has a plate in the gripper or printer, or while the printer is printing. A hold along the way ends the test with a message; until now it waited forever for a “resume” that does not exist there.',
+      'AFTER A PRINT FAILURE: the recovery first finds a free slot if none was assigned yet. A stop or a stuck arm during recovery is no longer booked as “eject failed”, and after “plate removed by hand, resume” the gripper and bed count as empty.',
+      'BROKEN FILE MID-RUN: if a data file is unreadable before a step, the farm pauses and continues exactly there after resuming. Until now it restarted the whole job, or after the print start discarded it with the wrong message “move got stuck”.',
+      'ENQUEUE ALL OR NOTHING: if the farm is stopped while a new job is still being checked, it goes into the saved queue instead of vanishing. For files with several plates (OrcaSlicer plugin), none is queued if one fails; until now the first was already in the farm, and sending again printed it twice.',
+    ],
+  },
+  {
     version: '1.1.54',
     de: [
       'EINGEMESSENE POSITIONEN GEHEN NICHT VERLOREN: Legt man ein Gerät neu an, nachdem das alte gelöscht wurde (oder nach einem Backup auf einem neuen Rechner), fragt der Drucker-Tab, ob die Positionen des alten übernommen werden sollen. Bisher bekam das neue Gerät erfundene Positionen (400 mm daneben), und das nächste Speichern löschte die eingemessenen.',

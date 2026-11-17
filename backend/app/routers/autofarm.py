@@ -627,6 +627,20 @@ def _rack_data() -> dict:
         return {}
 
 
+async def _hold_for_file(reason: str) -> None:
+    """Kaputte Datendatei mitten im Lauf: pausieren, melden, auf „Fortsetzen" warten.
+    Außerhalb der Farm (Stresstest) gibt es kein Fortsetzen → Fehler."""
+    if not _farm.get("running"):
+        raise RuntimeError(reason)
+    _pause_for_file(reason)
+    await _notify(f"🛑 Printloom — Datei unlesbar\n{reason}")
+    while _farm["paused"] and not _farm["stopping"]:
+        await asyncio.sleep(0.5)
+    if _farm["stopping"]:
+        raise RuntimeError("Gestoppt")
+    _farm["error"] = None
+
+
 def _pause_for_file(reason: str) -> None:
     """Farm anhalten, weil eine Datendatei nicht stimmt (nur wenn sie läuft)."""
     _log(f"🛑 {reason} — Farm pausiert (System → Datenspeicher)")
@@ -1171,6 +1185,8 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
     _log(f"Plate-GCode: {plate_param or 'n/a'}")
 
     await asyncio.sleep(5)
+    # Kam während des Uploads Stopp oder Notaus, geht kein Druckstart mehr raus.
+    _assert_may_command_printer("Druck starten")
     ok = await loop.run_in_executor(
         bambu_manager.executor,
         lambda: bambu_manager.start_print(device, print_name, use_ams=use_ams,
@@ -1178,6 +1194,9 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
     await asyncio.sleep(2)
     if not ok:
         raise RuntimeError("Druckstart fehlgeschlagen")
+    # Ab jetzt liegt ein Druck auf dem Bett (bis v1.1.54 nie gebucht: Hinweise nach
+    # Skip oder Neustart sagten „leere Platte", obwohl ein Druck darauf lag).
+    _set_bed("printing")
     _log(f"'{file.original_filename}' gestartet (AMS: {ams_mapping})")
 
 
@@ -1237,7 +1256,12 @@ GATE_GRACE_S = 60.0
 
 
 async def _hold_until_resumed(error: str, push: str) -> None:
-    """Farm pausieren, Grund anzeigen, einmal Push, auf „Fortsetzen" warten."""
+    """Farm pausieren, Grund anzeigen, einmal Push, auf „Fortsetzen" warten.
+    Außerhalb der Farm (Stresstest) gibt es kein „Fortsetzen": dann Fehler statt
+    Pause (bis v1.1.54 wartete der Stresstest dort endlos, und alle Handfahrten
+    blieben gesperrt)."""
+    if not _farm.get("running"):
+        raise RuntimeError(error)
     _farm["paused"] = True
     _farm["error"] = error
     _log(f"⏸ {error}")
@@ -1268,6 +1292,10 @@ async def _printer_gate(device, what: str, need_bed_empty: bool = False) -> None
         bed = _farm.get("bed") or "empty"
         bed_busy = need_bed_empty and bed != "empty"
         if not busy and not bed_busy:
+            # Hat der Nutzer während der Wartezeit pausiert, erst seine Pause abwarten.
+            if _farm.get("paused") and _farm.get("running"):
+                await _wait_while_paused()
+                continue
             return
         if busy and not bed_busy and loop.time() < deadline:
             await asyncio.sleep(3)
@@ -2200,9 +2228,19 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         _jetzt = _read_sequences()
                         bergung = (_eject_recovery_steps(_jetzt["seq_next"]) if _jetzt else None) \
                             or fail_steps
+                        # Ohne Fach (FAILED vor der ersten Restzeit-Meldung) würde das Einlagern
+                        # abbrechen: erst ein Fach suchen, wie bei FINISH.
+                        if job.get("slot") in (None, "", "1-0"):
+                            await _assign_slot_for_height(job, job.get("object_height_mm") or 0.0)
                         try:
                             await _exec_sequence(bergung, job, device, False, poll_sec, min_min, [], [])
+                        except _MoveTimeout:
+                            # Arm hängt: nicht als „Auswurf misslungen" verbuchen, die Farm hat dafür
+                            # eine eigene Pause mit Neu-Homen (bis v1.1.54 hier verschluckt).
+                            raise
                         except Exception as fe:
+                            if isinstance(fe, RuntimeError) and str(fe) == "Gestoppt":
+                                raise
                             # Auswurf misslungen → NICHT blind weiterfahren (Kollisionsgefahr) → pausieren.
                             _log(f"🛑 Auswurf-Sequenz fehlgeschlagen: {fe} — pausiert")
                             _farm["paused"] = True
@@ -2213,6 +2251,12 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                                 await asyncio.sleep(0.5)
                             if _farm["stopping"]:
                                 raise RuntimeError("Gestoppt")
+                            # „Fortsetzen" heißt hier: Platte ist von Hand entnommen. Sonst stünde
+                            # Greifer/Bett weiter auf „unbekannt" bzw. „Druck", und das nächste Tor
+                            # hielte die Farm grundlos noch einmal an.
+                            _set_arm("none")
+                            _set_bed("empty")
+                            _log("✓ Fortgesetzt — Platte gilt als entnommen")
                             raise RuntimeError("Druck fehlgeschlagen (FAILED)")
                         raise _EjectRecovered(
                             "Druck fehlgeschlagen (FAILED) — Platte ausgeworfen & eingelagert")
@@ -2281,8 +2325,11 @@ def _load_farm_geometry() -> dict:
     g = _motion.merge_defaults(storage.read_json_checked(GEOMETRY_PATH, None, expect=dict))
     try:
         _motion.apply_rack_config(g, rack_store.load())
-    except Exception:
-        pass
+    except storage.BrokenFile:
+        # Sonst führe die Farm mit Regalzahl/Fächern aus den Vorgaben statt der eigenen.
+        raise
+    except (OSError, ValueError, TypeError, KeyError) as e:
+        logger.warning(f"Regal-Konfiguration nicht auf die Geometrie anwendbar: {e}")
     # Seit v1.1.8 gibt es keine zweite X-Quelle mehr: das Farm-Layout wird aus
     # genau dieser Geometrie abgeleitet, statt sie zu überlagern. Damit fahren
     # Test-Knopf (Drucker-Tab) und Farm garantiert dieselben Positionen.
@@ -2393,6 +2440,19 @@ def _assert_store_slot(job: dict) -> None:
         raise RuntimeError(f"Kein gültiges Ablagefach ({slot or 'keins'}) — Platte bleibt im Greifer")
     if int(slot.split("-")[1]) == _rack_logic.magazine_slot_of(data):
         raise RuntimeError(f"Fach {slot} ist das Magazin — Platte bleibt im Greifer")
+
+
+def _mark_in_motion(op: Optional[str]) -> None:
+    """Vor einer Fahrt mit Platte: Was der Greifer hält, ist unterwegs unbekannt.
+    Bricht die Fahrt ab (Hänger, Klipper-Fehler, Notaus), steht so „unknown" statt
+    des alten Stands; das Greif-Tor und der Hinweis nach dem Stopp fragen dann nach.
+    Nach Erfolg bucht _book_op den neuen Stand (bis v1.1.54 blieb der alte stehen)."""
+    if op in ("grab", "grab_magazine", "store", "eject", "place", "load"):
+        arm = _farm.get("arm") or {}
+        _set_arm("unknown", arm.get("from", ""), arm.get("job_id"))
+    if op in ("place", "load"):
+        # Liegt die Platte nach einem Abbruch schon halb im Drucker, gilt das Bett als belegt.
+        _set_bed("plate")
 
 
 def _book_op(op: Optional[str], job: dict, rack=None, slot=None) -> None:
@@ -2554,6 +2614,8 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             await _printer_gate(device, "Auswerfen")
         elif kind == "store":
             _assert_store_slot(job)
+        if kind == "eject":
+            await _gripper_gate("Auswerfen")
         # Opt-in: bekannte Drucker-/Regal-Macros können als Printloom-G-code laufen
         # (geometry.use_gcode[op] = true). Standard aus → Geräte-Macro wie bisher.
         # Die Magazin-/Fach-Buchhaltung unten prüft weiter val (Macro-Name, unverändert).
@@ -2583,6 +2645,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             send_val, op_used = val, None
             logger.warning(f"use_gcode-Auswertung fehlgeschlagen ({e}) — Geräte-Macro {val!r}")
         _log(f"▶ {val}" + (f"  →  Printloom-G-code ({op_used})" if op_used else ""))
+        _mark_in_motion(kind)
         await _do_macro(send_val)
         _book_op(kind, job, stack_rack, stack_slot)
 
@@ -2602,6 +2665,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             await _printer_gate(device, "Platte einlegen", need_bed_empty=True)
         elif op == "eject":
             await _printer_gate(device, "Auswerfen")
+            await _gripper_gate("Auswerfen")
         elif is_store:
             _assert_store_slot(job)
         if is_grab:
@@ -2621,6 +2685,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         geom = _farm.get("geometry") or _load_farm_geometry()
         script = _motion.build_op(geom, op, rack=rk, slot=sl, printer=_farm_printer(geom))
         _log(f"▶ Printloom-Op: {op}" + (f" (Regal {rk} Fach {sl})" if (is_grab or is_store) else ""))
+        _mark_in_motion(op)
         await _do_macro(script)   # Klipper HTTP blocks until movement is complete
         # Gegriffenes Fach ausdrücklich mitgeben — ohne Magazin wird genau dessen
         # Markierung gelöscht (nicht „das nächstbeste" Fach).
@@ -2684,6 +2749,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         loop = asyncio.get_running_loop()
         _log(f"[↑] Bambu Position Z{z} (F{feed}) per G-Code…")
         # Über die persistente Verbindung (bambu_manager) senden — kein eigener Connect.
+        _assert_may_command_printer("Bett-Fahrt")
         ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.send_gcode, device, f"G90\nG1 Z{z} F{feed}")
         if not ok:
             raise RuntimeError("Z-Bewegung (G-Code) fehlgeschlagen")
@@ -3081,8 +3147,13 @@ async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
         _refresh_live_settings()
         try:
             _farm["geometry"] = _load_farm_geometry()
-        except storage.BrokenFile:
-            raise                    # → _run_farm pausiert und wiederholt den Job
+        except storage.BrokenFile as e:
+            # Noch hat sich in diesem Schritt nichts bewegt: anhalten, nach dem
+            # Fortsetzen genau diesen Schritt neu laden. Bis v1.1.54 ging der Fehler an
+            # _run_farm, das den ganzen Job neu begann oder ihn nach dem Druckstart als
+            # „Bewegung hing" verwarf (der fertige Druck blieb ungebucht im Drucker).
+            await _hold_for_file(str(e))
+            continue
         except Exception as e:
             logger.warning(f"Geometrie nicht geladen: {e}")
             _farm["geometry"] = None
@@ -3351,7 +3422,8 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 if _farm["stopping"]:
                     break
                 _farm["error"] = None
-                _resume_after_move_timeout(job, cur_slot, job_started_at)
+                _resume_after_move_timeout(job, cur_slot, job_started_at,
+                                           "Datei war mitten im Druckablauf unlesbar — Platte prüfen")
                 cur_slot = None
                 continue
 
@@ -3574,7 +3646,8 @@ def _assert_released() -> None:
         db.close()
 
 
-def _resume_after_move_timeout(job: dict, cur_slot, job_started_at) -> None:
+def _resume_after_move_timeout(job: dict, cur_slot, job_started_at,
+                               fehler: str = "Bewegung hing nach dem Druckstart — Platte prüfen") -> None:
     """Nach „Bewegung hängt → pausieren" und Fortsetzen: Was wird aus dem Job?
 
     Bis v1.1.44 blieb er „running" stehen, und die Farm nahm den nächsten.
@@ -3586,7 +3659,6 @@ def _resume_after_move_timeout(job: dict, cur_slot, job_started_at) -> None:
         _set_job(job["id"], {"status": "pending", "progress": 0, "remaining": 0})
         _log("↻ Fortgesetzt — der Job beginnt neu")
     else:
-        fehler = "Bewegung hing nach dem Druckstart — Platte prüfen"
         _log(f"🔴 {fehler}")
         _record_completed(job, "error", job_started_at, datetime.now(),
                           (datetime.now() - job_started_at).total_seconds() / 60.0, fehler)
@@ -3788,12 +3860,9 @@ async def _job_height(job: dict) -> tuple:
     return float(result.get("computed_height_mm") or 0.0), float(lh)
 
 
-@router.post("/enqueue")
-async def enqueue_job(job: EnqueueRequest):
-    """Add a job to the running farm's queue."""
-    if not _farm["running"]:
-        raise HTTPException(400, "Farm nicht aktiv — erst starten")
-
+async def _prepare_job(job: EnqueueRequest) -> dict:
+    """Job-Eintrag vorbereiten: Höhe aus der Datei (await). Angehängt wird getrennt
+    (_append_jobs, ohne await), damit nichts zwischen Prüfen und Anhängen passiert."""
     # Analyze height server-side so runtime slot assignment has clearance data.
     # The slot is forced to "1-0" so the print picks a real free slot at start time
     # based on the LIVE rack state (handles slots freed while the farm is running).
@@ -3807,17 +3876,8 @@ async def enqueue_job(job: EnqueueRequest):
             layer_h = lh
     except (OSError, ValueError) as e:
         logger.warning(f"enqueue height analysis failed for file {job.fileId}: {e}")
-
-    # Eindeutige ID: Prüfen und anhängen OHNE await dazwischen. Bis v1.1.48 stand die
-    # Prüfung vor der Höhen-Analyse (await): Zwei gleichzeitige Aufrufe (Plugin +
-    # Bibliothek) sahen beide „frei" und legten zwei Jobs mit derselben ID an.
-    new_id = job.id
-    if new_id is None:
-        new_id = max([int(j.get("id") or 0) for j in _farm["jobs"]] or [0]) + 1
-    elif any(j["id"] == new_id for j in _farm["jobs"]):
-        raise HTTPException(409, "Job bereits in der Warteschlange")
-    _farm["jobs"].append({
-        "id":               new_id,
+    return {
+        "id":               job.id,
         "fileId":           job.fileId,
         "fileName":         job.fileName,
         "slot":             "1-0",  # sentinel → real slot chosen at print start
@@ -3832,40 +3892,92 @@ async def enqueue_job(job: EnqueueRequest):
         "plateTotal":       job.plateTotal,
         "plateName":        job.plateName or "",
         "tag":              job.tag or "",
-    })
-    _log(f"[+] {job.fileName}{f' (Platte {job.plate})' if job.plate else ''} → Fach wird bei Ausführung zugewiesen")
-    return {"success": True, "id": new_id}
+    }
+
+
+def _saved_queue_append(prepared: list) -> list:
+    """Jobs in die GESPEICHERTE Warteschlange (Farm läuft nicht). → IDs."""
+    jobs = list(_read_checked(QUEUE_PATH, {"jobs": []}).get("jobs", []))
+    taken = {int(j.get("id") or 0) for j in jobs}
+    next_id = max(taken or {0}) + 1
+    ids = []
+    for pj in prepared:
+        jid = pj.get("id")
+        if jid is None or int(jid) in taken:
+            jid, next_id = next_id, next_id + 1
+        taken.add(int(jid))
+        jobs.append({
+            "id": jid, "fileId": pj["fileId"], "fileName": pj["fileName"],
+            "slot": None, "amsMap": pj.get("amsMap", ""), "status": "pending",
+            "plate": pj.get("plate"), "plateTotal": pj.get("plateTotal"),
+            "plateName": pj.get("plateName") or None,
+            "objectHeight": pj.get("object_height_mm"), "progress": 0, "remaining": 0,
+        })
+        ids.append(jid)
+    _write_config(QUEUE_PATH, {"jobs": jobs})
+    return ids
+
+
+def _append_jobs(prepared: list) -> list:
+    """Vorbereitete Jobs anhängen — synchron, ohne await, also ohne Lücke. Ganz oder
+    gar nicht: Eine doppelte ID lehnt den ganzen Satz ab (409). Läuft die Farm nicht
+    mehr (in der Zwischenzeit gestoppt), gehen die Jobs in die gespeicherte
+    Warteschlange: Bis v1.1.54 verschwanden sie dann (die Farm hatte ihre Liste schon
+    weggeschrieben und geleert). → IDs."""
+    if not _farm["running"]:
+        ids = _saved_queue_append(prepared)
+        _log(f"[+] {len(ids)} Job(s) → gespeicherte Warteschlange (Farm lief nicht mehr)")
+        return ids
+    have = {j["id"] for j in _farm["jobs"]}
+    wanted = [pj["id"] for pj in prepared if pj.get("id") is not None]
+    if any(i in have for i in wanted) or len(set(wanted)) != len(wanted):
+        raise HTTPException(409, "Job bereits in der Warteschlange")
+    next_id = max([int(j.get("id") or 0) for j in _farm["jobs"]] + [int(i) for i in wanted] or [0]) + 1
+    ids = []
+    for pj in prepared:
+        if pj.get("id") is None:
+            pj = {**pj, "id": next_id}
+            next_id += 1
+        _farm["jobs"].append(pj)
+        ids.append(pj["id"])
+        platte = f" (Platte {pj.get('plate')})" if pj.get("plate") else ""
+        _log(f"[+] {pj['fileName']}{platte} → Fach wird bei Ausführung zugewiesen")
+    return ids
+
+
+@router.post("/enqueue")
+async def enqueue_job(job: EnqueueRequest):
+    """Add a job to the running farm's queue."""
+    if not _farm["running"]:
+        raise HTTPException(400, "Farm nicht aktiv — erst starten")
+    # Eindeutige ID: Prüfen und anhängen ohne await dazwischen (_append_jobs). Bis
+    # v1.1.48 lag die Höhen-Analyse dazwischen, und zwei gleichzeitige Aufrufe (Plugin
+    # und Bibliothek) legten zwei Jobs mit derselben ID an.
+    prepared = await _prepare_job(job)
+    ids = _append_jobs([prepared])
+    return {"success": True, "id": ids[0]}
 
 
 async def add_library_jobs(file_id: int, file_name: str, units: list) -> list:
     """Jobs für eine Bibliotheksdatei anlegen, wie „+ Warteschlange" in der Bibliothek:
-    läuft die Farm, in ihre Warteschlange (Höhe ermittelt enqueue_job), sonst in die
+    läuft die Farm, in ihre Warteschlange (Höhe ermittelt _prepare_job), sonst in die
     gespeicherte. `units` = [(plate, plate_total, plate_name), …], je Eintrag ein Job.
     → die neuen Job-IDs.
+
+    Ganz oder gar nicht: Erst werden ALLE Platten vorbereitet, dann in einem Schritt
+    angehängt. Bis v1.1.54 landete bei einem Fehler in Platte 2 schon Platte 1 in der
+    Farm, und ein erneutes Senden druckte sie doppelt.
 
     Für das OrcaSlicer-Plugin. Die Bibliothek macht dasselbe noch im Browser
     (FileLibrary.jsx) — die Jobs sehen in beiden Fällen gleich aus."""
     if _farm["running"]:
-        ids = []
-        for plate, total, name in units:
-            r = await enqueue_job(EnqueueRequest(
-                id=None, fileId=file_id, fileName=file_name, slot="1-0", amsMap="",
-                plate=plate, plateTotal=total, plateName=name))
-            ids.append(r["id"])
-        return ids
-    jobs = list(_read_checked(QUEUE_PATH, {"jobs": []}).get("jobs", []))
-    next_id = max([int(j.get("id") or 0) for j in jobs] or [0]) + 1
-    ids = []
-    for plate, total, name in units:
-        jobs.append({
-            "id": next_id, "fileId": file_id, "fileName": file_name,
-            "slot": None, "amsMap": "", "status": "pending",
-            "plate": plate, "plateTotal": total, "plateName": name,
-            "objectHeight": None, "progress": 0, "remaining": 0,
-        })
-        ids.append(next_id)
-        next_id += 1
-    _write_config(QUEUE_PATH, {"jobs": jobs})
+        prepared = [await _prepare_job(EnqueueRequest(
+            id=None, fileId=file_id, fileName=file_name, slot="1-0", amsMap="",
+            plate=plate, plateTotal=total, plateName=name)) for plate, total, name in units]
+        return _append_jobs(prepared)
+    ids = _saved_queue_append([{"id": None, "fileId": file_id, "fileName": file_name,
+                                "plate": plate, "plateTotal": total, "plateName": name,
+                                "object_height_mm": None} for plate, total, name in units])
     _log(f"[+] {file_name} → Warteschlange ({len(ids)} Job{'s' if len(ids) != 1 else ''})")
     return ids
 
@@ -4223,6 +4335,7 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
             # Aus dem Stapel wird FLACH gegriffen (grab_magazine, ohne Anheben);
             # eine einzeln liegende Leerplatte dagegen normal.
             griff = "grab_magazine" if m.get("from_magazine") else "grab"
+            _mark_in_motion(griff)
             await _do_macro(_motion.build_op(geom, griff, rack=m["from_rack"],
                                              slot=m["from_slot"], printer=printer))
             if m.get("from_magazine"):
@@ -4234,14 +4347,19 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
             for op in umweg:
                 _stress["step"] = f"{m['from']} → Drucker ({op})"
                 _log(f"🏋 … {op} am Drucker")
+                _mark_in_motion(op)
                 await _do_macro(_motion.build_op(geom, op, printer=printer))
                 # Zwischen Auflegen und Herunternehmen liegt die Platte WIRKLICH auf
                 # dem Bett — den Arm so lange als leer führen, sonst sucht eine
-                # Bergung nach einer Platte, die nicht am Greifer hängt.
+                # Bergung nach einer Platte, die nicht am Greifer hängt. Das Bett
+                # wird mitgebucht (bis v1.1.54 nicht: Ein Abbruch dazwischen ließ eine
+                # Platte im Drucker, von der die nächste Farm nichts wusste).
                 _set_arm("none" if op in ("place", "load") else "empty",
                          "" if op in ("place", "load") else m["from"])
+                _set_bed("plate" if op in ("place", "load") else "empty")
             _stress["step"] = f"{m['from']} → {m['to']}"
 
+            _mark_in_motion("store")
             await _do_macro(_motion.build_op(geom, "store", rack=m["to_rack"],
                                              slot=m["to_slot"], printer=printer))
             # Im Fach liegt jetzt eine Platte — als belegt buchen, sonst plant die
@@ -4310,7 +4428,13 @@ async def start_stress_test(body: Optional[StressStartBody] = None):
     _assert_released()
     # Nicht während einer Handfahrt (der erste Griff begänne an deren Endposition).
     await _assert_arm_idle_for_start()
+    if _plate_left():
+        _farm["recovery"] = _load_recovery() or _farm.get("recovery")
+        raise HTTPException(409, "Laut letztem Stand liegt noch eine Platte im Greifer oder "
+                                 "Drucker — nachsehen und im Hinweis bestätigen")
     device = _stress_bambu(body.device_id) if body.include_printer else None
+    if device is not None:
+        await _assert_printer_idle_for_start(device.id)
     plan = _stress_plan(include_printer=body.include_printer)
     if not plan["plate_count"]:
         raise HTTPException(400, "Die Magazine sind leer — nichts zu verteilen.")
