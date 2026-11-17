@@ -3,6 +3,7 @@ import { fileService, folderService, printerService, deviceService, filamentServ
 import { useAutoRefresh, usePageActive } from '../services/useAutoRefresh'
 import { useLanguage, locale } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
+import { useMotionLock } from '../services/motionLock'
 import { colorLabel } from '../services/colorNames'
 import { amsAutoMap } from '../services/amsUtils'
 
@@ -333,7 +334,7 @@ function ColHeader({ label, width, sortable, sortActive, sortDir, onSort, values
 
 // Aufklappbare Platten-Liste einer Multi-Plate-.3mf: Zeit/Höhe/Filament JE Platte
 // (plattengenau vom Server gelesen) + Einzeldruck / einzeln in die Queue.
-function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sending }) {
+function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sending, printLock }) {
   const { tr } = useLanguage()
   const [plates, setPlates] = useState(null)   // null = lädt
   useEffect(() => {
@@ -367,9 +368,9 @@ function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sendin
           <button onClick={() => onQueuePlate(file, p.plate, plates.length, p.name || null)} disabled={enqueuing}
             className="btn btn-ghost btn-sm text-[10px] disabled:opacity-50"
             title={tr('Nur diese Platte in die Auto-Farm-Queue legen')}>{tr('+ Queue')}</button>
-          <button onClick={() => onSendPlate(file, p.plate)} disabled={!bambuId || sending === file.id}
+          <button onClick={() => onSendPlate(file, p.plate)} disabled={!bambuId || sending === file.id || !!printLock}
             className="btn btn-ghost btn-sm text-[10px] text-cyan-400 disabled:opacity-50"
-            title={bambuId ? tr('Nur diese Platte sofort drucken') : tr('Kein Bambu-Gerät konfiguriert')}>{tr('▶ Drucken')}</button>
+            title={printLock || (bambuId ? tr('Nur diese Platte sofort drucken') : tr('Kein Bambu-Gerät konfiguriert'))}>{tr('▶ Drucken')}</button>
         </div>
       ))}
     </div>
@@ -423,7 +424,7 @@ function CrashWarning({ fileId, plate = null }) {
 
 function FileRow({ file, meta, folderOptions, folderById, searching, selected, onToggleSelect,
                   onSaveField, onMoveFolder, onDelete, onQueue, onSend, bambuId, sending, enqueuing,
-                  amsSlots, catalog, onQueuePlate, onSendPlate }) {
+                  amsSlots, catalog, onQueuePlate, onSendPlate, printLock }) {
   const { tr } = useLanguage()
   const [showPlates, setShowPlates] = useState(false)
   const [name, setName]         = useState(file.original_filename || '')
@@ -503,7 +504,7 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
           {isPrintable && <FileFilaments fileId={file.id} amsSlots={amsSlots} />}
           {showPlates && (
             <PlateList file={file} onQueuePlate={onQueuePlate} onSendPlate={onSendPlate}
-              bambuId={bambuId} enqueuing={enqueuing} sending={sending} />
+              bambuId={bambuId} enqueuing={enqueuing} sending={sending} printLock={printLock} />
           )}
         </div>
 
@@ -513,8 +514,8 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
               className="btn btn-primary btn-sm" title={tr('In die Auto-Farm-Queue legen')}>{tr('+ Queue')}</button>
           )}
           {isPrintable && (
-            <button onClick={() => onSend(file)} disabled={sending === file.id || !bambuId}
-              className="btn btn-cyan btn-sm" title={bambuId ? tr('Sofort an Drucker senden (ohne Queue)') : tr('Kein Bambu-Gerät konfiguriert')}>
+            <button onClick={() => onSend(file)} disabled={sending === file.id || !bambuId || !!printLock}
+              className="btn btn-cyan btn-sm" title={printLock || (bambuId ? tr('Sofort an Drucker senden (ohne Queue)') : tr('Kein Bambu-Gerät konfiguriert'))}>
               {sending === file.id ? tr('Sende…') : tr('Drucken')}
             </button>
           )}
@@ -545,6 +546,8 @@ function FileLibrary() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(null)
   const [sending, setSending]   = useState(null)
+  // Bei laufender Farm kein Direktdruck (das Backend lehnt mit 409 ab).
+  const { printer: printLock } = useMotionLock()
   const [feedback, setFeedback] = useState(null)
   const [search, setSearch]     = useState('')
   const [drag, setDrag]         = useState(false)
@@ -859,6 +862,15 @@ function FileLibrary() {
 
   const handleSend = async (file, plate = null) => {
     if (!bambuId) return showFeedback(tr('Kein Bambu Lab Gerät konfiguriert'), false)
+    if (printLock) return showFeedback(printLock, false)
+    // Direktdruck geht an der Warteschlange und am Farm-Check vorbei. Bis v1.1.43
+    // startete ein Klick sofort, auch auf ein belegtes Druckbett.
+    if (!(await confirmDialog({
+      title: tr('Jetzt drucken?'),
+      message: tr('„{0}“ geht sofort an den Drucker, ohne Warteschlange. Ist das Druckbett leer?',
+                  plate != null ? `${file.original_filename || ''} · ${tr('Platte {0}', plate)}` : (file.original_filename || '')),
+      confirmLabel: tr('Drucken'),
+    }))) return
     setSending(file.id)
     try {
       const r = await printerService.sendFile(bambuId, file.id, useAms, null, plate)
@@ -1218,6 +1230,7 @@ function FileLibrary() {
                 onSend={handleSend}
                 onQueuePlate={enqueuePlate}
                 onSendPlate={(file, plate) => handleSend(file, plate)}
+                printLock={printLock}
                 bambuId={bambuId}
                 sending={sending}
                 enqueuing={enqueuing}

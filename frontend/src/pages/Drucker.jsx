@@ -3,6 +3,7 @@ import { useLanguage, trProblem } from '../services/i18n'
 import { controlService, rackManagerService, deviceService, printerService,
          autofarmService } from '../services/api'
 import { confirmDialog } from '../services/confirm'
+import { useMotionLock } from '../services/motionLock'
 import { findPrinter } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
 import TeachIn from '../components/TeachIn'
@@ -913,6 +914,11 @@ export default function Drucker() {
   const [limitsBusy, setLimitsBusy] = useState(false)
   const [limitsMsg, setLimitsMsg]   = useState('')
   const [jog, setJog] = useState({ busy: false, msg: '', err: false })
+  // Farm oder Stresstest haben den Arm: Fahrknöpfe sperren (das Backend lehnt mit
+  // 409 ab, die Sperre hier spart den Klick ins Leere und sagt, warum).
+  const lock = useMotionLock()
+  const armBusy = jog.busy || !!lock.arm
+  const blocked = (reason) => { setJog({ busy: false, msg: reason, err: true }); return true }
   const [lastScript, setLastScript] = useState('')
   const [showScript, setShowScript] = useState(false)
   const [gcodeLine, setGcodeLine]   = useState('')
@@ -1187,6 +1193,7 @@ export default function Drucker() {
   // ── Live: OTTOeject-Operation aus der AKTUELLEN Geometrie senden ──
   const sendOp = async (op, label, extra = {}, geomOverride = null) => {
     if (jog.busy) return
+    if (lock.arm && blocked(lock.arm)) return
     setJog({ busy: true, msg: label, err: false })
     try {
       const r = await controlService.runOp({ op, geometry: geomOverride || geometry, ...extra })
@@ -1204,6 +1211,7 @@ export default function Drucker() {
   // (Durchbiegung: Stapel liegt pro Platte ~1 mm tiefer).
   const grabFromMagazine = async (r) => {
     if (jog.busy) return
+    if (lock.arm && blocked(lock.arm)) return
     setJog({ busy: true, msg: tr('Magazin R{0} — Platte holen…', r), err: false })
     try {
       const res = await controlService.runOp({ op: 'grab_magazine', geometry, rack: r })
@@ -1223,6 +1231,7 @@ export default function Drucker() {
   const sendGcodeLine = async () => {
     const g = gcodeLine.trim()
     if (!g || jog.busy) return
+    if (lock.arm && blocked(lock.arm)) return
     setJog({ busy: true, msg: tr('G-code senden…'), err: false })
     try {
       const r = await controlService.sendKlipperGcode(g)
@@ -1237,6 +1246,7 @@ export default function Drucker() {
   // Druckerbett fahren/homen — nur mit zugeordnetem Bambu-Gerät (MQTT).
   const bedGcode = async (deviceId, gcode, label) => {
     if (deviceId == null || jog.busy) return
+    if (lock.printer && blocked(lock.printer)) return
     setJog({ busy: true, msg: label, err: false })
     try {
       await printerService.sendGcode(deviceId, gcode)
@@ -1350,12 +1360,17 @@ export default function Drucker() {
 
       {/* ── Werkzeuge: Referenzfahrt, Tempo, direkter G-code, Bett ── */}
       <div className="card p-3 space-y-2">
+        {(lock.arm || lock.printer) && (
+          <p role="status" className="text-[12px] px-3 py-2 rounded border border-amber-700 bg-amber-950 text-amber-300">
+            ⚠ {lock.arm || lock.printer}
+          </p>
+        )}
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={homeOtto} disabled={jog.busy}
+          <button onClick={homeOtto} disabled={armBusy}
             className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">{tr('⌂ Referenzfahrt')}</button>
           <span className="text-[11px] text-surface-400 ml-2">{tr('Geschwindigkeit (global)')}</span>
           {SPEEDS.map(v => (
-            <button key={v} onClick={() => applySpeed(v)} disabled={jog.busy}
+            <button key={v} onClick={() => applySpeed(v)} disabled={armBusy}
               className={`text-[11px] px-2 py-1 rounded border transition-colors disabled:opacity-50 ${(+speedFactor || 100) === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>{v}%</button>
           ))}
           <span className="text-[9px] text-surface-600">{tr('M220-Fallback · pro Operation eigene Geschwindigkeit einstellbar')}</span>
@@ -1369,8 +1384,8 @@ export default function Drucker() {
           <input type="text" value={gcodeLine} onChange={e => setGcodeLine(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') sendGcodeLine() }}
             placeholder={tr('G-code direkt an den OTTOeject — z. B. G1 X100 F6000')}
-            className="flex-1 font-mono text-[11px] h-8 py-0 px-2" disabled={jog.busy} />
-          <button onClick={sendGcodeLine} disabled={jog.busy || !gcodeLine.trim()}
+            className="flex-1 font-mono text-[11px] h-8 py-0 px-2" disabled={armBusy} />
+          <button onClick={sendGcodeLine} disabled={armBusy || !gcodeLine.trim()}
             className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 shrink-0">{tr('▶ Senden')}</button>
         </div>
         <p className="text-[9px] text-surface-600">
@@ -1405,7 +1420,7 @@ export default function Drucker() {
           dev={devices.find(d => d.id === p.device_id) || null}
           open={openSec === p.id} onToggle={() => toggleSec(p.id)}
           onPatch={patch => patchPrinter(p.id, patch)}
-          models={models} busy={jog.busy} onTest={sendOp}
+          models={models} busy={armBusy} onTest={sendOp}
           onLoadGcode={loadPrinterGcode} onGcodeText={setPrinterGcode} onClearGcode={clearPrinterGcode}
           teachOp={teachOp}
           onTeach={(op) => setTeachOp(t => {
@@ -1433,7 +1448,7 @@ export default function Drucker() {
           onPatch={patch => patchRack(nr, patch)} printers={shownPrinters}
           slots={rackCfg.slots_per_rack} magazineSlot={magazineSlot}
           magazineCount={Math.max(0, +(rackCfg.magazine_counts?.[nr - 1] ?? 0))}
-          busy={jog.busy} onTest={sendOp} onMagazine={() => grabFromMagazine(nr)}
+          busy={armBusy} onTest={sendOp} onMagazine={() => grabFromMagazine(nr)}
           teachOn={teachOp === `rack-${nr}`}
           onTeach={() => setTeachOp(t => (t === `rack-${nr}` ? null : `rack-${nr}`))}
           onTeachApply={applyTeachRack(nr)} onTeachClose={() => setTeachOp(null)}

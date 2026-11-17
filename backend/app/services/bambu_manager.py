@@ -128,6 +128,13 @@ def last_status(device) -> Optional[dict]:
     return c.get_last_message() if c else None
 
 
+def status_age(device) -> Optional[float]:
+    """Sekunden seit dem letzten Telegramm des Druckers, None = noch keins."""
+    c = _clients.get(_key(device))
+    ts = getattr(c, "last_message_ts", None) if c else None
+    return None if ts is None else time.monotonic() - ts
+
+
 def _has_ams(raw: dict) -> bool:
     return bool((((raw or {}).get("print", {}) or {}).get("ams", {}) or {}).get("ams"))
 

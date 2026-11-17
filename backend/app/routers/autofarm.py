@@ -835,6 +835,23 @@ def arm_status() -> dict:
     return {"busy": _arm_lock.locked(), "holder": _arm_holder, "waiting": list(_arm_waiting)}
 
 
+def motion_owner(include_paused: bool = False) -> Optional[str]:
+    """Wer bewegt den Arm gerade? None = niemand, eine Handfahrt darf los.
+
+    Bis v1.1.43 konnten Farm, Stresstest und Handfahrten (Joggen, G-code, Drucker-Tab)
+    den Arm gleichzeitig ansteuern; Handfahrten gingen an arm_access vorbei. Eine
+    PAUSIERTE Farm gibt den Arm für Handfahrten frei (dafür pausiert man), aber nicht
+    den Drucker: Dort kann der Arm noch im Bauraum stehen (include_paused=True)."""
+    if _stress.get("running") or (_stress_task is not None and not _stress_task.done()):
+        return "Stresstest läuft — erst stoppen"
+    if _farm.get("running") and (include_paused or not _farm.get("paused")):
+        return ("Auto Farm läuft — erst stoppen" if include_paused
+                else "Auto Farm läuft — erst pausieren oder stoppen")
+    if _arm_lock.locked():
+        return f"OTTOeject fährt gerade ({_arm_holder or '?'})"
+    return None
+
+
 class _MoveTimeout(RuntimeError):
     """Eine OTTOeject-Bewegung hat nicht innerhalb des Zeitlimits geantwortet.
     Eigener Typ, damit die Fehlerstrategie „move_timeout" darauf reagieren kann —
@@ -3151,6 +3168,8 @@ async def start_farm(req: StartRequest):
     if _farm["running"]:
         raise HTTPException(409, "Auto Farm läuft bereits")
     _assert_released()
+    if _stress.get("running") or (_stress_task is not None and not _stress_task.done()):
+        raise HTTPException(409, "Stresstest läuft — erst stoppen")
 
     # Validate sequences BEFORE touching farm state
     seq_data = _read_config(SEQ_PATH, {"seq_new": [], "seq_next": []})

@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.44',
+    de: [
+      'NUR EINER BEWEGT DEN ARM: Solange die Auto Farm oder der Stresstest läuft, sind Joggen, G-code, Referenzfahrt und die Testfahrten im Drucker-Tab gesperrt; oben steht, warum. Bisher konnte ein Klick im Drucker-Tab den Arm mitten in eine Bewegung der Farm schicken. Pausierst du die Farm, darfst du den Arm von Hand fahren; die Farm fährt danach zuerst eine Referenzfahrt.',
+      'DRUCKER-BEFEHLE NUR BEI FREIEM DRUCKER: Bett fahren, Kalibrierung, Filament laden/entladen und Direktdruck gehen nur ohne Notaus, ohne laufende Farm (auch keine pausierte, da kann der Arm noch im Bauraum stehen) und wenn der Drucker gerade frisch „frei“ gemeldet hat. Bisher reichte ein alter oder leerer Zwischenstand, und eine Kalibrierung ließ sich auch ohne Verbindung zum Drucker auslösen. Filament wechseln in der Druckpause geht weiter.',
+      'DIREKTDRUCK MIT RÜCKFRAGE: „Drucken“ in der Bibliothek fragt jetzt, ob das Druckbett leer ist, und ist bei laufender Farm gesperrt.',
+      'Ein Befehl an den Drucker gilt erst als gesendet, wenn die Verbindung ihn bestätigt. Bisher meldete Printloom „gesendet“, auch wenn der Drucker nach 5 Sekunden nichts bekommen hatte.',
+    ],
+    en: [
+      'ONLY ONE THING MOVES THE ARM: while the Auto Farm or the stress test is running, jogging, G-code, homing and the test moves in the Printer tab are locked, with the reason shown at the top. Until now a click in the Printer tab could send the arm into the middle of a farm move. If you pause the farm you may move the arm by hand; the farm then homes first.',
+      'PRINTER COMMANDS ONLY WHEN THE PRINTER IS FREE: moving the bed, calibration, loading/unloading filament and direct printing only work without an emergency stop, without a running farm (not even a paused one, the arm may still be inside) and when the printer has just reported “free”. Until now an old or empty cached state was enough, and a calibration could be started without a connection to the printer. Changing filament during a print pause still works.',
+      'DIRECT PRINT ASKS FIRST: “Print” in the library now asks whether the build plate is empty, and is locked while the farm is running.',
+      'A command to the printer only counts as sent once the connection confirms it. Until now Printloom said “sent” even if the printer had received nothing after 5 seconds.',
+    ],
+  },
+  {
     version: '1.1.43',
     de: [
       'NOTAUS AUF JEDER SEITE: Der rote Notaus-Knopf steht jetzt oben in der Kopfzeile, auch auf dem Handy und in der mobilen Rack-Ansicht. Bisher gab es ihn nur in der Steuerung. Solange ein Notaus aktiv ist, steht daneben „Fortsetzen“.',

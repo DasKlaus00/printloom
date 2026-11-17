@@ -444,6 +444,25 @@ def serve_snapshot(filename: str):
     return FileResponse(str(f), media_type="image/jpeg")
 
 
+async def _assert_printer_may_move(db: Session, device, allow_pause: bool = False) -> None:
+    """Druckerbett, Kalibrierung, AMS und Direktdruck nur, wenn kein Notaus ansteht,
+    keine Farm läuft (auch keine pausierte: dann kann der Arm im Bauraum stehen) und
+    der Drucker laut FRISCHEM Status frei ist. Bis v1.1.43 reichte ein leerer oder
+    alter Cache-Status, und ein G-code fürs Bett ging auch mitten in die Farm."""
+    from app.routers import autofarm
+    from app.routers.control import assert_released
+    from app.services import printer_guard
+    assert_released(db)
+    grund = autofarm.motion_owner(include_paused=True)
+    if grund:
+        raise HTTPException(409, grund)
+    loop = asyncio.get_running_loop()
+    state = await loop.run_in_executor(bambu_manager.executor, printer_guard.live_state, device)
+    grund = printer_guard.busy_reason(state, allow_pause=allow_pause)
+    if grund:
+        raise HTTPException(409, grund)
+
+
 def _get_bambu_device(device_id: int, db: Session) -> Device:
     device = db.query(Device).filter(
         Device.id == device_id,
@@ -521,10 +540,9 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
                                plate: Optional[int] = None, db: Session = Depends(get_db)):
     """Datei per FTPS auf den Drucker laden und Druck per MQTT starten.
     `plate`: bei Multi-Plate-.3mf GENAU diese Platte drucken (sonst die erste)."""
-    from app.routers.control import assert_released
     from app.services import farm_settings
-    assert_released(db)
     device = _get_bambu_device(device_id, db)
+    await _assert_printer_may_move(db, device)
 
     file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
     if not file:
@@ -659,6 +677,7 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
 async def send_gcode(device_id: int, gcode: str, db: Session = Depends(get_db)):
     """Direkte GCode-Zeilen an den Drucker senden (kein Datei-Upload nötig)."""
     device = _get_bambu_device(device_id, db)
+    await _assert_printer_may_move(db, device)
     loop = asyncio.get_running_loop()
 
     # Über die persistente Verbindung (bambu_manager) senden — kein eigener Connect.
@@ -813,7 +832,10 @@ async def get_printer_settings(device_id: int, db: Session = Depends(get_db)):
 @router.post("/settings/{device_id}")
 async def set_printer_settings(device_id: int, body: dict, db: Session = Depends(get_db)):
     """Eine oder mehrere Einstellungen setzen: {"first_layer_inspector": true, …}.
-    Jede Einstellung wird als eigenes MQTT-Kommando geschickt."""
+    Jede Einstellung wird als eigenes MQTT-Kommando geschickt.
+
+    Bewusst OHNE _assert_printer_may_move: Licht, KI-Erkennung und Geschwindigkeit
+    bewegen nichts und sollen auch während des Drucks gehen."""
     device = _get_bambu_device(device_id, db)
     from app.services import bambu_settings
     if not isinstance(body, dict) or not body:
@@ -847,10 +869,7 @@ async def calibrate_printer(device_id: int, body: dict = None, db: Session = Dep
     device = _get_bambu_device(device_id, db)
     from app.services import bambu_settings
     options = (body or {}).get("options") or list(bambu_settings.CALIBRATION_BITS)
-    raw = bambu_manager.last_status(device) or {}
-    state = (raw.get("print", {}) or {}).get("gcode_state", "")
-    if state in ("RUNNING", "PREPARE", "SLICING", "PAUSE"):
-        raise HTTPException(409, f"Drucker ist beschäftigt ({state}) — Kalibrierung nicht möglich")
+    await _assert_printer_may_move(db, device)
     try:
         cmd = bambu_settings.build_calibration(options)
     except ValueError as e:
@@ -872,15 +891,6 @@ async def get_send_diagnostics():
 
 # ── AMS-Aktionen (Steuerung): Slot neu einlesen, Filament laden/entladen ─────
 
-def _ams_guard_not_printing(device):
-    """Laden/Entladen nur, wenn gerade kein Druck läuft (PAUSE ist ok — da ist
-    Filamentwechsel am Gerät ausdrücklich erlaubt)."""
-    raw = bambu_manager.last_status(device) or {}
-    state = (raw.get("print", {}) or {}).get("gcode_state", "")
-    if state in ("RUNNING", "PREPARE", "SLICING"):
-        raise HTTPException(409, f"Drucker druckt gerade ({state}) — Filamentwechsel nicht möglich")
-
-
 async def _ams_publish(device, cmd: dict) -> None:
     loop = asyncio.get_running_loop()
     ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.publish_command, device, cmd)
@@ -899,7 +909,8 @@ async def ams_load_filament(device_id: int, body: dict, db: Session = Depends(ge
         tray = -1
     if not 0 <= tray <= 15:
         raise HTTPException(400, "tray (0–15) fehlt")
-    _ams_guard_not_printing(device)
+    # PAUSE ist erlaubt: Filamentwechsel am Gerät ist genau dafür da.
+    await _assert_printer_may_move(db, device, allow_pause=True)
     temp = 240
     raw = bambu_manager.last_status(device) or {}
     for unit in ((raw.get("print", {}).get("ams", {}) or {}).get("ams") or []):
@@ -921,7 +932,7 @@ async def ams_load_filament(device_id: int, body: dict, db: Session = Depends(ge
 async def ams_unload_filament(device_id: int, db: Session = Depends(get_db)):
     """Aktuelles Filament aus dem Extruder zurück ins AMS entladen."""
     device = _get_bambu_device(device_id, db)
-    _ams_guard_not_printing(device)
+    await _assert_printer_may_move(db, device, allow_pause=True)
     await _ams_publish(device, {"print": {
         "sequence_id": str(int(time.time())), "command": "unload_filament",
     }})
@@ -940,6 +951,9 @@ async def ams_read_slot(device_id: int, body: dict, db: Session = Depends(get_db
         ams_id = slot_id = -1
     if not (0 <= ams_id <= 3 and 0 <= slot_id <= 3):
         raise HTTPException(400, "ams_id/slot_id (0–3) fehlt")
+    # Einlesen bewegt das AMS (Spule dreht), nicht den Drucker: nur die Notaus-Sperre.
+    from app.routers.control import assert_released
+    assert_released(db)
     # Beide sequence-Schreibweisen mitschicken — die Doku nennt für ams_get_rfid
     # ausnahmsweise "sequenceId"; ein überzähliges Feld ignoriert die Firmware.
     await _ams_publish(device, {"print": {

@@ -31,6 +31,9 @@ class BambuLabMQTT:
         self.connected = False
         self.callbacks = {}
         self.last_message = None
+        # Wann kam das letzte Telegramm? Ein Cache-Zustand sagt sonst nicht, ob er
+        # von eben ist oder von vor einer Stunde (printer_guard braucht frisch).
+        self.last_message_ts = None
         self._connected_event = threading.Event()
         # Persistenter Modus (bambu_manager): einmal verbinden, danach hält paho die
         # Verbindung per Auto-Reconnect. `_started` verhindert, dass parallel ein
@@ -103,7 +106,15 @@ class BambuLabMQTT:
         try:
             topic = f"device/{self.device.serial_number}/request"
             result = self.client.publish(topic, json.dumps(command), qos=1)
+            if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                logger.error(f"Befehl nicht gesendet ({topic}): rc={result.rc}")
+                return False
             result.wait_for_publish(timeout=5.0)
+            # paho ≥ 2 kehrt nach dem Zeitlimit OHNE Fehler zurück. Bis v1.1.43 galt
+            # ein Befehl darum auch dann als gesendet, wenn der Drucker ihn nie bekam.
+            if not result.is_published():
+                logger.error(f"Befehl nach 5 s nicht vom Drucker bestätigt ({topic})")
+                return False
             logger.info(f"Published to {topic}: {command}")
             return True
         except Exception as e:
@@ -271,6 +282,7 @@ class BambuLabMQTT:
     def _on_message(self, client, userdata, msg):
         try:
             payload = json.loads(msg.payload.decode())
+            self.last_message_ts = time.monotonic()
             # Deltas in einen persistenten Vollzustand mergen (sonst geht z. B. 'ams'
             # verloren, wenn ein Folge-Delta es weglässt → "No AMS detected").
             if isinstance(self.last_message, dict) and isinstance(payload, dict):

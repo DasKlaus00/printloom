@@ -1427,6 +1427,12 @@ const EN_STRINGS = {
   // Notaus-Baustein in der Kopfzeile (seit v1.1.43)
   'Fortsetzen': 'Resume',
   'Notaus: Arm sofort anhalten': 'Emergency stop: halt the arm immediately',
+  // Arm-Belegung und Direktdruck (seit v1.1.44)
+  'Stresstest läuft — erst stoppen': 'Stress test running — stop it first',
+  'Auto Farm läuft — erst pausieren oder stoppen': 'Auto Farm is running — pause or stop it first',
+  'Auto Farm läuft — Drucker-Befehle erst nach dem Stopp': 'Auto Farm is running — printer commands only after stopping it',
+  'Jetzt drucken?': 'Print now?',
+  '„{0}“ geht sofort an den Drucker, ohne Warteschlange. Ist das Druckbett leer?': '“{0}” goes straight to the printer, without the queue. Is the build plate empty?',
   'Warnschwelle': 'Warning threshold',
   '⟳ Man.': '⟳ Man.',
   'Jetzt': 'Now',

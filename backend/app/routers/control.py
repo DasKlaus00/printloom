@@ -51,6 +51,17 @@ def _klipper(db: Session, bewegt: bool = False) -> Device:
         raise HTTPException(400, "Klipper / OTTOeject nicht konfiguriert")
     if bewegt and not klipper.is_active:
         raise HTTPException(409, NOTAUS_AKTIV)
+    if bewegt:
+        # Nur einer bewegt den Arm: Farm und Stresstest gehen über arm_access,
+        # Handfahrten hier vorbei. Darum hier fragen, wer den Arm gerade hat.
+        from app.routers import autofarm
+        grund = autofarm.motion_owner()
+        if grund:
+            raise HTTPException(409, grund)
+        if autofarm._farm.get("running") and autofarm._farm.get("paused"):
+            # Eine Handfahrt in der Pause verschiebt den Arm: Die Farm referenziert
+            # vor ihrer nächsten Bewegung, statt von der alten Position auszugehen.
+            autofarm.mark_position_unknown("Handfahrt während Pause")
     return klipper
 
 

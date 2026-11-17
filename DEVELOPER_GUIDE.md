@@ -175,7 +175,9 @@ oder Zusagen bricht**, nicht die Menge an Code:
 | `test_geometry_check.py` | Bewegung außerhalb der Achse wird nicht gesendet; ohne bekannte Achsgrenzen wird nichts nach oben blockiert |
 | `test_plate_source.py`   | Griff-Reihenfolge mit/ohne Magazin + reservierte Quell-Fächer (Kollisionsschutz) |
 | `test_rack_logic.py` / `test_slotlogic.py` | Fach-Belegung nach Objekthöhe, Betriebszeiten, Start-Countdown |
-| `test_notaus_sperre.py` / `test_emergency_stop.py` | Nach dem Notaus bewegt sich nichts, bis man freigibt |
+| `test_notaus_sperre.py` / `test_emergency_stop.py` | Nach dem Notaus bewegt sich nichts (auch kein Parken), bis der Klipper-Neustart geklappt hat |
+| `test_arm_belegung.py`   | Farm, Stresstest und Handfahrten bewegen den Arm nie gleichzeitig |
+| `test_drucker_sperren.py` / `test_printer_guard.py` | Bett, Kalibrierung, AMS, Direktdruck nur ohne Notaus/Farm und bei frischem, freiem Druckerstatus |
 | `test_online.py`         | OHNE Zustimmung + Schalter geht KEIN Request nach außen |
 | `test_backup.py`         | Backup vollständig; Zugangsdaten nur auf Wunsch, verschlüsselt; Einspielen löscht keine |
 | `test_diagnostics.py`    | keine Geheimnisse im Diagnose-ZIP |
