@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.61',
+    de: [
+      'BACKUP NUR BEI STILLSTAND: Ein Backup lässt sich nur einspielen, wenn Farm und Stresstest stehen (auch nicht pausiert). Bisher änderte es mitten im Lauf Sequenzen, Regal und Geometrie.',
+      'DIE FACH-BELEGUNG BLEIBT: Vom Regal übernimmt ein Backup nur die Einstellungen (Fächer, Höhen, Magazin-Soll). Welche Fächer belegt sind und wie viele Platten im Magazin liegen, bleibt, wie es ist. Bisher ersetzte das Backup die echte Belegung, und die Farm konnte eine Platte auf ein belegtes Fach legen.',
+      'BACKUPS WERDEN VOR DEM SCHREIBEN GEPRÜFT: Hat ein Abschnitt die falsche Form oder stammt die Datei nicht von Printloom, wird nichts eingespielt. Sequenzen werden bereinigt und bekommen das aktuelle Format, die Geometrie muss in allen Positionsfeldern eine Zahl haben. Hinweise (etwa übersprungene Schritte) stehen in der Meldung.',
+      'UPDATE NUR BEI STILLSTAND, ERGEBNIS EHRLICH: Ein Update startet nicht, solange die Farm oder der Stresstest läuft. Nach dem Neustart prüft die Seite, ob die Version wirklich gewechselt hat, und meldet sonst „Update fehlgeschlagen?“. Bisher hieß es immer „Fertig“. Scheitert der neue Container, kommt jetzt sicher das alte Image zurück.',
+    ],
+    en: [
+      'BACKUP ONLY AT STANDSTILL: a backup can only be restored while the farm and the stress test are stopped (not paused either). Until now it changed sequences, rack and geometry in the middle of a run.',
+      'SLOT OCCUPANCY STAYS: from the rack, a backup only restores the settings (slots, heights, magazine target). Which slots are occupied and how many plates are in the magazine stays as it is. Until now the backup replaced the real occupancy, and the farm could put a plate onto an occupied slot.',
+      'BACKUPS ARE CHECKED BEFORE WRITING: if a section has the wrong shape or the file is not from Printloom, nothing is restored. Sequences are cleaned up and get the current format; the geometry must have a number in every position field. Notes (such as skipped steps) are shown in the message.',
+      'UPDATE ONLY AT STANDSTILL, HONEST RESULT: an update does not start while the farm or the stress test is running. After the restart the page checks whether the version really changed and otherwise reports “update failed?”. Until now it always said “Done”. If the new container fails, the old image now reliably comes back.',
+    ],
+  },
+  {
     version: '1.1.60',
     de: [
       'KEIN UNBEAUFSICHTIGTER DRUCK MIT KOLLISIONSGEFAHR: Ragt eine Datei in die Bahn des OTTOeject (oder lässt sie sich nicht prüfen), druckt die Farm sie nicht, meldet es und nimmt den nächsten Job. Einstellbar unter Konfiguration → Fehlerstrategie („Kollisionsgefahr für den Arm“: nicht drucken, pausieren, stoppen oder ignorieren). Bisher stand die Warnung nur als „!“ in der Bibliothek.',

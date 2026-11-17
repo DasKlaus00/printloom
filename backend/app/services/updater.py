@@ -152,13 +152,16 @@ def recreate(new_image: str, name: str) -> None:
         run_kwargs["command"] = cfg.get("Cmd")
     run_kwargs = {k: v for k, v in run_kwargs.items() if v is not None}
 
-    old_image = cfg.get("Image")  # für Rollback, falls der neue Container nicht startet
+    # Für den Rollback die ID des laufenden Images, nicht den Tag: Nach dem Pull zeigt
+    # „:beta" schon auf das NEUE Image, ein Rollback per Tag startete wieder das
+    # kaputte (bis v1.1.60).
+    old_image = getattr(getattr(old, "image", None), "id", None) or cfg.get("Image")
 
     logger.info(f"Stoppe & entferne alten Container {name} …")
     try:
         old.stop(timeout=20)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Alter Container hielt nicht sauber an ({e}) — wird entfernt")
     old.remove(force=True)
 
     logger.info(f"Starte neuen Container {name} aus {new_image} …")

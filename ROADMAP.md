@@ -18,19 +18,19 @@ Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 | Bereich | Stand |
 |---|---|
 | **Drucker** | EIN Bambu Lab pro Zyklus. Persistente MQTT-Verbindung, FTP-Upload, Modelle X1/X1C/X1E, P1P/P1S, A1/A1 mini, H2D; Drucker-Einstellungen + Kalibrierung aus Printloom |
-| **OTTOeject** | Printloom erzeugt den G-code selbst; Achsprüfung vor dem Senden; Sequenz-Editor mit Einzelschritt-Test; Stresstest mit und ohne Drucker; Notaus-Knopf auf jeder Seite, sperrt jede Bewegung (auch das Aufräumen) bis „Betrieb fortsetzen“ mit erfolgreichem Klipper-Neustart; nur ein Ablauf bewegt den Arm (Farm, Stresstest oder Handfahrt); Drucker-Befehle nur bei frisch bestätigt freiem Drucker |
+| **OTTOeject** | Printloom erzeugt den G-code selbst; Achsprüfung vor dem Senden (auch eigener G-code, relative Bewegungen werden abgelehnt); Sequenz-Editor mit Einzelschritt-Test; Stresstest mit und ohne Drucker; Notaus-Knopf auf jeder Seite, sperrt jede Bewegung (auch das Aufräumen) bis „Betrieb fortsetzen“ mit erfolgreichem Klipper-Neustart; nur ein Ablauf bewegt den Arm (Farm, Stresstest oder Handfahrt); Drucker-Befehle nur bei frisch bestätigt freiem Drucker |
 | **Greifer** | Standard (seitlich klemmend) und Magnet-Greifer (seit v1.1.21, eigene Wege, Abkühlen als Sequenz-Schritt) |
 | **Regal** | 1–10 Regale × 1–20 Fächer; alle Fächer = Lager oder Magazin-Fach über den Lagerfächern; Verkleinern nur über leere Fächer, Bestand nur auf Wunsch aufgefüllt |
 | **Einrichten** | Setup-Assistent inkl. geführter Erstkalibrierung, jederzeit wieder aufrufbar (System) |
-| **Farm** | Dauerbetrieb, höhenbasierte Fachwahl, Druckbett-Merker und Prüfung vor jedem Einfahren (Drucker frei, Bett leer, Greifer leer), Fehlerklassen mit eigener Strategie, Bergung nach Druckfehler, Zustand (auch Platte in Greifer und Drucker) übersteht Stopp, Reset und Neustart, die Warteschlange übersteht Neustart und Update (eine Liste im Server), Start erst nach Bestätigung, Betriebszeiten, Einstellungen wirken live |
+| **Farm** | Dauerbetrieb, höhenbasierte Fachwahl, Druckbett-Merker und Prüfung vor jedem Einfahren (Drucker frei, Bett leer, Greifer leer), Fehlerklassen mit eigener Strategie, Bergung nach Druckfehler, Crash-Zone je Drucker (eine Datei mit Kollisionsgefahr druckt die Farm nicht unbeaufsichtigt), Zustand (auch Platte in Greifer und Drucker) übersteht Stopp, Reset und Neustart, die Warteschlange übersteht Neustart und Update (eine Liste im Server), Start erst nach Bestätigung, Betriebszeiten, Einstellungen wirken live |
 | **Kosten** | Strom (Smart-Plug) + Maschinenstunde + Material aus dem G-code-Header |
 | **Oberfläche** | Startseite und Auto-Farm frei konfigurierbar; Hell/Dunkel/System |
 | **Daten** | Kaputte Datendateien werden gemeldet (Kopfzeile, System → Datenspeicher) statt still durch Vorgaben ersetzt; Seiten speichern erst nach erfolgreichem Laden |
 | **Online** | Alles Opt-in: Update-Prüfung, Hinweise, Bibliothek. Diagnose-ZIP ohne Geheimnisse und Adressen |
 | **Sicherheit** | Keine eigene Anmeldung (Reverse-Proxy davor). Kein CORS, schreibende Anfragen fremder Seiten gesperrt (auch über http), nur Heimnetz-Adressen (gegen DNS-Rebinding), kein Einbetten in fremde Seiten, Windows-Update nur aus dem eigenen Release, Backup ohne Zugangsdaten (auf Wunsch verschlüsselt mit) |
-| **Auslieferung** | Docker (amd64/arm64), native Windows-App, native Linux. Version im Image, Update aus der Oberfläche über den Docker-Socket, Promote-Workflow Beta → Stabil |
-| **Slicer** | OrcaSlicer-Plugin (ab Orca 2.5): Farm-Check nach dem Slicen, Senden in die Warteschlange, Drucker und AMS im Geräte-Tab, Farm-Tab |
-| **Qualität** | 1123 Backend-, 59 Plugin- und 114 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
+| **Auslieferung** | Docker (amd64/arm64), native Windows-App, native Linux. Version im Image, Update aus der Oberfläche über den Docker-Socket (nur bei Stillstand, meldet einen Fehlschlag), Backup einspielen nur bei Stillstand (Fach-Belegung bleibt), Promote-Workflow Beta → Stabil |
+| **Slicer** | OrcaSlicer-Plugin (ab Orca 2.5): Farm-Check nach dem Slicen, Senden in die Warteschlange (erst nach der Prüfung, mit Kollisionsgefahr nur in die Bibliothek), Drucker und AMS im Geräte-Tab, Farm-Tab |
+| **Qualität** | 1134 Backend-, 59 Plugin- und 114 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
 
 ---
 

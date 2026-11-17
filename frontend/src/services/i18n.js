@@ -1901,6 +1901,8 @@ const EN_STRINGS = {
   'Die Farm läuft — Änderungen gelten erst nach „Übernehmen“, ab dem nächsten Job.': 'The farm is running — changes only take effect after “Apply”, from the next job on.',
   'Entwurf — noch nicht gespeichert.': 'Draft — not saved yet.',
   'Änderungen übernehmen': 'Apply changes',
+  'Neu gestartet, Version unverändert — Update fehlgeschlagen?': 'Restarted, version unchanged — did the update fail?',
+  'Letztes Update fehlgeschlagen — es läuft weiter Version {0}': 'Last update failed — still running version {0}',
   'Zuweisung fehlgeschlagen': 'Assignment failed',
   '{0} Fach/Fächer geleert': '{0} slot(s) emptied',
   'Regal konnte nicht geleert werden': 'Rack could not be emptied',

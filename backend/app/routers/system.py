@@ -258,7 +258,52 @@ _VERSION_CACHE: dict = {}
 _VERSION_CACHE_S = 300.0
 
 
+UPDATE_FAILED_AFTER_S = 600     # so lange darf der Wechsel dauern, dann gilt er als gescheitert
+
+
+def _update_marker_path() -> str:
+    return str(_db_dir() / "update_pending.json")
+
+
+def _write_update_marker(data: dict) -> None:
+    try:
+        storage.write_json(_update_marker_path(), data)
+    except OSError as e:
+        logger.warning(f"Update-Marker nicht geschrieben: {e}")
+
+
+def _clear_update_marker() -> None:
+    try:
+        os.remove(_update_marker_path())
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        logger.warning(f"Update-Marker nicht gelöscht: {e}")
+
+
+def update_result(current: str) -> Optional[dict]:
+    """Was wurde aus dem letzten Update? None = keins offen. „ok" (Version gewechselt,
+    Marker weg), „pending" (läuft noch), „failed" (nach 10 min dieselbe Version)."""
+    try:
+        m = storage.read_json(_update_marker_path(), None)
+    except (OSError, ValueError):
+        m = None
+    if not isinstance(m, dict):
+        return None
+    if str(m.get("from_version")) != str(current):
+        _clear_update_marker()
+        return {"state": "ok", "from": m.get("from_version"), "to": current}
+    age = time.time() - float(m.get("at") or 0)
+    state = "failed" if age > UPDATE_FAILED_AFTER_S else "pending"
+    return {"state": state, "from": m.get("from_version"), "target_image": m.get("target_image")}
+
+
 async def _version_info(channel: str, force: bool) -> dict:
+    info = await _version_info_inner(channel, force)
+    return {**info, "update_result": update_result(info.get("current"))}
+
+
+async def _version_info_inner(channel: str, force: bool) -> dict:
     current = _get_current_version()
     from app.services import online
     if not online.enabled("update_check") and not force:
@@ -394,6 +439,7 @@ async def trigger_update(body: UpdateIn = UpdateIn()):
 
     Native Desktop-App: lädt das Installer-Asset des passenden GitHub-Release und
     startet es (der Installer schließt die App und ersetzt die Dateien)."""
+    _assert_standstill()
     if paths.RUNTIME == "native-linux":
         raise HTTPException(
             501,
@@ -445,9 +491,14 @@ async def _trigger_update_docker(body: "UpdateIn"):
     ok, detail = await asyncio.to_thread(updater.pull_image, target_image)
     if not ok:
         raise HTTPException(502, detail)
+    # Merken, was gerade passieren soll: Nach dem Neustart sagt GET /version, ob die
+    # Version wirklich gewechselt hat (bis v1.1.60 hieß es immer „Fertig").
+    _write_update_marker({"from_version": _get_current_version(), "target_image": target_image,
+                          "channel": channel, "at": time.time()})
     try:
         updater.spawn_helper(target_image, CONTAINER_NAME)
     except Exception as e:
+        _clear_update_marker()
         logger.exception("Update-Helfer nicht gestartet")
         raise HTTPException(502, f"Update-Helfer nicht gestartet: {e}")
     return {"success": True, "method": "docker", "switching": True, "image": target_image}
@@ -940,6 +991,75 @@ def _restore_devices(db, devices: list, settings: dict, name_to_id_out: dict = N
     return n
 
 
+def _assert_standstill() -> None:
+    """Einspielen und Update nur, wenn sich nichts bewegt — auch nicht pausiert (dort
+    kann der Arm noch im Bauraum stehen). Bis v1.1.60 ging beides mitten im Lauf:
+    Die Farm fuhr danach mit halb ersetzten Sequenzen oder wurde vom Update abgewürgt."""
+    from app.routers import autofarm
+    owner = autofarm.motion_owner(include_paused=True)
+    if owner:
+        raise HTTPException(409, owner)
+
+
+def _int_like(v) -> bool:
+    if v is None:
+        return True
+    try:
+        int(str(v).strip())
+        return True
+    except ValueError:
+        return False
+
+
+def _prepare_section(key: str, value):
+    """Einen Backup-Abschnitt prüfen und in die Form bringen, die geschrieben wird.
+    → (Inhalt, Hinweis). Schreibt NICHTS: Erst wenn alle Abschnitte taugen, wird
+    geschrieben (bis v1.1.60 landete jeder Abschnitt wörtlich in seiner Datei — eine
+    Liste statt eines Regals machte die Datei kaputt, und die Farm stand)."""
+    from app.routers import autofarm
+    from app.services import geometry_check, geometry_store, ottoeject_motion, sequence_steps
+    rules = _data_file_rules()
+    expect = rules.get(key, (None,))[0]
+    if expect is not None and not isinstance(value, expect):
+        raise HTTPException(400, f"Backup-Abschnitt „{key}“ hat die falsche Form "
+                                 f"(erwartet {expect.__name__})")
+    if expect is None and not isinstance(value, (dict, list)):
+        raise HTTPException(400, f"Backup-Abschnitt „{key}“ hat die falsche Form")
+    if key == "sequences":
+        for name in ("seq_new", "seq_next"):
+            if not isinstance(value.get(name, []), list):
+                raise HTTPException(400, f"Backup-Abschnitt „sequences.{name}“ ist keine Liste")
+        out, dropped = {"schema_version": autofarm.SEQ_SCHEMA_VERSION}, 0
+        for name in ("seq_new", "seq_next"):
+            steps = [sequence_steps.sanitize_step(s) for s in value.get(name) or []]
+            dropped += sum(1 for s in steps if s is None)
+            out[name] = [s for s in steps if s is not None]
+        return out, (f"{dropped} unbekannte Schritt(e) nicht übernommen" if dropped else None)
+    if key == "geometry":
+        merged = ottoeject_motion.merge_defaults(value)
+        bad = geometry_store.invalid_positions(merged)
+        if bad:
+            raise HTTPException(400, "Backup-Geometrie: Positionsfelder ohne Zahl: " + ", ".join(bad[:8]))
+        errs = geometry_check.check_geometry(merged).get("errors") or []
+        return value, (f"Geometrie: {len(errs)} Fehler laut Prüfung — im Drucker-Tab ansehen"
+                       if errs else None)
+    return value, None
+
+
+def _restore_rack_config(value: dict):
+    """Vom Regal nur die Einstellungen (Fächer, Höhen, Magazin-Soll). Belegung und
+    Magazin-Bestand bleiben, wie sie sind: Bis v1.1.60 ersetzte ein Backup die echte
+    Belegung, und die Farm legte eine Platte auf ein belegtes Fach."""
+    from app.services import profiles, rack_store
+    neu = not rack_store.exists()
+    rack_store.ensure_file()
+    res = profiles._apply_rack_config(value)
+    if isinstance(res, str):
+        raise HTTPException(409, f"Regal nicht übernommen: {res}")
+    return ("Regal neu angelegt: alle Fächer frei, Magazin-Bestand 0 — bitte prüfen"
+            if neu else None)
+
+
 @router.post("/backup/restore")
 async def import_backup(body: dict):
     """Stellt die komplette Konfiguration aus einem Backup wieder her.
@@ -949,13 +1069,29 @@ async def import_backup(body: dict):
     Zugangsdaten eingespielt (secrets = "skipped")."""
     if not isinstance(body, dict):
         raise HTTPException(400, "Ungültiges Backup")
+    _assert_standstill()
     password = None
     backup = body
     if isinstance(body.get("backup"), dict) and "schema" not in body:
         backup, password = body["backup"], body.get("password")
+    schema = backup.get("schema")
+    if schema is not None and not str(schema).startswith("printloom-backup/"):
+        # Ohne „schema" gilt es als Altformat; ein fremdes ist kein Printloom-Backup.
+        raise HTTPException(400, f"Kein Printloom-Backup (schema „{schema}“)")
 
     # Zuerst entschlüsseln: ein falsches Passwort soll NICHTS halb einspielen.
     devices, settings, secrets_state = _merge_secrets(backup, password)
+    for d in devices or []:
+        if not isinstance(d, dict) or not all(_int_like(d.get(k)) for k in ("port", "mqtt_port")):
+            raise HTTPException(400, f"Backup-Gerät „{(d or {}).get('name', '?')}“: Port ist keine Zahl")
+    # Alle Abschnitte prüfen, BEVOR etwas geschrieben wird.
+    prepared, notes = {}, []
+    for path, key in _backup_files():
+        if key in backup and backup[key] not in (None, {}, []):
+            data, note = _prepare_section(key, backup[key])
+            prepared[key] = (path, data)
+            if note:
+                notes.append(note)
     restored = []
     unmapped = []
 
@@ -968,22 +1104,26 @@ async def import_backup(body: dict):
             # Geometrie an die (evtl. neuen) Geräte-IDs anpassen, bevor sie geschrieben
             # wird. Bis v1.1.50 zeigten Drucker-Blöcke nach dem Einspielen auf einer
             # frischen Datenbank auf falsche Geräte (oder auf keins).
-            if isinstance(backup.get("geometry"), dict):
+            if "geometry" in prepared:
                 for d in db.query(Device).all():
                     name_to_id.setdefault(d.name, d.id)
-                backup = {**backup}
-                backup["geometry"], unmapped = _remap_geometry(backup["geometry"], devices, name_to_id)
+                gpath, gdata = prepared["geometry"]
+                gdata, unmapped = _remap_geometry(gdata, devices, name_to_id)
+                prepared["geometry"] = (gpath, gdata)
         finally:
             db.close()
 
-    # Einfache Konfig-Dateien — jeder vorhandene, nicht leere Abschnitt wörtlich.
-    for path, key in _backup_files():
-        if key in backup and backup[key] not in (None, {}, []):
-            _safe_write_json(path, backup[key])
-            restored.append(key)
+    for key, (path, data) in prepared.items():
+        if key == "rack_slots":
+            note = _restore_rack_config(data)
+            if note:
+                notes.append(note)
+        else:
+            _safe_write_json(path, data)
+        restored.append(key)
 
     return {"success": True, "restored": restored, "secrets": secrets_state,
-            "unmapped_printers": unmapped}
+            "unmapped_printers": unmapped, "notes": notes}
 
 
 # ─── Multi-target health (printer · klipper) ─────────────────────────────────

@@ -200,6 +200,10 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
       const r = await systemService.getVersion(channel, force)
       setInfo(r.data)
       onUpdateAvailable?.(r.data.update_available)
+      // Auch nach einem Neuladen sichtbar: Das letzte Update hat nichts gewechselt.
+      if (r.data?.update_result?.state === 'failed') {
+        setError(tr('Letztes Update fehlgeschlagen — es läuft weiter Version {0}', r.data.current))
+      }
     } catch {
       if (!silent) setError(tr('Versionscheck fehlgeschlagen — GitHub/Registry nicht erreichbar?'))
     } finally {
@@ -208,6 +212,26 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
   }, [onUpdateAvailable, channel])
 
   useEffect(() => { checkVersion() }, [checkVersion])
+
+  // Nach dem Neustart: Hat die Version gewechselt? Bis v1.1.60 hieß es immer „Fertig",
+  // auch wenn der neue Container nicht startete und das alte Image zurückkam.
+  const finishAfterRestart = async (before) => {
+    await waitForRestart()
+    let after = null
+    try { after = (await systemService.getVersion(channel, false)).data } catch (e) {
+      console.warn('Version nach dem Neustart nicht lesbar:', e?.message || e)
+    }
+    if (after?.update_result?.state === 'failed' ||
+        (after && before && after.current === before && info?.update_available)) {
+      setPhase(null)
+      setError(tr('Neu gestartet, Version unverändert — Update fehlgeschlagen?'))
+      onUpdatePhase?.(null)
+      return
+    }
+    setPhase('done')
+    onUpdatePhase?.('done')
+    setTimeout(() => window.location.reload(), 2500)
+  }
 
   const triggerUpdate = async () => {
     setUpdating(true)
@@ -225,10 +249,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
         return
       }
       await systemService.triggerUpdate(channel)
-      await waitForRestart()
-      setPhase('done')
-      onUpdatePhase?.('done')
-      setTimeout(() => window.location.reload(), 2500)
+      await finishAfterRestart(info?.current)
     } catch (e) {
       if (e.response) {
         // Backend answered with an error → the update did NOT start. Show the real
@@ -243,10 +264,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
         onUpdatePhase?.(null)
       } else {
         // No response = connection dropped because the container restarted mid-request.
-        await waitForRestart()
-        setPhase('done')
-        onUpdatePhase?.('done')
-        setTimeout(() => window.location.reload(), 2500)
+        await finishAfterRestart(info?.current)
       }
     } finally {
       setUpdating(false)
@@ -288,14 +306,17 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
       setPendingImport(null)
       setImportPw('')
       const ohne = r.data?.unmapped_printers || []
+      // Hinweise des Servers (z. B. „Regal neu angelegt", übersprungene Schritte).
+      const notes = r.data?.notes || []
       setBackupFeedback({ ok: true, msg: tr('Backup wiederhergestellt (v{0}, exportiert: {1})', data.current_version ?? '?', data.exported_at?.split('T')[0] ?? '?')
         + ' ' + (SECRETS_STATE[r.data?.secrets] ?? '')
         + (ohne.length ? ' ' + tr('Ohne passendes Gerät (Positionen im Drucker-Tab zuordnen): {0}.', ohne.join(', ')) : '')
+        + (notes.length ? ' ' + notes.join(' · ') + '.' : '')
         + ' ' + tr('Die Seite lädt gleich neu.') })
       // Neu laden: Versteckt geöffnete Seiten (Drucker-Tab, Sequenz-Editor, Auto Farm)
       // halten noch ihre alte Kopie. Bis v1.1.50 schrieb etwa der Drucker-Tab beim
       // nächsten Speichern die alte Geometrie über die eben eingespielte.
-      setTimeout(() => window.location.reload(), ohne.length ? 6000 : 2500)
+      setTimeout(() => window.location.reload(), ohne.length || notes.length ? 8000 : 2500)
     } catch (err) {
       const detail = err.response?.data?.detail
       if (detail === 'BACKUP_PASSWORT_FALSCH') {
