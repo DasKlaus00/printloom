@@ -37,7 +37,7 @@ API_VERSION = 1
 PRINT_TYPES = {".3mf", ".gcode"}
 # Größer wird kein Platten-G-code — ein Deckel, damit ein kaputter Client nicht die
 # Platte vollschreibt. 1 GB entpackt entspricht einem zweitägigen Druck.
-MAX_BYTES = 1024 * 1024 * 1024
+MAX_BYTES = print_file.MAX_UPLOAD_BYTES     # eine Quelle mit der Bibliothek
 _CHUNK = 1024 * 1024
 
 # Aus dem Roh-Telegramm des Druckers nur, was der Geräte-Tab in Orca braucht.
@@ -229,6 +229,10 @@ async def _store_upload(request: Request, name: str, ftype: str, queue: bool) ->
     dest = files.new_upload_path(name)
     try:
         size = await _receive(request, dest)
+        await run_in_threadpool(print_file.zip_guard, str(dest))
+    except ValueError as e:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, str(e))
     except Exception:
         dest.unlink(missing_ok=True)
         raise

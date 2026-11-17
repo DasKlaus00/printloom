@@ -46,7 +46,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import orca
 
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 API_VERSION = 1
 AGENT_ID = "printloom"          # steht in den Drucker-Profilen der Nutzer — nie ändern
 STATUS_INTERVAL_S = 3.0          # Geräte-Tab: so oft fragt Orca auch seine eigenen Drucker
@@ -344,6 +344,28 @@ class _ProgressFile:
         self._f.close()
 
 
+class _SameHostRedirect(urllib.request.HTTPRedirectHandler):
+    """Weiterleitungen folgen, die Anmeldung (Basic-Auth) aber nur an dasselbe Ziel
+    schicken. Bis 1.0.4 nahm urllib sie bei jeder Weiterleitung mit — ein Proxy, der
+    auf einen fremden Host weiterleitete, bekam Benutzer und Passwort."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None:
+            a = urllib.parse.urlsplit(req.full_url)
+            b = urllib.parse.urlsplit(newurl)
+            if (a.scheme, a.hostname, a.port) != (b.scheme, b.hostname, b.port):
+                new.remove_header("Authorization")
+        return new
+
+
+_OPENER = urllib.request.build_opener(_SameHostRedirect)
+
+
+def _urlopen(req, timeout):
+    return _OPENER.open(req, timeout=timeout)
+
+
 class Client:
     """HTTP zu Printloom. Hinter einer Anmeldung (authentik) per Basic-Auth mit
     Benutzer und (App-)Passwort; im Heimnetz ohne."""
@@ -369,7 +391,7 @@ class Client:
             hdrs["Authorization"] = self._auth
         req = urllib.request.Request(self.base + path, data=body, method=method, headers=hdrs)
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with _urlopen(req, timeout=timeout) as resp:
                 raw = resp.read()
                 ctype = resp.headers.get("Content-Type", "")
         except urllib.error.HTTPError as e:

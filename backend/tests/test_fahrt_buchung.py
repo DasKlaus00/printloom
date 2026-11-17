@@ -31,7 +31,7 @@ class Datei:
     id = 3
     original_filename = "teil.3mf"
     file_path = "/daten/teil.3mf"
-    file_type = "3mf"
+    file_type = ".3mf"
 
 
 def _job(**kw):

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { safeHref } from '../services/safeUrl'
 import { profileService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 import { useAutoRefresh } from '../services/useAutoRefresh'
@@ -157,7 +158,7 @@ function Components({ components }) {
         <div key={i} className="rounded-lg border border-surface-800/60 bg-surface-900/40 p-2.5">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-surface-200">{c.name || tr('Bauteil {0}', i + 1)}</span>
-            {c.url && <a href={c.url} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline shrink-0">Link ↗</a>}
+            {safeHref(c.url) && <a href={safeHref(c.url)} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline shrink-0">Link ↗</a>}
           </div>
           {c.instructions && (
             <pre className="mt-1.5 text-[11px] text-surface-400 whitespace-pre-wrap font-sans leading-relaxed">{c.instructions}</pre>

@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.63',
+    de: [
+      'MANIPULIERTE DATEIEN RICHTEN NICHTS AN: Eine .3mf, die sich beim Entpacken auf ein Vielfaches aufbläht (Zip-Bombe), oder eine Datei über 1 GB wird beim Hochladen abgelehnt und gelöscht. Einträge in einer .3mf werden nur bis zu einer Grenze gelesen; bisher konnte eine präparierte Datei den Speicher füllen.',
+      'DATEINAME AUF DEM DRUCKER: Die Endung kommt jetzt aus dem geprüften Dateityp. Bisher ging eine Datei namens „x.exe“ mit genau diesem Namen auf die SD-Karte.',
+      'ONLINE-DIENSTE: Antworten werden schon beim Empfang auf 2 MB begrenzt, und eine Weiterleitung auf einen fremden Server wird nicht verfolgt.',
+      'PROFILE: Links aus importierten Profilen gelten nur mit http(s). Ein „javascript:“-Link wurde bisher beim Klick als Code ausgeführt.',
+      'OrcaSlicer-Plugin 1.0.5: Leitet Printloom (bzw. der Proxy davor) auf einen anderen Rechner weiter, geht die Anmeldung nicht mit. Plugin unter System → OrcaSlicer neu herunterladen.',
+    ],
+    en: [
+      'CRAFTED FILES CAN DO NO HARM: a .3mf that inflates many times over when unpacked (zip bomb), or a file over 1 GB, is rejected on upload and deleted. Entries inside a .3mf are only read up to a limit; until now a crafted file could fill the memory.',
+      'FILE NAME ON THE PRINTER: the extension now comes from the checked file type. Until now a file called “x.exe” went onto the SD card under exactly that name.',
+      'ONLINE SERVICES: responses are limited to 2 MB while they arrive, and a redirect to a foreign server is not followed.',
+      'PROFILES: links from imported profiles only count with http(s). A “javascript:” link used to run as code when clicked.',
+      'OrcaSlicer plugin 1.0.5: if Printloom (or the proxy in front of it) redirects to another computer, the login does not go along. Download the plugin again under System → OrcaSlicer.',
+    ],
+  },
+  {
     version: '1.1.62',
     de: [
       'ZUGANGSDATEN BLEIBEN AN IHRER ADRESSE: Ändert ein Backup die Adresse eines Druckers, von Home Assistant oder einer Steckdose, bringt aber die Zugangsdaten dazu nicht mit, verwirft Printloom die vorhandenen und sagt es. Bisher blieben sie stehen, und ein präpariertes Backup hätte den Access-Code oder Token an einen fremden Rechner schicken lassen. Gleiche Adresse: Die Zugangsdaten bleiben wie bisher.',

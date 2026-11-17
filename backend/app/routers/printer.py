@@ -612,7 +612,7 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
     _diag_add(sess, "Konfigurierte AMS-Slots  (project_settings.config)", slot_lines)
     _diag_add(sess, "Tatsächlich gedruckte Filamente  (slice_info.config)", used_lines)
 
-    print_name = print_file.make_print_name(file.original_filename)
+    print_name = print_file.make_print_name(file.original_filename, file.file_type)
 
     # ── MQTT (persistente Verbindung, bambu_manager) ─────────────
     connected = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)

@@ -97,6 +97,47 @@ def print_units(path: str, ftype: str) -> list:
     return [(p, len(plates), names.get(str(p)) or None) for p in plates]
 
 
+# Grenzen für Zip-Einträge, die ganz in den Speicher gelesen werden. Ein Platten-
+# G-code wird gestreamt und hat keine solche Grenze (echte G-codes sind groß).
+MAX_PNG_BYTES = 5 * 1024 * 1024
+MAX_META_BYTES = 20 * 1024 * 1024        # XML/JSON/config
+# Upload: eine Quelle für Bibliothek und OrcaSlicer-Plugin (1 GB ≈ zweitägiger Druck).
+MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
+ZIP_MAX_TOTAL = 2 * 1024 * 1024 * 1024    # Summe entpackt
+ZIP_MAX_RATIO = 200                      # entpackt/gepackt je Eintrag (G-code: ~5–20)
+
+
+def read_member(zf, name: str, max_bytes: int) -> bytes:
+    """Einen Zip-Eintrag lesen, höchstens `max_bytes`. Prüft die angegebene Größe
+    vorab und liest trotzdem nie mehr (die Angabe lässt sich fälschen). Bis v1.1.62
+    las zf.read() jeden Eintrag ganz: Eine präparierte .3mf mit 10 GB „config"
+    füllte den Speicher. → ValueError, wenn er zu groß ist."""
+    info = zf.getinfo(name)
+    if info.file_size > max_bytes:
+        raise ValueError(f"{name}: {info.file_size} Bytes, erlaubt {max_bytes}")
+    with zf.open(info) as f:
+        data = f.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError(f"{name}: größer als angegeben (über {max_bytes} Bytes)")
+    return data
+
+
+def zip_guard(path) -> None:
+    """Hochgeladenes Zip (.3mf) vor dem Eintragen prüfen: entpackt höchstens
+    ZIP_MAX_TOTAL, kein Eintrag stärker gepackt als ZIP_MAX_RATIO (Zip-Bombe).
+    Keine Zip-Datei: nichts zu prüfen. → ValueError mit Grund."""
+    if not zipfile.is_zipfile(path):
+        return
+    with zipfile.ZipFile(path) as zf:
+        total = 0
+        for info in zf.infolist():
+            total += info.file_size
+            if info.compress_size and info.file_size / info.compress_size > ZIP_MAX_RATIO:
+                raise ValueError(f"„{info.filename}“ ist ungewöhnlich stark gepackt — keine Druckdatei?")
+            if total > ZIP_MAX_TOTAL:
+                raise ValueError("Entpackt größer als 2 GB — keine Druckdatei?")
+
+
 def plate_names(zf) -> dict:
     """{Platten-Nr (str): Name} aus model_settings.config (<metadata key="plater_name">).
     OrcaSlicer/Bambu Studio speichern dort den vom Nutzer vergebenen Platten-Namen —
@@ -105,7 +146,7 @@ def plate_names(zf) -> dict:
         name = next((n for n in zf.namelist() if n.lower().endswith('model_settings.config')), None)
         if not name:
             return {}
-        root = ET.fromstring(zf.read(name).decode('utf-8', errors='ignore'))
+        root = ET.fromstring(read_member(zf, name, MAX_META_BYTES).decode('utf-8', errors='ignore'))
         out = {}
         for pl in root.iter('plate'):
             meta = {m.get('key'): m.get('value') for m in pl.findall('metadata')}
@@ -125,7 +166,7 @@ def plate_predictions(zf) -> dict:
         name = next((n for n in zf.namelist() if n.lower().endswith('slice_info.config')), None)
         if not name:
             return {}
-        root = ET.fromstring(zf.read(name).decode('utf-8', errors='ignore'))
+        root = ET.fromstring(read_member(zf, name, MAX_META_BYTES).decode('utf-8', errors='ignore'))
         out = {}
         for pl in root.iter('plate'):
             meta = {m.get('key'): m.get('value') for m in pl.findall('metadata')}
@@ -266,11 +307,19 @@ def upload_plan(file_path: str, file_type: str, plate=None) -> tuple:
             f"({os.path.getsize(tmp) / 1e6:.1f} statt {os.path.getsize(file_path) / 1e6:.1f} MB)")
 
 
-def make_print_name(original: str) -> str:
-    """Dateiname für die SD-Karte des Druckers (nur sichere Zeichen, max. 60)."""
-    base, _, ext = original.rpartition('.')
-    safe_base = re.sub(r'[^a-zA-Z0-9_-]', '_', base)[:60]
-    return f"{safe_base}.{ext}" if ext else safe_base
+def make_print_name(original: str, file_type: str) -> str:
+    """Dateiname für die SD-Karte des Druckers: sicherer Stamm (max. 60 Zeichen) plus
+    die Endung aus dem GEPRÜFTEN Dateityp der Bibliothek. Bis v1.1.62 kam die Endung
+    aus dem Namen: Eine „x.exe" ging als „x.exe" auf den Drucker.
+    'Halter.gcode.3mf' + '.3mf' → 'Halter_gcode.3mf' (wie bisher)."""
+    ext = (file_type or "").lower()
+    if ext not in (".3mf", ".gcode"):
+        raise ValueError(f"Kein Druckformat: {file_type!r}")
+    stem = os.path.basename(str(original or "").replace("\\", "/"))
+    if stem.lower().endswith(ext):
+        stem = stem[:-len(ext)]
+    safe = re.sub(r'[^a-zA-Z0-9_-]', '_', stem)[:60] or "druck"
+    return safe + ext
 
 
 # ── G-code-Kopf ──────────────────────────────────────────────────────────────
@@ -454,7 +503,7 @@ def _slice_info_plate(z, plate):
     name = next((n for n in z.namelist() if n.lower().endswith('slice_info.config')), None)
     if not name:
         return None
-    root = ET.fromstring(z.read(name).decode('utf-8', errors='ignore'))
+    root = ET.fromstring(read_member(z, name, MAX_META_BYTES).decode('utf-8', errors='ignore'))
     plates = list(root.iter('plate'))
     if not plates:
         return None
@@ -706,7 +755,7 @@ def ams_mapping_from_3mf(filepath: str, diag: list = None) -> list:
             # 1. filament_sequence.json
             seq_path = next((n for n in names if n.endswith('filament_sequence.json')), None)
             if seq_path:
-                data = json.loads(z.read(seq_path).decode('utf-8', errors='ignore'))
+                data = json.loads(read_member(z, seq_path, MAX_META_BYTES).decode('utf-8', errors='ignore'))
                 found = False
                 for pl in data.values():
                     for key in ('optimal_assignment', 'mapping', 'filament_maps'):
@@ -726,7 +775,7 @@ def ams_mapping_from_3mf(filepath: str, diag: list = None) -> list:
             # 2. slice_info.config
             info_path = next((n for n in names if n.endswith('slice_info.config')), None)
             if info_path:
-                text = z.read(info_path).decode('utf-8', errors='ignore')
+                text = read_member(z, info_path, MAX_META_BYTES).decode('utf-8', errors='ignore')
                 m = re.search(r'key="filament_maps"\s+value="([^"]+)"', text)
                 if m:
                     clean = _clean([max(0, int(x) - 1) for x in m.group(1).split()])
@@ -863,7 +912,7 @@ def height_3mf(file_path: str, plate: int | None = None) -> dict:
             si_path = next((n for n in names if n.lower().endswith('slice_info.config')), None)
             if si_path:
                 try:
-                    content = zf.read(si_path).decode('utf-8', errors='ignore')
+                    content = read_member(zf, si_path, MAX_META_BYTES).decode('utf-8', errors='ignore')
                     h_m = re.search(r'key="height"\s+value="([\d.]+)"', content)
                     lh_m = re.search(r'key="layer_height"\s+value="([\d.]+)"', content)
                     lc_m = re.search(r'key="top_layer"\s+value="(\d+)"', content)

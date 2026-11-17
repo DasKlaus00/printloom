@@ -1187,7 +1187,7 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
     if not file:
         raise RuntimeError(f"Datei {job['fileId']} nicht gefunden")
 
-    print_name = print_file.make_print_name(file.original_filename)
+    print_name = print_file.make_print_name(file.original_filename, file.file_type)
     if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
         raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
     # Nie eine Datei in einen laufenden Druck starten. FAILED gilt als frei, der

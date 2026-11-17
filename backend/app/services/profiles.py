@@ -17,6 +17,7 @@ falsche Stelle fahren. Die stehen im Backup. Ältere Profile enthalten noch eine
 „Kalibrierung" (`macro_config`, Werte alter Geräte-Makros); seit dem Drucker-Tab
 bewirkte sie nichts mehr und wird beim Import übergangen.
 """
+import re
 from typing import Optional
 
 from app.services import farm_settings, rack_store, storage
@@ -53,6 +54,23 @@ def _current_rack_config() -> dict:
     return {k: data[k] for k in _RACK_CONFIG_KEYS if k in data}
 
 
+_SAFE_URL = re.compile(r"^https?://", re.IGNORECASE)
+
+
+def clean_components(components) -> list:
+    """Komponenten eines Profils: nur Objekte, ein Link nur mit http(s). Ein
+    importiertes Profil mit „javascript:"-Link lief bis v1.1.62 beim Klick als Code."""
+    out = []
+    for c in components or []:
+        if not isinstance(c, dict):
+            continue
+        c = dict(c)
+        if c.get("url") and not _SAFE_URL.match(str(c["url"]).strip()):
+            c.pop("url")
+        out.append(c)
+    return out
+
+
 def build_profile(name: str, printer_model: str, description: str,
                   components: Optional[list]) -> dict:
     """Den aktuellen Stand als teilbares Profil."""
@@ -61,7 +79,7 @@ def build_profile(name: str, printer_model: str, description: str,
         "name":          name,
         "printer_model": printer_model,
         "description":   description,
-        "components":    components or [],
+        "components":    clean_components(components),
         "sequences":     _current_sequences(),
         "rack_config":   _current_rack_config(),
         "settings":      farm_settings.read(),
@@ -145,6 +163,7 @@ def list_local() -> list:
 
 
 def save_local(profile: dict) -> list:
+    profile = {**profile, "components": clean_components(profile.get("components"))}
     name = profile.get("name", "Unbenannt")
     lib = [p for p in list_local() if p.get("name") != name] + [profile]
     storage.write_json(_lib_path(), lib)

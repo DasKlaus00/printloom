@@ -86,7 +86,7 @@ def test_abgelehnter_zugriff_gibt_eine_verstaendliche_meldung(plugin, printloom,
     def audit(*a, **k):
         raise PermissionError('Plugin attempted audited operation "urllib.Request" '
                               'without permission: audit permission required')
-    monkeypatch.setattr(plugin.urllib.request, "urlopen", audit)
+    monkeypatch.setattr(plugin, "_urlopen", audit)
     g = tmp_path / "plate_1.gcode"
     g.write_bytes(b"G1 X50\n")
     ctx = types.SimpleNamespace(code=plugin.orca.LifecycleEvtCode.Ok, msg=str(g))
@@ -261,7 +261,7 @@ def test_nicht_erreichbar(plugin, monkeypatch):
 
     def refused(*a, **k):
         raise urllib.error.URLError(ConnectionRefusedError(10061, "Verbindung verweigert"))
-    monkeypatch.setattr(plugin.urllib.request, "urlopen", refused)
+    monkeypatch.setattr(plugin, "_urlopen", refused)
     with pytest.raises(plugin.PrintloomError, match="verweigert"):
         plugin.Client("http://127.0.0.1:9").info()
 
@@ -554,3 +554,49 @@ def test_seite_ist_eigenstaendig(plugin):
     html = plugin.PrintloomTab().get_ui()
     assert "orca.postMessage({type: 'ready'})" in html
     assert "http" not in html.replace("http://192.168.1.20", "").split("<script>")[0]
+
+
+# ── Weiterleitung auf einen anderen Host (seit 1.0.5) ──────────────────────────
+
+def test_anmeldung_geht_nicht_an_einen_anderen_host(plugin):
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    gesehen = []
+
+    class Ziel(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            gesehen.append(self.headers.get("Authorization"))
+            body = json.dumps({"api": plugin.API_VERSION, "version": "x", "printers": [],
+                               "limits": {}}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    ziel = ThreadingHTTPServer(("127.0.0.1", 0), Ziel)
+    ziel_url = f"http://127.0.0.1:{ziel.server_address[1]}"
+
+    class Umleitung(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", ziel_url + self.path)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    quelle = ThreadingHTTPServer(("127.0.0.1", 0), Umleitung)
+    for srv in (ziel, quelle):
+        threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+    try:
+        plugin.Client(f"http://127.0.0.1:{quelle.server_address[1]}", "alex", "geheim").info()
+    finally:
+        for srv in (ziel, quelle):
+            srv.shutdown()
+            srv.server_close()
+    assert gesehen == [None]       # anderer Port = anderes Ziel: keine Anmeldung

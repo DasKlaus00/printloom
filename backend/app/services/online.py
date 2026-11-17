@@ -21,8 +21,10 @@ Sicherheit/Datenschutz:
     Sequenzen/Profile bewegen Hardware, deshalb immer erst Vorschau, dann
     bewusstes Übernehmen durch den Nutzer.
 """
+import json
 import time
 import logging
+from urllib.parse import urljoin, urlparse
 from typing import Optional, Tuple
 
 import httpx
@@ -133,6 +135,27 @@ def clear_cache() -> None:
 
 
 # ── Abruf ────────────────────────────────────────────────────────────────────
+async def _get_limited(client, url: str, params) -> tuple:
+    """GET mit Größengrenze: Content-Length vorab, beim Lesen abbrechen, sobald
+    _MAX_BYTES überschritten sind (bis v1.1.62 kam die Antwort erst ganz in den
+    Speicher und wurde dann gemessen). → (status, body, location)."""
+    async with client.stream("GET", url, params=params or None,
+                             headers={"Accept": "application/json"}) as r:
+        if r.status_code in (301, 302, 303, 307, 308):
+            return r.status_code, b"", r.headers.get("location", "")
+        if r.status_code != 200:
+            return r.status_code, b"", ""
+        cl = r.headers.get("content-length")
+        if cl and cl.isdigit() and int(cl) > _MAX_BYTES:
+            raise RuntimeError("Antwort zu groß")
+        buf = bytearray()
+        async for chunk in r.aiter_bytes():
+            buf += chunk
+            if len(buf) > _MAX_BYTES:
+                raise RuntimeError("Antwort zu groß")
+        return 200, bytes(buf), ""
+
+
 async def fetch(path: str, feature: str, *, force: bool = False,
                 params: dict = None) -> dict:
     """Eine JSON-Ressource holen. Ergebnis:
@@ -156,14 +179,18 @@ async def fetch(path: str, feature: str, *, force: bool = False,
     cfg = read_settings()
     url = f"{cfg['server_url']}/{key}"
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
-            r = await client.get(url, params=params or None,
-                                 headers={"Accept": "application/json"})
-        if r.status_code != 200:
-            raise RuntimeError(f"HTTP {r.status_code}")
-        if len(r.content) > _MAX_BYTES:
-            raise RuntimeError("Antwort zu groß")
-        payload = r.json()
+        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=False) as client:
+            status, body, location = await _get_limited(client, url, params)
+            if status in (301, 302, 303, 307, 308):
+                # Höchstens EINE Weiterleitung, und nur auf denselben Host: Bis v1.1.62
+                # folgte der Abruf jeder Weiterleitung, auch auf fremde Rechner.
+                nxt = urljoin(url, location)
+                if urlparse(nxt).hostname != urlparse(url).hostname:
+                    raise RuntimeError("Weiterleitung auf einen fremden Host")
+                status, body, _ = await _get_limited(client, nxt, None)
+        if status != 200:
+            raise RuntimeError(f"HTTP {status}")
+        payload = json.loads(body)
     except Exception as e:
         logger.info(f"Online-Abruf {url} fehlgeschlagen: {e}")
         return {"ok": data is not None, "data": data, "fetched_at": ts,

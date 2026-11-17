@@ -41,9 +41,17 @@ ALLOWED_EXTENSIONS = {".3mf", ".stl", ".gcode"}
 _UPLOAD_CHUNK = 1024 * 1024      # 1 MB
 
 
+THUMB_CACHE_MAX_BYTES = 2 * 1024 * 1024
+
+
+class UploadRejected(ValueError):
+    """Datei zu groß oder keine plausible Druckdatei (Zip-Bombe)."""
+
+
 def _save_upload(src, dest: Path) -> int:
     """Hochgeladenen Strom stückweise nach `dest` schreiben und die Größe liefern.
-    Läuft im Threadpool (siehe upload_file) — hier darf blockiert werden."""
+    Läuft im Threadpool (siehe upload_file) — hier darf blockiert werden. Über
+    print_file.MAX_UPLOAD_BYTES wird abgebrochen (bis v1.1.62 ohne Grenze)."""
     total = 0
     src.seek(0)
     with open(dest, "wb") as out:
@@ -51,8 +59,10 @@ def _save_upload(src, dest: Path) -> int:
             chunk = src.read(_UPLOAD_CHUNK)
             if not chunk:
                 break
-            out.write(chunk)
             total += len(chunk)
+            if total > print_file.MAX_UPLOAD_BYTES:
+                raise UploadRejected("Datei größer als 1 GB")
+            out.write(chunk)
     return total
 
 
@@ -75,9 +85,17 @@ async def upload_file(file: UploadFile = File(...), folder_id: Optional[int] = N
         # Datei in den RAM gelesen und dann synchron geschrieben: eine 40-MB-.3mf
         # blockierte damit den Event-Loop für die Dauer des Schreibens (die ganze App
         # stand still) und belegte den Speicher doppelt.
-        size = await run_in_threadpool(_save_upload, file.file, file_path)
+        try:
+            size = await run_in_threadpool(_save_upload, file.file, file_path)
+            await run_in_threadpool(print_file.zip_guard, file_path)
+        except (UploadRejected, ValueError, zipfile.BadZipFile) as e:
+            # Nichts behalten, nichts eintragen.
+            Path(file_path).unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail=str(e))
         return register_upload(db, file_path, file.filename, size, folder_id)
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
 
@@ -298,8 +316,12 @@ def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
             thumb_path = print_file.thumbnail_name(names, plate_num)
             if not thumb_path:
                 raise HTTPException(status_code=404, detail="Kein Thumbnail in dieser .3mf Datei")
-            png_bytes = zf.read(thumb_path)
-        if sig:
+            try:
+                png_bytes = print_file.read_member(zf, thumb_path, print_file.MAX_PNG_BYTES)
+            except ValueError as e:
+                raise HTTPException(status_code=413, detail=f"Vorschaubild zu groß: {e}")
+        # Nur kleine Bilder merken: Der Cache liegt im Speicher.
+        if sig and len(png_bytes) <= THUMB_CACHE_MAX_BYTES:
             if len(_THUMB_CACHE) >= _THUMB_CACHE_MAX:
                 _THUMB_CACHE.clear()       # simpel und ausreichend: nie unbegrenzt wachsen
             _THUMB_CACHE[file_id] = (sig, png_bytes)
@@ -755,7 +777,7 @@ def _analyze_3mf(file_path: str) -> dict:
         thumb_path = print_file.thumbnail_name(names, plate_num)
         if thumb_path:
             try:
-                raw_png = zf.read(thumb_path)
+                raw_png = print_file.read_member(zf, thumb_path, print_file.MAX_PNG_BYTES)
                 thumb_b64 = "data:image/png;base64," + base64.b64encode(raw_png).decode('ascii')
             except Exception:
                 pass

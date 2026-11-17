@@ -31,6 +31,8 @@ class FakeResponse:
 class FakeClient:
     payload = {}
     status = 200
+    raw = None          # rohe Antwort statt payload (z. B. übergroß)
+    redirect = None     # Location der ersten Antwort (302)
 
     def __init__(self, **kw):
         pass
@@ -45,6 +47,27 @@ class FakeClient:
         CALLS.append(url)
         return FakeResponse(FakeClient.payload, FakeClient.status)
 
+    def stream(self, method, url, params=None, headers=None):
+        # Wie httpx.AsyncClient.stream: ein async Kontext mit status_code/headers/aiter_bytes
+        CALLS.append(url)
+        redirect = FakeClient.redirect if len(CALLS) == 1 else None
+        body = FakeClient.raw if FakeClient.raw is not None else json.dumps(FakeClient.payload).encode()
+
+        class Stream:
+            status_code = 302 if redirect else FakeClient.status
+            headers = {"location": redirect} if redirect else {}
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def aiter_bytes(self):
+                for i in range(0, len(body), 65536):
+                    yield body[i:i + 65536]
+        return Stream()
+
 
 class FakeHttpx:
     AsyncClient = FakeClient
@@ -58,6 +81,7 @@ def _isoliert(tmp_path, monkeypatch):
     monkeypatch.setattr(online, "httpx", FakeHttpx)
     CALLS.clear()
     FakeClient.payload, FakeClient.status = {}, 200
+    FakeClient.raw, FakeClient.redirect = None, None
     yield
 
 
@@ -215,3 +239,31 @@ def test_kaputte_sequenz_wirft(bad):
 def test_unbekannte_art_wirft():
     with pytest.raises(ValueError):
         online.clean_library_item("unbekannt", {})
+
+
+# ── Grenzen (seit v1.1.63) ───────────────────────────────────────────────────
+
+def _freigeben():
+    online.write_settings({"consented": True, "notices": True})
+
+
+def test_zu_grosse_antwort_wird_verworfen():
+    _freigeben()
+    FakeClient.raw = b"[" + b"0," * (online._MAX_BYTES // 2 + 10) + b"0]"
+    r = _fetch("api/v1/notices.json", "notices", force=True)
+    assert r["error"] == "Antwort zu groß" and r["data"] is None
+
+
+def test_weiterleitung_auf_fremden_host_wird_nicht_verfolgt():
+    _freigeben()
+    FakeClient.redirect = "https://boese.example/notices.json"
+    r = _fetch("api/v1/notices.json", "notices", force=True)
+    assert "fremden Host" in r["error"] and len(CALLS) == 1
+
+
+def test_weiterleitung_auf_denselben_host_geht():
+    _freigeben()
+    FakeClient.payload = {"ok": 1}
+    FakeClient.redirect = "/api/v2/notices.json"
+    r = _fetch("api/v1/notices.json", "notices", force=True)
+    assert r["error"] is None and len(CALLS) == 2 and CALLS[1] == "https://printloom.alexsz.de/api/v2/notices.json"
