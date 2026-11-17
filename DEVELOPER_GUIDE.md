@@ -82,13 +82,15 @@ Image selbst bauen: `docker build -t printloom:dev .`, dann in `docker-compose.y
 auf `beta` startet `.github/workflows/docker-publish.yml`: erst die Tests
 (`tests.yml`), dann der Multi-Arch-Build (amd64 + arm64), 3–8 Minuten.
 
-**Änderungen** kommen über einen Zweig und einen Pull Request nach `beta`:
+**Änderungen** gehen, wenn alle Prüfungen grün sind, direkt auf `beta` — so arbeitet
+das Projekt. Beiträge von außen kommen über einen Zweig und einen Pull Request nach
+`beta` (`tests.yml` läuft am PR):
 
 ```bash
-git switch -c claude/<thema> beta      # bzw. <name>/<thema>
+git switch -c <name>/<thema> beta
 # … Änderungen, Tests …
-git push -u printloom claude/<thema>
-# Pull Request nach beta öffnen — tests.yml läuft am PR
+git push -u origin <name>/<thema>
+# Pull Request nach beta öffnen
 ```
 
 **Jedes Release:**
@@ -98,7 +100,8 @@ git push -u printloom claude/<thema>
 2. Eintrag oben in `frontend/src/changelog.js`, `de` und `en`, für Nutzer geschrieben.
 3. Englische Fassung jedes neuen `tr('…')`-Textes in `frontend/src/services/i18n.js`.
 4. Commit `vX.Y.Z — <Kurzbeschreibung>`, Stichpunkte darunter.
-5. Backend-Tests, Frontend-Tests, `npm run lint:ci`, `npm run build` — alles grün.
+5. Backend-Tests, Plugin-Tests (`python -m pytest -q orca-plugin/tests`),
+   Frontend-Tests, `npm run lint:ci`, `npm run build` — alles grün.
 
 **Stabil machen** — erst nach einem Test auf der echten Farm: GitHub → Actions →
 **„Promote (Beta → Stabil)"** → Version und Digest eingeben. Den Digest zeigt die
@@ -120,6 +123,34 @@ festgelegt (Tag als Kommentar).
 **Versionsanzeige.** Die Version steht als Label `org.opencontainers.image.version`
 im Image. Die App liest es für „v1.1.x verfügbar" und meldet „wird gebaut", solange
 `version.txt` im Branch neuer ist als das Image.
+
+## Windows-Paket bauen
+
+Die native Windows-App (Tray + Browser) entsteht aus demselben Code:
+
+```powershell
+powershell -File desktop\build_windows.ps1
+```
+
+Voraussetzungen und Ablauf stehen oben im Skript: `.venv-build` (Python 3.12 mit
+`backend/requirements.txt`, PyInstaller, pystray, pillow), Node/npm und Inno Setup 6.
+Das Skript holt ein festes, per SHA-256 geprüftes `ffmpeg` (`desktop/fetch_ffmpeg.py`),
+baut das Frontend neu, packt alles mit PyInstaller (`desktop/printloom.spec`) und baut
+den Installer (`desktop/installer.iss`). Jeder Schritt bricht bei einem Fehler ab.
+Ergebnis: `desktop/Output/Printloom-Setup-X.Y.Z.exe` und daneben `.sha256` — beide
+gehören ins GitHub-Release. Die App startet auf `127.0.0.1:8756`, Daten in
+`%APPDATA%\Printloom` (`backend/app/paths.py`).
+
+## OrcaSlicer-Plugin entwickeln
+
+`orca-plugin/printloom_orca.py` ist eine einzelne Datei für Orca ab 2.5. Es urteilt
+nicht selbst, sondern fragt Printloom (`/api/slicer/…`, `backend/app/routers/slicer.py`);
+Printloom liefert es unter `/api/slicer/plugin` aus, damit Plugin und Server
+zusammenpassen. Was Orcas Agent- und Geräte-Schnittstelle erwartet, steht in Orcas
+`MoonrakerPrinterAgent.cpp`, nicht in der Doku. Fehler im Plugin landen in Orcas
+`log\python_*.log` (Windows: `%APPDATA%\OrcaSlicer`). Tests:
+`python -m pytest -q orca-plugin/tests`. Bei Änderungen die Plugin-Version in der
+Datei hochzählen — Nutzer müssen es in Orca neu installieren.
 
 ## Regeln im Code
 

@@ -35,8 +35,9 @@ one unattended, with live status, cameras and ETA in a clean web UI.
 - **Rack & magazine manager** — track plate slots, capacity and refill; live status.
 - **File library** — folders, per-file print time & filament estimate (parsed from the
   `.3mf`/`.gcode`), bulk queueing with a calculated total.
-- **Cameras** — **WIP** — external webcam (WebRTC / HLS / MJPEG) and the built-in X1C chamber
-  camera via a Home Assistant proxy (token stays server-side).
+- **Cameras** — external webcam (WebRTC / HLS / MJPEG) and the printer's own camera:
+  X1 series directly over RTSPS, P1/A1 over Bambu's port-6000 stream. One connection per
+  printer, shared by all viewers. A Home Assistant proxy is optional.
 - **Live status & control** — temperatures, progress, AMS, chamber light, manual moves.
 - **Notifications** — Web Push to the browsers you subscribe (job done, errors, pauses).
 - **In-app updates** — switch between **Latest** and **Beta** channels and update with
@@ -50,9 +51,13 @@ one unattended, with live status, cameras and ETA in a clean web UI.
 
 ## Hardware
 
-- **Bambu Lab X1C (P1P/P1S/P2S/X2D) but only tested on X1C** (LAN access code; "LAN Mode Liveview" on for the camera).
+- **Bambu Lab printer** — tested on the **X1 Carbon**. Also recognized: X1, X1E, P1S,
+  P1P, A1, A1 mini and H2D (geometry templates for X1C, P1S, P1P and A1). Needs the LAN
+  access code; for the camera, "LAN Mode Liveview" must be on.
 - **OTTOeject** running Klipper/Moonraker (the auto-ejector).
-- Any host that runs Docker (a small x86/ARM box, NUC, Pi 4/5, or a Proxmox LXC).
+- A host for Printloom: anything that runs Docker (a small x86/ARM box, NUC, Pi 4/5, a
+  Proxmox LXC), a Windows PC (native app, see below) or a Linux box without Docker
+  ([docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md)).
 
 ---
 
@@ -71,6 +76,15 @@ Open **http://<host-ip>:8000** and follow the in-app setup.
 
 > Setting up a **fresh Debian server** from scratch (Docker + all dependencies)?
 > See **[docs/DEBIAN_SETUP.md](docs/DEBIAN_SETUP.md)**.
+
+## Windows app
+
+The [GitHub releases](https://github.com/DasKlaus00/printloom/releases) carry a
+Windows installer (`Printloom-Setup-X.Y.Z.exe`, with a `.sha256` checksum next to it)
+and a portable `.exe`. Printloom then runs as a tray app and opens in your browser at
+**http://127.0.0.1:8756**. Its data (database, uploads, settings) lives in
+`%APPDATA%\Printloom`. Updates come from the **System** page: the app downloads the
+installer of the newest release, checks its checksum and only then starts it.
 
 ---
 
@@ -129,13 +143,45 @@ reverse proxy must pass the browser's `Host` on, including the port (nginx:
 only be shown in an iframe on its own pages; for Home Assistant, set
 `PRINTLOOM_FRAME_ANCESTORS` (e.g. `https://ha.example.com`).
 
+### Securing the OTTOeject
+
+Moonraker on the OTTOeject accepts commands without a login from every address listed
+under `trusted_clients` — by default that is your whole private network
+(`192.168.0.0/16`, `10.0.0.0/8`, …). Anything on your LAN can then move the arm, even
+while a print is running. Narrow it down in `moonraker.conf` on the OTTOeject:
+
+```ini
+[authorization]
+trusted_clients:
+    192.168.1.20      # the Printloom host
+    127.0.0.0/8
+cors_domains:
+    http://ottoeject.local   # only the UIs you actually use (Mainsail)
+```
+
+Do not forward Moonraker's port (7125) to the internet.
+
 ### Cameras
 
 - **External webcam:** enter a stream URL (Configuration → Cameras). Port `:8889`/`/whep`
   → WebRTC (<1 s), `:8888`/`.m3u8` → HLS, otherwise MJPEG.
-- **Built-in X1C camera:** on recent firmware the printer's camera allows only one
-  client. Printloom reads it via a **Home Assistant** proxy — enter your HA URL, the
-  camera entity and a long-lived token (Configuration → Cameras).
+- **Printer camera:** Printloom reads it directly — X1 series over RTSPS (needs
+  `ffmpeg`; the Docker image and the Windows app ship it), P1/A1 over port 6000. It
+  keeps one connection per printer and shares it. If another client (Bambu Studio,
+  Handy) holds the camera, use the **Home Assistant** proxy instead: HA URL, camera
+  entity and a long-lived token (Configuration → Cameras; the token stays on the server).
+- **Weak hosts** (Raspberry Pi Zero/3): converting the X1 stream takes a full CPU. Turn
+  the camera off under Configuration → Cameras → "Kamera komplett deaktivieren".
+
+### OrcaSlicer plugin
+
+1. **System → OrcaSlicer-Plugin → Download** (the plugin always matches your Printloom).
+2. In OrcaSlicer 2.5+: *Plugins → Install local plugin* → the downloaded file.
+3. In the new **Printloom** tab, enter the address of your Printloom page (behind
+   authentik: user + app password).
+4. For *Send*/*Print*: *Preferences → Developer → Experimental features → "Use printer
+   agents instead of print hosts"*, then pick **Printloom** as printer agent in the
+   printer profile (*Basic information → Advanced*).
 
 ---
 

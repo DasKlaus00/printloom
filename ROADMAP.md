@@ -1,8 +1,10 @@
 # Printloom — Roadmap
 
-**Stand: v1.1.40** (08.11.2026). Die vorige Fassung stand auf v1.1.20; ihre
-Phase 1 ist bis auf zwei Messungen erledigt (Tür, Magnet-Greifer, Versionsnummer im
-Image, Zugangsdaten im Backup), Teile von Phase 2 ebenso.
+**Stand: v1.1.78** (18.11.2026). Seit v1.1.42 läuft der Umbauplan aus dem Prüfbericht
+vom 16.11. (Sicherheit, Arm und Drucker, Daten, Oberfläche, Auslieferung, Aufräumen,
+Doku); die Fundament-Tabelle unten zeigt das Ergebnis. Offen daraus: die Struktur
+(`autofarm.py` und große Seiten teilen) und WARUM-Kommentare zu festen Werten, die
+Angaben vom Hardware-Autor brauchen.
 
 Maßstab bleibt: **Was sagt printloom.alexsz.de zu, und hält die Software das?** Eine
 Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
@@ -13,7 +15,7 @@ Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 
 ---
 
-## Fundament — was steht (v1.1.40)
+## Fundament — was steht (v1.1.78)
 
 | Bereich | Stand |
 |---|---|

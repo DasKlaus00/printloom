@@ -120,7 +120,7 @@ docker compose logs -f printloom   # Strg+C zum Beenden
 
 Sobald der Container `healthy` ist:
 
-**→ http://<server-ip>:8000** im Browser öffnen** (z. B. http://192.168.1.20:8000).**
+**→ http://<server-ip>:8000 im Browser öffnen** (z. B. http://192.168.1.20:8000).
 
 ---
 
@@ -133,18 +133,27 @@ sudo ufw enable
 sudo ufw status
 ```
 
+> **Achtung:** Docker trägt veröffentlichte Ports selbst in iptables ein und geht damit
+> an ufw vorbei — `ufw deny 8000` sperrt den Port NICHT. Wer Printloom nur über einen
+> Reverse-Proxy erreichbar machen will, veröffentlicht den Port nur lokal
+> (`"127.0.0.1:8000:8000"` in `docker-compose.yml`, siehe README → Security).
+
 ---
 
 ## 7. Erste Einrichtung im WebUI
 
-Alles Weitere passiert in der Oberfläche (keine Configs auf der Konsole):
+Alles Weitere passiert in der Oberfläche (keine Configs auf der Konsole). Beim
+ersten Aufruf öffnet sich der **Setup-Assistent** (später unter System → Einrichtung);
+er führt durch Komponenten, Drucker, OTTOeject, Regal und Kalibrierung. Einzeln:
 
-1. **Konfiguration → Drucker:** X1C hinzufügen — IP, Seriennummer, **Access-Code**
-   (am Drucker: Einstellungen → WLAN). „LAN Mode Liveview" am Drucker einschalten.
-2. **Konfiguration → OTTOeject:** Moonraker-IP + Port (`7125`) des Ejectors.
-3. **Rack Manager:** Fächer/Magazin einrichten.
-4. **Konfiguration → Kameras** (optional): externe Webcam-URL und/oder die
-   X1C-Kamera über Home Assistant (HA-URL, Entity, Long-Lived-Token).
+1. **Konfiguration → Geräte:** den Drucker anlegen — IP, Seriennummer, **Access-Code**
+   (am Drucker: Einstellungen → WLAN) — und die OTTOeject (Moonraker-IP, Port `7125`).
+   Für die Kamera am Drucker „LAN Mode Liveview" einschalten.
+2. **Konfiguration → Allgemein → Regal-Konfiguration:** Regale, Fächer, Magazin.
+3. **Drucker** (Seitenleiste): Positionen einmessen, jede Bewegung einzeln testen.
+4. **Konfiguration → Kameras** (optional): externe Webcam-URL; die Drucker-Kamera liest
+   Printloom direkt, der Home-Assistant-Weg (HA-URL, Entity, Long-Lived-Token) ist
+   optional. Auf schwachen Rechnern dort „Kamera komplett deaktivieren".
 
 Geräte-Daten (Access-Code, Tokens) liegen nur im gemounteten `db/`-Volume —
 nie im Image oder in git.
@@ -177,7 +186,9 @@ docker compose logs -f printloom
 docker compose restart
 docker compose down
 
-# Backup der Daten (Geräte, Rack, Sequenzen, Queue, Uploads)
+# Backup: am einfachsten über System → Backup in der Oberfläche (Zugangsdaten nur
+# auf Wunsch, dann mit Passwort verschlüsselt). Eine Dateikopie wie hier enthält
+# Access-Codes und Tokens im KLARTEXT — entsprechend sicher aufbewahren.
 tar czf ~/printloom-backup-$(date +%F).tar.gz -C ~/printloom backend/db backend/uploads
 
 # Plattenplatz aufräumen (alte Images)
@@ -193,5 +204,5 @@ docker image prune -f
 | `permission denied … docker.sock` | Schritt 2: `usermod -aG docker $USER`, dann neu anmelden. |
 | WebUI nicht erreichbar | `docker compose ... ps` (healthy?), Firewall Port 8000, richtige IP? |
 | In-App-Update tut nichts | Docker-Socket-Mount im `printloom`-Service vorhanden? (`/var/run/docker.sock`). |
-| Kamera „belegt"/kein Bild | Nur ein Client gleichzeitig an der X1C — siehe README → Kameras (HA-Proxy). |
-| Image-Pull schlägt fehl (401/403) | ghcr-Package privat → in `.env` `GITHUB_TOKEN` setzen oder Package public stellen. |
+| Kamera „belegt"/kein Bild | „LAN Mode Liveview" am Drucker an? Hält ein anderer Client (Bambu Studio, Handy) die X1-Kamera, den HA-Weg nehmen — README → Cameras. |
+| Image-Pull schlägt fehl (401/403) | Das ghcr-Package ist öffentlich; bei einem privaten Fork auf dem Host einmal `docker login ghcr.io` ausführen (ein `GITHUB_TOKEN` in `.env` erreicht den Docker-Dienst nicht). |

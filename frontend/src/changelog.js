@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.78',
+    de: [
+      'DOKU PASST ZUR SOFTWARE: README und Anleitungen nennen die richtigen Menüs (Konfiguration → Geräte / Kameras / Allgemein, Setup-Assistent), die erkannten Drucker-Modelle, die Windows-App (Installer, Adresse, Datenordner, Update) und die Einrichtung des OrcaSlicer-Plugins. Die Kamera wird beschrieben, wie sie heute läuft (direkt am Drucker, Home Assistant optional).',
+      'NEU: „OTTOeject absichern“ — Moonraker lässt ab Werk jedes Gerät im Heimnetz den Arm bewegen. README und die mitgelieferte moonraker.conf erklären, wie man das auf den Printloom-Rechner beschränkt.',
+      'Debian-Anleitung: Hinweis, dass Docker an ufw vorbeigeht, und dass eine Dateikopie der Daten Zugangsdaten im Klartext enthält (Backup über System ist die sichere Wahl).',
+    ],
+    en: [
+      'DOCS MATCH THE SOFTWARE: README and guides name the right menus (Configuration → Devices / Cameras / General, setup wizard), the recognized printer models, the Windows app (installer, address, data folder, updates) and how to set up the OrcaSlicer plugin. The camera is described as it works today (directly at the printer, Home Assistant optional).',
+      'NEW: “Securing the OTTOeject” — out of the box, Moonraker lets every device on your home network move the arm. README and the bundled moonraker.conf explain how to limit that to the Printloom host.',
+      'Debian guide: note that Docker bypasses ufw, and that a file copy of the data contains credentials in plain text (the backup in System is the safe choice).',
+    ],
+  },
+  {
     version: '1.1.77',
     de: [
       'SCHNELLERER START: Das Start-Paket der Oberfläche ist etwa halb so groß (911 → 505 kB). „Was ist neu“, der Setup-Assistent und die Konfiguration laden erst, wenn man sie öffnet.',
