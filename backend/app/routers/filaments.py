@@ -1,3 +1,4 @@
+import uuid
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -154,10 +155,30 @@ class CustomFilament(BaseModel):
     article: Optional[str] = ""
 
 
+def _new_id() -> str:
+    return uuid.uuid4().hex
+
+
 def _load_custom() -> list:
     # Streng: Bei kaputter Datei speicherten Hinzufügen/Lernen bis v1.1.47 [neu] und
     # alle eigenen Filamente waren weg.
-    return storage.read_json_checked(CUSTOM_PATH, default=[], expect=list)
+    data = storage.read_json_checked(CUSTOM_PATH, default=[], expect=list)
+    # Feste ID je Filament (seit v1.1.64). Bis dahin zeigte die Seite über die
+    # Listen-Position darauf; mit gesetztem Filter löschte „×" ein anderes Filament.
+    # Altbestand (auch aus Backups) bekommt einmal eine ID.
+    missing = [f for f in data if isinstance(f, dict) and not f.get("id")]
+    for f in missing:
+        f["id"] = _new_id()
+    if missing:
+        _save_custom(data)
+    return data
+
+
+def _find(custom: list, fid: str) -> int:
+    i = next((k for k, f in enumerate(custom) if isinstance(f, dict) and f.get("id") == fid), None)
+    if i is None:
+        raise HTTPException(status_code=404, detail="Filament nicht gefunden")
+    return i
 
 
 def _save_custom(data: list):
@@ -201,8 +222,8 @@ def learn_filaments(payload: LearnPayload):
             continue
         seen.add(k)
         hexv = col if col.startswith("#") else (f"#{col}" if col else "")
-        entry = {"brand": "AMS", "material": mat, "name": "", "color_hex": hexv[:7],
-                 "article": "", "source": "ams"}
+        entry = {"id": _new_id(), "brand": "AMS", "material": mat, "name": "",
+                 "color_hex": hexv[:7], "article": "", "source": "ams"}
         custom.append(entry)
         added.append(entry)
     if added:
@@ -220,27 +241,26 @@ def clear_custom():
 @router.post("/custom")
 def add_custom(f: CustomFilament):
     custom = _load_custom()
-    entry = f.model_dump()
+    entry = {"id": _new_id(), **f.model_dump(), "source": "manual"}
     custom.append(entry)
     _save_custom(custom)
-    return {"index": len(custom) - 1, "filament": entry}
+    return {"id": entry["id"], "filament": entry}
 
 
-@router.put("/custom/{idx}")
-def update_custom(idx: int, f: CustomFilament):
+@router.put("/custom/id/{fid}")
+def update_custom(fid: str, f: CustomFilament):
+    """Ein Filament über seine ID ändern; ID und Herkunft (AMS/manuell) bleiben.
+    Bis v1.1.63 über die Listen-Position, und „source" fiel beim Speichern weg."""
     custom = _load_custom()
-    if idx < 0 or idx >= len(custom):
-        raise HTTPException(status_code=404, detail="Not found")
-    custom[idx] = f.model_dump()
+    i = _find(custom, fid)
+    custom[i] = {**f.model_dump(), "id": fid, "source": custom[i].get("source", "manual")}
     _save_custom(custom)
-    return {"index": idx, "filament": custom[idx]}
+    return {"id": fid, "filament": custom[i]}
 
 
-@router.delete("/custom/{idx}")
-def delete_custom(idx: int):
+@router.delete("/custom/id/{fid}")
+def delete_custom(fid: str):
     custom = _load_custom()
-    if idx < 0 or idx >= len(custom):
-        raise HTTPException(status_code=404, detail="Not found")
-    removed = custom.pop(idx)
+    removed = custom.pop(_find(custom, fid))
     _save_custom(custom)
     return {"removed": removed}

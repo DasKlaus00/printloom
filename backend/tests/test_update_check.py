@@ -136,3 +136,67 @@ def test_update_ohne_docker_socket_sagt_was_zu_tun_ist(monkeypatch):
 def test_kein_watchtower_mehr():
     assert not hasattr(system, "WATCHTOWER_URL")
     assert not hasattr(system, "WATCHTOWER_TOKEN")
+
+
+# ── Kanal vom Server, Zurückstufen nur mit Bestätigung (seit v1.1.64) ───────────
+
+@pytest.fixture
+def docker_beta(monkeypatch):
+    from app.routers import autofarm
+    from app.services import updater
+    monkeypatch.setattr(system.paths, "RUNTIME", "docker")
+    monkeypatch.setattr(system, "_docker_available", lambda: True)
+    monkeypatch.setattr(updater, "docker_available", lambda: True)
+    monkeypatch.setattr(updater, "current_image", lambda name: "ghcr.io/dasklaus00/printloom:beta")
+    monkeypatch.setattr(system, "_get_current_version", lambda: "1.1.64")
+    monkeypatch.setitem(autofarm._farm, "running", False)
+    monkeypatch.setitem(autofarm._stress, "running", False)
+    monkeypatch.setattr(autofarm, "_stress_task", None)
+    return updater
+
+
+def test_update_kanal_kommt_vom_server(docker_beta, monkeypatch):
+    gefragt = []
+
+    async def inner(channel, force):
+        gefragt.append(channel)
+        return {"current": "1.1.64"}
+    monkeypatch.setattr(system, "_version_info_inner", inner)
+    r = asyncio.run(system.get_version())
+    assert gefragt == ["beta"] and r["running_channel"] == "beta"
+
+
+def test_zurueckstufen_braucht_bestaetigung(docker_beta, monkeypatch):
+    gezogen = []
+
+    async def check(current, channel):
+        assert channel == "latest"
+        return {"latest": "1.1.41"}               # stabil ist älter als die laufende Beta
+    monkeypatch.setattr(system, "_version_check", check)
+    monkeypatch.setattr(docker_beta, "pull_image", lambda img: gezogen.append(img) or (False, "gestoppt"))
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(system.trigger_update(system.UpdateIn(channel="latest")))
+    assert e.value.status_code == 409 and e.value.detail["error"] == "ZURUECKSTUFEN"
+    assert e.value.detail["from"] == "1.1.64" and e.value.detail["to"] == "1.1.41" and gezogen == []
+    with pytest.raises(HTTPException) as e:              # bestätigt → das Update läuft los
+        asyncio.run(system.trigger_update(system.UpdateIn(channel="latest", confirm_downgrade=True)))
+    assert e.value.status_code == 502 and gezogen == ["ghcr.io/dasklaus00/printloom:latest"]
+
+
+def test_gleicher_kanal_fragt_nicht(docker_beta, monkeypatch):
+    async def check(current, channel):
+        raise AssertionError("darf nicht ins Netz")
+    monkeypatch.setattr(system, "_version_check", check)
+    monkeypatch.setattr(docker_beta, "pull_image", lambda img: (False, "gestoppt"))
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(system.trigger_update(system.UpdateIn(channel="beta")))
+    assert e.value.status_code == 502
+
+
+def test_nativer_kanal_wird_gespeichert(tmp_path, monkeypatch):
+    from app.services import appsettings
+    monkeypatch.setattr(appsettings, "_channel_file", lambda: str(tmp_path / "update_channel.json"))
+    monkeypatch.setattr(system.paths, "RUNTIME", "native")
+    assert system._running_channel() == "latest"
+    system._remember_channel("beta")
+    assert system._running_channel() == "beta"

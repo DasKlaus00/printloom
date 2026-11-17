@@ -944,7 +944,7 @@ function Configuration() {
     setCamTypes(p => ({ ...p, [deviceId]: value }))
     try {
       await deviceSettingsService.updateSettings(deviceId, { camera_type: value })
-      window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved'))
+      window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved', { detail: { source: 'configuration' } }))
     } catch {
       setCamTypes(p => ({ ...p, [deviceId]: prev }))
     }
@@ -991,11 +991,14 @@ function Configuration() {
   // Setup-Assistent (oder andere Stellen) ändern Geräte/Einstellungen → ohne F5 neu laden.
   useEffect(() => {
     const reload = () => load()
+    // Eigene Kamera-Speicherungen nicht als Anlass zum Neuladen nehmen: Bis v1.1.63
+    // lud die Seite sich dabei selbst neu und verwarf, was in anderen Feldern stand.
+    const reloadCam = (e) => { if (e?.detail?.source !== 'configuration') load() }
     window.addEventListener('printloom:devicesChanged', reload)
-    window.addEventListener('printloom:cameraSettingsSaved', reload)
+    window.addEventListener('printloom:cameraSettingsSaved', reloadCam)
     return () => {
       window.removeEventListener('printloom:devicesChanged', reload)
-      window.removeEventListener('printloom:cameraSettingsSaved', reload)
+      window.removeEventListener('printloom:cameraSettingsSaved', reloadCam)
     }
   }, [])
 
@@ -1433,7 +1436,7 @@ function Configuration() {
                       await deviceSettingsService.updateSettings(bambu.id, { ha_url: '', ha_camera: '', ha_token: null })
                       setHaCams(prev => ({ ...prev, [bambu.id]: { url: '', entity: '', token: '', tokenSet: false } }))
                       setHaTest(prev => ({ ...prev, [bambu.id]: null }))
-                      window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved'))
+                      window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved', { detail: { source: 'configuration' } }))
                     } catch (e) { console.error(e) }
                   }} className="btn btn-ghost btn-sm text-xs ml-auto text-red-400/80 hover:text-red-300">
                     {tr('HA-Kamera entfernen')}
@@ -1457,7 +1460,7 @@ function Configuration() {
                     await deviceSettingsService.updateSettings(bambu.id, payload)
                     if ((ha.token || '').trim())
                       setHaCams(prev => ({ ...prev, [bambu.id]: { ...prev[bambu.id], token: '', tokenSet: true } }))
-                    window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved'))
+                    window.dispatchEvent(new CustomEvent('printloom:cameraSettingsSaved', { detail: { source: 'configuration' } }))
                   } catch(e) { console.error(e) }
                   finally { setSavingWebcam(null) }
                 }} disabled={savingWebcam === bambu.id} className="btn btn-ghost btn-sm flex-shrink-0 text-xs">

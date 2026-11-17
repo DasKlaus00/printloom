@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useServerField } from '../services/dirtyField'
 import { fileService, folderService, printerService, deviceService, filamentService, autofarmService } from '../services/api'
 import { useAutoRefresh, usePageActive } from '../services/useAutoRefresh'
 import { useLanguage, locale } from '../services/i18n'
@@ -434,21 +435,20 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
                   amsSlots, catalog, onQueuePlate, onSendPlate, printLock }) {
   const { tr } = useLanguage()
   const [showPlates, setShowPlates] = useState(false)
-  const [name, setName]         = useState(file.original_filename || '')
-  const [pn, setPn]             = useState(file.part_number || '')
-  const [material, setMaterial] = useState(file.material || '')
-  const [color, setColor]       = useState(file.color || '')
-  const [tags, setTags]         = useState(file.tags || '')
+  // Jedes Feld folgt dem Serverwert, bis es bearbeitet wird (useServerField).
+  const nameF     = useServerField(file.original_filename)
+  const pnF       = useServerField(file.part_number)
+  const materialF = useServerField(file.material)
+  const colorF    = useServerField(file.color)
+  const tagsF     = useServerField(file.tags)
+  const color = colorF.value
 
-  useEffect(() => {
-    setName(file.original_filename || ''); setPn(file.part_number || '')
-    setMaterial(file.material || ''); setColor(file.color || ''); setTags(file.tags || '')
-  }, [file.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const isPrintable = file.file_type === '.3mf' || file.file_type === '.gcode'
   const colorVal = color ? (color.startsWith('#') ? color : `#${color}`) : '#888888'
   const extColor = { '.3mf': 'badge-blue', '.gcode': 'badge-green', '.stl': 'badge-amber' }
-  const save = (field, val, orig) => { if ((val || '') !== (orig || '')) onSaveField(file.id, { [field]: val }) }
+  // Nur speichern, was wirklich bearbeitet wurde — und nur, wenn es sich vom Server unterscheidet.
+  const save = (f, field, orig) => { if (f.commit() && (f.value || '') !== (orig || '')) onSaveField(file.id, { [field]: f.value }) }
   const fld = "text-[11px] h-7 py-0 px-2"
 
   return (
@@ -463,24 +463,24 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
 
         <div className="min-w-0 flex-1 space-y-1.5">
           {/* Name */}
-          <input value={name} onChange={e => setName(e.target.value)}
-            onBlur={() => save('original_filename', name, file.original_filename)}
+          <input value={nameF.value} onChange={e => nameF.set(e.target.value)}
+            onBlur={() => save(nameF, 'original_filename', file.original_filename)}
             className="text-sm font-medium h-7 py-0 px-2" />
 
           {/* Properties side by side */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <input value={pn} onChange={e => setPn(e.target.value)} onBlur={() => save('part_number', pn, file.part_number)}
+            <input value={pnF.value} onChange={e => pnF.set(e.target.value)} onBlur={() => save(pnF, 'part_number', file.part_number)}
               placeholder={tr('SKU / Teile-Nr.')} className={`${fld} font-mono w-32`} title={tr('Teilenummer / SKU')} />
-            <input value={material} onChange={e => setMaterial(e.target.value)} onBlur={() => save('material', material, file.material)}
+            <input value={materialF.value} onChange={e => materialF.set(e.target.value)} onBlur={() => save(materialF, 'material', file.material)}
               placeholder={tr('Material')} className={`${fld} w-24`} title={tr('Material')} />
             <span className="flex items-center gap-1">
               <input type="color" value={colorVal}
-                onChange={e => { setColor(e.target.value); onSaveField(file.id, { color: e.target.value }) }}
+                onChange={e => { colorF.set(e.target.value); colorF.commit(); onSaveField(file.id, { color: e.target.value }) }}
                 className="w-7 h-7 p-0.5 cursor-pointer shrink-0" title={tr('Farbe')} />
-              <input value={color} onChange={e => setColor(e.target.value)} onBlur={() => save('color', color, file.color)}
+              <input value={colorF.value} onChange={e => colorF.set(e.target.value)} onBlur={() => save(colorF, 'color', file.color)}
                 placeholder={tr('#Farbe')} className={`${fld} font-mono w-20`} />
             </span>
-            <input value={tags} onChange={e => setTags(e.target.value)} onBlur={() => save('tags', tags, file.tags)}
+            <input value={tagsF.value} onChange={e => tagsF.set(e.target.value)} onBlur={() => save(tagsF, 'tags', file.tags)}
               placeholder={tr('Tags (Komma)')} className={`${fld} flex-1 min-w-[8rem]`} title={tr('Tags')} />
             <select value={file.folder_id ?? ''} onChange={e => onMoveFolder(file.id, e.target.value === '' ? null : Number(e.target.value))}
               className={`${fld} w-36`} title={tr('Ordner')}>

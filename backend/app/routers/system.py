@@ -227,8 +227,35 @@ async def _check_native_linux(current: str, channel: str) -> dict:
     return result
 
 
+def _remember_channel(channel) -> None:
+    from app.services import appsettings
+    try:
+        appsettings.write_update_channel((channel or "latest").lower())
+    except OSError as e:
+        logger.warning(f"Update-Kanal nicht gespeichert: {e}")
+
+
+def _running_channel() -> str:
+    """Kanal der laufenden Installation: Docker → Tag des laufenden Images (beta oder
+    latest), sonst der beim letzten Update gespeicherte."""
+    from app.services import appsettings
+    if paths.RUNTIME not in ("native", "native-linux") and _docker_available():
+        from app.services import updater
+        image = updater.current_image(CONTAINER_NAME) or ""
+        if ":" in image.rsplit("/", 1)[-1]:
+            return "beta" if image.rsplit(":", 1)[-1] == "beta" else "latest"
+    return appsettings.read_update_channel()
+
+
+def _version_tuple(v) -> Optional[tuple]:
+    try:
+        return tuple(int(x) for x in str(v).lstrip("v").split("."))
+    except (TypeError, ValueError):
+        return None
+
+
 @router.get("/version")
-async def get_version(channel: str = "latest"):
+async def get_version(channel: Optional[str] = None):
     """Update check for the selected channel: stable (git tags) or beta (:beta image).
 
     Native Desktop-App: prüft GitHub-Releases auf einen Installer statt Docker/ghcr.
@@ -239,15 +266,15 @@ async def get_version(channel: str = "latest"):
     auf Knopfdruck ist POST /version/check: Bis v1.1.41 ging das per GET mit
     force=1, und jede fremde Seite konnte mit einem <img> eine Anfrage ins Internet
     auslösen, obwohl der Nutzer sie abgeschaltet hatte."""
-    return await _version_info(channel, force=False)
+    return await _version_info(channel or _running_channel(), force=False)
 
 
 @router.post("/version/check")
-async def check_version_now(channel: str = "latest"):
+async def check_version_now(channel: Optional[str] = None):
     """Einmalige Update-Prüfung auf ausdrücklichen Knopfdruck (die UI fragt vorher),
     auch wenn die automatische Prüfung aus ist. POST, damit der Wächter in main.py
     fremde Seiten aussperrt."""
-    return await _version_info(channel, force=True)
+    return await _version_info(channel or _running_channel(), force=True)
 
 
 # Ergebnis der Prüfung im Internet für ein paar Minuten merken. Ohne das fragte bei
@@ -300,7 +327,8 @@ def update_result(current: str) -> Optional[dict]:
 
 async def _version_info(channel: str, force: bool) -> dict:
     info = await _version_info_inner(channel, force)
-    return {**info, "update_result": update_result(info.get("current"))}
+    return {**info, "update_result": update_result(info.get("current")),
+            "running_channel": _running_channel()}
 
 
 async def _version_info_inner(channel: str, force: bool) -> dict:
@@ -431,6 +459,27 @@ class UpdateIn(BaseModel):
     # entscheidet jetzt allein native_update.check(). Pydantic ignoriert die alten
     # Felder, ältere Oberflächen brechen also nicht.
     channel: Optional[str] = None
+    # Auf einen anderen Kanal mit älterer (oder unbekannter) Version nur, wenn der
+    # Nutzer das Zurückstufen ausdrücklich bestätigt hat.
+    confirm_downgrade: bool = False
+
+
+async def _assert_no_silent_downgrade(body: "UpdateIn", info: Optional[dict] = None) -> None:
+    """Erst kurz vor dem eigentlichen Update (nach den anderen Prüfungen): Die Abfrage
+    der Zielversion geht ins Internet, das tut das Update ohnehin."""
+    target = (body.channel or _running_channel()).lower()
+    if target == _running_channel() or body.confirm_downgrade:
+        return
+    current = _get_current_version()
+    if info is None:
+        info = await _version_check(current, target)
+    tv = info.get("latest_version") or info.get("latest")
+    cur_t, tv_t = _version_tuple(current), _version_tuple(tv)
+    if tv_t is None or cur_t is None or tv_t < cur_t:
+        raise HTTPException(409, {"error": "ZURUECKSTUFEN", "from": current, "to": tv,
+                                  "channel": target,
+                                  "message": f"Wechsel auf „{target}“ stuft zurück "
+                                             f"(v{current} → v{tv or '?'}) — bitte bestätigen"})
 
 
 @router.post("/update")
@@ -447,7 +496,7 @@ async def trigger_update(body: UpdateIn = UpdateIn()):
             "bash ~/printloom/scripts/update-native.sh")
     if paths.RUNTIME == "native":
         from app.services import native_update
-        info = await native_update.check(_get_current_version(), (body.channel or "latest"))
+        info = await native_update.check(_get_current_version(), (body.channel or _running_channel()))
         if info.get("error"):
             raise HTTPException(502, info["error"])
         if not info.get("update_available"):
@@ -455,6 +504,7 @@ async def trigger_update(body: UpdateIn = UpdateIn()):
         url, asset = info.get("download_url"), info.get("asset_name")
         if not url:
             raise HTTPException(502, "Kein Installer-Asset im Release gefunden")
+        await _assert_no_silent_downgrade(body, info)
         try:
             res = await asyncio.to_thread(native_update.download_and_launch, url, asset)
         except ValueError as e:
@@ -462,6 +512,7 @@ async def trigger_update(body: UpdateIn = UpdateIn()):
             raise HTTPException(400, f"Installer abgelehnt: {e}")
         except Exception as e:
             raise HTTPException(502, f"Installer-Download/Start fehlgeschlagen: {e}")
+        _remember_channel(body.channel)
         return {"success": True, "method": "native", **res}
     return await _trigger_update_docker(body)
 
@@ -485,6 +536,7 @@ async def _trigger_update_docker(body: "UpdateIn"):
     from app.services import updater
     if not updater.docker_available():
         raise HTTPException(501, NO_DOCKER_SOCKET)
+    await _assert_no_silent_downgrade(body)
     # Erst HIER ziehen: ein Fehler (privates Package, falscher Tag, kein Netz) kommt
     # so als echte Meldung zurück, statt dass ein abgekoppelter Helfer still stirbt
     # („Update läuft ewig, passiert nichts").
@@ -501,6 +553,7 @@ async def _trigger_update_docker(body: "UpdateIn"):
         _clear_update_marker()
         logger.exception("Update-Helfer nicht gestartet")
         raise HTTPException(502, f"Update-Helfer nicht gestartet: {e}")
+    _remember_channel(channel)
     return {"success": True, "method": "docker", "switching": True, "image": target_image}
 
 

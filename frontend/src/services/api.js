@@ -197,7 +197,8 @@ export const systemService = {
                       : api.get('/system/version', { params: channel ? { channel } : {} }),
   getRunningVersion:() => api.get('/system/running-version'),
   // Kein Timeout: Image ziehen + Container neu starten dauert Minuten.
-  triggerUpdate:    (channel) => api.post('/system/update', channel ? { channel } : {},
+  triggerUpdate:    (channel, confirmDowngrade) => api.post('/system/update',
+                      { ...(channel ? { channel } : {}), ...(confirmDowngrade ? { confirm_downgrade: true } : {}) },
                                           { timeout: NO_TIMEOUT }),
   // Ohne Optionen: Backup OHNE Zugangsdaten. Mit Zugangsdaten per POST, damit das
   // Passwort nicht in der Adresse steht.
@@ -320,8 +321,9 @@ export const pushService = {
 export const filamentService = {
   list:          ()           => api.get('/filaments/'),
   addCustom:     (data)       => api.post('/filaments/custom', data),
-  updateCustom:  (idx, data)  => api.put(`/filaments/custom/${idx}`, data),
-  deleteCustom:  (idx)        => api.delete(`/filaments/custom/${idx}`),
+  // Über die feste ID (seit v1.1.64), nie über die Position in einer gefilterten Liste.
+  updateCustom:  (id, data)   => api.put(`/filaments/custom/id/${encodeURIComponent(id)}`, data),
+  deleteCustom:  (id)         => api.delete(`/filaments/custom/id/${encodeURIComponent(id)}`),
   clearCustom:   ()           => api.delete('/filaments/custom'),
   learn:         (slots)      => api.post('/filaments/learn', { slots }),
 }

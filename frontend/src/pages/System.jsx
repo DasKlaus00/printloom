@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { confirmDialog } from '../services/confirm'
 import { systemService, healthService, pushService } from '../services/api'
 import SetupHealth from '../components/SetupHealth'
 import OnlineServices from '../components/OnlineServices'
@@ -179,7 +180,10 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
   const [updating, setUpdating]       = useState(false)
   const [phase, setPhase]             = useState(null)
   const [error, setError]             = useState(null)
-  const [channel, setChannel]         = useState(() => localStorage.getItem('ottomat3d_channel') ?? 'latest')
+  // Der Kanal kommt vom Server (laufende Installation), nicht aus dem Browser: Bis
+  // v1.1.63 stand er im localStorage, und ein anderer Browser stufte Beta zurück.
+  // null = noch nicht geladen → der Server prüft den laufenden Kanal.
+  const [channel, setChannel]         = useState(null)
   const [confirmUpdate, setConfirmUpdate] = useState(false)
 
   const [backupFeedback, setBackupFeedback] = useState(null)
@@ -199,6 +203,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
     try {
       const r = await systemService.getVersion(channel, force)
       setInfo(r.data)
+      if (channel == null && r.data?.running_channel) setChannel(r.data.running_channel)
       onUpdateAvailable?.(r.data.update_available)
       // Auch nach einem Neuladen sichtbar: Das letzte Update hat nichts gewechselt.
       if (r.data?.update_result?.state === 'failed') {
@@ -233,6 +238,24 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
     setTimeout(() => window.location.reload(), 2500)
   }
 
+  // Wechsel auf einen Kanal mit älterer Version: Der Server antwortet 409 ZURUECKSTUFEN,
+  // dann eigene Rückfrage „von v… auf v…". → Antwort, oder null bei „Abbrechen".
+  const triggerWithDowngradeCheck = async () => {
+    try {
+      return await systemService.triggerUpdate(channel)
+    } catch (e) {
+      const d = e.response?.data?.detail
+      if (e.response?.status !== 409 || d?.error !== 'ZURUECKSTUFEN') throw e
+      const ok = await confirmDialog({
+        title: tr('Zurückstufen?'),
+        message: tr('Zurückstufen von v{0} auf v{1} ({2}). Neuere Daten können dabei verloren gehen — vorher ein Backup ziehen.', d.from, d.to ?? '?', d.channel),
+        confirmLabel: tr('Zurückstufen'),
+      })
+      if (!ok) return null
+      return await systemService.triggerUpdate(channel, true)
+    }
+  }
+
   const triggerUpdate = async () => {
     setUpdating(true)
     setPhase('running')
@@ -242,19 +265,22 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
       // Native Desktop-App: der Server lädt den Installer und startet ihn; die App
       // wird vom Installer geschlossen → NICHT auf Neustart warten / neu laden.
       if (info?.runtime === 'native') {
-        const r = await systemService.triggerUpdate(channel)
+        const r = await triggerWithDowngradeCheck()
+        if (!r) { setPhase(null); onUpdatePhase?.(null); return }
         if (r.data?.reason === 'up_to_date') { setPhase(null); setUpdating(false); return }
         setPhase('native-launched')
         onUpdatePhase?.(null)
         return
       }
-      await systemService.triggerUpdate(channel)
+      if (!(await triggerWithDowngradeCheck())) { setPhase(null); onUpdatePhase?.(null); return }
       await finishAfterRestart(info?.current)
     } catch (e) {
       if (e.response) {
         // Backend answered with an error → the update did NOT start. Show the real
         // reason (e.g. private ghcr package, no Docker socket) instead of waiting.
-        const detail = e.response.data?.detail || tr('Fehler {0}', e.response.status)
+        // Objekt-Details (z. B. {error, message}) nie direkt rendern — React stürzt sonst ab.
+        const raw = e.response.data?.detail
+        const detail = (typeof raw === 'string' ? raw : raw?.message) || tr('Fehler {0}', e.response.status)
         if (e.response.status === 501) {
           setPhase('manual')   // kein Docker-Socket → Befehl für die Kommandozeile zeigen
         } else {
@@ -364,7 +390,6 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
 
   const switchChannel = (ch) => {
     setChannel(ch)
-    localStorage.setItem('ottomat3d_channel', ch)
     setInfo(null)
     setPhase(null)
     setError(null)

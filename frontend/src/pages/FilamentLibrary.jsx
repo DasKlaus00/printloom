@@ -21,7 +21,7 @@ function ColorSwatch({ hex, size = 'md' }) {
   )
 }
 
-function FilamentCard({ f, isCustom, idx, onEdit, onDelete }) {
+function FilamentCard({ f, isCustom, onEdit, onDelete }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-900/50 border border-surface-800/40 hover:border-surface-700/60 transition-colors group">
       <ColorSwatch hex={f.color_hex} />
@@ -34,8 +34,8 @@ function FilamentCard({ f, isCustom, idx, onEdit, onDelete }) {
       )}
       {isCustom && (
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-          <button onClick={() => onEdit(idx, f)} className="text-surface-600 hover:text-blue-400 text-xs px-1">✎</button>
-          <button onClick={() => onDelete(idx)} className="text-surface-600 hover:text-red-400 text-xs px-1">×</button>
+          <button onClick={() => onEdit(f)} className="text-surface-600 hover:text-blue-400 text-xs px-1">✎</button>
+          <button onClick={() => onDelete(f)} className="text-surface-600 hover:text-red-400 text-xs px-1">×</button>
         </div>
       )}
     </div>
@@ -154,7 +154,7 @@ export default function FilamentLibrary() {
 
   const handleUpdateCustom = async (data) => {
     try {
-      await filamentService.updateCustom(editIdx, data)
+      await filamentService.updateCustom(editIdx, data)   // editIdx = ID des Filaments
       await load()
       setEditEntry(null); setEditIdx(null)
       setFeedback({ ok: true, msg: tr('Filament aktualisiert.') })
@@ -163,10 +163,12 @@ export default function FilamentLibrary() {
     }
   }
 
-  const handleDelete = async (idx) => {
-    if (!(await confirmDialog({ title: tr('Filament löschen'), message: tr('Filament wirklich löschen?'), confirmLabel: tr('Löschen') }))) return
+  const handleDelete = async (f) => {
+    // Die Rückfrage nennt das Filament: Bis v1.1.63 traf „×" mit Filter ein anderes.
+    const label = [f.brand, f.material, f.name || f.color_hex].filter(Boolean).join(' · ')
+    if (!(await confirmDialog({ title: tr('Filament löschen'), message: tr('„{0}“ wirklich löschen?', label), confirmLabel: tr('Löschen') }))) return
     try {
-      await filamentService.deleteCustom(idx)
+      await filamentService.deleteCustom(f.id)
       await load()
       setFeedback({ ok: true, msg: tr('Gelöscht.') })
     } catch {
@@ -312,10 +314,10 @@ export default function FilamentLibrary() {
           <p className="text-[11px] text-surface-600 py-2">{tr('Noch keine Filamente. Lade Spulen ins AMS (werden automatisch erkannt) oder füge manuell hinzu.')}</p>
         ) : (
           <div className="grid gap-1.5 sm:grid-cols-2">
-            {filteredCustom.map((f, i) => (
+            {filteredCustom.map((f) => (
               <FilamentCard
-                key={i} f={f} isCustom idx={i}
-                onEdit={(idx, entry) => { setEditIdx(idx); setEditEntry(entry); setShowForm(false) }}
+                key={f.id} f={f} isCustom
+                onEdit={(entry) => { setEditIdx(entry.id); setEditEntry(entry); setShowForm(false) }}
                 onDelete={handleDelete}
               />
             ))}

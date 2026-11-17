@@ -68,3 +68,27 @@ def camera_disabled() -> bool:
         return bool(read_camera().get("disabled"))
     except Exception:
         return False
+
+
+# ── Update-Kanal (latest/beta) ───────────────────────────────────────────────
+# Der Kanal gehört zur Installation, nicht zum Browser. Bis v1.1.63 stand er im
+# localStorage: Ein anderer Browser (Standard „latest") hätte eine Beta-Installation
+# beim nächsten Klick auf „Update" auf den stabilen Stand zurückgestuft.
+CHANNELS = ("latest", "beta")
+
+
+def _channel_file() -> str:
+    return str(_db_dir() / "update_channel.json")
+
+
+def read_update_channel() -> str:
+    try:
+        ch = (storage.read_json(_channel_file(), {}) or {}).get("channel")
+    except (OSError, ValueError):
+        ch = None
+    return ch if ch in CHANNELS else "latest"
+
+
+def write_update_channel(channel: str) -> None:
+    if channel in CHANNELS:
+        storage.write_json(_channel_file(), {"channel": channel})

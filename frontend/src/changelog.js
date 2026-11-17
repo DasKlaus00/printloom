@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.64',
+    de: [
+      'FILAMENTE: Bearbeiten und Löschen treffen immer das angeklickte Filament. Bisher traf „×“ bei gesetztem Filter womöglich ein anderes, und beim Bearbeiten ging die Herkunft (aus dem AMS gelernt) verloren. Die Rückfrage nennt jetzt Marke, Material und Farbe.',
+      'UPDATE-KANAL: Ob Beta oder stabil, entscheidet die Installation, nicht der Browser. Bisher merkte sich jeder Browser den Kanal selbst; ein anderer Browser hätte eine Beta-Installation beim nächsten Update zurückgestuft. Ein Wechsel auf eine ältere Version heißt jetzt „Zurückstufen von v… auf v…“ und fragt eigens nach.',
+      'EINGABEFELDER: Teilenummer, Material, Farbe, Name und Tags in der Bibliothek übernehmen Änderungen aus einem anderen Tab, solange man nicht selbst tippt. Bisher schrieb schon das Hinein- und Herausklicken den alten Wert zurück. In der Konfiguration verwirft das Speichern der Kamera-Einstellungen keine anderen Eingaben mehr.',
+    ],
+    en: [
+      'FILAMENTS: editing and deleting always hit the filament you clicked. Until now “×” could hit a different one while a filter was set, and editing lost the origin (learned from the AMS). The confirmation now names brand, material and colour.',
+      'UPDATE CHANNEL: whether beta or stable is decided by the installation, not the browser. Until now every browser remembered the channel itself; a different browser would have downgraded a beta installation on the next update. Switching to an older version is now called “Downgrade from v… to v…” and asks separately.',
+      'INPUT FIELDS: part number, material, colour, name and tags in the library take over changes from another tab as long as you are not typing yourself. Until now merely clicking in and out wrote the old value back. In the configuration, saving the camera settings no longer discards other inputs.',
+    ],
+  },
+  {
     version: '1.1.63',
     de: [
       'MANIPULIERTE DATEIEN RICHTEN NICHTS AN: Eine .3mf, die sich beim Entpacken auf ein Vielfaches aufbläht (Zip-Bombe), oder eine Datei über 1 GB wird beim Hochladen abgelehnt und gelöscht. Einträge in einer .3mf werden nur bis zu einer Grenze gelesen; bisher konnte eine präparierte Datei den Speicher füllen.',
