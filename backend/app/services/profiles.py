@@ -20,7 +20,7 @@ bewirkte sie nichts mehr und wird beim Import übergangen.
 from typing import Optional
 
 from app.services import farm_settings, rack_store, storage
-from app.services.sequence_steps import STEP_FIELDS, STEP_TYPES
+from app.services.sequence_steps import sanitize_step as _sanitize_step
 
 SCHEMA = "om4d-profile/1"
 
@@ -69,19 +69,6 @@ def build_profile(name: str, printer_model: str, description: str,
 
 
 # ── Einspielen ──────────────────────────────────────────────────────────────
-
-def _sanitize_step(step) -> Optional[dict]:
-    if not isinstance(step, dict):
-        return None
-    t = step.get("type", "")
-    if t not in STEP_TYPES:
-        return None
-    out = {k: step.get(k) for k in STEP_FIELDS if k in step}
-    out["type"] = t
-    if "value" in out and out["value"] is not None:
-        out["value"] = str(out["value"])
-    return out
-
 
 def _apply_sequences(incoming) -> bool:
     if not isinstance(incoming, dict):

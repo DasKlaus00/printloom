@@ -247,7 +247,9 @@ export const autofarmService = {
   patchJob:      (jobId, body) => api.patch(`/autofarm/queue/jobs/${jobId}`, body), // {amsMap?, retry?}
   resetFailed:   ()      => api.post('/autofarm/queue/reset-failed'),
   getSequences:  ()      => api.get('/autofarm/sequences'),
-  saveSequences: (data)  => api.put('/autofarm/sequences', data),
+  // Nur auf den gelesenen Stand (revision aus getSequences), sonst 409 (seit v1.1.59).
+  saveSequences: (data, revision) => api.put('/autofarm/sequences', data,
+    { headers: revision ? { 'If-Match': revision } : {} }),
   // Trockenlauf: Sequenz durchspielen, ohne etwas zu senden
   dryRun:        (body)  => api.post('/autofarm/dry-run', body || {}),
   // Unterbrochener Lauf (Neustart/Update mitten im Zyklus) + Drucker-Fehler-Historie

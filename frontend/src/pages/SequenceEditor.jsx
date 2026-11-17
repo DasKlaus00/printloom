@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { DEFAULT_SEQ_NEW, DEFAULT_SEQ_NEXT } from '../services/sequenceData'
 import { prepAllowed } from '../services/sequenceRules'
 import { autofarmService, controlService } from '../services/api'
-import { useLanguage, tr as translate, currentLang } from '../services/i18n'
+import { useLanguage, tr as translate, currentLang, trProblem } from '../services/i18n'
+import { decideSequenceLoad, validateImportedSequences } from '../services/sequenceLoad'
+import { confirmDialog } from '../services/confirm'
+import { useAutoRefresh } from '../services/useAutoRefresh'
 
 // Printloom-eigene Operationen (Drucker-Tab-Geometrie → G-code) — frei in Sequenzen
 // nutzbar wie Makros. Fallback, falls das /app-ops-Backend (noch) nicht da ist.
@@ -593,7 +596,14 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true,
           {desc && <p className="text-[11px] text-surface-600 mt-0.5">{desc}</p>}
         </div>
         <button
-          onClick={() => setSteps(defaults)}
+          onClick={async () => {
+            // Bis v1.1.58 ersetzte ein Klick die eigenen Schritte ohne Rückfrage.
+            if (await confirmDialog({
+              title: tr('Standard laden?'),
+              message: tr('Die Schritte von „{0}“ werden durch den Standard ersetzt.', title),
+              confirmLabel: tr('Ersetzen'),
+            })) setSteps(defaults)
+          }}
           className="text-xs text-surface-700 hover:text-surface-400 shrink-0 ml-2 mt-0.5"
         >{tr('↺ Standard')}</button>
       </div>
@@ -704,40 +714,33 @@ function SequenceEditor() {
       .catch(() => {})
   }, [])
 
+  // Stand des Servers: Revision zum Speichern und der zuletzt gespeicherte Inhalt.
+  const [revision, setRevision] = useState(null)
+  const [baseline, setBaseline] = useState('')
+  const [mode,     setMode]     = useState('ok')    // 'ok' | 'outdated' | 'fresh'
+  const [draft,    setDraft]    = useState(false)   // Entwurf: gilt erst nach „Übernehmen"
+  const [saveMsg,  setSaveMsg]  = useState(null)    // { ok, text }
+  const [farmRunning, setFarmRunning] = useState(false)
+  const pollFarm = useCallback(() => {
+    autofarmService.getStatus(true).then(r => setFarmRunning(!!r.data?.running))
+      .catch(e => console.warn('Farm-Status nicht geladen:', e?.message || e))
+  }, [])
+  useAutoRefresh(pollFarm, 10000)
+  const snapshot = (n, x) => JSON.stringify({ n, x })
+
   useEffect(() => {
-    // Migration: strip the prep flag from steps where it's nonsensical (wait_print/
-    // send_file/wait_homing) and drop per-step conditions (Feature entfernt — sie
-    // machten den Ablauf unvorhersehbar). Cleans up sequences saved before.
-    const sanitize = (steps) => {
-      let changed = false
-      const out = steps.map(s => {
-        let t = s
-        if (t.prep && !prepAllowed(t)) {
-          changed = true
-          t = { ...t, prep: false }
-        }
-        if (t.condition) {
-          changed = true
-          const { condition, ...rest } = t
-          t = rest
-        }
-        return t
-      })
-      return { out, changed }
-    }
     autofarmService.getSequences()
       .then(r => {
-        const d = r.data
-        const rawNew  = Array.isArray(d.seq_new)  ? (d.seq_new.length  ? d.seq_new  : DEFAULT_SEQ_NEW)  : DEFAULT_SEQ_NEW
-        const rawNext = Array.isArray(d.seq_next) ? (d.seq_next.length ? d.seq_next : DEFAULT_SEQ_NEXT) : DEFAULT_SEQ_NEXT
-        const a = sanitize(rawNew), b = sanitize(rawNext)
-        const sNew = a.out, sNext = b.out
-        setNewSteps(sNew)
-        setNextSteps(sNext)
-        if (!d.seq_new?.length || a.changed || b.changed) {
-          autofarmService.saveSequences({ seq_new: sNew, seq_next: sNext })
-            .catch(() => {})
-        }
+        const d = decideSequenceLoad(r.data, { seqNew: DEFAULT_SEQ_NEW, seqNext: DEFAULT_SEQ_NEXT })
+        setNewSteps(d.newSteps)
+        setNextSteps(d.nextSteps)
+        setRevision(d.revision)
+        setMode(d.mode)
+        // Was nicht dem Gespeicherten entspricht (Standard einer neuen Anlage, altes
+        // Schema, bereinigte Schritte), gilt als ungespeichert.
+        setBaseline(d.mode !== 'ok' || d.cleaned ? '' : snapshot(d.newSteps, d.nextSteps))
+        setDraft(d.mode === 'outdated' || d.cleaned)
+        setSaveMsg(null)
         setLoaded(true)
       })
       // Nur nach Erfolg „geladen": Bis v1.1.47 speicherte der Editor nach einem
@@ -745,15 +748,39 @@ function SequenceEditor() {
       .catch(e => setLoadError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
   }, [reloadTick])
 
+  const dirty = loaded && snapshot(newSteps, nextSteps) !== baseline
+
+  const saveNow = async (seqNew, seqNext) => {
+    try {
+      const r = await autofarmService.saveSequences({ seq_new: seqNew, seq_next: seqNext }, revision)
+      setRevision(r.data?.revision ?? null)
+      setBaseline(snapshot(seqNew, seqNext))
+      setDraft(false)
+      setMode('ok')
+      setSaveMsg(null)
+    } catch (e) {
+      const st = e.response?.status
+      const d = e.response?.data?.detail
+      if (st === 409 || st === 428) {
+        // Ein anderer Tab (oder das Setup) hat gespeichert: nicht darüber schreiben.
+        setSaveMsg({ ok: false, text: tr('Sequenzen wurden inzwischen woanders geändert — neu geladen, deine letzte Änderung ist nicht gespeichert.') })
+        setReloadTick(n => n + 1)
+      } else if (Array.isArray(d?.problems)) {
+        setSaveMsg({ ok: false, text: tr('Nicht gespeichert: {0}', d.problems.map(trProblem).join(' · ')) })
+      } else {
+        setSaveMsg({ ok: false, text: tr('Nicht gespeichert: {0}', typeof d === 'string' ? d : (e.message || '?')) })
+      }
+    }
+  }
+
+  // Automatisch gespeichert wird nur, was kein Entwurf ist, und nie bei laufender
+  // Farm: Bis v1.1.58 wurde jeder halbe Zwischenstand sofort zur Bewegungsfolge.
   useEffect(() => {
-    if (!loaded) return
+    if (!dirty || draft || farmRunning) return
     clearTimeout(saveRef.current)
-    saveRef.current = setTimeout(() => {
-      autofarmService.saveSequences({ seq_new: newSteps, seq_next: nextSteps })
-        .catch(() => {})
-    }, 600)
+    saveRef.current = setTimeout(() => saveNow(newSteps, nextSteps), 600)
     return () => clearTimeout(saveRef.current)
-  }, [newSteps, nextSteps, loaded])
+  }, [newSteps, nextSteps, dirty, draft, farmRunning]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const exportConfig = () => {
     const data = {
@@ -797,10 +824,17 @@ function SequenceEditor() {
     reader.onload = (ev) => {
       try {
         const data = JSON.parse(ev.target.result)
-        if (!data.seq_new || !data.seq_next)
-          throw new Error(tr('Ungültiges Format — seq_new / seq_next fehlen'))
-        setNewSteps(data.seq_new)
-        setNextSteps(data.seq_next)
+        const v = validateImportedSequences(data, Object.keys(TYPE_META))
+        if (!v.ok) {
+          throw new Error(v.problem === 'format'
+            ? tr('Ungültiges Format — seq_new / seq_next fehlen')
+            : tr('Unbekannte Schritt-Art: {0}', v.unknownTypes.join(', ')))
+        }
+        // Als Entwurf: Ein Import bewegt Hardware erst nach „Übernehmen".
+        setNewSteps(v.seqNew)
+        setNextSteps(v.seqNext)
+        setDraft(true)
+        setSaveMsg({ ok: true, text: tr('Import geladen — prüfen, dann „Übernehmen“.') })
       } catch (err) {
         setImportErr(err.message)
       }
@@ -841,6 +875,32 @@ function SequenceEditor() {
           >{tr('↓ Export')}</button>
         </div>
       </div>
+
+      {loaded && mode === 'outdated' && (
+        <div className="rounded-lg border border-amber-700 bg-amber-950 px-4 py-2 text-[12px] text-amber-200" role="status">
+          {tr('Diese Sequenzen stammen aus einer älteren Printloom-Version. Bitte prüfen und übernehmen — oder je Abschnitt „↺ Standard“ laden.')}
+        </div>
+      )}
+      {dirty && (draft || farmRunning) && (
+        <div className="rounded-lg border border-blue-700 bg-blue-950 px-4 py-2 flex flex-wrap items-center gap-3" role="status">
+          <span className="text-[12px] text-blue-200 flex-1">
+            {farmRunning
+              ? tr('Die Farm läuft — Änderungen gelten erst nach „Übernehmen“, ab dem nächsten Job.')
+              : tr('Entwurf — noch nicht gespeichert.')}
+          </span>
+          <button onClick={() => saveNow(newSteps, nextSteps)} className="btn btn-primary btn-sm text-[11px]">
+            {farmRunning ? tr('Änderungen übernehmen') : tr('Übernehmen')}
+          </button>
+          <button onClick={() => setReloadTick(n => n + 1)} className="btn btn-ghost btn-sm text-[11px]">{tr('Verwerfen')}</button>
+        </div>
+      )}
+      {saveMsg && (
+        <div className={`px-4 py-2.5 rounded-lg text-sm border ${saveMsg.ok
+          ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300'
+          : 'bg-red-950/40 border-red-800 text-red-300'}`} role="alert">
+          {saveMsg.text}
+        </div>
+      )}
 
       {importErr && (
         <div className="px-4 py-2.5 rounded-lg bg-red-950/40 border border-red-800 text-red-300 text-sm">

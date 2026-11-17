@@ -374,7 +374,7 @@ export default function Setup({ setCurrentPage }) {
           s => !(s.type === 'app_op' && String(s.value || '').includes('door')))
         const seq_new = strip(d.seq_new), seq_next = strip(d.seq_next)
         if (seq_new.length || seq_next.length) {
-          await autofarmService.saveSequences({ seq_new, seq_next })
+          await autofarmService.saveSequences({ seq_new, seq_next }, d.revision)
         }
       } catch { /* dito */ }
     }

@@ -11,6 +11,8 @@ Schritte — also fast alle Bewegungen eines aktuellen Zyklus — ohne Meldung. 
 fiel das Feld `nowait` weg, und das Homing im First Start wartete danach wieder.
 """
 
+from typing import Optional
+
 # Was der Ablauf ausführen kann. Die mit „alt" markierten bietet der Editor nicht
 # mehr an; gespeicherte Sequenzen dürfen sie aber noch enthalten.
 STEP_TYPES = frozenset({
@@ -23,6 +25,21 @@ STEP_TYPES = frozenset({
 # Felder, die ein Schritt tragen darf.
 STEP_FIELDS = ("id", "type", "label", "value", "seconds", "z", "feed", "nowait",
                "parallel", "optional", "disabled", "prep", "condition")
+
+
+def sanitize_step(step) -> Optional[dict]:
+    """Nur bekannte Felder einer bekannten Art; None bei unbekannter Art oder keinem
+    Objekt. Eine Stelle für Speichern (autofarm) und Profil-Import (profiles)."""
+    if not isinstance(step, dict):
+        return None
+    t = step.get("type", "")
+    if t not in STEP_TYPES:
+        return None
+    out = {k: step.get(k) for k in STEP_FIELDS if k in step}
+    out["type"] = t
+    if "value" in out and out["value"] is not None:
+        out["value"] = str(out["value"])
+    return out
 
 # ── Vorziehen (⏱ „prep"): ~1 min vor Druckende, während der Drucker noch druckt ──
 # Eine ERLAUBNIS-Liste statt einer Verbotsliste: Bis v1.1.45 durfte alles außer

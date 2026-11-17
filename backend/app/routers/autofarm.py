@@ -17,7 +17,7 @@ from typing import Optional, List
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.db.database import SessionLocal
 from app.models.models import Device, PrinterType, UploadedFile
@@ -3686,6 +3686,9 @@ class ReorderPayload(BaseModel):
 
 
 class SequencesPayload(BaseModel):
+    # Unbekannte Felder sind ein Fehler: Die Bibliothek schickte bis v1.1.57 ein Feld
+    # „sequences", das hier still wegfiel, und meldete trotzdem „übernommen".
+    model_config = ConfigDict(extra="forbid")
     seq_new:  List[dict] = []
     seq_next: List[dict] = []
 
@@ -3857,8 +3860,8 @@ async def start_farm(req: StartRequest):
     if saved_ver != SEQ_SCHEMA_VERSION:
         raise HTTPException(
             400,
-            f"Sequenzen veraltet (Schema {saved_ver} ≠ {SEQ_SCHEMA_VERSION}) — "
-            f"bitte Sequenz-Editor öffnen und ↺ Standard klicken, dann erneut starten."
+            f"Sequenzen aus einer älteren Version (Schema {saved_ver} ≠ {SEQ_SCHEMA_VERSION}) — "
+            f"im Sequenz-Editor prüfen und übernehmen, dann erneut starten."
         )
     seq_problems = _validate_sequences(seq_data)
     if seq_problems:
@@ -4891,20 +4894,60 @@ async def dry_run(payload: dict = None):
 
 
 @router.get("/sequences")
-async def get_sequences():
+async def get_sequences(response: Response):
+    """Die gespeicherten Sequenzen, IMMER mit Inhalt. Bis v1.1.57 kamen bei altem
+    Schema leere Listen, und der Editor ersetzte die eigenen Abläufe still durch den
+    Standard. Jetzt: `outdated` + alte Schema-Nummer, der Editor fragt.
+    `exists: false` = es gibt noch keine Datei (nur dann darf der Editor den Standard
+    von sich aus speichern). `revision` (auch als ETag) für das Speichern."""
+    exists = os.path.exists(SEQ_PATH)
     data = _read_checked(SEQ_PATH, {})
-    # Schema version mismatch → return empty so frontend resets to new defaults
-    if data.get("schema_version") != SEQ_SCHEMA_VERSION:
-        return {"seq_new": [], "seq_next": []}
-    return data
+    rev = storage.etag(data)
+    response.headers["ETag"] = f'"{rev}"'
+    return {"seq_new": data.get("seq_new") or [], "seq_next": data.get("seq_next") or [],
+            "schema_version": data.get("schema_version"), "exists": exists,
+            "outdated": exists and data.get("schema_version") != SEQ_SCHEMA_VERSION,
+            "revision": rev}
+
+
+def _sequence_problems(data: dict) -> list:
+    """Speicher-Prüfung: unbekannte Arten (auch deaktivierte — sonst fielen sie beim
+    nächsten Laden still weg) und dieselben Regeln wie der Start (_validate_sequences)."""
+    problems = []
+    for name in ("seq_new", "seq_next"):
+        for st in data.get(name) or []:
+            if sequence_steps.sanitize_step(st) is None and st.get("disabled"):
+                label = st.get("label") or st.get("type") or "?"
+                problems.append(_geometry_check.problem("seq_unknown_type", "error",
+                                  "Unbekannte Schritt-Art „{0}“ in „{1}“",
+                                  [str(st.get("type")), label]))
+    return problems + _validate_sequences(data)
+
 
 @router.put("/sequences")
-async def save_sequences(payload: SequencesPayload):
+async def save_sequences(payload: SequencesPayload, request: Request):
+    """Speichern nur auf den gelesenen Stand (If-Match = revision) und nur, was die
+    Farm fahren könnte. Bis v1.1.57 speicherte der Editor jeden Zwischenstand, auch
+    bei laufender Farm, auch einen Zyklus ohne „Druckdatei senden", und ein zweiter
+    Tab überschrieb den ersten still."""
+    current = _read_checked(SEQ_PATH, {})        # kaputte Datei nicht still überschreiben
+    rev = storage.etag(current)
+    sent = (request.headers.get("if-match") or "").strip('"')
+    if not sent:
+        raise HTTPException(428, "Revision fehlt (If-Match) — Seite neu laden")
+    if sent != rev:
+        raise HTTPException(409, {"error": "SEQUENZ_GEAENDERT", "revision": rev,
+                                  "message": "Sequenzen wurden inzwischen woanders geändert — neu laden"})
     data = payload.model_dump()
+    problems = _sequence_problems(data)
+    if problems:
+        raise HTTPException(400, {"error": "SEQUENZ_UNGUELTIG", "problems": problems,
+                                  "message": "Nicht gespeichert: " + "; ".join(p["message"] for p in problems)})
+    data = {name: [sequence_steps.sanitize_step(s) for s in data[name]]
+            for name in ("seq_new", "seq_next")}
     data["schema_version"] = SEQ_SCHEMA_VERSION
-    _read_checked(SEQ_PATH, {})        # kaputte Datei nicht still überschreiben
     _write_config(SEQ_PATH, data)
-    return {"success": True}
+    return {"success": True, "revision": storage.etag(data)}
 
 @router.get("/settings")
 async def get_settings():

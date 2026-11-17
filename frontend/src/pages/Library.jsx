@@ -112,15 +112,19 @@ export default function Library({ setCurrentPage }) {
         await profileService.import(content)
         setMsg({ text: tr('Profil „{0}" importiert.', item.name), err: false })
       } else if (item.kind === 'sequence') {
-        // Sequenzen liegen als EIN Dokument → einmischen statt ersetzen.
-        const cur = (await autofarmService.getSequences()).data ?? {}
-        const list = Array.isArray(cur.sequences) ? [...cur.sequences] : []
+        // Eine Sequenz bewegt Hardware: nie automatisch anwenden. Bis v1.1.58 landete
+        // sie in einem Feld, das der Server gar nicht kannte, und trotzdem hieß es
+        // „übernommen". Jetzt als Datei; der Import im Sequenz-Editor zeigt sie als
+        // Entwurf, gespeichert wird erst nach „Übernehmen".
         const name = content.name || item.name
-        const idx = list.findIndex(s => s?.name === name)
-        const entry = { name, description: content.description || item.description, steps: content.steps }
-        if (idx >= 0) list[idx] = entry; else list.push(entry)
-        await autofarmService.saveSequences({ ...cur, sequences: list })
-        setMsg({ text: tr('Sequenz „{0}" übernommen — VOR dem Einsatz im Sequenz-Editor prüfen und ohne Platte testen.', name), err: false })
+        const doc = { seq_new: content.seq_new ?? [], seq_next: content.seq_next ?? content.steps ?? [] }
+        const url = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }))
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${String(name).replace(/[^\w.-]+/g, '_')}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+        setMsg({ text: tr('Sequenz „{0}" heruntergeladen — im Sequenz-Editor mit „↑ Import" laden, prüfen und übernehmen.', name), err: false })
       }
       setPreview(null)
     } catch (e) {

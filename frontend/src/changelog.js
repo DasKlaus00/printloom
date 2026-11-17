@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.59',
+    de: [
+      'EIGENE SEQUENZEN WERDEN NICHT MEHR STILL ERSETZT: Nach einem Update mit neuem Sequenz-Format zeigt der Sequenz-Editor deine Schritte mit dem Hinweis „aus einer älteren Version — prüfen und übernehmen“. Bisher ersetzte er sie beim Öffnen durch den Standard und speicherte. Ein bewusst leerer First Start bleibt leer, und „↺ Standard“ fragt jetzt nach.',
+      'BEI LAUFENDER FARM ERST NACH „ÜBERNEHMEN“: Änderungen im Sequenz-Editor werden während eines Laufs nicht mehr sofort zur Bewegungsfolge, sondern gelten nach „Änderungen übernehmen“ ab dem nächsten Job. Ein Import ist zuerst ein Entwurf.',
+      'NICHTS FAHRBARES GEHT VERLOREN: Ein Zyklus ohne „Druckdatei senden“ oder ohne genau ein „Auf Druckende warten“ und unbekannte Schritt-Arten werden nicht gespeichert; der Editor sagt, warum. Hat ein zweiter Tab inzwischen gespeichert, überschreibt der erste ihn nicht mehr, sondern lädt neu.',
+      'BIBLIOTHEK: Eine heruntergeladene Sequenz wird als Datei gespeichert und im Sequenz-Editor über „↑ Import“ geprüft und übernommen. Bisher hieß es „übernommen“, gespeichert wurde aber nichts.',
+    ],
+    en: [
+      'YOUR OWN SEQUENCES ARE NO LONGER REPLACED SILENTLY: after an update with a new sequence format, the sequence editor shows your steps with the note “from an older version — check and apply”. Until now it replaced them with the default when opened and saved. A deliberately empty First Start stays empty, and “↺ Default” now asks first.',
+      'WITH A RUNNING FARM ONLY AFTER “APPLY”: changes in the sequence editor no longer become the motion sequence immediately during a run; they take effect after “Apply changes”, from the next job on. An import is a draft first.',
+      'NOTHING RUNNABLE IS LOST: a cycle without “Send print file” or without exactly one “Wait for print end”, and unknown step types, are not saved; the editor says why. If a second tab has saved in the meantime, the first one no longer overwrites it but reloads.',
+      'LIBRARY: a downloaded sequence is saved as a file and checked and applied in the sequence editor via “↑ Import”. Until now it said “applied”, but nothing was saved.',
+    ],
+  },
+  {
     version: '1.1.58',
     de: [
       'DIE WARTESCHLANGE ÜBERSTEHT NEUSTART UND UPDATE: Printloom führt sie jetzt selbst und speichert jede Änderung sofort. Bisher speicherte die Auto-Farm-Seite ihre eigene Kopie vor dem Start. Nach einem Neustart oder Update mitten im Druck stand der gedruckte Job wieder auf „wartet“, und die Farm hätte ihn noch einmal gedruckt. Jetzt steht ein unterbrochener Job als Fehler mit Grund da („Unterbrochen — Platte prüfen“).',
