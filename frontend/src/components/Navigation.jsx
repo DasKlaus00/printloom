@@ -263,12 +263,12 @@ function Navigation({ currentPage, setCurrentPage, updateAvailable, collapsed, o
   return (
     <>
       {mobileOpen && (
-        <div className="fixed inset-0 top-[47px] z-30 bg-surface-50/30 md:hidden" onClick={onCloseMobile} aria-hidden="true" />
+        <div className="fixed inset-0 top-[47px] z-nav bg-surface-50/30 md:hidden" onClick={onCloseMobile} aria-hidden="true" />
       )}
       <nav
         className={`flex-shrink-0 bg-surface-800 border-r border-surface-700 flex flex-col overflow-hidden
           transition-[width,transform] duration-150 ease-out
-          fixed md:static top-[47px] bottom-0 left-0 z-40 md:z-auto
+          fixed md:static top-[47px] bottom-0 left-0 z-nav md:z-auto
           ${collapsed ? 'md:w-[54px]' : 'md:w-[210px]'} w-[240px]
           ${mobileOpen ? 'translate-x-0 shadow-lg' : '-translate-x-full md:translate-x-0 invisible md:visible'}`}
         aria-label={tr('Navigation')}

@@ -259,7 +259,7 @@ export default function Library({ setCurrentPage }) {
 
       {/* ── Vorschau ── */}
       {preview && (
-        <div className="fixed inset-0 z-[9998] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+        <div className="fixed inset-0 z-dialog bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => setPreview(null)}>
           <div className="card p-5 max-w-2xl w-full space-y-3" onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-3">

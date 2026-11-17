@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import ColorDot from '../components/ColorDot'
 import { PageTitle } from '../components/PageHeader'
 import { createPortal } from 'react-dom'
 import { apiError } from '../services/apiError'
@@ -80,8 +81,7 @@ const AMS_Q = {
 const colorQuality = (d) => d <= EXACT_COLOR_THRESHOLD ? 'exact' : (d <= AMS_COLOR_THRESHOLD ? 'similar' : 'far')
 
 function AmsDot({ hex }) {
-  const c = hex ? (hex.startsWith('#') ? hex : `#${hex}`) : '#555'
-  return <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0" style={{ backgroundColor: c }} />
+  return <ColorDot hex={hex} size="w-3.5 h-3.5" />
 }
 
 // Read-only AMS-Mapping-Vorschau (1.3) mit Ampel + Klartext-Farbnamen (1.6).
@@ -1665,7 +1665,7 @@ function AutoFarm({ setCurrentPage } = {}) {
     <div className="space-y-4" ref={rootRef}>
 
       {/* Feedback */}
-      {/* ── Schwebende Hinweise: FIXED oben mittig über dem Header (z-50 > Header z-40).
+      {/* ── Schwebende Hinweise: FIXED oben mittig unter der Kopfzeile (z-float, siehe tailwind.config.js).
              Bewusst KEIN Element im Layoutfluss — ein auftauchender Hinweis darf das
              Dashboard nicht mehr nach unten schieben. pageActive-Gate: die Seite bleibt
              versteckt gemountet, das Overlay darf nur auf der aktiven Seite erscheinen. ── */}
@@ -1674,7 +1674,7 @@ function AutoFarm({ setCurrentPage } = {}) {
         || (running && !!curJobId && !jobs.find(j => j.id === curJobId))) && (
         // Unter der Kopfzeile (47 px, z-40): Bis v1.1.67 lagen die Hinweise darüber und
         // verdeckten Logo, Statuspillen und Theme-Schalter (#74).
-        <div className="fixed top-[55px] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 w-max max-w-[92vw] pointer-events-none">
+        <div className="fixed top-[55px] left-1/2 -translate-x-1/2 z-float flex flex-col items-center gap-1.5 w-max max-w-[92vw] pointer-events-none">
           {feedback && (
             <div className={`pointer-events-auto max-w-full min-w-0 flex items-center gap-2 px-4 py-1.5 rounded-full text-sm border shadow-xl backdrop-blur-md ${
               feedback.ok
@@ -1897,7 +1897,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                   // Am <body> statt im Panel: In einer kleinen Rasterzelle schnitt das Panel
                   // das Menü bis v1.1.67 ab, und unter dem Nachbarpanel lag es verdeckt.
                   <div ref={tplMenuRef} style={{ position: 'fixed', right: tplPos.right, top: tplPos.top, bottom: tplPos.bottom }}
-                    className="z-50 w-64 card p-2 space-y-2 shadow-xl border border-surface-700">
+                    className="z-menu w-64 card p-2 space-y-2 shadow-xl border border-surface-700">
                     <div className="flex items-center gap-1">
                       <input
                         type="text"

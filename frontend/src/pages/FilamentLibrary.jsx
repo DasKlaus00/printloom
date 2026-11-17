@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import ColorDot from '../components/ColorDot'
 import { PageTitle } from '../components/PageHeader'
 import { filamentService, deviceService, printerService } from '../services/api'
 import { learnFromAms } from '../services/amsLearn'
@@ -13,13 +14,7 @@ const MATERIALS = [
 ]
 
 function ColorSwatch({ hex, size = 'md' }) {
-  const s = size === 'sm' ? 'w-4 h-4' : 'w-6 h-6'
-  return (
-    <span
-      className={`${s} rounded-full border border-white/15 shrink-0 inline-block`}
-      style={{ backgroundColor: hex || '#888' }}
-    />
-  )
+  return <ColorDot hex={hex} size={size === 'sm' ? 'w-4 h-4' : 'w-6 h-6'} />
 }
 
 function FilamentCard({ f, isCustom, onEdit, onDelete }) {

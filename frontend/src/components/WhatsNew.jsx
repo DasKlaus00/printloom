@@ -51,7 +51,7 @@ export default function WhatsNew() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={close}>
+    <div className="fixed inset-0 z-dialog flex items-center justify-center bg-black/70 p-4" onClick={close}>
       <div className="w-full max-w-lg max-h-[80vh] overflow-auto rounded-xl border border-surface-700 bg-surface-900 p-5 space-y-4"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">

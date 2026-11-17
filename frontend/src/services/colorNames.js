@@ -29,6 +29,17 @@ function dist(a, b) {
   return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2)
 }
 
+/** Farbwert in eine Form bringen: '#fff', 'FFFFFFFF' (Bambu: RRGGBBAA) und 'ff0000'
+ *  werden zu '#FFFFFF' bzw. '#FF0000'. Leer, null oder kein Hex → null (= Farbe unbekannt).
+ *  Bis v1.1.70 hatte jede Seite ihre eigene Umwandlung, mit drei verschiedenen Ersatzfarben. */
+export function normalizeHex(value) {
+  if (value == null) return null
+  let s = String(value).trim().replace(/^#/, '')
+  if (/^[0-9a-f]{3}$/i.test(s)) s = s.split('').map(c => c + c).join('')
+  else if (/^[0-9a-f]{8}$/i.test(s)) s = s.slice(0, 6)
+  return /^[0-9a-f]{6}$/i.test(s) ? `#${s.toUpperCase()}` : null
+}
+
 /** Nächster Bambu-Farbname zu `hex`, oder null wenn nichts klar genug passt (Distanz > maxDist). */
 export function nearestColorName(hex, maxDist = 18) {
   if (!hex) return null

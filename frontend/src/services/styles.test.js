@@ -107,3 +107,20 @@ describe('Manifest', () => {
     expect(html).toContain(`<meta name="theme-color" content="${manifest.theme_color}"`)
   })
 })
+
+/* Seit v1.1.71: ein Farbpunkt-Baustein, benannte z-Stufen, ein Toast-System. */
+describe('Eine Stelle je Baustein', () => {
+  it('Farbpunkte mit backgroundColor gibt es nur in ColorDot.jsx', () => {
+    const andere = SOURCES.filter(([name, s]) => name !== 'components/ColorDot.jsx' && /backgroundColor/.test(s))
+      .map(([name]) => name)
+    expect(andere).toEqual([])
+  })
+  it('keine freien z-Werte (z-[…]) — Stufen stehen in tailwind.config.js', () => {
+    expect(funde(/\bz-\[\d+\]/g)).toEqual([])
+  })
+  it('Toasts unten rechts nur im Toaster', () => {
+    const andere = SOURCES.filter(([name, s]) => name !== 'components/Toaster.jsx' && /fixed bottom-\d+ right-\d+/.test(s))
+      .map(([name]) => name)
+    expect(andere).toEqual([])
+  })
+})

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import ColorDot from '../components/ColorDot'
 import PageHeader from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { printerState } from '../services/printerState'
@@ -105,14 +106,12 @@ function AmsPanel({ units, activeSlot, deviceId }) {
               {(unit.slots.length ? unit.slots : [0,1,2,3].map(i => ({ id: i, type: '', color: '', remain: -1 }))).map(slot => {
                 const gid      = unit.id * 4 + slot.id
                 const isActive = activeSlot === gid
-                const cssColor = slot.color ? `#${slot.color.substring(0,6)}` : null
                 const empty    = !slot.type
                 return (
                   <div key={slot.id} className={`rounded-lg border p-2 flex flex-col items-center gap-1 transition-all ${
                     isActive ? 'border-blue-500 bg-blue-950/30' : empty ? 'border-surface-700 bg-surface-950 opacity-60' : 'border-surface-700 bg-surface-900'
                   }`}>
-                    <div className="w-5 h-5 rounded-full border-2 flex-shrink-0"
-                         style={{ backgroundColor: cssColor ?? 'transparent', borderColor: cssColor ?? '#374151' }} />
+                    <ColorDot hex={slot.color} size="w-5 h-5" title={empty ? tr('Leer') : undefined} />
                     <p className="text-[10px] font-mono text-surface-300 leading-none">{slot.type || '—'}</p>
                     <p className="text-[10px] text-surface-600">S{gid + 1}</p>
                     {slot.remain >= 0 && (

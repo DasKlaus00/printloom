@@ -440,7 +440,7 @@ function App() {
 
       {/* Kopfzeile — wie die Prüfplanung: weiß, eine Linie darunter, links Menü-Knopf
           und Name mit Version, rechts die Zustände und der Hell/Dunkel-Umschalter. */}
-      <header className="h-[47px] bg-surface-800 border-b border-surface-700 flex items-center gap-3 px-3 sm:pl-3 sm:pr-5 flex-shrink-0 sticky top-0 z-40">
+      <header className="h-[47px] bg-surface-800 border-b border-surface-700 flex items-center gap-3 px-3 sm:pl-3 sm:pr-5 flex-shrink-0 sticky top-0 z-header">
         <button
           onClick={toggleNav}
           className="p-1.5 rounded text-surface-100 hover:bg-surface-900 flex-none"
@@ -548,7 +548,7 @@ function App() {
       </div>
       {/* Full-screen update overlay — blocks all interaction */}
       {updateOverlay && (
-        <div className="fixed inset-0 z-[9999] bg-surface-950/95 flex flex-col items-center justify-center gap-6 select-none">
+        <div className="fixed inset-0 z-blocker bg-surface-950/95 flex flex-col items-center justify-center gap-6 select-none">
           {updateOverlay === 'running' ? (
             <>
               <div className="w-12 h-12 rounded-full border-[3px] border-surface-700 border-t-blue-600 animate-spin" />

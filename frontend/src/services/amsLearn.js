@@ -16,7 +16,7 @@ export async function learnFromAms(amsSlots) {
     const added = r.data?.added || []
     for (const f of added) {
       const name = colorLabel(f.color_hex)
-      pushToast(tr('{0} hinzugefügt', `${f.material}${name ? ' · ' + name : ''}`), 'success')
+      pushToast(tr('{0} hinzugefügt', `${f.material}${name ? ' · ' + name : ''}`), 'success', { icon: '🧵' })
     }
     if (added.length) window.dispatchEvent(new CustomEvent('printloom:filamentsLearned'))
     return added

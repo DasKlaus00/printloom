@@ -197,7 +197,7 @@ export default function OnlineServices({ setCurrentPage }) {
 
       {/* ── Hinweis-Dialog VOR der ersten Aktivierung ── */}
       {askConsent && (
-        <div className="fixed inset-0 z-[9998] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+        <div className="fixed inset-0 z-dialog bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => setAsk(null)}>
           <div className="card p-5 max-w-lg w-full space-y-3" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-semibold text-surface-100">

@@ -50,6 +50,13 @@ export default {
         xl: '0 4px 14px rgb(29 33 37 / 0.16)',
         '2xl': '0 8px 28px rgb(29 33 37 / 0.22)',
       },
+      // Benannte z-Stufen (seit v1.1.71) statt freier Werte von 10 bis 9999. Reihenfolge:
+      // schwebender Hinweis < Leiste < Kopfzeile < Menü < Notaus-Banner < Dialog
+      // < Toast (Meldungen bleiben über Dialogen sichtbar) < Update-Sperre über allem.
+      zIndex: {
+        float: '20', nav: '30', header: '40', menu: '50', alarm: '55',
+        dialog: '60', toast: '70', blocker: '100',
+      },
       fontFamily: {
         sans: ['"Segoe UI"', 'system-ui', '-apple-system', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
         mono: ['"JetBrains Mono"', '"Fira Code"', 'Consolas', 'monospace'],

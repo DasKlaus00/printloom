@@ -41,7 +41,7 @@ export default function EmergencyStop({ compact = false }) {
   const banner = warning && (
     <div role="alert"
       className={`flex items-start gap-3 px-4 py-3 rounded-lg border-2 border-red-600 bg-red-950 text-red-200 text-sm font-semibold
-                  ${compact ? 'fixed top-14 right-3 left-3 sm:left-auto sm:w-[26rem] z-[9997] shadow-xl' : ''}`}>
+                  ${compact ? 'fixed top-14 right-3 left-3 sm:left-auto sm:w-[26rem] z-alarm shadow-xl' : ''}`}>
       <span className="flex-1">⚠ {warning}</span>
       <button onClick={dismissArmWarning} className="text-red-400 hover:text-red-200 text-xs font-normal">
         {tr('Verstanden')}

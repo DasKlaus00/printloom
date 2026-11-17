@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.71',
+    de: [
+      'FARBPUNKTE ÜBERALL GLEICH: Filament- und AMS-Farben haben einen sichtbaren Rand, damit ein weißes Filament im hellen und ein schwarzes im dunklen Thema nicht verschwinden. Eine unbekannte Farbe ist ein gestrichelter leerer Kreis statt eines erfundenen Grautons.',
+      'MELDUNGEN ÜBER DIALOGEN: Hinweise unten rechts bleiben sichtbar, auch wenn ein Dialog offen ist. Fehler bleiben 12 Sekunden stehen (sonst 5), lange Texte brechen um, auf dem Handy nutzen sie die ganze Breite. Das Faden-Symbol erscheint nur noch bei neu gelernten Filamenten.',
+      'Die Datei-Bibliothek meldet über dieselben Hinweise wie der Rest der App; ihr eigener Kasten lag unter Dialogen.',
+      'Feste Ebenen für Kopfzeile, Leiste, Menüs, Dialoge und Hinweise: nichts überdeckt mehr zufällig etwas anderes, das Update-Fenster liegt über allem.',
+      'Screenreader sagen Meldungen an, Fehler sofort.',
+    ],
+    en: [
+      'COLOR DOTS LOOK THE SAME EVERYWHERE: filament and AMS colors have a visible border, so a white filament in the light theme and a black one in the dark theme no longer disappear. An unknown color is a dashed empty circle instead of a made-up grey.',
+      'MESSAGES ABOVE DIALOGS: notices at the bottom right stay visible while a dialog is open. Errors stay for 12 seconds (others 5), long texts wrap, and on a phone they use the full width. The thread icon only appears for newly learned filaments.',
+      'The file library reports through the same notices as the rest of the app; its own box sat underneath dialogs.',
+      'Fixed layers for header, sidebar, menus, dialogs and notices: nothing covers something else by accident any more, and the update screen is on top of everything.',
+      'Screen readers announce messages, errors immediately.',
+    ],
+  },
+  {
     version: '1.1.70',
     de: [
       'BESSER LESBAR IN HELL UND DUNKEL: Gedämpfte Texte (Hinweise, Beschriftungen, Einheiten) sind im hellen Thema deutlich dunkler, im dunklen etwas heller. Weiße Schrift auf grünen und gelben Knöpfen ist im Dunkeln wieder gut lesbar, und beim Überfahren werden die Knöpfe dort dunkler statt heller.',
@@ -14,7 +31,7 @@ export const CHANGELOG = [
     ],
     en: [
       'EASIER TO READ IN LIGHT AND DARK: muted text (hints, labels, units) is clearly darker in the light theme and slightly lighter in the dark one. White text on green and yellow buttons is readable again in the dark theme, and there buttons get darker on hover instead of lighter.',
-      'VISIBLE LINES, NO TINY TEXT: borders that used to vanish into their own background are visible. Nothing is smaller than 10 px, buttons are at least 12 px. Explanations in the sequence editor and the configuration no longer use pale tint colours.',
+      'VISIBLE LINES, NO TINY TEXT: borders that used to vanish into their own background are visible. Nothing is smaller than 10 px, buttons are at least 12 px. Explanations in the sequence editor and the configuration no longer use pale tint colors.',
       'CAMERA IMAGE IN THE LIGHT THEME: labels and error messages on the black camera area are light and readable in both themes.',
       'APP NAME: installed as an app, Printloom is now called “Printloom” (was “Ottomat4d”) and starts with a light instead of a black background. Reinstall the app once for this.',
       'A test keeps the minimum contrast (4.5:1) and the minimum font size in place.',

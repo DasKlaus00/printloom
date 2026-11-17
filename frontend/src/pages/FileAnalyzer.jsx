@@ -1,21 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import ColorDot from '../components/ColorDot'
 import { PageTitle } from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { fileService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 
-/* ── Color swatch ─────────────────────────────────────────────── */
-function ColorDot({ hex, size = 'w-3 h-3' }) {
-  if (!hex) return <span className={`${size} rounded-full bg-surface-700 inline-block flex-shrink-0`} />
-  const color = hex.startsWith('#') ? hex : `#${hex}`
-  return (
-    <span
-      className={`${size} rounded-full inline-block border border-white/10 flex-shrink-0`}
-      style={{ backgroundColor: color }}
-      title={color}
-    />
-  )
-}
 
 /* ── Diff highlight ───────────────────────────────────────────── */
 function Cell({ a, b, label, fmt = (v) => v ?? '—', mono = false }) {
