@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.52',
+    de: [
+      'KEINE ALTE KOPIE ÜBERSCHREIBT DIE GEOMETRIE: Drucker-Tab, Setup-Assistent und Erstkalibrierung speichern die Positionen nur noch auf den Stand, den sie gelesen haben. Hat sich die Geometrie inzwischen woanders geändert, zeigt der Drucker-Tab einen Hinweis „neu laden“ und speichert nicht mehr. Bisher schrieb ein länger offener Drucker-Tab still seine alte Kopie zurück, etwa über den eben im Setup geänderten Fach-Abstand.',
+      'Setup und Erstkalibrierung wenden ihre Änderung bei so einem Konflikt auf den neuen Stand an, statt die alte Kopie zu schreiben.',
+      'Ein Speicherfehler im Drucker-Tab wird jetzt angezeigt (bisher still verschluckt), und ein Positionsfeld ohne Zahl lehnt der Server ab, statt eine Koordinate daraus zu machen.',
+    ],
+    en: [
+      'NO OLD COPY OVERWRITES THE GEOMETRY: the Printer tab, the setup wizard and the first calibration now only save positions onto the state they read. If the geometry has changed elsewhere in the meantime, the Printer tab shows a “reload” notice and stops saving. Until now a Printer tab left open quietly wrote its old copy back, for example over a slot spacing just changed in the setup.',
+      'In such a conflict, setup and first calibration apply their change to the new state instead of writing the old copy.',
+      'A save error in the Printer tab is now shown (it used to be swallowed), and the server rejects a position field without a number instead of turning it into a coordinate.',
+    ],
+  },
+  {
     version: '1.1.51',
     de: [
       'GERÄTE LÖSCHEN RÄUMT AUF: Mit dem Gerät verschwinden jetzt auch seine Einstellungen (Kamera-Adresse, Steckdose, Home-Assistant), die Verbindung zum Drucker und laufende Kamera-Streams. Bisher blieben sie stehen.',

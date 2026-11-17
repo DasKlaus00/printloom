@@ -5,16 +5,16 @@ Notaus-Sperre. Bis v1.1.34 beachtete nur der Makro-Knopf einen ausgelösten Nota
 Joggen, G-code und die Drucker-Tab-Bewegungen fuhren trotzdem los.
 """
 import asyncio
+from typing import Optional
 import logging
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header, Response
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.models import Device, PrinterType
-from app.paths import db_path
 from app.schemas.schemas import MacroExecutionRequest, MacroExecutionResponse
 from app.services import geometry_check as _geometry_check
 from app.services import ottoeject_motion as _motion
@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-GEOMETRY_PATH = db_path("ottoeject_geometry.json")
+# Eine Quelle: geometry_store.PATH (Alias, damit Tests den Pfad weiter setzen können).
+from app.services import geometry_store as _geometry_store  # noqa: E402
+GEOMETRY_PATH = _geometry_store.PATH
 
 NOTAUS_AKTIV = ("Notaus aktiv — erst „Betrieb fortsetzen“ (Steuerung), dann wieder bewegen.")
 
@@ -467,25 +469,37 @@ def _geometry_from_request(request: dict) -> dict:
 
 
 @router.get("/ottoeject/geometry")
-async def get_ottoeject_geometry():
-    """Gespeicherte Geometrie (mit Defaults aufgefüllt)."""
-    return {"success": True, "geometry": _load_geometry()}
+async def get_ottoeject_geometry(response: Response):
+    """Gespeicherte Geometrie (mit Defaults aufgefüllt) und ihre Revision. Beim
+    Speichern muss die Revision als If-Match zurückkommen."""
+    rev = _geometry_store.revision(_geometry_store.load_raw(GEOMETRY_PATH))
+    response.headers["ETag"] = rev
+    return {"success": True, "geometry": _load_geometry(), "revision": rev}
 
 
 @router.put("/ottoeject/geometry")
-async def put_ottoeject_geometry(geometry: dict):
+async def put_ottoeject_geometry(geometry: dict, if_match: Optional[str] = Header(None)):
     """Geometrie speichern (Printloom merkt sich alle Positionen).
 
     Gespeichert wird IMMER — der Nutzer soll zwischendurch abspeichern können. Die
     Antwort enthält aber das Prüfergebnis (`check`), damit die UI unplausible Werte
     sofort zeigt, statt sie stillschweigend zu übernehmen. Gesendet wird eine
     fehlerhafte Bewegung ohnehin nicht (siehe /ottoeject/op)."""
+    # Zuerst: Ist die Datei überhaupt lesbar? (BrokenFile → 503, nicht still überschreiben)
+    _geometry_store.load_raw(GEOMETRY_PATH)
+    if not if_match:
+        # Ohne Revision kein Speichern: Sonst schriebe eine alte Kopie über neuere Werte.
+        raise HTTPException(428, "Revision fehlt (If-Match) — Geometrie erst laden")
+    bad = _geometry_store.invalid_positions(geometry)
+    if bad:
+        raise HTTPException(422, detail={"detail": "Positionsfelder ohne Zahl", "fields": bad})
     merged = _motion.merge_defaults(geometry)
-    # Eine kaputte Datei nicht still überschreiben (BrokenFile → 503): Die Oberfläche
-    # hätte sonst nur Vorgaben gezeigt, und „Speichern" machte sie endgültig.
-    _storage.read_json_checked(GEOMETRY_PATH, None, expect=dict)
-    _storage.write_json(GEOMETRY_PATH, merged)
-    return {"success": True, "geometry": merged,
+    try:
+        rev = _geometry_store.save(merged, if_match.strip().strip('"'), GEOMETRY_PATH)
+    except _storage.Conflict as e:
+        raise HTTPException(409, detail={"detail": "Geometrie wurde an anderer Stelle geändert",
+                                         "revision": e.current_etag, "geometry": _load_geometry()})
+    return {"success": True, "geometry": merged, "revision": rev,
             "check": _geometry_check.check_geometry(_load_geometry())}
 
 

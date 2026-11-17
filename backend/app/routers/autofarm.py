@@ -58,7 +58,8 @@ HISTORY_KEEP  = 8     # rolling samples per file for the duration average
 SEQ_SCHEMA_VERSION = "5.0.0"  # bump when default sequences change structurally
 
 HOMING_3MF_PATH = db_path("printloom_homing.3mf")
-GEOMETRY_PATH = db_path("ottoeject_geometry.json")  # Drucker-Geometrie (Drucker-Tab) — opt-in App-G-code
+from app.services import geometry_store as _geometry_store  # noqa: E402
+GEOMETRY_PATH = _geometry_store.PATH  # Drucker-Geometrie (Drucker-Tab), eine Quelle
 
 _DEFAULT_SETTINGS = farm_settings.DEFAULTS
 

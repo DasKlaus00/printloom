@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { controlService } from '../services/api'
+import { patchGeometry as patchGeometryRev } from '../services/geometryClient'
 import { useLanguage } from '../services/i18n'
 import { SLOT_Z_EXTRA } from '../services/hardware'
 import TeachIn from './TeachIn'
@@ -59,9 +60,10 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
   const patchGeometry = useCallback(async (fn) => {
     setErr(''); setBusy(true)
     try {
-      const g = (await controlService.getGeometry())?.data?.geometry
-      if (!g) throw new Error(tr('Geometrie nicht lesbar'))
-      await controlService.putGeometry(fn(structuredClone(g)))
+      // Mit Revision: Hat sich die Geometrie inzwischen geändert, gilt die Änderung
+      // für den neuen Stand (geometryClient), nie für eine alte Kopie.
+      const r = await patchGeometryRev(fn, 'kalibrierung')
+      if (!r) throw new Error(tr('Geometrie nicht lesbar'))
       return true
     } catch (e) {
       setErr(e?.response?.data?.detail || e?.message || tr('Fehler'))

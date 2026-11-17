@@ -4,6 +4,7 @@ import { controlService, rackManagerService, deviceService, printerService,
          autofarmService } from '../services/api'
 import { confirmDialog } from '../services/confirm'
 import { useMotionLock } from '../services/motionLock'
+import { saveGeometry } from '../services/geometryClient'
 import { findPrinter } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
 import TeachIn from '../components/TeachIn'
@@ -919,6 +920,9 @@ export default function Drucker() {
   const lock = useMotionLock()
   // Ladefehler bei Geometrie, Regal oder Geräten: dann wird NICHTS gespeichert.
   const [loadError, setLoadError] = useState('')
+  // Revision der geladenen Geometrie (If-Match) und ob sie anderswo neuer gespeichert wurde.
+  const geomRev = useRef(null)
+  const [geomStale, setGeomStale] = useState(false)
   const armBusy = jog.busy || !!lock.arm
   const blocked = (reason) => { setJog({ busy: false, msg: reason, err: true }); return true }
   const [lastScript, setLastScript] = useState('')
@@ -1112,6 +1116,7 @@ export default function Drucker() {
   const hydrated = useRef(false)
   useEffect(() => {
     controlService.getGeometry().then(r => {
+      geomRev.current = r?.data?.revision
       const g = r?.data?.geometry
       if (!g) return
       // Das Backend liefert die volle Form (ein Block je Drucker/Regal, absolute
@@ -1156,13 +1161,28 @@ export default function Drucker() {
     if (!hydrated.current || !printers.length || !rackReady || !devicesReady) return
     // Speichern liefert die Plausibilitätsprüfung mit zurück (Achsgrenzen) — so sieht
     // der Nutzer sofort, wenn ein Wert eine Bewegung aus der Achse fahren würde.
+    if (geomStale) return
     const t = setTimeout(() => {
-      controlService.putGeometry(geometry)
-        .then(r => setCheck(r?.data?.check || null))
-        .catch(() => {})
+      saveGeometry(geometry, geomRev.current, 'drucker')
+        .then(r => { geomRev.current = r?.data?.revision; setCheck(r?.data?.check || null) })
+        .catch(e => {
+          // 409: an anderer Stelle (Setup, Kalibrierung, anderer Tab) gespeichert. Nicht
+          // überschreiben, sondern Bescheid geben (bis v1.1.51 schrieb der Tab still
+          // seine alte Kopie zurück). Andere Fehler ebenfalls sichtbar (vorher .catch(() => {})).
+          if (e?.response?.status === 409) setGeomStale(true)
+          else setJog({ busy: false, err: true,
+                        msg: tr('Geometrie nicht gespeichert: {0}', e?.response?.data?.detail?.detail || e?.response?.data?.detail || e?.message) })
+        })
     }, 600)
     return () => clearTimeout(t)
-  }, [geometry, printers.length, rackReady, devicesReady])
+  }, [geometry, printers.length, rackReady, devicesReady, geomStale])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Eine andere Seite hat die Geometrie gespeichert → diese Kopie ist veraltet.
+  useEffect(() => {
+    const on = (e) => { if (e.detail?.source !== 'drucker' && e.detail?.revision !== geomRev.current) setGeomStale(true) }
+    window.addEventListener('printloom:geometrySaved', on)
+    return () => window.removeEventListener('printloom:geometrySaved', on)
+  }, [])
 
   // Regalzahl / Fächer / Magazin-Fach global aus der Rack-Konfiguration (Configuration).
   useEffect(() => {
@@ -1367,6 +1387,12 @@ export default function Drucker() {
 
       {/* ── Werkzeuge: Referenzfahrt, Tempo, direkter G-code, Bett ── */}
       <div className="card p-3 space-y-2">
+        {geomStale && (
+          <p role="alert" className="text-[12px] px-3 py-2 rounded border border-amber-700 bg-amber-950 text-amber-300 flex flex-wrap items-center gap-2">
+            <span className="flex-1">⚠ {tr('Die Geometrie wurde an anderer Stelle geändert. Diese Seite speichert nicht mehr, damit nichts überschrieben wird.')}</span>
+            <button onClick={() => window.location.reload()} className="btn btn-secondary btn-sm text-[11px]">{tr('Neu laden')}</button>
+          </p>
+        )}
         {loadError && (
           <p role="alert" className="text-[12px] px-3 py-2 rounded border border-red-700 bg-red-950 text-red-300">
             ⚠ {tr('Nicht geladen: {0}. Änderungen hier werden nicht gespeichert — Seite neu laden.', loadError)}

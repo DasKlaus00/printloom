@@ -185,6 +185,7 @@ oder Zusagen bricht**, nicht die Menge an Code:
 | `test_arm_belegung.py`   | Farm, Stresstest und Handfahrten bewegen den Arm nie gleichzeitig |
 | `test_drucker_tore.py`   | Vor Einlegen, Auswerfen, Greifen und Senden: Drucker frei, Bett leer, Greifer leer — sonst Pause; Buchung über Macro und Op |
 | `test_druckfehler_ablauf.py` | FAILED nur ohne Druck wiederholen, übersprungene Drucke werden gestoppt, Hänger beenden den Job sauber |
+| `test_geometry_revision.py` | Geometrie nur auf den gelesenen Stand speichern (If-Match, 409/428), Positionsfeld ohne Zahl 422 |
 | `test_device_ids.py`     | Gelöschtes Gerät hinterlässt nichts, IDs werden nie wiederverwendet, Backup ordnet Drucker-Positionen neu zu |
 | `test_rack_config_guard.py` | Regal-Eingaben löschen keine belegten Fächer, kein Magazin-Fach als Ablage, Sollzahl setzt den Bestand nicht zurück |
 | `test_echtes_fach.py`    | Höhe nie geraten, nur echte Fächer (nie „1-0“, nie Magazin), keine geratene Plattenquelle, eindeutige Job-IDs |

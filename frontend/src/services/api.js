@@ -107,7 +107,9 @@ export const controlService = {
   getKlipperInfo:      ()      => api.get('/control/klipper/info'),
   // OTTOeject-Geometrie (Printloom kennt alle Koordinaten, sendet G-code direkt)
   getGeometry:         ()      => api.get('/control/ottoeject/geometry'),
-  putGeometry:         (g)     => api.put('/control/ottoeject/geometry', g),
+  // Revision als If-Match: Das Backend speichert nur auf den gelesenen Stand (sonst 409).
+  putGeometry:         (g, revision) => api.put('/control/ottoeject/geometry', g,
+                                                revision ? { headers: { 'If-Match': revision } } : undefined),
   runOp:               (body)  => api.post('/control/ottoeject/op', body),
   previewOp:           (body)  => api.post('/control/ottoeject/preview', body),
   // Plausibilitätsprüfung der Geometrie (Achsgrenzen) — prüft ohne zu speichern

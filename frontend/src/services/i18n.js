@@ -1438,6 +1438,9 @@ const EN_STRINGS = {
   'Regal {0}: {1}': 'Rack {0}: {1}',
   'muss über den Fächern liegen (> {0}) oder 0 sein': 'must be above the slots (> {0}) or 0',
   'Fächer {0} sind belegt — erst im Rack Manager leeren': 'Slots {0} are occupied — empty them in the Rack Manager first',
+  // Geometrie mit Revision (seit v1.1.52)
+  'Geometrie nicht gespeichert: {0}': 'Geometry not saved: {0}',
+  'Die Geometrie wurde an anderer Stelle geändert. Diese Seite speichert nicht mehr, damit nichts überschrieben wird.': 'The geometry was changed elsewhere. This page no longer saves so that nothing gets overwritten.',
   // Backup und Geräte (seit v1.1.51)
   'Ohne passendes Gerät (Positionen im Drucker-Tab zuordnen): {0}.': 'Without a matching device (assign the positions in the Printer tab): {0}.',
   'Die Seite lädt gleich neu.': 'The page will reload shortly.',

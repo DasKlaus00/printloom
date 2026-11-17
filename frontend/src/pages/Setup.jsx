@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { deviceService, rackManagerService, autofarmService, controlService } from '../services/api'
+import { patchGeometry, saveGeometry } from '../services/geometryClient'
 import { useLanguage, setLanguage, availableLanguages, trProblem } from '../services/i18n'
 import { TIMEZONES } from './Configuration'
 import { PRINTERS } from '../services/printers'
@@ -137,8 +138,7 @@ export default function Setup({ setCurrentPage }) {
     setLimitsBusy(true); setLimitsMsg(''); setLimitsErr(false)
     try {
       const l = (await controlService.getAxisLimits())?.data?.limits || {}
-      const cur = (await controlService.getGeometry())?.data?.geometry || {}
-      await controlService.putGeometry({ ...cur, machine_limits: l })
+      await patchGeometry(cur => ({ ...cur, machine_limits: l }), 'setup')
       setLimitsMsg(tr('✓ X {0} · Y {1} · Z {2} mm', l.x ?? '—', l.y ?? '—', l.z ?? '—'))
     } catch (e) {
       setLimitsErr(true)
@@ -310,7 +310,8 @@ export default function Setup({ setCurrentPage }) {
      Regale gesetzt: hier baut man eine Anlage aus gleichen Regalen auf. Wer später
      ein anders gebautes Regal dazustellt, ändert dessen Wert im Drucker-Tab. */
   const writeSlotGap = async (gap, extra) => {
-    const g = (await controlService.getGeometry())?.data?.geometry
+    const gr = (await controlService.getGeometry())?.data
+    const g = gr?.geometry
     if (!g) return
     const rg = { ...(g.rack_geo || {}) }
     const same = !hasMixedSlotGaps(g) || await confirmDialog({
@@ -319,9 +320,11 @@ export default function Setup({ setCurrentPage }) {
       confirmLabel: tr('Alle gleich setzen'),
     })
     if (same) for (const k of Object.keys(rg)) rg[k] = { ...rg[k], slot_gap: gap }
-    await controlService.putGeometry({
+    // Mit der gelesenen Revision: Änderte jemand die Geometrie, während die Rückfrage
+    // offen war, gibt es 409 statt eines stillen Überschreibens.
+    await saveGeometry({
       ...g, ...(extra || {}), rack_geo: rg, storage: { ...(g.storage || {}), slot_gap: gap },
-    })
+    }, gr?.revision, 'setup')
   }
 
   const applyPrinterPackage = async (modelId) => {
@@ -330,7 +333,8 @@ export default function Setup({ setCurrentPage }) {
     const preset = m.preset ? PRINTERS.find(p => p.id === m.preset) : null
     if (preset) {
       try {
-        const cur = (await controlService.getGeometry())?.data?.geometry || {}
+        const gr = (await controlService.getGeometry())?.data
+        const cur = gr?.geometry || {}
         // Seit v1.1.9 stehen die Drucker-Positionen ABSOLUT im Block `printers[0]`
         // (vorher als Basis in `printer`, die beim Fahren um den Regal-Versatz
         // verschoben wurde). Die Vorlage kennt nur die Basis — deshalb hier denselben
@@ -344,7 +348,7 @@ export default function Setup({ setCurrentPage }) {
           message: tr('Eingemessene Positionen von „{0}" durch die Vorlage ersetzen?', first.name || preset.name),
           confirmLabel: tr('Ersetzen'),
         })
-        if (replace) await controlService.putGeometry({
+        if (replace) await saveGeometry({
           ...cur,
           printer_id: preset.id, printer_name: preset.name, enclosed: preset.enclosed,
           printers: [{
@@ -354,7 +358,7 @@ export default function Setup({ setCurrentPage }) {
             eject: abs(preset.eject), load: abs(preset.load), move: abs(preset.eject),
             door: preset.door ? { open: abs(preset.door.open), close: abs(preset.door.close) } : null,
           }, ...(Array.isArray(cur.printers) ? cur.printers.slice(1) : [])],
-        })
+        }, gr?.revision, 'setup')
       } catch { /* Vorlage ist Komfort — Setup darf daran nicht scheitern */ }
     }
     // Offener Drucker → Tür-Schritte aus den Sequenzen nehmen (sie würden „keine

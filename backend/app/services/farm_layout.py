@@ -36,7 +36,8 @@ from app.services import storage
 from app.services.geometry_check import problem
 
 LAYOUT_PATH = db_path("farm_layout.json")
-GEOMETRY_PATH = db_path("ottoeject_geometry.json")
+from app.services import geometry_store as _geometry_store  # noqa: E402
+GEOMETRY_PATH = _geometry_store.PATH   # eine Quelle
 
 TYPES = ("printer", "rack", "home")
 
