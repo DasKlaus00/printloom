@@ -7,7 +7,10 @@
    bekam das Gerät die erfundenen Positionen, und der Autosave löschte den
    verwaisten Block mit den eingemessenen Werten.
 
-   → { printers, adopt: [{ deviceId, deviceName, blockIdx, blockName }] }.
+   → { printers, adopt: [{ deviceId, deviceName, block, blockId, blockName }] }.
+   `block` ist der Block selbst (dieselbe Referenz in `printers`): Bis v1.1.64 stand
+   hier der Index in der ALTEN Liste. Weil `printers` umsortiert wird, übernahm bei
+   zwei Druckern „Ja" den Block des anderen Druckers (dessen Positionen).
    Unverändert: dieselbe Referenz `ps` (sonst löste der Effekt sich selbst aus). */
 export function reconcilePrinters(ps, devs, seed, { declined = new Set() } = {}) {
   if (!devs.length) return { printers: ps, adopt: [] }
@@ -22,7 +25,8 @@ export function reconcilePrinters(ps, devs, seed, { declined = new Set() } = {})
       const orphan = ps.findIndex((p, k) => !taken.has(k) && p.device_id != null && !ids.has(p.device_id))
       if (orphan >= 0) {
         taken.add(orphan)
-        adopt.push({ deviceId: d.id, deviceName: d.name, blockIdx: orphan, blockName: ps[orphan].name || '' })
+        adopt.push({ deviceId: d.id, deviceName: d.name, block: ps[orphan],
+                     blockId: ps[orphan].id ?? null, blockName: ps[orphan].name || '' })
         out.push(ps[orphan])           // bleibt stehen, bis die Frage beantwortet ist
         continue
       }
@@ -40,7 +44,9 @@ export function reconcilePrinters(ps, devs, seed, { declined = new Set() } = {})
   return { printers: same ? ps : next, adopt }
 }
 
-/* Antwort „Ja": Der verwaiste Block gehört jetzt diesem Gerät. */
-export function adoptBlock(ps, { deviceId, deviceName, blockIdx }) {
-  return ps.map((p, k) => (k === blockIdx ? { ...p, device_id: deviceId, name: deviceName } : p))
+/* Antwort „Ja": Der verwaiste Block gehört jetzt diesem Gerät — gefunden über den
+   Block selbst (oder seine id), nie über eine Position. */
+export function adoptBlock(ps, { deviceId, deviceName, block, blockId }) {
+  return ps.map(p => ((p === block || (blockId != null && p.id === blockId))
+    ? { ...p, device_id: deviceId, name: deviceName } : p))
 }

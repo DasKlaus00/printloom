@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { apiError } from '../services/apiError'
 import { fileService, projectService, autofarmService, deviceService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
@@ -99,18 +100,18 @@ function Projekt() {
       const r = await projectService.create(tr('Neues Projekt'))
       await reloadProjects()
       if (r.data?.id) { setActivePid(r.data.id); localStorage.setItem(ACTIVE_KEY, r.data.id) }
-    } catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+    } catch (e) { showFeedback(apiError(e), false) }
   }
   const deleteProject = async () => {
     if (!active) return
     if (!window.confirm(tr('Projekt „{0}" löschen?', active.name))) return
     try { await projectService.remove(active.id); localStorage.removeItem(ACTIVE_KEY); setActivePid(''); await reloadProjects() }
-    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+    catch (e) { showFeedback(apiError(e), false) }
   }
   const resetProgress = async () => {
     if (!active) return
     try { await projectService.resetProgress(active.id); await reloadProjects(); showFeedback(tr('Fortschritt zurückgesetzt')) }
-    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+    catch (e) { showFeedback(apiError(e), false) }
   }
 
   /* ── Upload ───────────────────────────────────────────────── */
@@ -123,12 +124,15 @@ function Projekt() {
       const fr = await fileService.listFiles()
       setFiles((fr.data.files ?? []).filter(f => ['.3mf', '.gcode'].includes(f.file_type)))
       showFeedback(tr('{0} hochgeladen', file.name))
-    } catch (err) { showFeedback(err.response?.data?.detail ?? err.message, false) }
+    } catch (err) { showFeedback(apiError(err), false) }
     finally { setUploading(false) }
   }
 
   /* ── Fortschritt / in Arbeit ──────────────────────────────── */
-  const inFlight = (itemId) => farmJobs.filter(j => j.tag === `proj:${itemId}` && IN_FLIGHT.includes(j.status)).length
+  // Ein Stück einer Mehr-Platten-Datei sind mehrere Jobs (je Platte): nur die letzte
+  // Platte zählt — so wie der Server ein Stück erst mit ihr abhakt.
+  const inFlight = (itemId) => farmJobs.filter(j => j.tag === `proj:${itemId}` && IN_FLIGHT.includes(j.status)
+    && (!j.plateTotal || j.plate === j.plateTotal)).length
   const outstanding = (it) => Math.max(0, (it.quantity || 0) - (it.done || 0) - inFlight(it.id))
 
   const items   = active?.items ?? []
@@ -146,8 +150,12 @@ function Projekt() {
       // geplanten waren weg (#21).
       let added = 0
       for (const it of items) {
-        const n = outstanding(it)
-        if (n > 0) added += (await autofarmService.addJobs({ fileId: it.file_id, count: n, tag: `proj:${it.id}` })).data?.ids?.length ?? 0
+        // Höchstens 50 je Anfrage (Grenze des Servers); bis v1.1.64 scheiterten Mengen
+        // darüber mit 422, nachdem die Positionen davor schon eingereiht waren.
+        for (let n = outstanding(it); n > 0; n -= 50) {
+          const r = await autofarmService.addJobs({ fileId: it.file_id, count: Math.min(n, 50), tag: `proj:${it.id}` })
+          added += r.data?.ids?.length ?? 0
+        }
       }
       const st = await autofarmService.getStatus(1)
       if (st.data?.running) {
@@ -164,7 +172,7 @@ function Projekt() {
         })
         showFeedback(tr('Auto Farm gestartet — {0} Objekt(e) eingereiht', added))
       }
-    } catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+    } catch (e) { showFeedback(apiError(e), false) }
     finally { setPushing(false) }
   }
 

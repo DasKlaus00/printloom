@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { apiError } from '../services/apiError'
 import { onlineService, systemService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 import { timeAgo } from '../services/timeAgo'
@@ -64,7 +65,7 @@ export default function OnlineServices({ setCurrentPage }) {
     try {
       setCfg((await onlineService.saveSettings(patch)).data)
     } catch (e) {
-      setMsg({ text: e.response?.data?.detail ?? e.message, err: true })
+      setMsg({ text: apiError(e), err: true })
     } finally { setBusy(false) }
   }
 

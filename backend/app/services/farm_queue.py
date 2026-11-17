@@ -32,6 +32,14 @@ def _int(v, default=None):
         return default
 
 
+def _float(v, default: float = 0.0) -> float:
+    # Ein kaputter Wert („0,2") in der Datei darf den App-Start nicht verhindern.
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def _height(d: dict):
     """Fachhöhe des Jobs. Die Auto-Farm-Seite speicherte sie bis v1.1.57 als
     computedHeight (mit Zuschlag) bzw. objectHeight (roh); die Farm als
@@ -64,7 +72,7 @@ def normalize_job(d: dict) -> dict:
         "remaining": _int(d.get("remaining"), 0),
         "estimatedMinutes": _int(d.get("estimatedMinutes")),
         "amsMap": str(d.get("amsMap") or ""),
-        "layerHeightMm": float(d.get("layerHeightMm") or 0.0),
+        "layerHeightMm": _float(d.get("layerHeightMm")),
         "object_height_mm": _height(d),
         "plate": _int(d.get("plate")),
         "plateTotal": _int(d.get("plateTotal")),
@@ -144,7 +152,7 @@ def remove(jobs: list, job_id) -> list:
 def reset_failed(jobs: list) -> list:
     """Fehlerhafte Jobs wieder auf „wartet". Fertige NIE (sonst druckt die Farm sie
     ein zweites Mal)."""
-    return [{**j, "status": "pending", "progress": 0, "remaining": 0, "reason": ""}
+    return [{**j, "status": "pending", "progress": 0, "remaining": 0, "reason": "", "slot": "1-0"}
             if j.get("status") == "error" else j for j in jobs]
 
 

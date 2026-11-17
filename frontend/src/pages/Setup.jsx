@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { apiError } from '../services/apiError'
 import { deviceService, rackManagerService, autofarmService, controlService } from '../services/api'
 import { patchGeometry, saveGeometry } from '../services/geometryClient'
 import { useLanguage, setLanguage, availableLanguages, trProblem } from '../services/i18n'
@@ -142,7 +143,7 @@ export default function Setup({ setCurrentPage }) {
       setLimitsMsg(tr('✓ X {0} · Y {1} · Z {2} mm', l.x ?? '—', l.y ?? '—', l.z ?? '—'))
     } catch (e) {
       setLimitsErr(true)
-      setLimitsMsg(e?.response?.data?.detail || e?.message || tr('Fehler'))
+      setLimitsMsg(apiError(e, tr('Fehler')))
     } finally { setLimitsBusy(false) }
   }
 
@@ -151,7 +152,7 @@ export default function Setup({ setCurrentPage }) {
     try {
       setDry((await autofarmService.dryRun({ which: 'both' }))?.data || null)
     } catch (e) {
-      setDry({ error: e?.response?.data?.detail || e?.message || tr('Fehler') })
+      setDry({ error: apiError(e, tr('Fehler')) })
     } finally { setDryBusy(false) }
   }
 
@@ -167,7 +168,7 @@ export default function Setup({ setCurrentPage }) {
       const r = await deviceService.discover(s || undefined)
       setDiscovered(r.data ?? { bambu: [], klipper: [] })
     } catch (e) {
-      setDiscovered({ bambu: [], klipper: [], error: e.response?.data?.detail ?? e.message })
+      setDiscovered({ bambu: [], klipper: [], error: apiError(e) })
     } finally { setDiscovering(false) }
   }
 
@@ -398,7 +399,7 @@ export default function Setup({ setCurrentPage }) {
       window.dispatchEvent(new CustomEvent('printloom:devicesChanged'))
       next()
     } catch (e) {
-      setPErr(e.response?.data?.detail ?? e.message)
+      setPErr(apiError(e))
     } finally { setPSaving(false) }
   }
 
@@ -409,7 +410,7 @@ export default function Setup({ setCurrentPage }) {
       const r = await deviceService.testDevice(bambu.id)
       setPTest(r.data)
     } catch (e) {
-      setPTest({ success: false, message: e.response?.data?.detail ?? e.message })
+      setPTest({ success: false, message: apiError(e) })
     } finally { setPTesting(false) }
   }
 
@@ -426,7 +427,7 @@ export default function Setup({ setCurrentPage }) {
       setDevices(r.data ?? [])
       window.dispatchEvent(new CustomEvent('printloom:devicesChanged'))
     } catch (e) {
-      setKErr(e.response?.data?.detail ?? e.message)
+      setKErr(apiError(e))
     } finally { setKSaving(false) }
   }
 
@@ -437,7 +438,7 @@ export default function Setup({ setCurrentPage }) {
       const r = await deviceService.testDevice(klipperDev.id)
       setKTest(r.data)
     } catch (e) {
-      setKTest({ success: false, message: e.response?.data?.detail ?? e.message })
+      setKTest({ success: false, message: apiError(e) })
     } finally { setKTesting(false) }
   }
 
@@ -465,7 +466,7 @@ export default function Setup({ setCurrentPage }) {
       const r = await autofarmService.getHomingFileInfo()
       setHoming(r.data)
     } catch (e) {
-      setHoming({ configured: false, error: e.response?.data?.detail ?? e.message })
+      setHoming({ configured: false, error: apiError(e) })
     } finally { setHBusy(false) }
   }
 

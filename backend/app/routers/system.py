@@ -286,6 +286,7 @@ _VERSION_CACHE_S = 300.0
 
 
 UPDATE_FAILED_AFTER_S = 600     # so lange darf der Wechsel dauern, dann gilt er als gescheitert
+UPDATE_MARKER_MAX_S = 24 * 3600  # danach wird ein Marker vergessen (nicht ewig „fehlgeschlagen")
 
 
 def _update_marker_path() -> str:
@@ -321,6 +322,9 @@ def update_result(current: str) -> Optional[dict]:
         _clear_update_marker()
         return {"state": "ok", "from": m.get("from_version"), "to": current}
     age = time.time() - float(m.get("at") or 0)
+    if age > UPDATE_MARKER_MAX_S:
+        _clear_update_marker()
+        return None
     state = "failed" if age > UPDATE_FAILED_AFTER_S else "pending"
     return {"state": state, "from": m.get("from_version"), "target_image": m.get("target_image")}
 
@@ -488,7 +492,12 @@ async def trigger_update(body: UpdateIn = UpdateIn()):
 
     Native Desktop-App: lädt das Installer-Asset des passenden GitHub-Release und
     startet es (der Installer schließt die App und ersetzt die Dateien)."""
-    _assert_standstill()
+    # Bleibt nach Erfolg gesetzt: Die App startet ohnehin gleich neu.
+    with _Wartung("Update läuft", keep_on_success=True):
+        return await _trigger_update(body)
+
+
+async def _trigger_update(body: "UpdateIn"):
     if paths.RUNTIME == "native-linux":
         raise HTTPException(
             501,
@@ -500,6 +509,8 @@ async def trigger_update(body: UpdateIn = UpdateIn()):
         if info.get("error"):
             raise HTTPException(502, info["error"])
         if not info.get("update_available"):
+            from app.routers import autofarm
+            autofarm.clear_maintenance()     # nichts zu tun: keine Wartung
             return {"success": False, "reason": "up_to_date", "current": info.get("current")}
         url, asset = info.get("download_url"), info.get("asset_name")
         if not url:
@@ -513,6 +524,8 @@ async def trigger_update(body: UpdateIn = UpdateIn()):
         except Exception as e:
             raise HTTPException(502, f"Installer-Download/Start fehlgeschlagen: {e}")
         _remember_channel(body.channel)
+        from app.routers import autofarm
+        autofarm.clear_maintenance()
         return {"success": True, "method": "native", **res}
     return await _trigger_update_docker(body)
 
@@ -1060,6 +1073,28 @@ def _restore_devices(db, devices: list, settings: dict, name_to_id_out: dict = N
     return n
 
 
+class _Wartung:
+    """Während Update bzw. Einspielen: Start, Stresstest und Handfahrten sperren.
+    Bis v1.1.64 lag zwischen der Stillstand-Prüfung und dem eigentlichen Schreiben
+    bzw. Neustart ein langes await (Image ziehen, Installer laden, Entschlüsseln) —
+    in dem Fenster ließ sich die Farm starten."""
+
+    def __init__(self, what: str, keep_on_success: bool = False):
+        self.what, self.keep = what, keep_on_success
+
+    def __enter__(self):
+        from app.routers import autofarm
+        _assert_standstill()
+        autofarm.set_maintenance(self.what)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        from app.routers import autofarm
+        if exc_type is not None or not self.keep:
+            autofarm.clear_maintenance()
+        return False
+
+
 def _assert_standstill() -> None:
     """Einspielen und Update nur, wenn sich nichts bewegt — auch nicht pausiert (dort
     kann der Arm noch im Bauraum stehen). Bis v1.1.60 ging beides mitten im Lauf:
@@ -1114,7 +1149,25 @@ def _prepare_section(key: str, value):
         errs = geometry_check.check_geometry(merged).get("errors") or []
         return value, (f"Geometrie: {len(errs)} Fehler laut Prüfung — im Drucker-Tab ansehen"
                        if errs else None)
+    if key == "rack_slots":
+        _dry_run_rack(value)
     return value, None
+
+
+def _dry_run_rack(value: dict) -> None:
+    """Regal-Einstellungen aus dem Backup auf einer KOPIE anwenden, bevor irgendetwas
+    geschrieben wird: Würde ein belegtes Fach wegfallen, kommt die 409 jetzt, und
+    nicht erst, nachdem Geräte und Sequenzen schon ersetzt sind (bis v1.1.64)."""
+    import copy
+    from app.services import profiles, rack_store
+    current = copy.deepcopy(rack_store.load()) if rack_store.exists() else rack_store.default_data()
+    body = {k: value[k] for k in profiles._RACK_CONFIG_KEYS if value.get(k) is not None}
+    try:
+        rack_store.apply_config(current, body)
+    except rack_store.RackShrinkConflict as e:
+        raise HTTPException(409, f"Regal nicht übernehmbar: {e}")
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, f"Backup-Regal ungültig: {e}")
 
 
 def _restore_rack_config(value: dict):
@@ -1140,7 +1193,11 @@ async def import_backup(body: dict):
     Zugangsdaten eingespielt (secrets = "skipped")."""
     if not isinstance(body, dict):
         raise HTTPException(400, "Ungültiges Backup")
-    _assert_standstill()
+    with _Wartung("Backup wird eingespielt"):
+        return await _import_backup(body)
+
+
+async def _import_backup(body: dict):
     password = None
     backup = body
     if isinstance(body.get("backup"), dict) and "schema" not in body:

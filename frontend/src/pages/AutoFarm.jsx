@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { apiError } from '../services/apiError'
 import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService, systemService } from '../services/api'
 import { parseNumber, rackSaveError } from '../services/rackForm'
 import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout, GRID_VERSION } from '../components/DashboardGrid'
@@ -1014,7 +1015,7 @@ function AutoFarm({ setCurrentPage } = {}) {
         setJobs(prev => mergeServerJobs(prev, r.data ?? []))
         setQueueLoaded(true)
       })
-      .catch(e => setQueueError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
+      .catch(e => setQueueError(apiError(e)))
   }, [])
   // Antwort einer Änderung (enthält die neue Liste) sofort übernehmen.
   const applyServer = (r) => { if (Array.isArray(r?.data?.jobs)) setJobs(prev => mergeServerJobs(prev, r.data.jobs)) }
@@ -1164,7 +1165,7 @@ function AutoFarm({ setCurrentPage } = {}) {
       if (count > 1) setAddCount(1)
       return r.data?.ids?.length ?? 0
     } catch (e) {
-      showFeedback(e.response?.data?.detail ?? e.message, false)
+      showFeedback(apiError(e), false)
       return 0
     }
   }
@@ -1233,7 +1234,7 @@ function AutoFarm({ setCurrentPage } = {}) {
       applyServer(await autofarmService.deleteJob(id))
     } catch (e) {
       if (e.response?.status === 404) { loadQueue(); return }    // anderswo schon entfernt
-      showFeedback(e.response?.data?.detail ?? e.message, false)
+      showFeedback(apiError(e), false)
     }
   }
 
@@ -1242,7 +1243,7 @@ function AutoFarm({ setCurrentPage } = {}) {
   const syncReorder = (updatedJobs) => {
     autofarmService.setOrder(pendingOrder(updatedJobs))
       .then(applyServer)
-      .catch(e => { showFeedback(e.response?.data?.detail ?? e.message, false); loadQueue() })
+      .catch(e => { showFeedback(apiError(e), false); loadQueue() })
   }
 
   const moveJobUp = (id) => setJobs(prev => {
@@ -1309,7 +1310,7 @@ function AutoFarm({ setCurrentPage } = {}) {
   // Nur Fehlgeschlagene: Ein fertiger Job auf „wartet" würde ein zweites Mal gedruckt.
   const resetJob = async (id) => {
     try { applyServer(await autofarmService.patchJob(id, { retry: true })) }
-    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+    catch (e) { showFeedback(apiError(e), false) }
   }
 
   // Persist the external webcam URL (shared with the Steuerung page via device settings)
@@ -1329,7 +1330,7 @@ function AutoFarm({ setCurrentPage } = {}) {
       confirmLabel: tr('Wiederholen'),
     }))) return
     try { applyServer(await autofarmService.resetFailed()) }
-    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+    catch (e) { showFeedback(apiError(e), false) }
   }
 
   /* ── Rack management ─────────────────────────────────────── */
@@ -1388,7 +1389,7 @@ function AutoFarm({ setCurrentPage } = {}) {
       showFeedback(has ? tr('Fach {0}: keine Leerplatte mehr', slotId)
                        : tr('Fach {0}: Leerplatte liegt drin', slotId))
     } catch (e) {
-      showFeedback(e?.response?.data?.detail || tr('Markierung konnte nicht geändert werden'), false)
+      showFeedback(apiError(e, tr('Markierung konnte nicht geändert werden')), false)
     }
   }
 
@@ -1464,7 +1465,7 @@ function AutoFarm({ setCurrentPage } = {}) {
     // seit dem Öffnen dieser Seite geändert haben.
     let fresh
     try { fresh = await loadSettings() } catch (e) {
-      return showFeedback(e.response?.data?.detail ?? e.message, false)
+      return showFeedback(apiError(e), false)
     }
 
     const preflightErrors = await checkPreflight(bambuId, tr)
@@ -1511,7 +1512,7 @@ function AutoFarm({ setCurrentPage } = {}) {
       await fetchStatus()
       showFeedback(tr('Auto Farm gestartet'))
     } catch (e) {
-      showFeedback(e.response?.data?.detail ?? e.message, false)
+      showFeedback(apiError(e), false)
       // Abgelehnt, weil noch eine Platte im Greifer/Drucker liegt: Hinweis neu laden.
       if (e.response?.status === 409) setRecoveryPing(n => n + 1)
     }
@@ -1519,17 +1520,17 @@ function AutoFarm({ setCurrentPage } = {}) {
 
   const stopFarm = async () => {
     try { await autofarmService.stop(); await fetchStatus() }
-    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+    catch (e) { showFeedback(apiError(e), false) }
   }
 
   const forceReset = async () => {
     try { await autofarmService.forceReset(); await fetchStatus(); showFeedback(tr('Farm-State zurückgesetzt')) }
-    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+    catch (e) { showFeedback(apiError(e), false) }
   }
 
   const togglePause = async () => {
     try { await autofarmService.pause(); await fetchStatus() }
-    catch (e) { showFeedback(e.response?.data?.detail ?? e.message, false) }
+    catch (e) { showFeedback(apiError(e), false) }
   }
   togglePauseRef.current = togglePause
 
@@ -2054,7 +2055,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                           onChange={map => {
                             setJobField(job.id, { amsMap: map })
                             autofarmService.patchJob(job.id, { amsMap: map })
-                              .catch(e => showFeedback(e.response?.data?.detail ?? e.message, false))
+                              .catch(e => showFeedback(apiError(e), false))
                           }}
                         />
                       </div>

@@ -85,11 +85,28 @@ def test_einlagern_nie_in_ein_fach_das_es_nicht_gibt(step, slot, farm):
     assert af._farm["arm"]["holding"] == "printed"
 
 
+def _reserviere(slot, status="printing"):
+    # Echte Lage: _assign_slot_for_height reserviert das Fach während des Drucks.
+    regal = af._rack_data()
+    regal["slots"][slot] = {**regal["slots"][slot], "status": status}
+
+
 def test_einlagern_in_ein_echtes_fach(farm, monkeypatch):
     monkeypatch.setattr(af, "_rack_update", lambda *a, **kw: None)
+    _reserviere("1-2")
     asyncio.run(af._exec_step({"type": "app_op", "value": "store"}, _job("1-2"), Drucker(), True, 20, 0, []))
     assert len(farm) == 1
     assert af._farm["arm"]["holding"] == "none"
+
+
+def test_nie_in_ein_belegtes_fach(farm, monkeypatch):
+    """Seit v1.1.65: Ein altes Fach am Job (nach „↺ Reset") zeigte womöglich auf ein
+    Fach mit fertiger Platte."""
+    monkeypatch.setattr(af, "_rack_update", lambda *a, **kw: None)
+    _reserviere("1-2", "done")
+    with pytest.raises(RuntimeError, match="nicht reserviert"):
+        asyncio.run(af._exec_step({"type": "app_op", "value": "store"}, _job("1-2"), Drucker(), True, 20, 0, []))
+    assert farm == [] and af._farm["arm"]["holding"] == "printed"
 
 
 # ── Keine geratenen Werte ohne Regal-Daten ────────────────────────────────────

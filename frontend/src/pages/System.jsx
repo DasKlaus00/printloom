@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { apiError, apiDetail } from '../services/apiError'
 import { confirmDialog } from '../services/confirm'
 import { systemService, healthService, pushService } from '../services/api'
 import SetupHealth from '../components/SetupHealth'
@@ -244,7 +245,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
     try {
       return await systemService.triggerUpdate(channel)
     } catch (e) {
-      const d = e.response?.data?.detail
+      const d = apiDetail(e)
       if (e.response?.status !== 409 || d?.error !== 'ZURUECKSTUFEN') throw e
       const ok = await confirmDialog({
         title: tr('Zurückstufen?'),
@@ -312,7 +313,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
       URL.revokeObjectURL(url)
       setBackupFeedback({ ok: true, msg: tr('Backup exportiert') })
     } catch (e) {
-      const detail = e.response?.data?.detail || e.message || tr('unbekannter Fehler')
+      const detail = apiError(e, tr('unbekannter Fehler'))
       setBackupFeedback({ ok: false, msg: tr('Export fehlgeschlagen: {0}', detail) })
     } finally {
       setTimeout(() => setBackupFeedback(null), 4000)
@@ -349,7 +350,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
       // nächsten Speichern die alte Geometrie über die eben eingespielte.
       setTimeout(() => window.location.reload(), ohne.length || notes.length || dropped.length ? 9000 : 2500)
     } catch (err) {
-      const detail = err.response?.data?.detail
+      const detail = apiDetail(err)
       if (detail === 'BACKUP_PASSWORT_FALSCH') {
         setBackupFeedback({ ok: false, msg: tr('Passwort falsch — nichts eingespielt.') })
         return   // Eingabe offen lassen, damit man es nochmal versuchen kann
@@ -360,7 +361,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
         return
       }
       setPendingImport(null)
-      setBackupFeedback({ ok: false, msg: tr('Import fehlgeschlagen: {0}', detail || err.message || err) })
+      setBackupFeedback({ ok: false, msg: tr('Import fehlgeschlagen: {0}', apiError(err)) })
     }
   }
 

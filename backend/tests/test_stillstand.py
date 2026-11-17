@@ -125,9 +125,12 @@ def test_update_bei_laufender_farm_wird_abgelehnt(ablage, monkeypatch):
 def test_update_marker(tmp_path, monkeypatch):
     monkeypatch.setattr(system, "_update_marker_path", lambda: str(tmp_path / "update_pending.json"))
     assert system.update_result("1.1.60") is None
-    system._write_update_marker({"from_version": "1.1.60", "target_image": "x:beta", "at": 0})
-    assert system.update_result("1.1.60")["state"] == "failed"      # 10 min um, gleiche Version
     import time
+    system._write_update_marker({"from_version": "1.1.60", "target_image": "x:beta",
+                                 "at": time.time() - 700})
+    assert system.update_result("1.1.60")["state"] == "failed"      # 10 min um, gleiche Version
+    system._write_update_marker({"from_version": "1.1.60", "at": time.time() - 25 * 3600})
+    assert system.update_result("1.1.60") is None                   # nach einem Tag vergessen
     system._write_update_marker({"from_version": "1.1.60", "at": time.time()})
     assert system.update_result("1.1.60")["state"] == "pending"
     assert system.update_result("1.1.61") == {"state": "ok", "from": "1.1.60", "to": "1.1.61"}

@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react'
+import { apiError } from '../services/apiError'
 import { useLanguage, setLanguage, availableLanguages } from '../services/i18n'
 import { fileService } from '../services/api'
 
@@ -181,7 +182,7 @@ function QuickUpload() {
       window.dispatchEvent(new CustomEvent('printloom:fileUploaded'))
       setTimeout(() => setLastFile(null), 4000)
     } catch (e) {
-      setErr(e.response?.data?.detail ?? tr('Upload fehlgeschlagen'))
+      setErr(apiError(e, tr('Upload fehlgeschlagen')))
       setTimeout(() => setErr(null), 4000)
     }
     setUploading(false)

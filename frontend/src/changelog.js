@@ -4,6 +4,27 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.65',
+    de: [
+      'NIE IN EIN BELEGTES FACH: Ein Job beginnt immer ohne Fach, die Farm wählt es live während des Drucks, und eingelagert wird nur in ein Fach, das für genau diesen Druck reserviert ist. Bisher konnte ein Job nach „↺ Reset“ sein altes Fach behalten, in dem inzwischen eine andere Platte lag. Bei einem Job-Fehler gibt die Farm nur noch das reservierte Fach frei, nie eines mit Platte.',
+      'DRUCKER-TAB, ZWEI DRUCKER: „Positionen übernehmen“ übernimmt jetzt sicher die Positionen des gelöschten Geräts. Bisher konnten es die des anderen Druckers sein.',
+      'EIGENER G-CODE WIRD VOR DEM START GEPRÜFT: Ein Schritt „OTTOeject GCode“ oder eigener G-code im Drucker-Tab mit relativen Bewegungen (G91) verhindert den Start bzw. das Speichern der Sequenz. Bisher fiel er erst mitten im Zyklus auf, nach dem Einlagern.',
+      'START OHNE DRUCKERMODELL: Ist das Modell unbekannt (keine Bettbreite für die Kollisionsprüfung), startet die Farm nicht und sagt, wo man es einträgt. Bisher wurde jeder Job sofort als „nicht gedruckt“ verworfen.',
+      'UPDATE UND BACKUP: Während ein Update geladen oder ein Backup eingespielt wird, lassen sich Farm, Stresstest und Handfahrten nicht starten. Ein Backup, dessen Regal belegte Fächer streichen würde, wird abgelehnt, bevor irgendetwas eingespielt ist. „Letztes Update fehlgeschlagen“ verschwindet nach einem Tag.',
+      'PROJEKTE: Mehr als 50 offene Stück werden in Häppchen eingereiht. Bei Dateien mit mehreren Platten zählt ein Stück erst mit seiner letzten Platte als fertig.',
+      'VERSTÄNDLICHE FEHLERMELDUNGEN: Fehler erscheinen überall als Satz, statt als rohes JSON oder „Network Error“, etwa „Server nicht erreichbar“ oder „Zeitüberschreitung“. Ein Prüfungsfehler mit mehreren Feldern stürzt die Seite nicht mehr ab.',
+    ],
+    en: [
+      'NEVER INTO AN OCCUPIED SLOT: a job always starts without a slot, the farm picks it live during the print, and storing only goes into a slot reserved for exactly this print. Until now a job could keep its old slot after “↺ Reset”, where another plate was lying in the meantime. After a job error the farm only frees the reserved slot, never one with a plate.',
+      'PRINTER TAB, TWO PRINTERS: “Adopt positions” now reliably adopts the positions of the deleted device. Until now they could be those of the other printer.',
+      'YOUR OWN G-CODE IS CHECKED BEFORE THE START: an “OTTOeject GCode” step or your own G-code in the printer tab with relative moves (G91) prevents the start or saving the sequence. Until now it only showed up in the middle of a cycle, after storing.',
+      'START WITHOUT A PRINTER MODEL: if the model is unknown (no bed width for the collision check), the farm does not start and says where to enter it. Until now every job was discarded at once as “not printed”.',
+      'UPDATE AND BACKUP: while an update is downloading or a backup is being restored, the farm, the stress test and manual moves cannot be started. A backup whose rack would remove occupied slots is rejected before anything is restored. “Last update failed” disappears after a day.',
+      'PROJECTS: more than 50 open pieces are queued in batches. For files with several plates, a piece only counts as finished with its last plate.',
+      'UNDERSTANDABLE ERROR MESSAGES: errors appear everywhere as a sentence instead of raw JSON or “Network Error”, for example “Server not reachable” or “Timeout”. A validation error with several fields no longer crashes the page.',
+    ],
+  },
+  {
     version: '1.1.64',
     de: [
       'FILAMENTE: Bearbeiten und Löschen treffen immer das angeklickte Filament. Bisher traf „×“ bei gesetztem Filter womöglich ein anderes, und beim Bearbeiten ging die Herkunft (aus dem AMS gelernt) verloren. Die Rückfrage nennt jetzt Marke, Material und Farbe.',

@@ -1,3 +1,4 @@
+import pytest
 import atexit
 import os
 import shutil
@@ -15,3 +16,15 @@ atexit.register(shutil.rmtree, _TEST_DATA, ignore_errors=True)
 
 # Make the backend package root importable regardless of pytest's cwd.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+
+@pytest.fixture(autouse=True)
+def _keine_wartung_zwischen_tests():
+    """Ein erfolgreicher Update-Aufruf lässt die Wartungs-Sperre stehen (im Betrieb
+    startet die App gleich neu). Im Test darf sie nicht in den nächsten hinüber."""
+    yield
+    try:
+        from app.routers import autofarm
+    except Exception:          # Tests ohne FastAPI
+        return
+    autofarm.clear_maintenance()

@@ -290,3 +290,10 @@ def test_kaputte_geometrie_haelt_an_und_wiederholt_nur_diesen_schritt(monkeypatc
     asyncio.run(ablauf())
     assert lauf["schritte"] == ["Parken"]       # genau einmal, nach dem Fortsetzen
     assert af._farm["error"] is None
+
+
+def test_hilfsdatei_bucht_keinen_druck_aufs_bett(senden):
+    """Seit v1.1.65: send_file_fixed (Homing o. Ä.) ist kein Druck; sonst hielt das
+    Einlege-Tor vor jedem Einlegen an."""
+    asyncio.run(af._do_send_file(_job(), Drucker(), False, book_bed=False))
+    assert len(senden["gestartet"]) == 1 and af._farm["bed"] == "empty"

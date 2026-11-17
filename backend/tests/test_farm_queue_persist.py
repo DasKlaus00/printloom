@@ -108,8 +108,10 @@ def test_start_ohne_jobliste_nimmt_die_gespeicherte(liste, monkeypatch):
     neu = af.JobIn(id=99, fileId=4, fileName="nur-im-browser.3mf", slot="1-0")
     r = asyncio.run(af.start_farm(af.StartRequest(bambu_id=1, jobs=[alt, neu])))
     assert r["job_count"] == 2
+    # Der fremde Job bekommt eine Server-ID (nie die aus dem Browser).
     assert [(j["id"], j["status"]) for j in af._farm["jobs"]] == [(1, "pending"), (2, "error"),
-                                                                 (99, "pending")]
+                                                                 (3, "pending")]
+    assert af._farm["jobs"][2]["fileName"] == "nur-im-browser.3mf"
 
 
 def test_stopp_behaelt_wartende_und_macht_laufende_zum_fehler():

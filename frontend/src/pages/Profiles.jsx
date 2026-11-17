@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { apiError } from '../services/apiError'
 import { safeHref } from '../services/safeUrl'
 import { profileService } from '../services/api'
 import { useLanguage } from '../services/i18n'
@@ -198,7 +199,7 @@ function Profiles() {
       setMsg(tr('Profil aus aktueller Konfiguration erzeugt.'))
       return r.data
     } catch (e) {
-      setErr(e.response?.data?.detail ?? e.message)
+      setErr(apiError(e))
       return null
     }
   }
@@ -223,7 +224,7 @@ function Profiles() {
       setLibrary(r.data.profiles || [])
       setMsg(tr('„{0}" in der Bibliothek gespeichert.', p.name))
     } catch (e) {
-      setErr(e.response?.data?.detail ?? e.message)
+      setErr(apiError(e))
     }
   }
 
@@ -253,7 +254,7 @@ function Profiles() {
              + (errs.length ? ' ' + tr('Nicht übernommen: {0}', errs.join('; ')) : ''))
       setPreview(null)
     } catch (e) {
-      setErr(e.response?.data?.detail ?? e.message)
+      setErr(apiError(e))
     }
   }
 
@@ -261,7 +262,7 @@ function Profiles() {
     try {
       const r = await profileService.deleteLocal(name)
       setLibrary(r.data.profiles || [])
-    } catch (e) { setErr(e.response?.data?.detail ?? e.message) }
+    } catch (e) { setErr(apiError(e)) }
   }
 
   return (

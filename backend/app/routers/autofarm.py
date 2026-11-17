@@ -43,7 +43,7 @@ router = APIRouter()
 # Regal-Zustand: app/services/rack_store.py (gemeinsam mit der Regalverwaltung).
 SEQ_PATH      = db_path("farm_sequences.json")
 SETTINGS_PATH = farm_settings.PATH
-QUEUE_PATH    = db_path("farm_queue.json")
+QUEUE_PATH    = farm_queue.PATH      # eine Quelle (services/farm_queue.py)
 LOG_PATH      = db_path("farm_log.txt")
 STATS_PATH    = db_path("farm_stats.json")
 HISTORY_PATH  = db_path("farm_history.json")
@@ -846,6 +846,9 @@ async def _wait_while_paused() -> None:
 
 
 async def _assign_slot_for_height(job: dict, height_mm: float):
+    if not (height_mm and height_mm > 0):
+        # Unbekannt ist nicht 0 mm: Ohne Höhe gäbe es ein Fach, das zu niedrig ist.
+        raise RuntimeError("Höhe des Objekts unbekannt — kein Fach wählbar")
     while not _farm["stopping"]:
         data = _rack_data()
         if not data:
@@ -1027,6 +1030,30 @@ def arm_status() -> dict:
     return {"busy": _arm_lock.locked(), "holder": _arm_holder, "waiting": list(_arm_waiting)}
 
 
+# Wartung (Update, Backup einspielen): sperrt Start, Stresstest und Handfahrten. Läuft
+# von selbst ab: Bricht etwa der Windows-Installer ab, bliebe die Farm sonst bis zum
+# nächsten Neustart gesperrt.
+MAINTENANCE_MAX_S = 600
+
+
+def set_maintenance(what: str) -> None:
+    _farm["_maintenance"] = what
+    _farm["_maintenance_until"] = _time.monotonic() + MAINTENANCE_MAX_S
+
+
+def clear_maintenance() -> None:
+    _farm.pop("_maintenance", None)
+    _farm.pop("_maintenance_until", None)
+
+
+def maintenance_reason() -> Optional[str]:
+    what = _farm.get("_maintenance")
+    if what and _time.monotonic() > _farm.get("_maintenance_until", 0.0):
+        clear_maintenance()
+        return None
+    return what or None
+
+
 def motion_owner(include_paused: bool = False, ignore_farm: bool = False) -> Optional[str]:
     """Wer bewegt den Arm gerade? None = niemand, eine Handfahrt darf los.
 
@@ -1034,6 +1061,8 @@ def motion_owner(include_paused: bool = False, ignore_farm: bool = False) -> Opt
     den Arm gleichzeitig ansteuern; Handfahrten gingen an arm_access vorbei. Eine
     PAUSIERTE Farm gibt den Arm für Handfahrten frei (dafür pausiert man), aber nicht
     den Drucker: Dort kann der Arm noch im Bauraum stehen (include_paused=True)."""
+    if maintenance_reason():
+        return f"{maintenance_reason()} — bitte warten"
     if _stress.get("running") or (_stress_task is not None and not _stress_task.done()):
         return "Stresstest läuft — erst stoppen"
     if ignore_farm:
@@ -1174,7 +1203,7 @@ def _job_manual_map(job: dict) -> str:
     return (job.get("amsMap") or "").strip() or ams_match.file_map(job.get("fileId"))
 
 
-async def _do_send_file(job: dict, device: Device, use_ams: bool):
+async def _do_send_file(job: dict, device: Device, use_ams: bool, book_bed: bool = True):
     """Druckdatei des Jobs hochladen und starten. AMS-Zuordnung: manuell (Job/Datei)
     oder Live-Abgleich; ob überhaupt gedruckt werden DARF, hat _ensure_ams_ready
     vorher geprüft."""
@@ -1260,7 +1289,8 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
         raise RuntimeError("Druckstart fehlgeschlagen")
     # Ab jetzt liegt ein Druck auf dem Bett (bis v1.1.54 nie gebucht: Hinweise nach
     # Skip oder Neustart sagten „leere Platte", obwohl ein Druck darauf lag).
-    _set_bed("printing")
+    if book_bed:
+        _set_bed("printing")
     _log(f"'{file.original_filename}' gestartet (AMS: {ams_mapping})")
 
 
@@ -2486,6 +2516,35 @@ async def _crash_gate(job: dict, device) -> None:
     raise RuntimeError(f"Nicht gedruckt: {grund}")
 
 
+def _assert_overrides_absolute() -> None:
+    """Eigener G-code je Op (Drucker-Tab) mit G91/G92 lässt sich nicht prüfen; build_op
+    lehnt ihn zur Laufzeit ab. Darum schon beim Start, nicht mitten im Zyklus."""
+    try:
+        errors = _geometry_check.check_geometry(_load_farm_geometry()).get("errors") or []
+    except (storage.BrokenFile, RuntimeError, ValueError) as e:
+        logger.warning(f"Geometrie-Prüfung beim Start nicht möglich: {e}")
+        return
+    rel = [e for e in errors if e.get("code") == "relative_move_unchecked"]
+    if rel:
+        raise HTTPException(400, "Eigener G-code nicht prüfbar: " + "; ".join(e["message"] for e in rel[:3]))
+
+
+def _assert_bed_width_known(bambu_id, settings: dict) -> None:
+    """Ohne Bettbreite ist jede Datei „nicht geprüft", und mit der Vorgabe „nicht
+    drucken" erklärte die Farm in Sekunden die ganze Warteschlange zum Fehler."""
+    strategie = (settings.get("error_strategy") or {}).get("crash_risk") or _ERROR_DEFAULTS["crash_risk"]
+    if strategie == "ignore":
+        return
+    db = SessionLocal()
+    try:
+        device = db.query(Device).filter(Device.id == bambu_id).first()
+    finally:
+        db.close()
+    if device is not None and crash_check.x_max_for(device) is None:
+        raise HTTPException(400, "Druckermodell unbekannt — ohne Bettbreite prüft Printloom keine "
+                                 "Kollisionszone. Modell unter Konfiguration → Geräte eintragen.")
+
+
 def _assert_printer_geometry(bambu_id) -> None:
     """Start verweigern, wenn für DIESES Gerät kein Drucker-Block existiert und die
     Farm App-G-code fahren soll.
@@ -2566,6 +2625,20 @@ def _macro_to_op(val: str, rack_num: str, slot_num: str, stack_rack: str, stack_
     return (kind, 1, 1) if kind else None
 
 
+def _release_reserved(slot) -> None:
+    """Ein Fach nach einem Job-Fehler freigeben — aber nur, wenn es für den Druck
+    reserviert war („printing"). Bis v1.1.64 gab die Farm jedes Fach des Jobs frei,
+    auch eines, in dem schon eine Platte lag; der nächste Job legte dann darauf ab."""
+    slot = str(slot or "")
+    if slot in ("", "1-0"):
+        return
+    status = ((_rack_data() or {}).get("slots") or {}).get(slot, {}).get("status")
+    if status == "printing":
+        _rack_update(slot, "free")
+    elif status not in (None, "free"):
+        _log(f"⚠ Fach {slot} bleibt „{status}“ (war nicht für diesen Job reserviert)")
+
+
 def _assert_store_slot(job: dict) -> None:
     """Vor dem Einlagern: Hat der Job ein echtes Fach? Bis v1.1.48 legte der Arm auch
     nach „1-0" (Platzhalter ohne Fach) ab. Dann lieber: Platte bleibt im Greifer, der
@@ -2576,6 +2649,10 @@ def _assert_store_slot(job: dict) -> None:
         raise RuntimeError(f"Kein gültiges Ablagefach ({slot or 'keins'}) — Platte bleibt im Greifer")
     if int(slot.split("-")[1]) == _rack_logic.magazine_slot_of(data):
         raise RuntimeError(f"Fach {slot} ist das Magazin — Platte bleibt im Greifer")
+    status = (data.get("slots") or {}).get(slot, {}).get("status")
+    if status != "printing":
+        # Nur in ein Fach, das für genau diesen Druck reserviert ist.
+        raise RuntimeError(f"Fach {slot} ist nicht reserviert („{status}“) — Platte bleibt im Greifer")
 
 
 def _mark_in_motion(op: Optional[str]) -> None:
@@ -2929,7 +3006,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                 "amsMap":   "",
             }
             _log(f"[↑] Feste Datei senden: {fixed_file.original_filename} (ID {fixed_id})")
-            await _do_send_file(fixed_job, device, False)  # AMS off for utility files
+            # AMS aus; eine Hilfsdatei (Homing o. Ä.) bucht keinen Druck aufs Bett — sonst
+            # hielte das Einlege-Tor vor jedem Einlegen an (bis v1.1.64).
+            await _do_send_file(fixed_job, device, False, book_bed=False)
         finally:
             db.close()
 
@@ -3462,7 +3541,12 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             # Hinweis danach, welcher Job wo stand (bis v1.1.46 immer leer).
             _farm["_current_job_name"] = job.get("fileName") or ""
             _farm["_current_job_slot"] = job.get("slot") or ""
-            _set_job(job["id"], {"status": "running"})
+            # Immer ohne Fach beginnen: Das Fach wählt die Farm live während des Drucks.
+            # Ein altes Fach am Job (nach „↺ Reset", Neustart, Bergung) zeigte bis
+            # v1.1.64 womöglich auf ein inzwischen belegtes Fach — dort hätte der Arm
+            # die fertige Platte abgelegt.
+            _set_job(job["id"], {"status": "running", "slot": "1-0"})
+            cur_slot = "1-0"
             job_started_at = datetime.now()   # wall-clock for the per-file history (B.2)
             job_start_kwh  = await _read_energy_kwh(bambu_id)   # plug energy counter (3.1)
 
@@ -3513,7 +3597,10 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 _rack_update(job["slot"], "done")
                 # Projekt-Fortschritt abhaken (Job trägt tag "proj:<itemId>").
                 tag = job.get("tag") or ""
-                if tag.startswith("proj:"):
+                # Bei Mehr-Platten-Dateien ist ein Stück erst mit seiner letzten Platte
+                # fertig; bis v1.1.64 zählte jede Platte als ein ganzes Stück.
+                letzte = not job.get("plateTotal") or job.get("plate") == job.get("plateTotal")
+                if tag.startswith("proj:") and letzte:
                     try:
                         from app.routers import project
                         project.mark_item_printed(tag[5:])
@@ -3597,7 +3684,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                                   (datetime.now() - job_started_at).total_seconds() / 60.0, msg[:120])
                 _set_job(job["id"], {"status": "error"})
                 if cur_slot:
-                    _rack_update(job["slot"], "free")
+                    _release_reserved(job["slot"])
                 cur_slot = None
                 _farm["current_job_id"] = None
 
@@ -3613,7 +3700,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                                   (datetime.now() - job_started_at).total_seconds() / 60.0, msg[:120])
                 _set_job(job["id"], {"status": "error"})
                 if cur_slot:
-                    _rack_update(job["slot"], "free")
+                    _release_reserved(job["slot"])
                 cur_slot = None
                 _farm["current_job_id"] = None
                 _farm["error"] = msg
@@ -3627,7 +3714,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             if j["status"] in ("running", "sending", "printing"):
                 j["status"] = "error"
         if cur_slot:
-            _rack_update(cur_slot, "free")
+            _release_reserved(cur_slot)
 
     finally:
         # Nie abgeholten Homing-Monitor (nowait ohne wait_homing / Abbruch) beenden.
@@ -3805,7 +3892,7 @@ def _resume_after_move_timeout(job: dict, cur_slot, job_started_at,
                           (datetime.now() - job_started_at).total_seconds() / 60.0, fehler)
         _set_job(job["id"], {"status": "error"})
         if cur_slot:
-            _rack_update(job["slot"], "free")
+            _release_reserved(job["slot"])
     _farm["current_job_id"] = None
 
 
@@ -3847,6 +3934,21 @@ def _validate_sequences(seq_data: dict) -> list:
     if not any(s.get("type") == "send_file" for s in cycle):
         problems.append(_geometry_check.problem("seq_no_send", "error",
                           "Der Zyklus sendet keine Druckdatei (Schritt „Druckdatei senden“ fehlt)"))
+    # Eigener G-code: dieselbe Achsprüfung wie zur Laufzeit, aber VOR dem Lauf. Bis
+    # v1.1.64 fiel ein Schritt mit G91 erst nach dem Einlagern auf, mitten im Zyklus.
+    scripts = [st for name in ("seq_new", "seq_next")
+               for st in _filter_disabled(seq_data.get(name) or [])
+               if st.get("type") == "klipper_gcode"]
+    if scripts:
+        try:
+            geom = _load_farm_geometry()
+        except (storage.BrokenFile, RuntimeError, ValueError) as e:
+            logger.warning(f"Geometrie für die Sequenz-Prüfung nicht lesbar: {e}")
+            geom = None
+        for st in scripts if geom else []:
+            problems += [p for p in _geometry_check.check_script(str(st.get("value") or ""), geom,
+                                                                 "klipper_gcode")
+                         if p.get("severity") == "error"]
     return problems
 
 
@@ -3902,6 +4004,8 @@ async def start_farm(req: StartRequest):
     global _task
     if _farm["running"]:
         raise HTTPException(409, "Auto Farm läuft bereits")
+    if maintenance_reason():
+        raise HTTPException(409, f"{maintenance_reason()} — bitte warten")
     _assert_released()
     if _stress.get("running") or (_stress_task is not None and not _stress_task.done()):
         raise HTTPException(409, "Stresstest läuft — erst stoppen")
@@ -3930,6 +4034,8 @@ async def start_farm(req: StartRequest):
     # v1.1.9 gibt es mehrere; ein Gerät ohne eigenen Block würde sonst still die
     # Koordinaten des ersten Druckers fahren — also gegen den falschen Drucker.
     _assert_printer_geometry(req.bambu_id)
+    _assert_overrides_absolute()
+    _assert_bed_width_known(req.bambu_id, _settings)
     if _plate_left():
         # Bis v1.1.46 setzte der Start Greifer und Bett einfach auf leer.
         _farm["recovery"] = _load_recovery() or _farm.get("recovery")
@@ -3939,7 +4045,7 @@ async def start_farm(req: StartRequest):
     await _assert_printer_idle_for_start(req.bambu_id)
     _assert_queue_ok()
     known = {j["id"] for j in _farm["jobs"]}
-    fremd = [farm_queue.normalize_job(j.model_dump()) for j in req.jobs
+    fremd = [{**farm_queue.normalize_job(j.model_dump()), "id": None} for j in req.jobs
              if j.id not in known and j.status == "pending"]
     if fremd:
         _farm["jobs"], _farm["_queue_next_id"] = farm_queue.with_ids(
@@ -4619,6 +4725,8 @@ async def start_stress_test(body: Optional[StressStartBody] = None):
     # Gerät VOR dem Plan holen: fehlt der Drucker, soll der Test gar nicht erst
     # starten statt mitten im Lauf auf halber Strecke stehenzubleiben.
     _assert_released()
+    if maintenance_reason():
+        raise HTTPException(409, f"{maintenance_reason()} — bitte warten")
     # Nicht während einer Handfahrt (der erste Griff begänne an deren Endposition).
     await _assert_arm_idle_for_start()
     if _plate_left():
@@ -4922,7 +5030,7 @@ async def dry_run(payload: dict = None):
 
     problems = [p for s in steps for p in s["problems"]]
     # Dieselbe Prüfung wie beim Start: Was den Start verweigern würde, steht als Fehler.
-    problems += _validate_sequences(seq_data)
+    problems += [p for p in _validate_sequences(seq_data) if p not in problems]
     # Warnungen als Vorlage + Werte (siehe geometry_check.problem) — sonst blieben
     # sie in jeder Sprache deutsch.
     warnings = []

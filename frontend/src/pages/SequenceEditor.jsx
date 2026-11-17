@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { apiError, apiDetail } from '../services/apiError'
 import { DEFAULT_SEQ_NEW, DEFAULT_SEQ_NEXT } from '../services/sequenceData'
 import { prepAllowed } from '../services/sequenceRules'
 import { autofarmService, controlService } from '../services/api'
@@ -39,16 +40,6 @@ const opLabel = (o) => {
 }
 const appOpLabel = (ops, key) => opLabel(ops.find(o => o.key === key)) || key
 
-// FastAPI-Fehler robust in Text wandeln: `detail` kann ein String, eine Pydantic-
-// Validierungsliste [{type,loc,msg,…}] oder ein Objekt sein. NIE direkt rendern —
-// ein Objekt als React-Child löst „Minified React error #31" aus.
-function errText(e) {
-  const d = e?.response?.data?.detail
-  if (typeof d === 'string') return d
-  if (Array.isArray(d)) return d.map(x => x?.msg || (typeof x === 'string' ? x : JSON.stringify(x))).join('; ')
-  if (d && typeof d === 'object') return d.msg || JSON.stringify(d)
-  return e?.message || translate('Fehler')
-}
 
 const TYPE_META = {
   macro:          { label: 'OTTOeject Makro',  icon: '▶',    color: 'text-violet-400',  bg: 'bg-violet-950/20',  border: 'border-violet-900/40' },
@@ -573,7 +564,7 @@ function SequenceCard({ title, desc, steps, setSteps, defaults, showSlot = true,
       const running = !!r?.data?.running
       setRunFeedback({ ok: true, msg: running ? translate('▶ {0} — läuft…', step.value) : `✓ ${step.value}` })
     } catch (e) {
-      setRunFeedback({ ok: false, msg: errText(e) })
+      setRunFeedback({ ok: false, msg: apiError(e) })
     }
     setTimeout(() => setRunFeedback(null), 3000)
   }
@@ -745,7 +736,7 @@ function SequenceEditor() {
       })
       // Nur nach Erfolg „geladen": Bis v1.1.47 speicherte der Editor nach einem
       // Ladefehler die Vorgabe-Sequenzen über die echten.
-      .catch(e => setLoadError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
+      .catch(e => setLoadError(apiError(e)))
   }, [reloadTick])
 
   const dirty = loaded && snapshot(newSteps, nextSteps) !== baseline
@@ -760,7 +751,7 @@ function SequenceEditor() {
       setSaveMsg(null)
     } catch (e) {
       const st = e.response?.status
-      const d = e.response?.data?.detail
+      const d = apiDetail(e)
       if (st === 409 || st === 428) {
         // Ein anderer Tab (oder das Setup) hat gespeichert: nicht darüber schreiben.
         setSaveMsg({ ok: false, text: tr('Sequenzen wurden inzwischen woanders geändert — neu geladen, deine letzte Änderung ist nicht gespeichert.') })

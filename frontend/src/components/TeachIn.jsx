@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { apiError } from '../services/apiError'
 import { controlService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 
@@ -41,7 +42,7 @@ export default function TeachIn({
       return r.data
     } catch (e) {
       setErr(true)
-      setMsg(e?.response?.data?.detail || tr('Position nicht lesbar'))
+      setMsg(apiError(e, tr('Position nicht lesbar')))
       return null
     }
   }, [tr])
@@ -58,7 +59,7 @@ export default function TeachIn({
       setTimeout(readPos, 350)
     } catch (e) {
       setErr(true)
-      setMsg(e?.response?.data?.detail || tr('Bewegung abgelehnt'))
+      setMsg(apiError(e, tr('Bewegung abgelehnt')))
     } finally { setBusy(false) }
   }
 
@@ -71,7 +72,7 @@ export default function TeachIn({
       setTimeout(readPos, 800)
     } catch (e) {
       setErr(true)
-      setMsg(e?.response?.data?.detail || tr('Anfahren fehlgeschlagen'))
+      setMsg(apiError(e, tr('Anfahren fehlgeschlagen')))
     } finally { setBusy(false) }
   }
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { apiError } from '../services/apiError'
 import { useServerField } from '../services/dirtyField'
 import { fileService, folderService, printerService, deviceService, filamentService, autofarmService } from '../services/api'
 import { useAutoRefresh, usePageActive } from '../services/useAutoRefresh'
@@ -883,7 +884,7 @@ function FileLibrary() {
       const r = await printerService.sendFile(bambuId, file.id, useAms, null, plate)
       showFeedback(plate != null ? tr('Platte {0}: {1}', plate, r.data.message ?? '✓') : r.data.message)
     } catch (e) {
-      showFeedback(e.response?.data?.detail ?? tr('Senden fehlgeschlagen'), false)
+      showFeedback(apiError(e, tr('Senden fehlgeschlagen')), false)
     } finally { setSending(null) }
   }
 
@@ -897,7 +898,7 @@ function FileLibrary() {
       window.dispatchEvent(new CustomEvent('printloom:queueChanged'))
       showFeedback(tr('Platte {0} in die Queue gelegt', plateName || plate))
     } catch (e) {
-      showFeedback(e.response?.data?.detail ?? tr('In die Queue legen fehlgeschlagen'), false)
+      showFeedback(apiError(e, tr('In die Queue legen fehlgeschlagen')), false)
     } finally { setEnqueuing(false) }
   }
 
@@ -929,7 +930,7 @@ function FileLibrary() {
       showFeedback(tr('{0} Job(s) in die Queue gelegt', added))
     } catch (e) {
       window.dispatchEvent(new CustomEvent('printloom:queueChanged'))   // Teil kann drin sein
-      showFeedback(e.response?.data?.detail ?? tr('In die Queue legen fehlgeschlagen'), false)
+      showFeedback(apiError(e, tr('In die Queue legen fehlgeschlagen')), false)
     } finally { setEnqueuing(false) }
   }
 

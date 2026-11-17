@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { apiError } from '../services/apiError'
 import { deviceService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
 import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
@@ -46,7 +47,7 @@ function LanguagePacks() {
         await loadInstalled()
         setStatus({ ok: true, msg: tr('Sprachpaket „{0}" importiert.', pack.code) })
       } catch (e2) {
-        setStatus({ ok: false, msg: e2.response?.data?.detail ?? e2.message })
+        setStatus({ ok: false, msg: apiError(e2) })
       }
     }
     reader.readAsText(file)
@@ -71,7 +72,7 @@ function LanguagePacks() {
       await systemService.deleteLang(code)
       await loadInstalled()
     } catch (e) {
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
+      setStatus({ ok: false, msg: apiError(e) })
     } finally { setBusy(false) }
   }
 
@@ -202,7 +203,7 @@ function FarmSettings() {
       })
       setStatus({ ok: true, msg: tr('Einstellungen gespeichert.') })
     } catch (e) {
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
+      setStatus({ ok: false, msg: apiError(e) })
     } finally { setSaving(false) }
   }
 
@@ -213,7 +214,7 @@ function FarmSettings() {
       setHomingFile({ configured: true, file_id: r.data.file_id, filename: r.data.filename })
       setStatus({ ok: true, msg: tr('Homing-Datei erstellt.') })
     } catch (e) {
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
+      setStatus({ ok: false, msg: apiError(e) })
     } finally { setHomingBusy(false) }
   }
 
@@ -392,7 +393,7 @@ function RegalKonfiguration() {
     } catch (e) {
       // „Speichern" bleibt gesperrt: Es schriebe sonst die Vorgaben dieses Formulars
       // über das echte Regal (bis v1.1.47 möglich).
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
+      setStatus({ ok: false, msg: apiError(e) })
     }
   }
   useEffect(() => { load() }, [])
@@ -615,7 +616,7 @@ function PowerSettings() {
       // sonst erschiene eine frisch eingerichtete Steckdose erst Minuten später.
       window.dispatchEvent(new CustomEvent('printloom:powerChanged'))
     } catch (e) {
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
+      setStatus({ ok: false, msg: apiError(e) })
     } finally { setSaving(false) }
   }
 
@@ -625,13 +626,13 @@ function PowerSettings() {
     try {
       const r = await deviceSettingsService.getPower(bambuId)
       setLive(r.data?.configured ? r.data : { error: tr('Nicht konfiguriert') })
-    } catch (e) { setLive({ error: e.response?.data?.detail ?? e.message }) }
+    } catch (e) { setLive({ error: apiError(e) }) }
   }
 
   const switchPlug = async (on) => {
     if (!bambuId) return
     try { await deviceSettingsService.switchPower(bambuId, on); setTimeout(test, 800) }
-    catch (e) { setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message }) }
+    catch (e) { setStatus({ ok: false, msg: apiError(e) }) }
   }
 
   const num = (key, step = '0.01') => (
@@ -791,7 +792,7 @@ function ErrorStrategy() {
       })
       setStatus({ ok: true, msg: tr('Gespeichert.') })
     } catch (e) {
-      setStatus({ ok: false, msg: e.response?.data?.detail ?? e.message })
+      setStatus({ ok: false, msg: apiError(e) })
     } finally { setSaving(false) }
   }
 
@@ -959,7 +960,7 @@ function Configuration() {
       const r = await deviceService.discover(s || undefined)
       setDiscovered(r.data ?? { bambu: [], klipper: [] })
     } catch (e) {
-      setDiscovered({ bambu: [], klipper: [], error: e.response?.data?.detail ?? e.message })
+      setDiscovered({ bambu: [], klipper: [], error: apiError(e) })
     } finally { setDiscovering(false) }
   }
 
@@ -1055,7 +1056,7 @@ function Configuration() {
       // Abschnitt JE angelegtem Drucker und muss das sofort mitbekommen.
       window.dispatchEvent(new CustomEvent('printloom:devicesChanged'))
     } catch (e) {
-      setError(e.response?.data?.detail ?? (editId != null ? 'Failed to update device' : 'Failed to add device'))
+      setError(apiError(e, editId != null ? tr('Gerät konnte nicht gespeichert werden') : tr('Gerät konnte nicht angelegt werden')))
     } finally {
       setSaving(false)
     }
@@ -1074,7 +1075,7 @@ function Configuration() {
       const r = await deviceService.testDevice(id)
       setTestResults(prev => ({ ...prev, [id]: r.data }))
     } catch (e) {
-      setTestResults(prev => ({ ...prev, [id]: { success: false, message: e.response?.data?.detail ?? e.message } }))
+      setTestResults(prev => ({ ...prev, [id]: { success: false, message: apiError(e) } }))
     } finally {
       setTesting(null)
     }
@@ -1423,7 +1424,7 @@ function Configuration() {
                   <button onClick={async () => {
                     setHaTest(prev => ({ ...prev, [bambu.id]: 'loading' }))
                     try { const r = await printerService.haCameraTest(bambu.id); setHaTest(prev => ({ ...prev, [bambu.id]: r.data })) }
-                    catch (e) { setHaTest(prev => ({ ...prev, [bambu.id]: { ok: false, detail: e.response?.data?.detail || String(e) } })) }
+                    catch (e) { setHaTest(prev => ({ ...prev, [bambu.id]: { ok: false, detail: apiError(e) } })) }
                   }} className="btn btn-ghost btn-sm text-xs">{tr('Testen')}</button>
                   {haTest[bambu.id] === 'loading'
                     ? <span className="text-[10px] text-surface-500">{tr('prüfe …')}</span>

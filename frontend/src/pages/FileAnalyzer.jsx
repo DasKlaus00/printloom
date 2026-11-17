@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { apiError } from '../services/apiError'
 import { fileService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 
@@ -290,7 +291,7 @@ function FileAnalyzer() {
       const r = await fileService.deepAnalyze(id)
       setData(r.data)
     } catch (e) {
-      setData({ error: e.response?.data?.detail ?? tr('Analyse fehlgeschlagen') })
+      setData({ error: apiError(e, tr('Analyse fehlgeschlagen')) })
     } finally {
       setLoading(false)
     }

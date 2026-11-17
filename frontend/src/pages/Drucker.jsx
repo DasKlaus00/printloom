@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
+import { apiError } from '../services/apiError'
 import { useLanguage, trProblem } from '../services/i18n'
 import { controlService, rackManagerService, deviceService, printerService,
          autofarmService } from '../services/api'
@@ -115,7 +116,7 @@ function StressTest({ open, onToggle, busy }) {
 
   const ladePlan = (mit = mitDrucker) => autofarmService.stressPlan(mit)
     .then(r => { setPlan(r.data); setMsg('') })
-    .catch(e => setMsg(e.response?.data?.detail || e.message))
+    .catch(e => setMsg(apiError(e)))
 
   // Die Schätzung hängt am Haken — beim Umschalten neu rechnen lassen.
   useEffect(() => { if (open) ladePlan(mitDrucker) }, [open, mitDrucker])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -154,12 +155,12 @@ function StressTest({ open, onToggle, busy }) {
       if (r.data?.moves) setPlan(r.data)
       setState({ running: true, done: 0, total: r.data?.moves?.length ?? anzahl })
       setMsg('')
-    } catch (e) { setMsg(e.response?.data?.detail || e.message) }
+    } catch (e) { setMsg(apiError(e)) }
   }
 
   const stopp = async () => {
     try { await autofarmService.stressStop(); setMsg(tr('Stoppt nach der laufenden Bewegung…')) }
-    catch (e) { setMsg(e.response?.data?.detail || e.message) }
+    catch (e) { setMsg(apiError(e)) }
   }
 
   const anzahl = plan?.moves?.length ?? 0
@@ -406,7 +407,7 @@ function PrinterSettingsPanel({ deviceId, printerName, canCalibrate }) {
       setS(r.data?.settings ?? {})
     } catch (e) {
       setOnline(false)
-      setMsg({ text: e.response?.data?.detail ?? e.message, err: true })
+      setMsg({ text: apiError(e), err: true })
     }
   }
   useEffect(() => { if (open) load() /* eslint-disable-next-line */ }, [open, deviceId])
@@ -422,7 +423,7 @@ function PrinterSettingsPanel({ deviceId, printerName, canCalibrate }) {
       setTimeout(load, 1500)   // Drucker meldet den neuen Zustand kurz danach
     } catch (e) {
       setS(o => ({ ...o, [key]: prev }))
-      setMsg({ text: e.response?.data?.detail ?? e.message, err: true })
+      setMsg({ text: apiError(e), err: true })
     } finally { setBusy(null) }
   }
 
@@ -433,7 +434,7 @@ function PrinterSettingsPanel({ deviceId, printerName, canCalibrate }) {
       const r = await printerService.calibrate(deviceId, calib)
       setMsg({ text: r.data?.message || tr('Kalibrierung gestartet'), err: false })
     } catch (e) {
-      setMsg({ text: e.response?.data?.detail ?? e.message, err: true })
+      setMsg({ text: apiError(e), err: true })
     } finally { setCalibBusy(false) }
   }
 
@@ -1162,7 +1163,7 @@ export default function Drucker() {
       // Erst nach Erfolg darf gespeichert werden. Bis v1.1.47 auch nach einem
       // Ladefehler: Dann schrieb der Tab die Vorgabe-Geometrie über die eingemessene.
       hydrated.current = true
-    }).catch(e => setLoadError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
+    }).catch(e => setLoadError(apiError(e)))
   }, [])
   useEffect(() => {
     // Erst speichern, wenn ALLES geladen ist: Geometrie, Regalzahl und Geräteliste.
@@ -1185,7 +1186,7 @@ export default function Drucker() {
           // seine alte Kopie zurück). Andere Fehler ebenfalls sichtbar (vorher .catch(() => {})).
           if (e?.response?.status === 409) setGeomStale(true)
           else setJog({ busy: false, err: true,
-                        msg: tr('Geometrie nicht gespeichert: {0}', e?.response?.data?.detail?.detail || e?.response?.data?.detail || e?.message) })
+                        msg: tr('Geometrie nicht gespeichert: {0}', apiError(e)) })
         })
     }, 600)
     return () => clearTimeout(t)
@@ -1207,7 +1208,7 @@ export default function Drucker() {
         magazine_counts: Array.isArray(d.magazine_counts) ? d.magazine_counts : [],
       })
       setRackReady(true)
-    }).catch(e => setLoadError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
+    }).catch(e => setLoadError(apiError(e)))
     load()
     window.addEventListener('printloom:rackConfigSaved', load)
     return () => window.removeEventListener('printloom:rackConfigSaved', load)
@@ -1224,7 +1225,7 @@ export default function Drucker() {
           .map(d => ({ id: d.id, name: d.name, model: d.model || '' })))
         setDevicesReady(true)
       })
-      .catch(e => setLoadError(e.response?.data?.detail ?? e.message ?? 'Fehler'))
+      .catch(e => setLoadError(apiError(e)))
     load()
     deviceService.listModels().then(r => setModels(r.data?.models || [])).catch(() => {})
     window.addEventListener('printloom:devicesChanged', load)
@@ -1241,7 +1242,7 @@ export default function Drucker() {
       if (r?.data?.script) setLastScript(r.data.script)
       setJog({ busy: false, msg: tr('✓ {0}', label), err: false })
     } catch (e) {
-      const detail = e?.response?.data?.detail || e?.message || tr('Fehler')
+      const detail = apiError(e, tr('Fehler'))
       setJog({ busy: false, msg: detail, err: true })
     }
   }
@@ -1263,7 +1264,7 @@ export default function Drucker() {
       }
       setJog({ busy: false, msg: tr('✓ Magazin R{0}', r), err: false })
     } catch (e) {
-      const detail = e?.response?.data?.detail || e?.message || tr('Fehler')
+      const detail = apiError(e, tr('Fehler'))
       setJog({ busy: false, msg: detail, err: true })
     }
   }
@@ -1279,7 +1280,7 @@ export default function Drucker() {
       if (r?.data?.gcode) setLastScript(r.data.gcode)
       setJog({ busy: false, msg: tr('✓ Gesendet: {0}', g), err: false })
     } catch (e) {
-      const detail = e?.response?.data?.detail || e?.message || tr('Fehler')
+      const detail = apiError(e, tr('Fehler'))
       setJog({ busy: false, msg: detail, err: true })
     }
   }
@@ -1293,7 +1294,7 @@ export default function Drucker() {
       await printerService.sendGcode(deviceId, gcode)
       setJog({ busy: false, msg: tr('✓ {0}', label), err: false })
     } catch (e) {
-      const detail = e?.response?.data?.detail || e?.message || tr('Fehler')
+      const detail = apiError(e, tr('Fehler'))
       setJog({ busy: false, msg: detail, err: true })
     }
   }
@@ -1307,7 +1308,7 @@ export default function Drucker() {
       setLimits(l)
       setLimitsMsg(tr('✓ Vom Gerät: X {0} · Y {1} · Z {2} mm', l.x ?? '—', l.y ?? '—', l.z ?? '—'))
     } catch (e) {
-      setLimitsMsg(e?.response?.data?.detail || e?.message || tr('Fehler'))
+      setLimitsMsg(apiError(e, tr('Fehler')))
     } finally { setLimitsBusy(false) }
   }
 

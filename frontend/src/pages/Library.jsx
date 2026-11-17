@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { apiError } from '../services/apiError'
 import { onlineService, systemService, profileService, autofarmService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 import { timeAgo } from '../services/timeAgo'
@@ -66,7 +67,7 @@ export default function Library({ setCurrentPage }) {
       // Zähler je Art, ohne pro Filterklick neu abzurufen.
       setData((await onlineService.getLibrary(null, refresh)).data)
     } catch (e) {
-      setData({ items: [], error: e.response?.data?.detail ?? e.message })
+      setData({ items: [], error: apiError(e) })
     } finally { setLoading(false) }
   }, [allowed])
   useEffect(() => { load(false) }, [load])
@@ -90,7 +91,7 @@ export default function Library({ setCurrentPage }) {
       setPreview({ item: r.data.item, content: r.data.content, loading: false })
     } catch (e) {
       setPreview(null)
-      setMsg({ text: e.response?.data?.detail ?? e.message, err: true })
+      setMsg({ text: apiError(e), err: true })
     }
   }
 
@@ -128,7 +129,7 @@ export default function Library({ setCurrentPage }) {
       }
       setPreview(null)
     } catch (e) {
-      setMsg({ text: e.response?.data?.detail ?? e.message, err: true })
+      setMsg({ text: apiError(e), err: true })
     } finally { setBusy(false) }
   }
 

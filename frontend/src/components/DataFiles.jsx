@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { apiError } from '../services/apiError'
 import { systemService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
@@ -39,7 +40,7 @@ export default function DataFiles() {
       load()
       window.dispatchEvent(new CustomEvent('printloom:brokenFile', { detail: {} }))
     } catch (e) {
-      pushToast(e.response?.data?.detail ?? e.message, 'error')
+      pushToast(apiError(e), 'error')
     } finally { setBusy('') }
   }
 

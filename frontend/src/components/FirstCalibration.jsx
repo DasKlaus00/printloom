@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react'
+import { apiError } from '../services/apiError'
 import { controlService } from '../services/api'
 import { patchGeometry as patchGeometryRev } from '../services/geometryClient'
 import { useLanguage } from '../services/i18n'
@@ -51,7 +52,7 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
       if (!ok && r?.data?.message) setErr(r.data.message)
     } catch (e) {
       setHoming('err')
-      setErr(e?.response?.data?.detail || e?.message || tr('Fehler'))
+      setErr(apiError(e, tr('Fehler')))
     }
   }
 
@@ -66,7 +67,7 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
       if (!r) throw new Error(tr('Geometrie nicht lesbar'))
       return true
     } catch (e) {
-      setErr(e?.response?.data?.detail || e?.message || tr('Fehler'))
+      setErr(apiError(e, tr('Fehler')))
       return false
     } finally { setBusy(false) }
   }, [tr])

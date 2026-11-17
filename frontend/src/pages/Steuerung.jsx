@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { apiError } from '../services/apiError'
 import { controlService, printerService, deviceService, deviceSettingsService, klipperConfigService } from '../services/api'
 import { useLanguage, locale } from '../services/i18n'
 import EmergencyStop from '../components/EmergencyStop'
@@ -78,7 +79,7 @@ function AmsPanel({ units, activeSlot, deviceId }) {
       const r = await fn()
       setMsg({ text: `✓ ${r?.data?.message || label}`, err: false })
     } catch (e) {
-      setMsg({ text: e?.response?.data?.detail || e?.message || tr('Fehler'), err: true })
+      setMsg({ text: apiError(e, tr('Fehler')), err: true })
     } finally { setBusy(false) }
   }
   const loadSlot = (gid) =>
@@ -180,7 +181,7 @@ function KlipperConfigViewer() {
       const r = await klipperConfigService.listConfigs()
       setFiles(r.data.files ?? [])
     } catch (e) {
-      setError(e.response?.data?.detail ?? e.message)
+      setError(apiError(e))
       setFiles([])
     } finally { setLoading(false) }
   }
@@ -191,7 +192,7 @@ function KlipperConfigViewer() {
       const r = await klipperConfigService.readConfig(filename)
       setContent(r.data.content)
     } catch (e) {
-      setError(e.response?.data?.detail ?? e.message)
+      setError(apiError(e))
     } finally { setLoading(false) }
   }
 
@@ -421,7 +422,7 @@ export default function Steuerung() {
       await printerService.sendGcode(bambuDevice.id, cmd)
       showFeedback(tr('{0} — gesendet', label))
     } catch (e) {
-      showFeedback(e.response?.data?.detail ?? e.message, false)
+      showFeedback(apiError(e), false)
     } finally { setExecuting(null) }
   }
 
@@ -431,7 +432,7 @@ export default function Steuerung() {
       const r = await controlService.executeMacro({ macro_name: name })
       showFeedback(r.data.success ? tr('{0} — OK', name) : r.data.message, r.data.success)
     } catch (e) {
-      showFeedback(e.response?.data?.detail ?? e.message, false)
+      showFeedback(apiError(e), false)
     } finally { setExecuting(null) }
   }
 
@@ -441,7 +442,7 @@ export default function Steuerung() {
       const r = await controlService.executeMacro({ macro_name: name })
       showFeedback(r.data.success ? tr('{0} — OK', label) : r.data.message, r.data.success)
     } catch (e) {
-      showFeedback(e.response?.data?.detail ?? e.message, false)
+      showFeedback(apiError(e), false)
     } finally { setMacroRunning(null) }
   }
 
@@ -452,7 +453,7 @@ export default function Steuerung() {
       showFeedback(tr('{0} — gesendet', label))
       setTimeout(fetchPos, 1500)
     } catch (e) {
-      showFeedback(e.response?.data?.detail ?? e.message, false)
+      showFeedback(apiError(e), false)
     } finally { setJogBusy(false) }
   }
 

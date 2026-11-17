@@ -1,4 +1,5 @@
 import { tr } from './i18n'
+import { apiDetail } from './apiError'
 
 /* Regal-Formulare: Eingaben prüfen, bevor etwas gespeichert wird (seit v1.1.50).
    ─────────────────────────────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ export function parseRackForm(fields, limits = {}) {
 /* Fehlertext einer abgelehnten Regal-Speicherung. Bei 409 „Verkleinern über belegte
    Fächer" schickt das Backend {detail, slots} — als Objekt nicht direkt anzeigbar. */
 export function rackSaveError(e) {
-  const d = e?.response?.data?.detail
+  const d = apiDetail(e)
   if (d && typeof d === 'object') {
     if (Array.isArray(d.slots) && d.slots.length) {
       return tr('Fächer {0} sind belegt — erst im Rack Manager leeren', d.slots.join(', '))

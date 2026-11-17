@@ -133,6 +133,8 @@ def test_haenger_vor_dem_druck_beginnt_den_job_neu(hänger, monkeypatch):
 
 
 def test_haenger_nach_dem_druckstart_endet_als_fehler(hänger, monkeypatch):
+    # Echte Lage: Das Fach des Jobs ist für den Druck reserviert („printing").
+    monkeypatch.setattr(af, "_rack_data", lambda: {"slots": {"2-3": {"status": "printing"}}})
     job = _job(status="printing")
     monkeypatch.setitem(af._farm, "jobs", [job])
     af._resume_after_move_timeout(job, "2-3", datetime.now())

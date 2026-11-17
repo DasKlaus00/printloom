@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { apiError } from '../services/apiError'
 import { autofarmService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 import { usePageActive } from '../services/useAutoRefresh'
@@ -44,7 +45,7 @@ export default function PrinterOverview() {
       setPlan(r.data)
       if (apply) { setTimeout(() => setPlan(null), 4000); load() }
     } catch (e) {
-      setPlan({ error: e?.response?.data?.detail || e.message })
+      setPlan({ error: apiError(e) })
     } finally { setBusy(false) }
   }
 
