@@ -129,7 +129,7 @@ async def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Device name already exists")
     data = device.model_dump()
     data["model"] = _clean_model(data.get("model"), data.get("serial_number")) or None
-    db_device = Device(**data)
+    db_device = Device(id=device_settings.next_device_id(db), **data)
     db.add(db_device)
     db.commit()
     db.refresh(db_device)
@@ -162,6 +162,19 @@ async def delete_device(device_id: int, db: Session = Depends(get_db)):
     db_device = db.query(Device).filter(Device.id == device_id).first()
     if not db_device:
         raise HTTPException(status_code=404, detail="Device not found")
+    # Was am Gerät hängt, mit abräumen: Einstellungen (sonst erbt sie ein neues Gerät),
+    # die MQTT-Verbindung und laufende Kamera-Streams.
+    ip, code = db_device.ip_address, db_device.access_code
+    try:
+        bambu_manager.drop(db_device)
+    except Exception as e:
+        logger.warning(f"MQTT-Verbindung von Gerät {device_id} nicht geschlossen: {e}")
+    try:
+        from app.services import camera_hub
+        camera_hub.drop_for_device(ip, code)
+    except Exception as e:
+        logger.warning(f"Kamera-Hub von Gerät {device_id} nicht beendet: {e}")
+    device_settings.delete(db, device_id)
     db.delete(db_device)
     db.commit()
     return {"message": "Device deleted successfully"}

@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.51',
+    de: [
+      'GERÄTE LÖSCHEN RÄUMT AUF: Mit dem Gerät verschwinden jetzt auch seine Einstellungen (Kamera-Adresse, Steckdose, Home-Assistant), die Verbindung zum Drucker und laufende Kamera-Streams. Bisher blieben sie stehen.',
+      'Gerätenummern werden nie wiederverwendet. Bisher bekam ein neues Gerät die Nummer des zuletzt gelöschten — und erbte dessen Einstellungen und die Drucker-Positionen im Drucker-Tab.',
+      'BACKUP AUF EINEM NEUEN RECHNER: Die Drucker-Positionen werden beim Einspielen den Geräten über ihren Namen zugeordnet. Bisher konnten sie auf einer frischen Installation auf ein falsches Gerät zeigen. Was sich nicht zuordnen lässt, nennt die Meldung.',
+      'Nach dem Einspielen eines Backups lädt die Seite neu. Bisher konnte eine im Hintergrund offene Seite (etwa der Drucker-Tab) beim nächsten Speichern ihre alte Kopie über das eingespielte Backup schreiben.',
+    ],
+    en: [
+      'DELETING A DEVICE CLEANS UP: its settings (camera address, smart plug, Home Assistant), the connection to the printer and running camera streams now go with it. Until now they stayed behind.',
+      'Device numbers are never reused. Until now a new device got the number of the last deleted one — and inherited its settings and the printer positions in the Printer tab.',
+      'BACKUP ON A NEW COMPUTER: printer positions are matched to the devices by name when restoring. Until now they could point to the wrong device on a fresh installation. Anything that cannot be matched is named in the message.',
+      'After restoring a backup the page reloads. Until now a page left open in the background (such as the Printer tab) could write its old copy over the restored backup on its next save.',
+    ],
+  },
+  {
     version: '1.1.50',
     de: [
       'REGAL-EINGABEN LÖSCHEN NICHTS MEHR: Wer die Zahl der Regale oder Fächer verkleinert, über Fächer, in denen etwas liegt, bekommt eine Meldung mit den Fächern („erst im Rack Manager leeren“). Bisher wurden sie still gelöscht; die Platte lag weiter im Regal, und Printloom legte später darauf ab.',

@@ -209,6 +209,16 @@ def get_hub(key, make_producer, first_frame_timeout: float) -> FrameHub:
     return hub
 
 
+def drop_for_device(ip, code) -> int:
+    """Alle Hubs eines Geräts beenden (Schlüssel = (backend, ip, code)). → Anzahl."""
+    with _hubs_lock:
+        treffer = [h for k, h in list(_hubs.items())
+                   if isinstance(k, tuple) and len(k) >= 3 and k[1] == ip and k[2] == code]
+    for h in treffer:
+        h.close()
+    return len(treffer)
+
+
 def find_hub(key) -> Optional[FrameHub]:
     """Laufenden Hub für `key` zurückgeben (für Snapshots), ohne einen zu starten."""
     with _hubs_lock:

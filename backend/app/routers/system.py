@@ -759,6 +759,9 @@ def _export_devices(db) -> tuple:
     secrets = {"devices": {}, "device_settings": {}}
     for d in db.query(Device).all():
         devices.append({
+            # Die alte ID: Beim Einspielen auf einer frischen Datenbank zeigt die
+            # Geometrie (printers[].device_id) sonst auf fremde oder keine Geräte.
+            "id":            d.id,
             "name":          d.name,
             "device_type":   d.device_type.value if d.device_type else None,
             "model":         d.model,
@@ -857,7 +860,32 @@ def _merge_secrets(backup: dict, password: Optional[str]) -> tuple:
     return devices, settings, "restored"
 
 
-def _restore_devices(db, devices: list, settings: dict) -> int:
+def _remap_geometry(geometry: dict, devices: list, name_to_id: dict) -> tuple:
+    """printers[].device_id der eingespielten Geometrie auf die NEUEN Geräte-IDs
+    umschreiben: über die alte ID aus dem Backup, sonst über den Namen des Blocks.
+    → (Geometrie, Namen der Blöcke ohne Zuordnung)."""
+    old_to_name = {d.get("id"): d.get("name") for d in devices or [] if d.get("id") is not None}
+    g = dict(geometry)
+    unmapped = []
+    printers = []
+    for blk in g.get("printers") or []:
+        if not isinstance(blk, dict):
+            printers.append(blk)
+            continue
+        blk = dict(blk)
+        name = old_to_name.get(blk.get("device_id")) or blk.get("name")
+        new_id = name_to_id.get(name)
+        if blk.get("device_id") is not None or name:
+            if new_id is None:
+                unmapped.append(blk.get("name") or str(blk.get("device_id")))
+            blk["device_id"] = new_id
+        printers.append(blk)
+    if "printers" in g:
+        g["printers"] = printers
+    return g, unmapped
+
+
+def _restore_devices(db, devices: list, settings: dict, name_to_id_out: dict = None) -> int:
     """Geräte über den Namen anlegen/aktualisieren, dann ihre Einstellungen unter der
     (evtl. neuen) ID ablegen. Zugangsdaten, die das Backup nicht mitbringt, bleiben
     wie sie sind — ein Backup ohne Zugangsdaten darf keine löschen."""
@@ -879,7 +907,7 @@ def _restore_devices(db, devices: list, settings: dict) -> int:
             dtype = None
         row = db.query(Device).filter(Device.name == name).first()
         if not row:
-            row = Device(name=name)
+            row = Device(id=device_settings.next_device_id(db), name=name)
             # Neue Geräte übernehmen den Zustand der Anlage: frei, außer ein Notaus
             # steht an. Ein Backup aus einem Notaus-Zustand (ältere Backups enthalten
             # `is_active`) sperrt so keine frische Anlage.
@@ -905,6 +933,8 @@ def _restore_devices(db, devices: list, settings: dict) -> int:
         if did and isinstance(s, dict):
             _, kept = credentials.split(device_settings.get(db, did))
             device_settings.put(db, did, {**kept, **s})
+    if name_to_id_out is not None:
+        name_to_id_out.update(name_to_id)
     return n
 
 
@@ -925,12 +955,22 @@ async def import_backup(body: dict):
     # Zuerst entschlüsseln: ein falsches Passwort soll NICHTS halb einspielen.
     devices, settings, secrets_state = _merge_secrets(backup, password)
     restored = []
+    unmapped = []
 
     if devices:
         db = SessionLocal()
         try:
-            count = _restore_devices(db, devices, settings)
+            name_to_id: dict = {}
+            count = _restore_devices(db, devices, settings, name_to_id)
             restored.append(f"devices ({count})")
+            # Geometrie an die (evtl. neuen) Geräte-IDs anpassen, bevor sie geschrieben
+            # wird. Bis v1.1.50 zeigten Drucker-Blöcke nach dem Einspielen auf einer
+            # frischen Datenbank auf falsche Geräte (oder auf keins).
+            if isinstance(backup.get("geometry"), dict):
+                for d in db.query(Device).all():
+                    name_to_id.setdefault(d.name, d.id)
+                backup = {**backup}
+                backup["geometry"], unmapped = _remap_geometry(backup["geometry"], devices, name_to_id)
         finally:
             db.close()
 
@@ -940,7 +980,8 @@ async def import_backup(body: dict):
             _safe_write_json(path, backup[key])
             restored.append(key)
 
-    return {"success": True, "restored": restored, "secrets": secrets_state}
+    return {"success": True, "restored": restored, "secrets": secrets_state,
+            "unmapped_printers": unmapped}
 
 
 # ─── Multi-target health (printer · klipper) ─────────────────────────────────

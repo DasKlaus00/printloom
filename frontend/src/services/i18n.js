@@ -1438,6 +1438,9 @@ const EN_STRINGS = {
   'Regal {0}: {1}': 'Rack {0}: {1}',
   'muss über den Fächern liegen (> {0}) oder 0 sein': 'must be above the slots (> {0}) or 0',
   'Fächer {0} sind belegt — erst im Rack Manager leeren': 'Slots {0} are occupied — empty them in the Rack Manager first',
+  // Backup und Geräte (seit v1.1.51)
+  'Ohne passendes Gerät (Positionen im Drucker-Tab zuordnen): {0}.': 'Without a matching device (assign the positions in the Printer tab): {0}.',
+  'Die Seite lädt gleich neu.': 'The page will reload shortly.',
   // Setup auf bestehender Anlage (seit v1.1.50)
   'Magazin jetzt voll bestückt?': 'Magazine fully loaded now?',
   'Soll der Bestand jedes Magazins auf {0} Platten gesetzt werden? „Abbrechen" lässt den heutigen Bestand stehen.': 'Set the stock of every magazine to {0} plates? “Cancel” keeps the current stock.',

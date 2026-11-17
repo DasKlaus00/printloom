@@ -39,6 +39,36 @@ def put(db, device_id: int, settings: dict) -> None:
     db.commit()
 
 
+def delete(db, device_id: int) -> None:
+    """Einstellungen eines gelöschten Geräts entfernen. Bis v1.1.50 blieben sie stehen,
+    und ein neues Gerät mit derselben ID erbte Kamera-URL, Steckdose und HA-Token."""
+    db.query(SystemConfig).filter(SystemConfig.key == key(device_id)).delete()
+    db.commit()
+
+
+def next_device_id(db) -> int:
+    """Nächste Geräte-ID über eine Hochwassermarke: Eine ID wird nie wiederverwendet.
+    SQLite vergibt sonst nach dem Löschen des höchsten Geräts dieselbe Nummer neu, und
+    Geometrie-Blöcke, die noch auf die alte ID zeigen, gehörten plötzlich dem neuen."""
+    from app.models.models import Device
+    from sqlalchemy import func
+    row = db.query(SystemConfig).filter(SystemConfig.key == HWM_KEY).first()
+    try:
+        hwm = int(row.value) if row else 0
+    except (TypeError, ValueError):
+        hwm = 0
+    top = db.query(func.max(Device.id)).scalar() or 0
+    new = max(hwm, int(top)) + 1
+    if row:
+        row.value = str(new)
+    else:
+        db.add(SystemConfig(key=HWM_KEY, value=str(new)))
+    return new
+
+
+HWM_KEY = "device_id_hwm"
+
+
 def read(device_id: int) -> dict:
     """Wie get(), mit eigener Sitzung — für Abläufe außerhalb eines Requests (Farm)."""
     from app.db.database import SessionLocal

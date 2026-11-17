@@ -287,9 +287,15 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
       const r = await systemService.importBackup(data, password)
       setPendingImport(null)
       setImportPw('')
+      const ohne = r.data?.unmapped_printers || []
       setBackupFeedback({ ok: true, msg: tr('Backup wiederhergestellt (v{0}, exportiert: {1})', data.current_version ?? '?', data.exported_at?.split('T')[0] ?? '?')
-        + ' ' + (SECRETS_STATE[r.data?.secrets] ?? '') })
-      setTimeout(() => setBackupFeedback(null), 8000)
+        + ' ' + (SECRETS_STATE[r.data?.secrets] ?? '')
+        + (ohne.length ? ' ' + tr('Ohne passendes Gerät (Positionen im Drucker-Tab zuordnen): {0}.', ohne.join(', ')) : '')
+        + ' ' + tr('Die Seite lädt gleich neu.') })
+      // Neu laden: Versteckt geöffnete Seiten (Drucker-Tab, Sequenz-Editor, Auto Farm)
+      // halten noch ihre alte Kopie. Bis v1.1.50 schrieb etwa der Drucker-Tab beim
+      // nächsten Speichern die alte Geometrie über die eben eingespielte.
+      setTimeout(() => window.location.reload(), ohne.length ? 6000 : 2500)
     } catch (err) {
       const detail = err.response?.data?.detail
       if (detail === 'BACKUP_PASSWORT_FALSCH') {
