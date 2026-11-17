@@ -50,8 +50,11 @@ def pull_image(image: str) -> tuple[bool, str]:
         msg = str(e)
         low = msg.lower()
         if "unauthorized" in low or "denied" in low or "forbidden" in low:
+            # Gezogen wird vom Docker-Dienst des Hosts mit dessen Anmeldung — ein
+            # GITHUB_TOKEN im Container hilft hier nicht (bis v1.1.73 stand das so da).
             hint = ("Image konnte nicht gezogen werden (kein Zugriff). Ist das "
-                    "ghcr-Package öffentlich? Sonst GITHUB_TOKEN mit 'read:packages' setzen.")
+                    "ghcr-Package öffentlich? Bei einem privaten Fork auf dem Host "
+                    "einmal `docker login ghcr.io` ausführen.")
         elif "not found" in low or "manifest unknown" in low:
             hint = f"Image/Tag nicht gefunden: {image}"
         else:
@@ -105,18 +108,88 @@ def spawn_helper(target_image: str, container_name: str) -> None:
     logger.info(f"Update-Helfer gestartet: {target_image} → {container_name}")
 
 
+def _own_env(container_env, image_env) -> list:
+    """Nur die Env-Einträge, die der Container selbst gesetzt hat. Was wörtlich so im
+    alten Image steht, kommt aus dem Image — das neue Image bringt seine eigenen
+    Werte mit. Bis v1.1.73 wurde die ganze Env übernommen und fror damit z. B. PATH
+    oder Versions-Variablen des alten Images im neuen Container ein."""
+    base = set(image_env or [])
+    return [e for e in (container_env or []) if e not in base]
+
+
+def _own_labels(container_labels, image_labels) -> dict:
+    """Labels, die nicht (gleich) aus dem alten Image stammen. Sonst trüge der neue
+    Container das alte org.opencontainers.image.version — die App zeigte die alte
+    Version als installiert."""
+    base = image_labels or {}
+    return {k: v for k, v in (container_labels or {}).items() if base.get(k) != v}
+
+
+def _mount_args(hostcfg: dict) -> list:
+    """HostConfig.Mounts als docker.types.Mount. Compose v2 legt benannte Volumes
+    hier ab statt in Binds — ohne diese Übernahme startete der neue Container ohne
+    sein Daten-Volume. Ziele, die schon über Binds kommen, werden ausgelassen."""
+    from docker.types import Mount
+    bound = {b.split(":")[1] for b in (hostcfg.get("Binds") or []) if b.count(":") >= 1}
+    out = []
+    for m in hostcfg.get("Mounts") or []:
+        target = m.get("Target")
+        if not target or target in bound:
+            continue
+        kind = (m.get("Type") or "volume").lower()
+        out.append(Mount(
+            target=target, source=m.get("Source") or None, type=kind,
+            read_only=bool(m.get("ReadOnly")),
+            propagation=(m.get("BindOptions") or {}).get("Propagation") if kind == "bind" else None,
+            no_copy=bool((m.get("VolumeOptions") or {}).get("NoCopy")) if kind == "volume" else False,
+        ))
+    return out
+
+
+def _host_args(hostcfg: dict, cfg: dict) -> dict:
+    """Weitere Einstellungen des alten Containers in docker-py-Parameter (7.1.0).
+    Nur Gesetztes wird übergeben; ohne Wert gilt der Standard des Dienstes."""
+    devices = [f"{d.get('PathOnHost')}:{d.get('PathInContainer')}:{d.get('CgroupPermissions') or 'rwm'}"
+               for d in (hostcfg.get("Devices") or []) if d.get("PathOnHost")]
+    log = hostcfg.get("LogConfig") or {}
+    args = {
+        "user": cfg.get("User") or None,
+        "cap_add": hostcfg.get("CapAdd") or None,
+        "cap_drop": hostcfg.get("CapDrop") or None,
+        "security_opt": hostcfg.get("SecurityOpt") or None,
+        "extra_hosts": hostcfg.get("ExtraHosts") or None,
+        "dns": hostcfg.get("Dns") or None,
+        "devices": devices or None,
+        "mem_limit": hostcfg.get("Memory") or None,
+        "nano_cpus": hostcfg.get("NanoCpus") or None,
+        "log_config": ({"Type": log["Type"], "Config": log.get("Config") or {}}
+                       if log.get("Type") else None),
+    }
+    mounts = _mount_args(hostcfg)
+    if mounts:
+        args["mounts"] = mounts
+    return {k: v for k, v in args.items() if v is not None}
+
+
 def recreate(new_image: str, name: str) -> None:
     """Pull `new_image` and recreate container `name` with the same config.
     Intended to run INSIDE the helper container."""
     client = _client()
+    old = client.containers.get(name)
+    # Vor dem Pull merken: Danach zeigt der Tag schon auf das neue Image.
+    old_image_id = getattr(getattr(old, "image", None), "id", None)
     logger.info(f"Ziehe Image {new_image} …")
     client.images.pull(new_image)
 
-    old = client.containers.get(name)
     info = old.attrs
     cfg = info.get("Config", {})
     hostcfg = info.get("HostConfig", {})
     nets = info.get("NetworkSettings", {}).get("Networks", {}) or {}
+    try:
+        image_cfg = client.images.get(old_image_id).attrs.get("Config") or {} if old_image_id else {}
+    except Exception as e:   # altes Image schon weg → alles als eigene Einstellung behandeln
+        logger.warning(f"Altes Image {old_image_id} nicht lesbar ({e}) — übernehme die ganze Konfiguration")
+        image_cfg = {}
 
     # ports: {"8000/tcp": [{"HostIp":"", "HostPort":"8000"}]} → {"8000/tcp": "8000"}
     ports = {}
@@ -137,25 +210,28 @@ def recreate(new_image: str, name: str) -> None:
         image=new_image,
         name=name,
         detach=True,
-        environment=cfg.get("Env"),
-        labels=cfg.get("Labels") or {},
+        environment=_own_env(cfg.get("Env"), image_cfg.get("Env")) or None,
+        labels=_own_labels(cfg.get("Labels"), image_cfg.get("Labels")),
         volumes=hostcfg.get("Binds") or [],
         ports=ports or None,
         restart_policy={"Name": restart.get("Name")} if restart.get("Name") else None,
         healthcheck=None,  # inherited from the image
+        **_host_args(hostcfg, cfg),
     )
     if network:
         run_kwargs["network"] = network
-    if cfg.get("Entrypoint"):
+    # Entrypoint/Cmd nur, wenn der Container sie selbst überschrieben hat — sonst
+    # gilt der des NEUEN Images (bis v1.1.73 wurde der alte eingefroren).
+    if cfg.get("Entrypoint") and cfg.get("Entrypoint") != image_cfg.get("Entrypoint"):
         run_kwargs["entrypoint"] = cfg.get("Entrypoint")
-    if cfg.get("Cmd"):
+    if cfg.get("Cmd") and cfg.get("Cmd") != image_cfg.get("Cmd"):
         run_kwargs["command"] = cfg.get("Cmd")
     run_kwargs = {k: v for k, v in run_kwargs.items() if v is not None}
 
     # Für den Rollback die ID des laufenden Images, nicht den Tag: Nach dem Pull zeigt
     # „:beta" schon auf das NEUE Image, ein Rollback per Tag startete wieder das
     # kaputte (bis v1.1.60).
-    old_image = getattr(getattr(old, "image", None), "id", None) or cfg.get("Image")
+    old_image = old_image_id or cfg.get("Image")
 
     logger.info(f"Stoppe & entferne alten Container {name} …")
     try:

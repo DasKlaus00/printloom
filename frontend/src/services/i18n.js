@@ -1903,6 +1903,7 @@ const EN_STRINGS = {
   'Änderungen übernehmen': 'Apply changes',
   'Druckdateien ablegen, prüfen und in die Warteschlange legen.': 'Store print files, check them and put them in the queue.',
   'Farbe unbekannt': 'Color unknown',
+  'Der Build für v{0} ist fehlgeschlagen — es gibt dafür kein Image. Die installierte Version läuft weiter.': 'The build for v{0} failed — there is no image for it. The installed version keeps running.',
   'Preise nicht geladen.': 'Prices not loaded.',
   'Maschine': 'Machine',
   '{0} Regale · {1} Fächer · Magazin-Fach {2} — Anzahl in Konfiguration → Allgemein → Regal-Konfiguration': '{0} racks · {1} slots · magazine slot {2} — count under Configuration → General → Rack configuration',

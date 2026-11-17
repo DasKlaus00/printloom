@@ -538,6 +538,12 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
             {tr('v{0} wird gerade gebaut (dauert 3–8 Minuten) — danach erneut prüfen.', info.building)}
           </p>
         )}
+        {/* Seit v1.1.74: Ein gescheiterter Build stand vorher für immer als „wird gebaut“ da. */}
+        {info?.build_failed && !info.error && !['done', 'running'].includes(phase) && (
+          <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+            {tr('Der Build für v{0} ist fehlgeschlagen — es gibt dafür kein Image. Die installierte Version läuft weiter.', info.build_failed)}
+          </p>
+        )}
 
         {phase === 'running' && (
           <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">

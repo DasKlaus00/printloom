@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.74',
+    de: [
+      'UPDATE IM DOCKER BEHÄLT, WAS DU EINGESTELLT HAST: Der Update-Helfer übernimmt nur noch die eigenen Einstellungen des Containers (Umgebung, Labels, Befehl) statt alles vom alten Image. Bisher konnte der neue Container das alte Versions-Label tragen und so die alte Version anzeigen. Benannte Volumes (Docker Compose v2), zusätzliche Hosts, Log-Einstellungen, Geräte, Rechte und Speichergrenzen werden jetzt mitgenommen.',
+      'GESCHEITERTER BUILD WIRD ERKANNT: Bei eingeschalteter Update-Prüfung heißt ein fehlgeschlagener Build nicht mehr endlos „wird gebaut“, sondern „Build fehlgeschlagen — die installierte Version läuft weiter“.',
+      'Richtige Hinweise bei fehlendem Zugriff auf das Image: „Package öffentlich? Bei privatem Fork auf dem Host docker login ghcr.io“ statt eines GITHUB_TOKEN, der den Container gar nicht erreicht.',
+    ],
+    en: [
+      'DOCKER UPDATE KEEPS WHAT YOU SET: the update helper now only carries over the container’s own settings (environment, labels, command) instead of everything from the old image. Until now the new container could carry the old version label and show the old version. Named volumes (Docker Compose v2), extra hosts, log settings, devices, capabilities and memory limits are now carried over.',
+      'FAILED BUILD IS DETECTED: with the update check enabled, a failed build no longer shows “being built” forever but “build failed — the installed version keeps running”.',
+      'Correct hints when the image cannot be pulled: “Is the package public? For a private fork run docker login ghcr.io on the host” instead of a GITHUB_TOKEN that never reaches the container.',
+    ],
+  },
+  {
     version: '1.1.73',
     de: [
       'KEINE ZUGANGSDATEN IM LOG: Das Passwort einer Tasmota-Steckdose und der Access-Code des Druckers konnten in Fehlermeldungen und im Log stehen (die Steckdose meldete ihre ganze Adresse samt Passwort, ffmpeg die Kamera-Adresse samt Access-Code). Jetzt werden Passwörter, Tokens und Zugangsdaten in Adressen vor dem Schreiben durch *** ersetzt — auch in Meldungen fremder Bibliotheken und in Fehlerberichten.',

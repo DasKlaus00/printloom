@@ -82,16 +82,25 @@ def test_building_nur_wenn_der_branch_neuer_ist():
     assert system._building(None, "1.1.40") is None
 
 
-def _beta(monkeypatch, remote, branch, local):
+LAEUFT = {"status": "in_progress", "conclusion": None}
+
+
+def _beta(monkeypatch, remote, branch, local, run=LAEUFT):
     async def image(tag):
         return remote
 
     async def branch_version(name):
         return branch
 
+    async def last_build(name):
+        assert name == "beta"
+        return run
+
     monkeypatch.setattr(system, "_ghcr_image", image)
     monkeypatch.setattr(system, "_branch_version", branch_version)
     monkeypatch.setattr(system, "_running_beta_digest", lambda: local)
+    # Kein echter Aufruf an die Actions-API aus dem Test heraus
+    monkeypatch.setattr(system, "_last_build", last_build)
     return asyncio.run(system._check_beta("1.1.39"))
 
 
@@ -200,3 +209,76 @@ def test_nativer_kanal_wird_gespeichert(tmp_path, monkeypatch):
     assert system._running_channel() == "latest"
     system._remember_channel("beta")
     assert system._running_channel() == "beta"
+
+
+# ── gescheiterter Build (seit v1.1.74) ─────────────────────────────────────
+
+def test_beta_meldet_einen_gescheiterten_build(monkeypatch):
+    digest = "sha256:" + "a" * 64
+    r = _beta(monkeypatch, {"digest": digest, "version": "1.1.39"}, "1.1.40", digest,
+              run={"status": "completed", "conclusion": "failure"})
+    assert r["building"] is None
+    assert r["build_failed"] == "1.1.40"
+    assert r["update_available"] is False
+
+
+def test_erfolgreicher_letzter_lauf_heisst_weiter_wird_gebaut(monkeypatch):
+    # Lauf fertig, Image aber noch nicht da (Registry hinkt nach) → weiter „wird gebaut“
+    digest = "sha256:" + "a" * 64
+    r = _beta(monkeypatch, {"digest": digest, "version": "1.1.39"}, "1.1.40", digest,
+              run={"status": "completed", "conclusion": "success"})
+    assert r["building"] == "1.1.40" and r["build_failed"] is None
+
+
+def test_ohne_ausstehenden_build_wird_github_nicht_gefragt(monkeypatch):
+    gefragt = []
+
+    async def last_build(name):
+        gefragt.append(name)
+        return None
+
+    async def image(tag):
+        return {"digest": "sha256:" + "b" * 64, "version": "1.1.40"}
+
+    async def branch_version(name):
+        return "1.1.40"
+
+    monkeypatch.setattr(system, "_ghcr_image", image)
+    monkeypatch.setattr(system, "_branch_version", branch_version)
+    monkeypatch.setattr(system, "_running_beta_digest", lambda: None)
+    monkeypatch.setattr(system, "_last_build", last_build)
+    r = asyncio.run(system._check_beta("1.1.39"))
+    assert r["building"] is None and r["build_failed"] is None
+    assert gefragt == []
+
+
+def test_last_build_liest_den_letzten_lauf(monkeypatch):
+    import httpx
+    gesehen = {}
+
+    def handler(request):
+        gesehen["url"] = str(request.url)
+        return httpx.Response(200, json={"workflow_runs": [
+            {"status": "completed", "conclusion": "failure", "head_sha": "abc"}]})
+    echt = httpx.AsyncClient
+    monkeypatch.setattr(system.httpx, "AsyncClient",
+                        lambda **kw: echt(transport=httpx.MockTransport(handler), **kw))
+    assert asyncio.run(system._last_build("beta")) == {"status": "completed", "conclusion": "failure"}
+    assert "/actions/workflows/docker-publish.yml/runs" in gesehen["url"]
+    assert "branch=beta" in gesehen["url"]
+
+
+def test_pull_hinweis_ohne_github_token(monkeypatch):
+    from app.services import updater
+
+    class Images:
+        def pull(self, image):
+            raise RuntimeError("denied: permission_denied")
+
+    class Client:
+        images = Images()
+    monkeypatch.setattr(updater, "_client", lambda: Client())
+    ok, hint = updater.pull_image("ghcr.io/x/printloom:beta")
+    assert ok is False
+    assert "GITHUB_TOKEN" not in hint
+    assert "docker login ghcr.io" in hint

@@ -181,7 +181,7 @@ async def _check_beta(current: str) -> dict:
         # Weder lokaler Digest (kein Socket) noch Version im Image → anbieten.
         result["update_available"] = True
         result["note"] = "Installierter Beta-Stand unbekannt — Update zieht den neuesten Beta-Build."
-    result["building"] = _building(branch, remote["version"])
+    result.update(await _build_state("beta", branch, remote["version"]))
     return result
 
 
@@ -190,6 +190,36 @@ def _building(branch_version: Optional[str], image_version: Optional[str]) -> Op
     if branch_version and image_version and _is_newer(branch_version, image_version):
         return branch_version
     return None
+
+
+async def _last_build(branch: str) -> Optional[dict]:
+    """Letzter Lauf von docker-publish.yml auf `branch`: {status, conclusion} oder
+    None. Nur im Opt-in-Pfad (eingeschaltete Update-Prüfung) und nur, wenn ein Build
+    überhaupt aussteht."""
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/docker-publish.yml/runs"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(url, params={"branch": branch, "per_page": 1},
+                                 headers={"Accept": "application/vnd.github+json"})
+        if r.status_code == 200:
+            runs = r.json().get("workflow_runs") or []
+            if runs:
+                return {"status": runs[0].get("status"), "conclusion": runs[0].get("conclusion")}
+    except Exception as e:
+        logger.info(f"Build-Status für {branch} nicht lesbar: {e}")
+    return None
+
+
+async def _build_state(branch: str, branch_version: Optional[str],
+                       image_version: Optional[str]) -> dict:
+    """{building, build_failed}. Bis v1.1.73 hieß ein gescheiterter Build für immer
+    „wird gebaut“ — man wartete auf ein Image, das nie kam."""
+    building = _building(branch_version, image_version)
+    if building:
+        run = await _last_build(branch)
+        if run and run.get("status") == "completed" and run.get("conclusion") == "failure":
+            return {"building": None, "build_failed": building}
+    return {"building": building, "build_failed": None}
 
 
 @router.get("/running-version")
@@ -419,8 +449,8 @@ async def _check_stable(current: str) -> dict:
             if r.status_code in (401, 403):
                 result["error"] = (
                     f"GitHub lehnt ab (HTTP {r.status_code}: {detail or 'kein Zugriff'}). "
-                    "Repo privat → Token mit 'repo'-Scope in .env setzen, ODER Repo auf "
-                    "öffentlich stellen (dann ist kein Token nötig)."
+                    "Repo privat → GITHUB_TOKEN (Scope 'repo') in docker-compose.yml unter "
+                    "environment eintragen, ODER Repo öffentlich stellen (dann ist kein Token nötig)."
                 )
             elif r.status_code == 404:
                 result["error"] = (
@@ -446,8 +476,8 @@ async def _check_stable(current: str) -> dict:
             # Ein Update zieht :latest, nicht den Tag. Ist das Image noch älter als
             # der Tag (Build läuft), gäbe es nach dem Klick nichts Neues.
             image = await _ghcr_image("latest")
-            result["building"] = _building(latest, image and image["version"])
-            if result["building"]:
+            result.update(await _build_state("main", latest, image and image["version"]))
+            if result["building"] or result["build_failed"]:
                 result["update_available"] = _is_newer(image["version"], current)
         else:
             result["error"] = "Keine passenden Versions-Tags im Repo gefunden"
