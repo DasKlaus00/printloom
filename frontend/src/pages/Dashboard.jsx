@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { fmtEur, fmtKwh } from '../services/format'
+import { costBreakdown } from '../services/costs'
 import { PageTitle } from '../components/PageHeader'
 import { deviceService, printerService, rackManagerService, autofarmService,
          systemService } from '../services/api'
@@ -11,13 +13,6 @@ import { ResponsiveDashboardGrid, HOME_PANELS, HOME_LAYOUTS,
          mergeHomeLayouts } from '../components/DashboardGrid'
 import { mergeChange, shouldPersist } from '../services/dashboardLayout'
 
-function fmtMin(min) {
-  if (!min || min <= 0) return '—'
-  if (min < 60) return `${Math.round(min)} min`
-  const h = Math.floor(min / 60)
-  const m = Math.round(min % 60)
-  return m > 0 ? `${h}h ${m}m` : `${h}h`
-}
 
 /* Printer utilization over the last 24h. Reconstructs active spans by pairing
    print_start with the next print_done/error/farm_stop; renders them on a time bar
@@ -391,11 +386,11 @@ export default function Dashboard() {
                 </div>
                 <div className="flex justify-between text-[11px] font-mono text-surface-500 gap-2">
                   <span className="text-surface-300">
-                    {remaining > 0 ? tr('~{0} verbleibend', fmtMin(remaining)) : tr('Fast fertig…')}
+                    {remaining > 0 ? tr('~{0} verbleibend', fmtDur(remaining * 60) ?? '—') : tr('Fast fertig…')}
                   </span>
                   {totalWithOverhead > 0 && (
                     <span className="text-surface-600 text-right">
-                      {tr('{0} wartend · ~{1} gesamt', pendingJobs.length, fmtMin(remaining + totalWithOverhead))}
+                      {tr('{0} wartend · ~{1} gesamt', pendingJobs.length, fmtDur((remaining + totalWithOverhead) * 60) ?? '—')}
                     </span>
                   )}
                 </div>
@@ -513,7 +508,7 @@ export default function Dashboard() {
                   </span>
                   {(j.estimatedMinutes ?? 0) > 0 && (
                     <span className="text-[10px] text-surface-600 font-mono shrink-0">
-                      ~{fmtMin(j.estimatedMinutes)}
+                      ~{fmtDur(j.estimatedMinutes * 60) ?? '—'}
                     </span>
                   )}
                 </div>
@@ -630,7 +625,7 @@ export default function Dashboard() {
                   <p className="text-[10px] text-surface-600 mt-0.5">{tr('Erfolgsrate')}</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xl font-bold font-mono text-blue-400">{fmtMin(stats.total_print_min)}</p>
+                  <p className="text-xl font-bold font-mono text-blue-400">{fmtDur(stats.total_print_min * 60) ?? '—'}</p>
                   <p className="text-[10px] text-surface-600 mt-0.5">{tr('Druckzeit gesamt')}</p>
                 </div>
                 <div className="text-center">
@@ -664,16 +659,12 @@ export default function Dashboard() {
         <div key="costs" className="panel-fill">
           {!(stats && stats.total_jobs > 0)
             ? <Empty label={tr('Energie & Kosten')} hint={tr('Noch keine abgeschlossenen Jobs.')} />
+            : !costCfg
+            ? <Empty label={tr('Energie & Kosten')} hint={tr('Preise nicht geladen.')} />
             : (() => {
-          const kwh   = stats.total_kwh || 0
-          const grams = stats.total_filament_g || 0
-          const price = costCfg?.power_price_eur_kwh ?? 0.30
-          const mRate = costCfg?.machine_rate_eur_h ?? 0
-          const fPrice = costCfg?.filament_price_eur_kg ?? 0
-          const eCost = kwh * price
-          const mCost = (stats.total_print_min / 60) * mRate
-          const fCost = (grams / 1000) * fPrice
-          const total = eCost + mCost + fCost
+          const c = costBreakdown(stats, costCfg)
+          const { kwh, grams } = c
+          const fPrice = costCfg.filament_price_eur_kg ?? 0
           // Wie viele erfolgreiche Jobs ihren Verbrauch überhaupt beigetragen haben.
           // Fremdformate und alte Slicer liefern keinen — das wird benannt statt als
           // 0 g verbucht, sonst sähe eine unvollständige Rechnung vollständig aus.
@@ -682,23 +673,30 @@ export default function Dashboard() {
           return (
             <div className="card h-full">
               <p className="section-label mb-2">{tr('Energie & Kosten')}</p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+              {/* auto-fit statt sm:grid-cols-4: Ein Fenster-Breakpoint passt nicht in ein Panel. */}
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-2 text-center">
                 <div>
-                  <p className="text-base font-bold font-mono text-amber-400">{kwh.toFixed(1)}</p>
+                  <p className="text-base font-bold font-mono text-amber-400">{fmtKwh(kwh)}</p>
                   <p className="text-[10px] text-surface-600">{tr('kWh gesamt')}</p>
                 </div>
                 <div>
-                  <p className="text-base font-bold font-mono text-amber-400">{eCost.toFixed(2)} €</p>
+                  <p className="text-base font-bold font-mono text-amber-400">{fmtEur(c.energy)}</p>
                   <p className="text-[10px] text-surface-600">{tr('Stromkosten')}</p>
                 </div>
+                {(costCfg.machine_rate_eur_h ?? 0) > 0 && (
+                  <div>
+                    <p className="text-base font-bold font-mono text-violet-400">{fmtEur(c.machine)}</p>
+                    <p className="text-[10px] text-surface-600">{tr('Maschine')}</p>
+                  </div>
+                )}
                 <div>
-                  <p className="text-base font-bold font-mono text-blue-400">{fCost.toFixed(2)} €</p>
+                  <p className="text-base font-bold font-mono text-blue-400">{fmtEur(c.material)}</p>
                   <p className="text-[10px] text-surface-600">
                     {grams > 0 ? tr('Material ({0} g)', Math.round(grams)) : tr('Material')}
                   </p>
                 </div>
                 <div>
-                  <p className="text-base font-bold font-mono text-surface-200">{total.toFixed(2)} €</p>
+                  <p className="text-base font-bold font-mono text-surface-200">{fmtEur(c.total)}</p>
                   <p className="text-[10px] text-surface-600">{tr('Gesamtkosten')}</p>
                 </div>
               </div>

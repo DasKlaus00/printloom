@@ -24,6 +24,7 @@ from app.models.models import Device, PrinterType, UploadedFile
 from app.paths import db_path
 from app.routers.printer import capture_snapshot, publish_live_status
 from app.services import ams_match, bambu_manager, device_settings, farm_queue, farm_settings, hms
+from app.services.timestamps import aware_iso, as_aware, as_aware_iso, now_iso
 from app.services import crash_check, print_file, printer_guard, rack_store, storage
 from app.services import geometry_check as _geometry_check
 from app.services import ottoeject_motion as _motion
@@ -169,7 +170,7 @@ def _record_success(print_min: int = 0, kwh: float = 0.0, filament_g=None):
         s["total_filament_g"] = round(s.get("total_filament_g", 0.0) + max(0.0, float(filament_g)), 2)
         s["filament_jobs"]    = s.get("filament_jobs", 0) + 1
     if not s.get("since"):
-        s["since"] = datetime.now().isoformat()
+        s["since"] = now_iso()
     _write_stats(s)
 
 
@@ -266,7 +267,7 @@ def _record_failure(error_msg: str = ""):
         errs[key] = errs.get(key, 0) + 1
         s["errors"] = errs
     if not s.get("since"):
-        s["since"] = datetime.now().isoformat()
+        s["since"] = now_iso()
     _write_stats(s)
 
 
@@ -344,7 +345,7 @@ def _record_event(etype: str, job: str = "", detail: str = ""):
     try:
         events = storage.read_json(TIMELINE_PATH, [])
         events.append({
-            "ts":     datetime.now().isoformat(),
+            "ts":     now_iso(),
             "type":   etype,
             "job":    job or "",
             "detail": detail or "",
@@ -395,7 +396,7 @@ def _persist_state():
             "bed":            _farm.get("bed") or "empty",
             "needs_home":     bool(_farm.get("needs_home")),
             "bambu_id":       _farm.get("bambu_id"),
-            "saved_at":       datetime.now().isoformat(),
+            "saved_at":       now_iso(),
         })
     except Exception as e:
         logger.warning(f"farm state persist failed: {e}")
@@ -519,7 +520,7 @@ def _record_hms(code: str, severity: str, text: str, action: str = ""):
         if not isinstance(items, list):
             items = []
         items.insert(0, {
-            "ts":       datetime.now().isoformat(),
+            "ts":       now_iso(),
             "code":     code,
             "severity": severity,
             "text":     text or "",
@@ -559,8 +560,9 @@ def _record_completed(job: dict, status: str, started_at, ended_at,
         items = storage.read_json(COMPLETED_PATH, [])
         if not isinstance(items, list):
             items = []
-        s_iso = started_at.isoformat() if hasattr(started_at, "isoformat") else (started_at or "")
-        e_iso = ended_at.isoformat() if hasattr(ended_at, "isoformat") else (ended_at or "")
+        # Der Zyklus rechnet mit naiver Serverzeit; gespeichert wird mit Offset.
+        s_iso = aware_iso(started_at) if isinstance(started_at, datetime) else (started_at or "")
+        e_iso = aware_iso(ended_at) if isinstance(ended_at, datetime) else (ended_at or "")
         items.insert(0, {
             "fileId":     job.get("fileId"),
             "fileName":   job.get("fileName", ""),
@@ -582,8 +584,11 @@ def _record_completed(job: dict, status: str, started_at, ended_at,
 
 
 def _log(msg: str):
-    ts  = datetime.now().strftime("%H:%M:%S")
-    day = datetime.now().strftime("%Y-%m-%d")
+    # Uhrzeit in der Zeitzone des Nutzers (Einstellung „timezone", sonst Serverzeit).
+    # Bis v1.1.71 Serverzeit — im Docker meist UTC, im Sommer zwei Stunden daneben.
+    now = _now_in_tz(_user_tz())
+    ts  = now.strftime("%H:%M:%S")
+    day = now.strftime("%Y-%m-%d")
     entry = f"{ts} — {msg}"
     _farm["log"].insert(0, entry)
     if len(_farm["log"]) > 200:
@@ -592,8 +597,9 @@ def _log(msg: str):
     try:
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(f"{day} {entry}\n")
-    except Exception:
-        pass
+    except OSError as e:
+        # Das Live-Log oben hat den Eintrag; nur die Datei fehlt.
+        logger.debug(f"farm.log nicht schreibbar: {e}")
 
 
 # ── Warteschlange: immer geladen, jede Änderung sofort in der Datei (seit v1.1.58) ──
@@ -1822,18 +1828,38 @@ def _eject_recovery_steps(seq_next: list) -> list:
 
 
 # ── Betriebszeiten (Roadmap 2.5) ─────────────────────────────
-def _local_now() -> datetime:
-    """Aktuelle Zeit in der Zeitzone des Nutzers. Der Container läuft meist in UTC;
-    ohne diese Korrektur würden die Betriebszeiten gegen UTC geprüft (Bug: Farm
-    startet erst Stunden später). Fällt ohne/ungültige TZ auf die Containerzeit zurück."""
-    tz = _farm.get("operating_tz")
+def _now_in_tz(tz: str) -> datetime:
+    """Jetzt (naiv) in der IANA-Zeitzone `tz`; ohne oder mit ungültiger Zone Serverzeit."""
     if tz:
         try:
             from zoneinfo import ZoneInfo
             return datetime.now(ZoneInfo(tz)).replace(tzinfo=None)
-        except Exception:
-            pass
+        except Exception as e:   # ungültiger Name oder fehlende tzdata
+            logger.debug(f"Zeitzone {tz!r} unbekannt, nehme Serverzeit: {e}")
     return datetime.now()
+
+
+def _local_now() -> datetime:
+    """Aktuelle Zeit in der Zeitzone des Nutzers. Der Container läuft meist in UTC;
+    ohne diese Korrektur würden die Betriebszeiten gegen UTC geprüft (Bug: Farm
+    startet erst Stunden später). Fällt ohne/ungültige TZ auf die Containerzeit zurück."""
+    return _now_in_tz(_farm.get("operating_tz"))
+
+
+_USER_TZ = {"mtime": None, "tz": ""}
+
+
+def _user_tz() -> str:
+    """Zeitzone aus den Farm-Einstellungen, auch wenn die Farm nicht läuft (Farm-Log).
+    Neu gelesen wird nur, wenn sich die Datei geändert hat."""
+    try:
+        mtime = os.path.getmtime(SETTINGS_PATH)
+    except OSError:
+        return _farm.get("operating_tz") or ""
+    if _USER_TZ["mtime"] != mtime:
+        tz = _read_config(SETTINGS_PATH, _DEFAULT_SETTINGS).get("timezone", "") or ""
+        _USER_TZ.update(mtime=mtime, tz=str(tz))
+    return _USER_TZ["tz"]
 
 
 def _parse_hhmm(s: str) -> int:
@@ -4066,7 +4092,7 @@ async def start_farm(req: StartRequest):
         "seq_step_idx":    0,
         "seq_step_total":  0,
         "seq_step_label":  "",
-        "started_at":      datetime.now().isoformat(),
+        "started_at":      now_iso(),
         "log":             [],
         # Startwerte über dieselbe Funktion, die sie später nachzieht — sonst laufen
         # Schnappschuss und Nachziehen mit der Zeit auseinander (siehe _live_settings).
@@ -4607,7 +4633,7 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
     tuer_offen = False        # nur schliessen, was wir auch geoeffnet haben
     umweg = _stress_service.printer_ops(geom, printer) if include_printer else ()
     _stress.update({"running": True, "done": 0, "total": len(moves), "error": None,
-                    "step": "", "started_at": datetime.now().isoformat(),
+                    "step": "", "started_at": now_iso(),
                     "include_printer": bool(include_printer)})
     _log(f"🏋 Stresstest: {len(moves)} Platte(n) aus den Magazinen verteilen"
          + (" — mit Umweg über den Drucker" if include_printer else ""))
@@ -4892,7 +4918,7 @@ async def get_recovery():
         "step_total": rec.get("step_total"),
         "arm": arm,
         "arm_hint": hint,
-        "saved_at": rec.get("saved_at"),
+        "saved_at": as_aware_iso(rec.get("saved_at")),
         "advice": ("Erst nachsehen: Steht eine Platte im Greifer oder im Drucker? "
                    "Danach hier bestätigen — die Farm referenziert vor der nächsten "
                    "Bewegung selbst."),
@@ -4930,7 +4956,9 @@ async def get_hms_history(limit: int = 100):
     items = storage.read_json(HMS_PATH, [])
     if not isinstance(items, list):
         items = []
-    return {"items": items[:max(1, min(HMS_MAX, limit))], "total": len(items)}
+    out = [{**it, "ts": as_aware_iso(it.get("ts"))} if isinstance(it, dict) else it
+           for it in items[:max(1, min(HMS_MAX, limit))]]
+    return {"items": out, "total": len(items)}
 
 
 @router.delete("/hms-history")
@@ -5230,7 +5258,10 @@ async def set_file_ams(file_id: int, payload: FileAmsPayload):
 
 @router.get("/stats")
 async def get_stats():
-    return _read_stats()
+    s = _read_stats()
+    if s.get("since"):
+        s = {**s, "since": as_aware_iso(s["since"])}
+    return s
 
 
 @router.delete("/stats")
@@ -5254,15 +5285,16 @@ async def get_history():
 async def get_timeline(hours: int = 24):
     """Recent printer-utilization events for the usage timeline (default last 24h)."""
     events = storage.read_json(TIMELINE_PATH, [])
-    cutoff = datetime.now() - timedelta(hours=max(1, hours))
+    # Beide Seiten mit Zone vergleichen: Bestand ist naiv (Serverzeit), neue Einträge
+    # tragen einen Offset — naiv gegen aware wäre ein TypeError (HTTP 500).
+    now = datetime.now().astimezone()
+    cutoff = now - timedelta(hours=max(1, hours))
     recent = []
     for e in events:
-        try:
-            if datetime.fromisoformat(e["ts"]) >= cutoff:
-                recent.append(e)
-        except (KeyError, ValueError):
-            continue
-    return {"events": recent, "now": datetime.now().isoformat(), "hours": hours}
+        ts = as_aware(e.get("ts")) if isinstance(e, dict) else None
+        if ts is not None and ts >= cutoff:
+            recent.append({**e, "ts": ts.isoformat(timespec="seconds")})
+    return {"events": recent, "now": now.isoformat(timespec="seconds"), "hours": hours}
 
 
 @router.delete("/timeline")
@@ -5282,7 +5314,10 @@ async def get_completed(limit: int = 500):
     items = storage.read_json(COMPLETED_PATH, [])
     if not isinstance(items, list):
         items = []
-    return {"items": items[:max(1, min(limit, COMPLETED_MAX))], "total": len(items)}
+    out = [{**it, "started_at": as_aware_iso(it.get("started_at")), "ended_at": as_aware_iso(it.get("ended_at"))}
+           if isinstance(it, dict) else it
+           for it in items[:max(1, min(limit, COMPLETED_MAX))]]
+    return {"items": out, "total": len(items)}
 
 
 @router.delete("/completed")

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { fmtDur } from '../services/format'
 import { pushToast } from '../services/toast'
 import ColorDot from '../components/ColorDot'
 import PageHeader from '../components/PageHeader'
@@ -32,19 +33,12 @@ function UploadedAt({ iso }) {
 }
 
 
-/* Sekunden → "1 h 5 min" / "12 min". Für Anzeige & Summen. */
-function fmtDuration(sec) {
-  if (!sec || sec <= 0) return null
-  const h = Math.floor(sec / 3600)
-  const m = Math.round((sec % 3600) / 60)
-  return h ? `${h} h ${m} min` : `${m} min`
-}
 
 /* Presentational: zeigt Druckzeit · Gramm · Höhe. Die Daten kommen vom Eltern-Cache
    (metaById), damit man sie auch für Queue-Summen aufaddieren kann. */
 function MetaChips({ meta }) {
   if (!meta) return null
-  const time = meta.estimated_time || fmtDuration(meta.time_seconds)
+  const time = meta.estimated_time || fmtDur(meta.time_seconds)
   if (!time && !meta.filament_g && !meta.max_z_mm) return null
   return (
     <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
@@ -336,11 +330,6 @@ function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sendin
       .catch(() => { if (alive) setPlates([]) })
     return () => { alive = false }
   }, [file.id])
-  const fmt = (s) => {
-    if (!s) return '—'
-    const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60)
-    return h ? `${h}h ${m}m` : `${m}m`
-  }
   if (plates === null) return <p className="text-[10px] text-surface-600 mt-1.5">{tr('Lade Platten…')}</p>
   if (!plates.length)  return <p className="text-[10px] text-surface-600 mt-1.5">{tr('Keine Platten-Infos in der Datei gefunden')}</p>
   return (
@@ -351,7 +340,7 @@ function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sendin
           <span className="text-blue-300 w-36 shrink-0 truncate" title={tr('Platte {0}', p.plate) + (p.name ? ` — ${p.name}` : '')}>
             {p.name || tr('Platte {0}', p.plate)}
           </span>
-          <span className="font-mono text-surface-400 w-16 shrink-0" title={tr('Druckzeit dieser Platte')}>⏱ {fmt(p.time_seconds)}</span>
+          <span className="font-mono text-surface-400 w-16 shrink-0" title={tr('Druckzeit dieser Platte')}>⏱ {fmtDur(p.time_seconds) ?? '—'}</span>
           <span className="font-mono text-surface-400 w-20 shrink-0" title={tr('Objekthöhe dieser Platte')}>↕ {p.max_z_mm ? `${p.max_z_mm} mm` : '—'}</span>
           {p.filament_g != null && p.filament_g !== '' && (
             <span className="font-mono text-surface-600 w-16 shrink-0 hidden sm:inline">{p.filament_g} g</span>
@@ -1049,10 +1038,10 @@ function FileLibrary() {
             <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm">{tr('Auswahl aufheben')}</button>
             {/* Gesamtkalkulation der Auswahl */}
             <div className="flex items-center gap-3 ml-auto text-[12px]">
-              {fmtDuration(selTotals.sec) && (
+              {fmtDur(selTotals.sec) && (
                 <span className="flex items-center gap-1 text-blue-200" title={tr('Geschätzte Gesamt-Druckzeit (reine Druckzeit, ohne Wechsel)')}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  ~{fmtDuration(selTotals.sec)}
+                  ~{fmtDur(selTotals.sec)}
                 </span>
               )}
               {selTotals.g > 0 && (

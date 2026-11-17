@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { fmtDur } from './format'
 import { autofarmService, fileService } from './api'
 import { gateStart } from './operatingHours'
 
@@ -13,12 +14,9 @@ const _metaCache = {}            // fileId → meta | null  (modulweit, von alle
 export const CHANGEOVER_SEC = 180  // ~3 min Platten-Wechsel/Auswurf je wartendem Job
 const PRINTING = new Set(['printing', 'running', 'sending'])
 
-export function fmtDur(sec) {
-  if (!sec || sec <= 0) return null
-  const h = Math.floor(sec / 3600)
-  const m = Math.round((sec % 3600) / 60)
-  return h ? `${h} h ${m} min` : `${m} min`
-}
+// Der Formatierer wohnt in services/format.js; hier nur weitergereicht, damit die
+// bisherigen Importe (AutoFarm, Dashboard) gültig bleiben.
+export { fmtDur }
 
 /* Lädt die quick-meta einer Datei (gecacht) — vom Planer genutzt. */
 export async function ensureMeta(fileId) {

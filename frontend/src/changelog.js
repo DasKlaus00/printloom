@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.72',
+    de: [
+      'UHRZEITEN STIMMEN IM DOCKER: Historie, Fehlerliste, Auslastung, Statistik („seit …“) und Sende-Diagnose speichern ihre Zeit jetzt mit Zeitzone. Im Docker-Betrieb (Server in UTC) lagen sie bisher im Sommer zwei Stunden daneben. Bestehende Einträge werden beim Anzeigen richtig eingeordnet.',
+      'FARM-LOG IN DEINER ZEITZONE: Das Aktivitäts-Log nutzt die Zeitzone aus den Einstellungen (Setup bzw. Konfiguration), auch wenn die Farm gerade nicht läuft.',
+      'DAUERN EINHEITLICH: Überall „2 h 5 min“ bzw. „12 min“. Bisher konnte eine knappe Stunde als „60 min“ erscheinen, und jede Seite schrieb Dauern anders.',
+      'KOSTEN ERGEBEN DIE SUMME: Ist ein Maschinen-Stundensatz eingestellt, hat er jetzt eine eigene Kachel; bisher steckte er nur in der Gesamtsumme. Beträge im Format der Sprache (12,34 € bzw. €12.34). Ohne geladene Preise rechnet die Kachel nicht mit einem geratenen Strompreis.',
+    ],
+    en: [
+      'TIMES ARE RIGHT IN DOCKER: history, error list, utilization, statistics (“since …”) and send diagnostics now store their time with a time zone. In Docker (server in UTC) they used to be two hours off in summer. Existing entries are placed correctly when shown.',
+      'FARM LOG IN YOUR TIME ZONE: the activity log uses the time zone from the settings (setup or configuration), even while the farm is not running.',
+      'CONSISTENT DURATIONS: “2 h 5 min” or “12 min” everywhere. Until now almost an hour could show as “60 min”, and every page wrote durations differently.',
+      'COSTS ADD UP: if a machine hourly rate is set, it now has its own tile; until now it was only part of the total. Amounts in the format of the language (12,34 € or €12.34). Without loaded prices the tile no longer calculates with a guessed power price.',
+    ],
+  },
+  {
     version: '1.1.71',
     de: [
       'FARBPUNKTE ÜBERALL GLEICH: Filament- und AMS-Farben haben einen sichtbaren Rand, damit ein weißes Filament im hellen und ein schwarzes im dunklen Thema nicht verschwinden. Eine unbekannte Farbe ist ein gestrichelter leerer Kreis statt eines erfundenen Grautons.',

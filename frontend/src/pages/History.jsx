@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { fmtDur } from '../services/format'
 import { PageTitle } from '../components/PageHeader'
 import { autofarmService } from '../services/api'
 import { useLanguage, locale } from '../services/i18n'
@@ -11,12 +12,6 @@ const STATUS_META = {
   ejected: { label: 'Geborgen', cls: 'text-amber-400 border-amber-900/60 bg-amber-950/20' },
 }
 
-function fmtDuration(min) {
-  if (!min && min !== 0) return '—'
-  const m = Math.round(min)
-  const h = Math.floor(m / 60)
-  return h ? `${h} h ${m % 60} min` : `${m} min`
-}
 
 // ISO → lokales Datum bzw. Uhrzeit; leer/kaputt → „—".
 function parseDate(iso) { const d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d : null }
@@ -122,7 +117,7 @@ export default function History() {
                       <td className="px-4 py-2.5 font-mono text-surface-400 whitespace-nowrap">{dateStr(s)}</td>
                       <td className="px-3 py-2.5 font-mono text-surface-400 whitespace-nowrap">{timeStr(s)}</td>
                       <td className="px-3 py-2.5 font-mono text-surface-400 whitespace-nowrap">{timeStr(e)}</td>
-                      <td className="px-3 py-2.5 font-mono text-surface-400 whitespace-nowrap">{fmtDuration(it.duration_min)}</td>
+                      <td className="px-3 py-2.5 font-mono text-surface-400 whitespace-nowrap">{fmtDur(it.duration_min * 60) ?? '—'}</td>
                       <td className="px-3 py-2.5 text-surface-200 min-w-0">
                         <span className="truncate">{name}</span>
                         <span className="text-surface-600 text-xs">{plateLabel}</span>

@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db, SessionLocal
 from app.models.models import Device, PrinterType, UploadedFile
 from app.services import ams_match, bambu_manager, camera, device_settings, print_file, storage
+from app.services.timestamps import as_aware_iso, now_iso
 from app.services.bambu_ftp import BambuFTP
 
 router = APIRouter()
@@ -52,7 +53,7 @@ def _diag_save():
 
 def _diag_begin(filename: str, file_id: int) -> dict:
     sess = {
-        "ts":      datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "ts":      now_iso(),
         "file":    filename,
         "file_id": file_id,
         "steps":   [],
@@ -943,8 +944,10 @@ async def calibrate_printer(device_id: int, body: dict = None, db: Session = Dep
 
 @router.get("/send-diagnostics")
 async def get_send_diagnostics():
-    """Letzte Sende-Diagnose-Sessions zurückgeben."""
-    return {"sessions": _diag_sessions}
+    """Letzte Sende-Diagnose-Sessions zurückgeben (Zeit mit Offset, Bestand bis
+    v1.1.71 war Serverzeit ohne Zone)."""
+    return {"sessions": [{**s, "ts": as_aware_iso(s.get("ts"))} if isinstance(s, dict) else s
+                         for s in _diag_sessions]}
 
 
 # ── AMS-Aktionen (Steuerung): Slot neu einlesen, Filament laden/entladen ─────

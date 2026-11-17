@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { fmtDur } from '../services/format'
 import ColorDot from '../components/ColorDot'
 import PageHeader from '../components/PageHeader'
 import { apiError } from '../services/apiError'
@@ -566,7 +567,7 @@ export default function Steuerung() {
                 </div>
                 <div className="flex justify-between text-[10px] text-surface-500 font-mono">
                   <span>{tr('Schicht {0} / {1}', layer, totalLayer)}</span>
-                  {remMin > 0 && <span>{tr('{0} verbleibend', remMin >= 60 ? `${Math.floor(remMin/60)}h ${remMin%60}min` : `${remMin} min`)}</span>}
+                  {remMin > 0 && <span>{tr('{0} verbleibend', fmtDur(remMin * 60))}</span>}
                 </div>
               </div>
             )}

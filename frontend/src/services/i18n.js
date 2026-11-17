@@ -1903,6 +1903,8 @@ const EN_STRINGS = {
   'Änderungen übernehmen': 'Apply changes',
   'Druckdateien ablegen, prüfen und in die Warteschlange legen.': 'Store print files, check them and put them in the queue.',
   'Farbe unbekannt': 'Color unknown',
+  'Preise nicht geladen.': 'Prices not loaded.',
+  'Maschine': 'Machine',
   '{0} Regale · {1} Fächer · Magazin-Fach {2} — Anzahl in Konfiguration → Allgemein → Regal-Konfiguration': '{0} racks · {1} slots · magazine slot {2} — count under Configuration → General → Rack configuration',
   'Fächer {0} sind belegt — erst unter Auto Farm → Regal leeren': 'Slots {0} are occupied — empty them under Auto Farm → Rack first',
   'Magazin leer — Bestand unter Auto Farm → Regal setzen': 'Magazine empty — set the stock under Auto Farm → Rack',

@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { PageTitle } from '../components/PageHeader'
 import { printerService } from '../services/api'
-import { useLanguage } from '../services/i18n'
+import { useLanguage, locale } from '../services/i18n'
+
+// Zeitstempel kommen mit Offset (seit v1.1.72) — als Ortszeit des Browsers zeigen.
+const fmtTs = (ts) => {
+  const d = ts ? new Date(ts) : null
+  return d && !isNaN(d) ? d.toLocaleString(locale()) : (ts || '—')
+}
 import { useAutoRefresh } from '../services/useAutoRefresh'
 
 function StatusBadge({ result }) {
@@ -65,7 +71,7 @@ function SessionCard({ session, idx }) {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-surface-100 truncate">{session.file}</p>
-            <p className="text-[11px] text-surface-600 font-mono mt-0.5">{session.ts}</p>
+            <p className="text-[11px] text-surface-600 font-mono mt-0.5">{fmtTs(session.ts)}</p>
           </div>
         </div>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
