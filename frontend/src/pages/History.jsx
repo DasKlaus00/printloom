@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { PageTitle } from '../components/PageHeader'
 import { autofarmService } from '../services/api'
 import { useLanguage, locale } from '../services/i18n'
 import { usePageActive } from '../services/useAutoRefresh'
@@ -69,7 +70,7 @@ export default function History() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Historie')}</h1>
+          <PageTitle className="mb-1">{tr('Historie')}</PageTitle>
           <p className="text-xs text-surface-500 mt-0.5">{tr('Alle abgeschlossenen Druck-Jobs mit Datum, Anfangs- und End-Uhrzeit.')}</p>
         </div>
         <div className="flex items-center gap-2">

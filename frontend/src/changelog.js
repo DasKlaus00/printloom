@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.69',
+    de: [
+      'SEITENLEISTE KLAPPT SELBST EIN: Unter 1280 px Breite (Laptop, Tablet quer) zeigt die Leiste nur noch Symbole, die Seite bekommt den Platz. Wer die Leiste mit dem Knopf oben links auf- oder zuklappt, behält diese Wahl.',
+      'HANDY UND TABLET: Projekt, Steuerung, Datei-Analyse und Regal-Verwaltung stapeln ihre Spalten auf schmalen Bildschirmen, statt seitlich überzulaufen. Auf der Steuerung stehen die Arm-Knöpfe auf dem Handy oben. Weniger Rand um die Seite auf dem Handy.',
+      'JEDE SEITE HAT EINE ÜBERSCHRIFT: Datei-Bibliothek, Steuerung und Konfiguration hatten keine. Alle Überschriften kommen jetzt aus einer Stelle und sehen gleich aus. Drucker und Bibliothek nutzen die volle Breite wie die anderen Seiten.',
+      'Geschlossen ist die Handy-Leiste nicht mehr per Tab erreichbar; geöffnet springt der Fokus auf den ersten Eintrag, Escape schließt sie.',
+    ],
+    en: [
+      'SIDEBAR COLLAPSES BY ITSELF: below 1280 px width (laptop, tablet in landscape) the sidebar shows icons only and the page gets the room. If you open or close it with the button at the top left, that choice is kept.',
+      'PHONE AND TABLET: Project, Control, File analysis and Rack manager stack their columns on narrow screens instead of overflowing sideways. On Control the arm buttons come first on a phone. Less margin around the page on a phone.',
+      'EVERY PAGE HAS A HEADING: File library, Control and Configuration had none. All headings now come from one place and look the same. Printer and Library use the full width like the other pages.',
+      'When closed, the phone sidebar can no longer be reached with Tab; when opened, focus moves to the first entry and Escape closes it.',
+    ],
+  },
+  {
     version: '1.1.68',
     de: [
       'AUTO FARM JE BILDSCHIRMBREITE: Wie die Startseite hat die Auto Farm jetzt eine eigene Anordnung für großen Monitor, Laptop, Tablet und Handy (dort eine Spalte). Eine bisher gespeicherte Anordnung gilt weiter für große Bildschirme und Laptops.',

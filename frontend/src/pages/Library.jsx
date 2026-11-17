@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { PageTitle } from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { onlineService, systemService, profileService, autofarmService } from '../services/api'
 import { useLanguage } from '../services/i18n'
@@ -136,9 +137,9 @@ export default function Library({ setCurrentPage }) {
   // ── Nicht freigeschaltet → nur Hinweis, kein Abruf ──
   if (cfg && !allowed) {
     return (
-      <div className="max-w-2xl space-y-4">
+      <div className="space-y-4">
         <div>
-          <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Bibliothek')}</h1>
+          <PageTitle className="mb-1">{tr('Bibliothek')}</PageTitle>
           <p className="text-sm text-surface-500 mt-1">{tr('Sprachpakete, Drucker-Profile und Sequenzen')}</p>
         </div>
         <div className="card p-5 space-y-3">
@@ -160,7 +161,7 @@ export default function Library({ setCurrentPage }) {
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Bibliothek')}</h1>
+          <PageTitle className="mb-1">{tr('Bibliothek')}</PageTitle>
           <p className="text-sm text-surface-500 mt-1">{tr('Sprachpakete, Drucker-Profile und Sequenzen')}</p>
         </div>
         <div className="flex items-center gap-2">

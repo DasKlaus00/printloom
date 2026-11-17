@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { PageTitle } from '../components/PageHeader'
 import { createPortal } from 'react-dom'
 import { apiError } from '../services/apiError'
 import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService, systemService } from '../services/api'
@@ -1728,7 +1729,7 @@ function AutoFarm({ setCurrentPage } = {}) {
         {/* Title */}
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div>
-            <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">Auto Farm</h2>
+            <PageTitle className="mb-1">Auto Farm</PageTitle>
             {running && (
               <p className="text-[11px] text-surface-600 font-mono mt-0.5">
                 {paused

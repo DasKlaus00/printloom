@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { apiError } from '../services/apiError'
 import { useLanguage, setLanguage, availableLanguages } from '../services/i18n'
 import { fileService } from '../services/api'
@@ -253,6 +253,12 @@ function Navigation({ currentPage, setCurrentPage, updateAvailable, collapsed, o
   const { t, tr } = useLanguage()
   const groups = buildGroups(t, tr)
   const go = (id) => { setCurrentPage(id); onCloseMobile?.() }
+  // Zugeklappt (Handy) ist die Leiste unsichtbar und damit aus dem Tab-Pfad; geöffnet
+  // bekommt der erste Eintrag den Fokus, Escape schließt.
+  const navRef = useRef(null)
+  useEffect(() => {
+    if (mobileOpen) navRef.current?.querySelector('button, a')?.focus()
+  }, [mobileOpen])
 
   return (
     <>
@@ -264,8 +270,10 @@ function Navigation({ currentPage, setCurrentPage, updateAvailable, collapsed, o
           transition-[width,transform] duration-150 ease-out
           fixed md:static top-[47px] bottom-0 left-0 z-40 md:z-auto
           ${collapsed ? 'md:w-[54px]' : 'md:w-[210px]'} w-[240px]
-          ${mobileOpen ? 'translate-x-0 shadow-lg' : '-translate-x-full md:translate-x-0'}`}
+          ${mobileOpen ? 'translate-x-0 shadow-lg' : '-translate-x-full md:translate-x-0 invisible md:visible'}`}
         aria-label={tr('Navigation')}
+        ref={navRef}
+        onKeyDown={e => { if (e.key === 'Escape' && mobileOpen) onCloseMobile?.() }}
       >
         <div className="flex-1 overflow-y-auto overflow-x-hidden py-2">
           {groups.map((g, gi) => (

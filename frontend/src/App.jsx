@@ -70,6 +70,7 @@ import { learnFromAms } from './services/amsLearn'
 import { loadLangPacks, useLanguage } from './services/i18n'
 import { useFarmStatusStream } from './services/useFarmStatusStream'
 import { tabTitle, farmTitleState } from './services/tabTitle'
+import { navCompact, NAV_KEY, NAV_AUTO_MAX } from './services/navState'
 import { VERSION } from './version'
 
 /* ── URL ↔ page-id mapping ──────────────────────────────────── */
@@ -183,9 +184,16 @@ function App() {
     return () => window.removeEventListener('printloom:brokenFile', check)
   }, [])
   // Seitenleiste: eingeklappt (je Gerät gemerkt) und — auf schmalen Bildschirmen — aufgeklappt.
-  const [navCollapsed, setNavCollapsed] = useState(() => {
-    try { return localStorage.getItem('ottomat3d_nav_compact') === '1' } catch { return false }
-  })
+  // Ohne eigene Wahl klappt die Leiste unter 1280 px selbst ein (services/navState.js).
+  const readNavChoice = () => { try { return localStorage.getItem(NAV_KEY) } catch { return null } }
+  const [navCollapsed, setNavCollapsed] = useState(() => navCompact(readNavChoice(), window.innerWidth))
+  useEffect(() => {
+    const mq = window.matchMedia?.(`(max-width: ${NAV_AUTO_MAX}px)`)
+    if (!mq) return undefined
+    const onChange = () => { if (readNavChoice() == null) setNavCollapsed(navCompact(null, window.innerWidth)) }
+    mq.addEventListener?.('change', onChange)
+    return () => mq.removeEventListener?.('change', onChange)
+  }, [])
   const [navOpenMobile, setNavOpenMobile] = useState(false)
   const toggleNav = useCallback(() => {
     // Der Knopf oben links tut, was auf dem Bildschirm Sinn ergibt: schmal → Leiste
@@ -193,7 +201,7 @@ function App() {
     if (window.matchMedia?.('(max-width: 767px)').matches) { setNavOpenMobile(v => !v); return }
     setNavCollapsed(v => {
       const next = !v
-      try { localStorage.setItem('ottomat3d_nav_compact', next ? '1' : '0') } catch { /* Privatmodus */ }
+      try { localStorage.setItem(NAV_KEY, next ? '1' : '0') } catch { /* Privatmodus */ }
       return next
     })
   }, [])
@@ -516,7 +524,8 @@ function App() {
 
         {/* Prüfplanung: volle Breite, 20/24 px Rand. */}
         <main className="flex-1 min-w-0 overflow-auto bg-surface-950">
-          <div className="px-3 py-4 sm:px-6 sm:pt-5 sm:pb-14">
+          {/* Eine Breitenregel für alle Seiten (seit v1.1.69): volle Breite bis 1600 px. */}
+          <div className="px-3 py-4 sm:px-6 sm:pt-5 sm:pb-14 max-w-[1600px]">
             {page('dashboard',     Dashboard)}
             {page('files',         FileLibrary)}
             {page('filamente',     FilamentLibrary)}

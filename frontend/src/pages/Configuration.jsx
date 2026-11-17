@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import PageHeader from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { deviceService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
 import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } from '../services/i18n'
@@ -1085,6 +1086,7 @@ function Configuration() {
 
   return (
     <div className="space-y-6">
+      <PageHeader title={tr('Konfiguration')} />
 
       {/* ── Tabs ─────────────────────────────────────────────────── */}
       <div className="flex gap-1 border-b border-surface-800">

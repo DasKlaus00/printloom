@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { PageTitle } from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { deviceService, rackManagerService, autofarmService, controlService } from '../services/api'
 import { patchGeometry, saveGeometry } from '../services/geometryClient'
@@ -474,7 +475,7 @@ export default function Setup({ setCurrentPage }) {
     <div className="max-w-xl mx-auto">
       <div className="card p-6">
         <div className="flex items-center justify-between mb-1">
-          <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Setup-Assistent')}</h1>
+          <PageTitle className="mb-1">{tr('Setup-Assistent')}</PageTitle>
           <button onClick={skip} className="text-[11px] text-surface-600 hover:text-surface-300">{tr('Überspringen →')}</button>
         </div>
         <p className="text-xs text-surface-500 mb-5">{tr('Komponenten · Drucker · OTTOeject · Regal · Kalibrierung · Einmessen in einem Durchlauf.')}</p>

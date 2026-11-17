@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import PageHeader from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { useServerField } from '../services/dirtyField'
 import { fileService, folderService, printerService, deviceService, filamentService, autofarmService } from '../services/api'
@@ -950,6 +951,7 @@ function FileLibrary() {
 
   return (
     <div className="space-y-5">
+      <PageHeader title={tr('Datei-Bibliothek')} subtitle={tr('Druckdateien ablegen, prüfen und in die Warteschlange legen.')} />
 
       {feedback && (
         <div className={`fixed bottom-5 right-5 z-50 max-w-sm flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border shadow-xl shadow-black/30 ${

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { PageTitle } from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { fileService, projectService, autofarmService, deviceService } from '../services/api'
 import { useLanguage } from '../services/i18n'
@@ -182,7 +183,7 @@ function Projekt() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Projekte')}</h2>
+        <PageTitle className="mb-1">{tr('Projekte')}</PageTitle>
         <p className="text-sm text-surface-500">
           {tr('Dateien mit Stückzahl sammeln, drucken lassen und fertige Objekte automatisch abhaken.')}
         </p>
@@ -217,7 +218,7 @@ function Projekt() {
           <button onClick={createProject} className="btn btn-primary btn-sm">{tr('+ Neues Projekt')}</button>
         </div>
       ) : (
-        <div className="grid grid-cols-[1fr_400px] gap-4 items-start">
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-4 items-start">
 
           {/* ── Datei-Browser ──────────────────────────────── */}
           <div className="card space-y-3">

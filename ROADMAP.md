@@ -30,7 +30,7 @@ Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 | **Sicherheit** | Keine eigene Anmeldung (Reverse-Proxy davor). Kein CORS, schreibende Anfragen fremder Seiten gesperrt (auch über http), nur Heimnetz-Adressen (gegen DNS-Rebinding), kein Einbetten in fremde Seiten, Windows-Update nur aus dem eigenen Release, Backup ohne Zugangsdaten (auf Wunsch verschlüsselt mit; beim Einspielen bleiben Zugangsdaten an ihre Adresse gebunden) |
 | **Auslieferung** | Docker (amd64/arm64), native Windows-App, native Linux. Version im Image, Update aus der Oberfläche über den Docker-Socket (nur bei Stillstand, meldet einen Fehlschlag), Backup einspielen nur bei Stillstand (Fach-Belegung bleibt), Promote-Workflow Beta → Stabil |
 | **Slicer** | OrcaSlicer-Plugin (ab Orca 2.5): Farm-Check nach dem Slicen, Senden in die Warteschlange (erst nach der Prüfung, mit Kollisionsgefahr nur in die Bibliothek), Drucker und AMS im Geräte-Tab, Farm-Tab |
-| **Qualität** | 1184 Backend-, 60 Plugin- und 155 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
+| **Qualität** | 1184 Backend-, 60 Plugin- und 159 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
 
 ---
 

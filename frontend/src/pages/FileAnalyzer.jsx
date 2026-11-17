@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { PageTitle } from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { fileService } from '../services/api'
 import { useLanguage } from '../services/i18n'
@@ -97,7 +98,7 @@ function Rows({ a, b }) {
   const row = (label, va, vb, mono = false) => {
     const diff = two && String(va ?? '') !== String(vb ?? '')
     return (
-      <div className={`grid ${two ? 'grid-cols-[180px_1fr_1fr]' : 'grid-cols-[180px_1fr]'} items-center gap-2 px-3 py-1.5 rounded text-xs ${diff ? 'bg-amber-950/25 border border-amber-800/30' : ''}`}>
+      <div className={`grid ${two ? 'grid-cols-[minmax(0,180px)_1fr_1fr]' : 'grid-cols-[minmax(0,180px)_1fr]'} items-center gap-2 px-3 py-1.5 rounded text-xs ${diff ? 'bg-amber-950/25 border border-amber-800/30' : ''}`}>
         <span className="text-surface-500 text-right pr-2">{label}</span>
         <span className={`${mono ? 'font-mono' : ''} ${diff ? 'text-amber-300' : 'text-surface-200'} truncate`}>{va ?? '—'}</span>
         {two && <span className={`${mono ? 'font-mono' : ''} ${diff ? 'text-amber-300' : 'text-surface-200'} truncate`}>{vb ?? '—'}</span>}
@@ -142,7 +143,7 @@ function Rows({ a, b }) {
           <div className="space-y-1">
             {/* column header when comparing */}
             {two && (
-              <div className={`grid grid-cols-[140px_1fr_1fr] gap-2 px-3 pb-1`}>
+              <div className={`grid grid-cols-[minmax(0,140px)_1fr_1fr] gap-2 px-3 pb-1`}>
                 <span />
                 <span className="text-[10px] text-surface-600 font-semibold">{a?.file_name ?? 'A'}</span>
                 <span className="text-[10px] text-surface-600 font-semibold">{b?.file_name ?? 'B'}</span>
@@ -180,7 +181,7 @@ function Rows({ a, b }) {
                 )
               }
               return (
-                <div key={i} className={`grid ${two ? 'grid-cols-[140px_1fr_1fr]' : 'grid-cols-[140px_1fr]'} items-center gap-2 px-3 py-1 rounded ${diff ? 'bg-amber-950/25 border border-amber-800/30' : ''}`}>
+                <div key={i} className={`grid ${two ? 'grid-cols-[minmax(0,140px)_1fr_1fr]' : 'grid-cols-[minmax(0,140px)_1fr]'} items-center gap-2 px-3 py-1 rounded ${diff ? 'bg-amber-950/25 border border-amber-800/30' : ''}`}>
                   <span className="text-surface-500 text-xs text-right pr-2 shrink-0">
                     {as_?.slot_label ?? bs_?.slot_label ?? `A${i+1}`}
                   </span>
@@ -199,7 +200,7 @@ function Rows({ a, b }) {
               const bf = b?.filaments?.[i]
               const diff = two && bf && (f.type !== bf.type || f.ams_slot !== bf.ams_slot)
               return (
-                <div key={i} className={`grid ${two ? 'grid-cols-[180px_1fr_1fr]' : 'grid-cols-[180px_1fr]'} items-center gap-2 px-3 py-1.5 rounded ${diff ? 'bg-amber-950/25 border border-amber-800/30' : ''}`}>
+                <div key={i} className={`grid ${two ? 'grid-cols-[minmax(0,180px)_1fr_1fr]' : 'grid-cols-[minmax(0,180px)_1fr]'} items-center gap-2 px-3 py-1.5 rounded ${diff ? 'bg-amber-950/25 border border-amber-800/30' : ''}`}>
                   <span className="text-surface-500 text-xs text-right pr-2">{tr('Filament')} {i}</span>
                   <div className="flex items-center gap-1.5 text-xs min-w-0">
                     <ColorDot hex={f.color} />
@@ -305,7 +306,7 @@ function FileAnalyzer() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Datei-Analyse')}</h2>
+        <PageTitle className="mb-1">{tr('Datei-Analyse')}</PageTitle>
         <p className="text-sm text-surface-500">
           {tr('Slicing-Metadaten, Temperaturen, Filamente und AMS-Mapping aus .3mf / .gcode extrahieren. Zwei Dateien gleichzeitig wählen für Side-by-Side-Vergleich — Unterschiede werden orange hervorgehoben.')}
         </p>
@@ -321,7 +322,7 @@ function FileAnalyzer() {
 
       {/* Column headers when comparing */}
       {comparing && (dataA || dataB) && (
-        <div className="grid grid-cols-[180px_1fr_1fr] gap-2 px-4">
+        <div className="grid grid-cols-[minmax(0,180px)_1fr_1fr] gap-2 px-4">
           <div />
           <div className="text-xs font-semibold text-surface-300 truncate">
             {dataA?.file_name ?? '…'}

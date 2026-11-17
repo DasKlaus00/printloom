@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import PageHeader from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { printerState } from '../services/printerState'
 import { amsClimate } from '../services/amsUtils'
@@ -488,6 +489,7 @@ export default function Steuerung() {
 
   return (
     <div className="space-y-4">
+      <PageHeader title={tr('Steuerung')} />
 
       {/* Feedback */}
       {feedback && (
@@ -504,7 +506,7 @@ export default function Steuerung() {
       <EmergencyStop />
 
       {/* ── Hauptlayout: Links Bambu Lab, Rechts OTTOeject ── */}
-      <div className="grid grid-cols-[1fr_300px] gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 items-start">
 
         {/* ── Linke Spalte: Bambu Lab ──────────────────────── */}
         <div className="space-y-3">
@@ -689,7 +691,7 @@ export default function Steuerung() {
         </div>
 
         {/* ── Rechte Spalte: OTTOeject + Kalibrierung ─────── */}
-        <div className="space-y-3">
+        <div className="space-y-3 order-first lg:order-none">
 
           {/* OTTOeject System */}
           <div className="card space-y-3">

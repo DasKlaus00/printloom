@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { PageTitle } from '../components/PageHeader'
 import { apiError, apiDetail } from '../services/apiError'
 import { DEFAULT_SEQ_NEW, DEFAULT_SEQ_NEXT } from '../services/sequenceData'
 import { prepAllowed } from '../services/sequenceRules'
@@ -847,7 +848,7 @@ function SequenceEditor() {
       )}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Sequenz-Editor')}</h2>
+          <PageTitle className="mb-1">{tr('Sequenz-Editor')}</PageTitle>
           <p className="text-sm text-surface-500">
             {tr('Ablauf des Auto Farms anpassen — Reihenfolge, Zeiten und Parallelausführung. Änderungen werden sofort gespeichert und beim nächsten Lauf verwendet.')}
           </p>

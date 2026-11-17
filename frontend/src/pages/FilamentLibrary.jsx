@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { PageTitle } from '../components/PageHeader'
 import { filamentService, deviceService, printerService } from '../services/api'
 import { learnFromAms } from '../services/amsLearn'
 import { useAutoRefresh } from '../services/useAutoRefresh'
@@ -234,7 +235,7 @@ export default function FilamentLibrary() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Filamente')}</h1>
+        <PageTitle className="mb-1">{tr('Filamente')}</PageTitle>
         <p className="text-sm text-surface-500 mt-0.5">
           {tr('Automatisch aus dem aktiven AMS gelernt + manuell · {0} Filament(e)', custom.length)}
         </p>

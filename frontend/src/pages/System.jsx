@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { PageTitle } from '../components/PageHeader'
 import { apiError, apiDetail } from '../services/apiError'
 import { confirmDialog } from '../services/confirm'
 import { systemService, healthService, pushService } from '../services/api'
@@ -400,7 +401,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('System')}</h1>
+        <PageTitle className="mb-1">{tr('System')}</PageTitle>
         <p className="text-sm text-surface-500 mt-1">{tr('Darstellung, Versionsverwaltung & Updates')}</p>
       </div>
 

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
+import { PageTitle } from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { useLanguage, trProblem } from '../services/i18n'
 import { controlService, rackManagerService, deviceService, printerService,
@@ -1364,9 +1365,9 @@ export default function Drucker() {
   }
 
   return (
-    <div className="space-y-4 max-w-5xl">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight mb-1">{tr('Drucker & Regale')}</h1>
+        <PageTitle className="mb-1">{tr('Drucker & Regale')}</PageTitle>
         <p className="text-sm text-surface-500 mt-0.5">
           {tr('Der ganze Aufbau auf einer Seite: was steht wo auf der Schiene, und welche Position fährt der Arm dort an.')}
         </p>

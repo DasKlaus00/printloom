@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { PageTitle } from '../components/PageHeader'
 import { deviceService, printerService, rackManagerService, autofarmService,
          systemService } from '../services/api'
 import { useQueueEta, fmtDur } from '../services/useQueueEta'
@@ -315,7 +316,7 @@ export default function Dashboard() {
 
       {/* ── Kopfzeile: Raster anpassen ── */}
       <div className="flex items-end justify-between gap-2 mb-4">
-        <h1 className="text-[1.45rem] font-semibold text-surface-100 leading-tight">{tr('Dashboard')}</h1>
+        <PageTitle>{tr('Dashboard')}</PageTitle>
         <button
           onClick={() => setEditing(e => !e)}
           className={`btn btn-sm ${editing ? 'btn-primary' : 'btn-ghost'}`}
