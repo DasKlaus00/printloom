@@ -1901,6 +1901,8 @@ const EN_STRINGS = {
   'Die Farm läuft — Änderungen gelten erst nach „Übernehmen“, ab dem nächsten Job.': 'The farm is running — changes only take effect after “Apply”, from the next job on.',
   'Entwurf — noch nicht gespeichert.': 'Draft — not saved yet.',
   'Änderungen übernehmen': 'Apply changes',
+  'Zugangsdaten verworfen, weil sich die Adresse geändert hat (neu eingeben): {0}.': 'Credentials discarded because the address changed (enter them again): {0}.',
+  'Das ist kein Printloom-Backup — nichts eingespielt.': 'This is not a Printloom backup — nothing was restored.',
   'Neu gestartet, Version unverändert — Update fehlgeschlagen?': 'Restarted, version unchanged — did the update fail?',
   'Letztes Update fehlgeschlagen — es läuft weiter Version {0}': 'Last update failed — still running version {0}',
   'Zuweisung fehlgeschlagen': 'Assignment failed',

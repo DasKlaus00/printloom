@@ -308,20 +308,30 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
       const ohne = r.data?.unmapped_printers || []
       // Hinweise des Servers (z. B. „Regal neu angelegt", übersprungene Schritte).
       const notes = r.data?.notes || []
+      // Seit v1.1.62: Zugangsdaten, deren Adresse das Backup geändert hat, ohne sie
+      // mitzubringen, verwirft der Server (sonst gingen sie an den neuen Rechner).
+      const dropped = Object.entries(r.data?.secrets_dropped || {})
+        .map(([dev, keys]) => `${dev}: ${keys.join(', ')}`)
       setBackupFeedback({ ok: true, msg: tr('Backup wiederhergestellt (v{0}, exportiert: {1})', data.current_version ?? '?', data.exported_at?.split('T')[0] ?? '?')
         + ' ' + (SECRETS_STATE[r.data?.secrets] ?? '')
         + (ohne.length ? ' ' + tr('Ohne passendes Gerät (Positionen im Drucker-Tab zuordnen): {0}.', ohne.join(', ')) : '')
         + (notes.length ? ' ' + notes.join(' · ') + '.' : '')
+        + (dropped.length ? ' ' + tr('Zugangsdaten verworfen, weil sich die Adresse geändert hat (neu eingeben): {0}.', dropped.join('; ')) : '')
         + ' ' + tr('Die Seite lädt gleich neu.') })
       // Neu laden: Versteckt geöffnete Seiten (Drucker-Tab, Sequenz-Editor, Auto Farm)
       // halten noch ihre alte Kopie. Bis v1.1.50 schrieb etwa der Drucker-Tab beim
       // nächsten Speichern die alte Geometrie über die eben eingespielte.
-      setTimeout(() => window.location.reload(), ohne.length || notes.length ? 8000 : 2500)
+      setTimeout(() => window.location.reload(), ohne.length || notes.length || dropped.length ? 9000 : 2500)
     } catch (err) {
       const detail = err.response?.data?.detail
       if (detail === 'BACKUP_PASSWORT_FALSCH') {
         setBackupFeedback({ ok: false, msg: tr('Passwort falsch — nichts eingespielt.') })
         return   // Eingabe offen lassen, damit man es nochmal versuchen kann
+      }
+      if (detail === 'KEIN_PRINTLOOM_BACKUP') {
+        setPendingImport(null)
+        setBackupFeedback({ ok: false, msg: tr('Das ist kein Printloom-Backup — nichts eingespielt.') })
+        return
       }
       setPendingImport(null)
       setBackupFeedback({ ok: false, msg: tr('Import fehlgeschlagen: {0}', detail || err.message || err) })

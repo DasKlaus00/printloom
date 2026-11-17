@@ -167,24 +167,44 @@ def test_falsches_passwort_spielt_nichts_ein(anlage, db):
 def test_ohne_passwort_wird_alles_ausser_zugangsdaten_eingespielt(anlage, db):
     b = _run(system.export_backup_with_options(
         system.BackupExportIn(include_secrets=True, password="langes-passwort")))
-    b["devices"][0]["ip_address"] = "10.0.0.99"
     r = _run(system.import_backup(b))
     assert r["secrets"] == "skipped"
+    assert db.query(Device).one().access_code == "12345678"     # gleiche Adresse: bleibt
+    assert r["secrets_dropped"] == {}
+
+
+def test_neue_adresse_ohne_zugangsdaten_verwirft_den_access_code(anlage, db):
+    """Seit v1.1.62: Sonst ginge der Access-Code an den Rechner, den ein präpariertes
+    Backup als Drucker einträgt."""
+    b = _run(system.export_backup_with_options(
+        system.BackupExportIn(include_secrets=True, password="langes-passwort")))
+    b["devices"][0]["ip_address"] = "10.0.0.99"
+    r = _run(system.import_backup(b))
     assert db.query(Device).one().ip_address == "10.0.0.99"
-    assert db.query(Device).one().access_code == "12345678"
+    assert db.query(Device).one().access_code is None
+    assert r["secrets_dropped"] == {"X1C": ["access_code"]}
 
 
 def test_backup_ohne_zugangsdaten_loescht_keine_vorhandenen(anlage, db):
     """Der häufige Fall: Backup vor dem Update ziehen, später einspielen."""
     b = _run(system.export_backup())
-    b["device_settings"]["X1C"]["ha_url"] = "http://neu:8123"
     r = _run(system.import_backup(b))
     assert r["secrets"] == "none"
     assert db.query(Device).one().access_code == "12345678"
     s = device_settings.get(db, anlage.id)
-    assert s["ha_url"] == "http://neu:8123"
     assert s["ha_token"] == GEHEIM["ha_token"]
     assert s["webcam_url"] == GEHEIM["webcam_url"]
+
+
+def test_neue_ha_adresse_ohne_token_verwirft_den_token(anlage, db):
+    b = _run(system.export_backup())
+    b["device_settings"]["X1C"]["ha_url"] = "http://fremd:8123"
+    r = _run(system.import_backup(b))
+    s = device_settings.get(db, anlage.id)
+    assert s["ha_url"] == "http://fremd:8123" and "ha_token" not in s
+    assert s["webcam_url"] == GEHEIM["webcam_url"]               # an nichts gebunden
+    assert s["plug_password"] == GEHEIM["plug_password"]         # Steckdose unverändert
+    assert r["secrets_dropped"] == {"X1C": ["ha_token"]}
 
 
 def test_klartext_zugangsdaten_auf_ausdruecklichen_wunsch(anlage, db):
@@ -271,9 +291,45 @@ def test_alte_abschnitte_stoeren_die_wiederherstellung_nicht(tmp_path, monkeypat
     ziel = tmp_path / "seq.json"
     monkeypatch.setattr(system, "_backup_files", lambda: [(str(ziel), "sequences")])
     r = _run(system.import_backup({
+        "schema": system.BACKUP_SCHEMA,
         "sequences": {"seq_new": [], "seq_next": [{"type": "delay"}]},
         "notifications": {"telegram_bot_token": "x"},
         "calibration": {"a": 1},
     }))
     assert r["restored"] == ["sequences"]
     assert ziel.exists()
+
+
+# ── Manipulierte Backups (seit v1.1.62) ─────────────────────────────────────────
+
+def test_fremdes_json_ohne_schema_wird_abgelehnt():
+    with pytest.raises(HTTPException) as e:
+        _run(system.import_backup({"sequences": {"seq_next": []}}))
+    assert e.value.detail == "KEIN_PRINTLOOM_BACKUP"
+
+
+def test_zu_teure_scrypt_parameter_werden_abgelehnt(monkeypatch):
+    import hashlib
+    gerufen = []
+    monkeypatch.setattr(hashlib, "scrypt", lambda *a, **kw: gerufen.append(1) or b"0" * 32)
+    blob = {"encrypted": True, "kdf": "scrypt", "n": 2 ** 17, "r": 8, "p": 1,
+            "salt": "AAAAAAAAAAAAAAAAAAAAAA==", "data": "x"}
+    with pytest.raises(HTTPException) as e:
+        _run(system.import_backup({"backup": {"schema": system.BACKUP_SCHEMA, "secrets": blob,
+                                              "devices": []}, "password": "egal"}))
+    assert e.value.status_code == 400 and gerufen == []
+    with pytest.raises(ValueError):
+        credentials.decrypt({**blob, "n": 2 ** 14, "p": 2}, "egal")
+
+
+def test_kaputtes_salt_wird_abgelehnt():
+    blob = {"encrypted": True, "kdf": "scrypt", "n": 2 ** 14, "r": 8, "p": 1,
+            "salt": "kein base64!", "data": "x"}
+    with pytest.raises(ValueError):
+        credentials.decrypt(blob, "egal")
+
+
+def test_altformat_nur_mit_token_in_den_einstellungen_gilt_als_wiederhergestellt():
+    _, _, state = system._merge_secrets({"exported_at": "2025-01-01", "devices": [{"name": "X1C"}],
+                                         "device_settings": {"X1C": {"ha_token": "t"}}}, None)
+    assert state == "restored"

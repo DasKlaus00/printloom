@@ -22,6 +22,8 @@ from app.routers import autofarm, system  # noqa: E402
 from app.services import rack_store, updater  # noqa: E402
 
 ZYKLUS = [{"id": 1, "type": "send_file"}, {"id": 2, "type": "wait_print"}]
+# Kopf eines echten Backups (export_backup); ohne ihn gilt es nicht als Printloom-Backup.
+KOPF = {"schema": "printloom-backup/3", "exported_at": "2026-11-17T22:00:00"}
 
 
 def _run(coro):
@@ -45,7 +47,7 @@ def ablage(tmp_path, monkeypatch):
 def test_einspielen_bei_laufender_farm_wird_abgelehnt(ablage, monkeypatch):
     monkeypatch.setitem(autofarm._farm, "running", True)
     with pytest.raises(HTTPException) as e:
-        _run(system.import_backup({"sequences": {"seq_new": [], "seq_next": ZYKLUS}}))
+        _run(system.import_backup({**KOPF, "sequences": {"seq_new": [], "seq_next": ZYKLUS}}))
     assert e.value.status_code == 409 and not ablage.seq.exists()
 
 
@@ -53,7 +55,7 @@ def test_einspielen_auch_bei_pausierter_farm_abgelehnt(ablage, monkeypatch):
     monkeypatch.setitem(autofarm._farm, "running", True)
     monkeypatch.setitem(autofarm._farm, "paused", True)
     with pytest.raises(HTTPException) as e:
-        _run(system.import_backup({"sequences": {"seq_new": [], "seq_next": ZYKLUS}}))
+        _run(system.import_backup({**KOPF, "sequences": {"seq_new": [], "seq_next": ZYKLUS}}))
     assert e.value.status_code == 409
 
 
@@ -64,7 +66,7 @@ def test_einspielen_ueberschreibt_keine_belegten_faecher(ablage):
         data["magazine_counts"] = [3] * data["num_racks"]   # echte Form: ein Wert je Regal
     backup = rack_store.default_data()       # im Backup ist 1-1 frei, Bestand voll
     backup["slot_height_mm"] = 55.0
-    r = _run(system.import_backup({"rack_slots": backup}))
+    r = _run(system.import_backup({**KOPF, "rack_slots": backup}))
     live = rack_store.load()
     assert live["slots"]["1-1"]["status"] == "done"
     assert live["magazine_counts"] == [3] * live["num_racks"]
@@ -72,38 +74,39 @@ def test_einspielen_ueberschreibt_keine_belegten_faecher(ablage):
 
 
 def test_ohne_regal_datei_wird_es_frei_angelegt_mit_hinweis(ablage):
-    r = _run(system.import_backup({"rack_slots": rack_store.default_data()}))
+    r = _run(system.import_backup({**KOPF, "rack_slots": rack_store.default_data()}))
     assert any("Regal neu angelegt" in n for n in r["notes"])
     assert all(s["status"] == "free" for s in rack_store.load()["slots"].values())
 
 
 def test_einspielen_prueft_die_form_der_abschnitte(ablage):
     with pytest.raises(HTTPException) as e:
-        _run(system.import_backup({"sequences": {"seq_new": [], "seq_next": ZYKLUS},
+        _run(system.import_backup({**KOPF, "sequences": {"seq_new": [], "seq_next": ZYKLUS},
                                    "rack_slots": [1, 2, 3]}))
     assert e.value.status_code == 400
     assert not ablage.seq.exists()            # nichts halb eingespielt
 
 
-def test_sequenzen_werden_bereinigt_und_bekommen_das_schema(ablage):
-    r = _run(system.import_backup({"sequences": {"seq_new": [], "seq_next": ZYKLUS + [
-        {"id": 3, "type": "teleport"}, {"id": 4, "type": "delay", "geheim": 1}]}}))
+def test_sequenzen_werden_bereinigt_und_behalten_ihr_schema(ablage):
+    r = _run(system.import_backup({**KOPF, "sequences": {"seq_new": [], "schema_version": "3.0.0",
+        "seq_next": ZYKLUS + [{"id": 3, "type": "teleport"}, {"id": 4, "type": "delay", "geheim": 1}]}}))
     data = json.loads(ablage.seq.read_text(encoding="utf-8"))
     assert [s["type"] for s in data["seq_next"]] == ["send_file", "wait_print", "delay"]
     assert "geheim" not in data["seq_next"][2]
-    assert data["schema_version"] == autofarm.SEQ_SCHEMA_VERSION
+    # Nicht neu gestempelt (#98): Der Editor zeigt ein altes Backup als „prüfen".
+    assert data["schema_version"] == "3.0.0"
     assert any("unbekannte Schritt" in n for n in r["notes"])
 
 
 def test_fremdes_schema_wird_abgelehnt(ablage):
     with pytest.raises(HTTPException) as e:
-        _run(system.import_backup({"schema": "fremdes-tool/2", "sequences": {"seq_next": ZYKLUS}}))
+        _run(system.import_backup({**KOPF, "schema": "fremdes-tool/2", "sequences": {"seq_next": ZYKLUS}}))
     assert e.value.status_code == 400 and not ablage.seq.exists()
 
 
 def test_geraet_mit_kaputtem_port_wird_abgelehnt(ablage):
     with pytest.raises(HTTPException) as e:
-        _run(system.import_backup({"devices": [{"name": "X", "device_type": "klipper",
+        _run(system.import_backup({**KOPF, "devices": [{"name": "X", "device_type": "klipper",
                                                 "port": "sieben"}]}))
     assert e.value.status_code == 400
 

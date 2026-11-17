@@ -11,6 +11,7 @@ seine Regal-Einstellungen sichern wollte.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import os
@@ -27,8 +28,36 @@ _URL_WITH_PASSWORD = re.compile(r"^[a-z][a-z0-9+.-]*://[^/@\s]*:[^/@\s]*@", re.I
 _SCRYPT = {"n": 2 ** 14, "r": 8, "p": 1}
 
 
+# Welches Geheimnis zu welcher Adresse gehört (eine Quelle für Backup und Einspielen).
+# Bringt ein Backup das Geheimnis NICHT mit, ändert aber die Adresse, wird das
+# vorhandene verworfen: Sonst schickte Printloom den Access-Code bzw. Token nach dem
+# Einspielen eines präparierten Backups an einen fremden Rechner (bis v1.1.61).
+SECRET_BINDINGS = {
+    "access_code":   ("ip_address",),
+    "ha_token":      ("ha_url",),
+    "plug_password": ("plug_url", "plug_type"),
+    "plug_token":    ("plug_url", "plug_type"),
+}
+
+# Höchstens diese scrypt-Kosten nimmt das Einspielen an: Ein Backup mit n = 2**20
+# hielte den Rechner minutenlang fest (und mit p > 1 noch länger).
+_SCRYPT_MAX_N = 2 ** 15
+
+
 class WrongPassword(ValueError):
     pass
+
+
+def dropped_on_change(old: dict, new: dict, brought) -> list:
+    """Geheimnisse aus `old`, die wegfallen: nicht in `brought` (vom Backup
+    mitgebracht), aber ein gebundenes Feld hat in `new` einen anderen Wert."""
+    out = []
+    for secret, fields in SECRET_BINDINGS.items():
+        if secret in brought or not (old or {}).get(secret):
+            continue
+        if any((new or {}).get(f) != (old or {}).get(f) for f in fields):
+            out.append(secret)
+    return out
 
 
 def is_secret_key(key) -> bool:
@@ -74,9 +103,16 @@ def decrypt(blob: dict, password: str) -> dict:
     from cryptography.fernet import Fernet, InvalidToken
     if blob.get("kdf") != "scrypt":
         raise ValueError(f"Unbekanntes Verfahren: {blob.get('kdf')}")
-    key = _key(password, base64.b64decode(blob["salt"]),
-               int(blob["n"]), int(blob["r"]), int(blob["p"]))
     try:
-        return json.loads(Fernet(key).decrypt(blob["data"].encode("ascii")))
+        n, r, p = int(blob["n"]), int(blob["r"]), int(blob["p"])
+        salt = base64.b64decode(blob["salt"], validate=True)
+        data = blob["data"].encode("ascii")
+    except (KeyError, TypeError, ValueError, AttributeError, binascii.Error) as e:
+        raise ValueError(f"Backup-Zugangsdaten unvollständig ({e})") from None
+    if not (2 <= n <= _SCRYPT_MAX_N and n & (n - 1) == 0) or r != 8 or p != 1 or not salt:
+        raise ValueError("Unbekannte Backup-Parameter")
+    key = _key(password, salt, n, r, p)
+    try:
+        return json.loads(Fernet(key).decrypt(data))
     except InvalidToken:
         raise WrongPassword("Backup-Passwort falsch")

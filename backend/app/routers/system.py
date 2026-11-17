@@ -897,7 +897,8 @@ def _merge_secrets(backup: dict, password: Optional[str]) -> tuple:
     blob = backup.get("secrets")
     if not isinstance(blob, dict):
         # Backups bis v1.1.38 tragen die Zugangsdaten direkt in devices/device_settings.
-        legacy = any(d.get("access_code") for d in devices)
+        legacy = (any(d.get("access_code") for d in devices)
+                  or any(credentials.split(s)[1] for s in settings.values()))
         return devices, settings, ("restored" if legacy else "none")
     if blob.get("encrypted"):
         if not password:
@@ -906,6 +907,8 @@ def _merge_secrets(backup: dict, password: Optional[str]) -> tuple:
             blob = credentials.decrypt(blob, password)
         except credentials.WrongPassword:
             raise HTTPException(400, "BACKUP_PASSWORT_FALSCH")
+        except ValueError as e:
+            raise HTTPException(400, f"Backup-Zugangsdaten unlesbar: {e}")
     for d in devices:
         d.update((blob.get("devices") or {}).get(d.get("name"), {}))
     for name, secret in (blob.get("device_settings") or {}).items():
@@ -938,7 +941,8 @@ def _remap_geometry(geometry: dict, devices: list, name_to_id: dict) -> tuple:
     return g, unmapped
 
 
-def _restore_devices(db, devices: list, settings: dict, name_to_id_out: dict = None) -> int:
+def _restore_devices(db, devices: list, settings: dict, name_to_id_out: dict = None,
+                     dropped_out: dict = None) -> int:
     """Geräte über den Namen anlegen/aktualisieren, dann ihre Einstellungen unter der
     (evtl. neuen) ID ablegen. Zugangsdaten, die das Backup nicht mitbringt, bleiben
     wie sie sind — ein Backup ohne Zugangsdaten darf keine löschen."""
@@ -968,11 +972,17 @@ def _restore_devices(db, devices: list, settings: dict, name_to_id_out: dict = N
             db.add(row)
         row.device_type    = dtype
         row.model          = printer_models.normalize(d.get("model")) or             printer_models.from_serial(d.get("serial_number")) or None
+        if d.get("access_code"):
+            row.access_code = d["access_code"]
+        elif row.id is not None and credentials.dropped_on_change(
+                {"access_code": row.access_code, "ip_address": row.ip_address},
+                {"ip_address": d.get("ip_address")}, set()):
+            row.access_code = None
+            if dropped_out is not None:
+                dropped_out.setdefault(name, []).append("access_code")
         row.ip_address     = d.get("ip_address")
         row.port           = d.get("port")
         row.serial_number  = d.get("serial_number")
-        if d.get("access_code"):
-            row.access_code = d["access_code"]
         row.mqtt_port      = d.get("mqtt_port", 8883)
         row.use_tls        = d.get("use_tls", True)
         # Vorhandene Geräte behalten ihr is_active (das Backup entscheidet das nie).
@@ -984,8 +994,14 @@ def _restore_devices(db, devices: list, settings: dict, name_to_id_out: dict = N
     for name, s in (settings or {}).items():
         did = name_to_id.get(name)
         if did and isinstance(s, dict):
-            _, kept = credentials.split(device_settings.get(db, did))
-            device_settings.put(db, did, {**kept, **s})
+            old = device_settings.get(db, did)
+            _, kept = credentials.split(old)
+            new = {**kept, **s}
+            for secret in credentials.dropped_on_change(old, new, set(s)):
+                new.pop(secret, None)
+                if dropped_out is not None:
+                    dropped_out.setdefault(name, []).append(secret)
+            device_settings.put(db, did, new)
     if name_to_id_out is not None:
         name_to_id_out.update(name_to_id)
     return n
@@ -1016,7 +1032,6 @@ def _prepare_section(key: str, value):
     → (Inhalt, Hinweis). Schreibt NICHTS: Erst wenn alle Abschnitte taugen, wird
     geschrieben (bis v1.1.60 landete jeder Abschnitt wörtlich in seiner Datei — eine
     Liste statt eines Regals machte die Datei kaputt, und die Farm stand)."""
-    from app.routers import autofarm
     from app.services import geometry_check, geometry_store, ottoeject_motion, sequence_steps
     rules = _data_file_rules()
     expect = rules.get(key, (None,))[0]
@@ -1029,7 +1044,10 @@ def _prepare_section(key: str, value):
         for name in ("seq_new", "seq_next"):
             if not isinstance(value.get(name, []), list):
                 raise HTTPException(400, f"Backup-Abschnitt „sequences.{name}“ ist keine Liste")
-        out, dropped = {"schema_version": autofarm.SEQ_SCHEMA_VERSION}, 0
+        # Schema-Nummer aus dem Backup, NICHT neu stempeln (#98): Ein altes Backup zeigt
+        # der Editor dann als „ältere Version — prüfen und übernehmen", und der Start
+        # verweigert es bis dahin.
+        out, dropped = {"schema_version": value.get("schema_version")}, 0
         for name in ("seq_new", "seq_next"):
             steps = [sequence_steps.sanitize_step(s) for s in value.get(name) or []]
             dropped += sum(1 for s in steps if s is None)
@@ -1075,12 +1093,15 @@ async def import_backup(body: dict):
     if isinstance(body.get("backup"), dict) and "schema" not in body:
         backup, password = body["backup"], body.get("password")
     schema = backup.get("schema")
-    if schema is not None and not str(schema).startswith("printloom-backup/"):
-        # Ohne „schema" gilt es als Altformat; ein fremdes ist kein Printloom-Backup.
-        raise HTTPException(400, f"Kein Printloom-Backup (schema „{schema}“)")
+    # Ohne „schema" nur das Altformat (hat immer „exported_at"); alles andere ist kein
+    # Printloom-Backup. Bis v1.1.60 nahm der Endpunkt jedes JSON-Objekt an.
+    if (schema is None and not backup.get("exported_at")) or \
+            (schema is not None and not str(schema).startswith("printloom-backup/")):
+        raise HTTPException(400, "KEIN_PRINTLOOM_BACKUP")
 
-    # Zuerst entschlüsseln: ein falsches Passwort soll NICHTS halb einspielen.
-    devices, settings, secrets_state = _merge_secrets(backup, password)
+    # Zuerst entschlüsseln: ein falsches Passwort soll NICHTS halb einspielen. Im
+    # Thread: scrypt braucht Rechenzeit und hielte sonst alle Anfragen an.
+    devices, settings, secrets_state = await asyncio.to_thread(_merge_secrets, backup, password)
     for d in devices or []:
         if not isinstance(d, dict) or not all(_int_like(d.get(k)) for k in ("port", "mqtt_port")):
             raise HTTPException(400, f"Backup-Gerät „{(d or {}).get('name', '?')}“: Port ist keine Zahl")
@@ -1094,12 +1115,13 @@ async def import_backup(body: dict):
                 notes.append(note)
     restored = []
     unmapped = []
+    dropped: dict = {}
 
     if devices:
         db = SessionLocal()
         try:
             name_to_id: dict = {}
-            count = _restore_devices(db, devices, settings, name_to_id)
+            count = _restore_devices(db, devices, settings, name_to_id, dropped)
             restored.append(f"devices ({count})")
             # Geometrie an die (evtl. neuen) Geräte-IDs anpassen, bevor sie geschrieben
             # wird. Bis v1.1.50 zeigten Drucker-Blöcke nach dem Einspielen auf einer
@@ -1123,7 +1145,7 @@ async def import_backup(body: dict):
         restored.append(key)
 
     return {"success": True, "restored": restored, "secrets": secrets_state,
-            "unmapped_printers": unmapped, "notes": notes}
+            "unmapped_printers": unmapped, "notes": notes, "secrets_dropped": dropped}
 
 
 # ─── Multi-target health (printer · klipper) ─────────────────────────────────

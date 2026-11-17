@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.62',
+    de: [
+      'ZUGANGSDATEN BLEIBEN AN IHRER ADRESSE: Ändert ein Backup die Adresse eines Druckers, von Home Assistant oder einer Steckdose, bringt aber die Zugangsdaten dazu nicht mit, verwirft Printloom die vorhandenen und sagt es. Bisher blieben sie stehen, und ein präpariertes Backup hätte den Access-Code oder Token an einen fremden Rechner schicken lassen. Gleiche Adresse: Die Zugangsdaten bleiben wie bisher.',
+      'NUR PRINTLOOM-BACKUPS: Eine Datei ohne Printloom-Kennung wird nicht eingespielt. Ein verschlüsseltes Backup mit ungewöhnlich teuren Schlüssel-Parametern wird abgelehnt, statt den Rechner minutenlang zu beschäftigen.',
+      'SEQUENZEN AUS EINEM ALTEN BACKUP: Sie behalten ihre Versions-Kennung. Der Sequenz-Editor zeigt sie dann mit „aus einer älteren Version — prüfen und übernehmen“, statt sie ungeprüft als aktuell zu führen.',
+    ],
+    en: [
+      'CREDENTIALS STAY WITH THEIR ADDRESS: if a backup changes the address of a printer, Home Assistant or a smart plug but does not bring the matching credentials, Printloom discards the existing ones and says so. Until now they stayed, and a crafted backup could have had the access code or token sent to a foreign computer. Same address: the credentials stay as before.',
+      'PRINTLOOM BACKUPS ONLY: a file without the Printloom marker is not restored. An encrypted backup with unusually expensive key parameters is rejected instead of keeping the computer busy for minutes.',
+      'SEQUENCES FROM AN OLD BACKUP keep their version marker. The sequence editor then shows them with “from an older version — check and apply” instead of treating them as current without a check.',
+    ],
+  },
+  {
     version: '1.1.61',
     de: [
       'BACKUP NUR BEI STILLSTAND: Ein Backup lässt sich nur einspielen, wenn Farm und Stresstest stehen (auch nicht pausiert). Bisher änderte es mitten im Lauf Sequenzen, Regal und Geometrie.',
