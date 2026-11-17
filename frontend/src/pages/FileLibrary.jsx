@@ -136,7 +136,7 @@ function AmsInfoPanel({ fileId, fileType }) {
     <div className="mt-1.5">
       <button
         onClick={load}
-        className="flex items-center gap-1.5 text-[11px] text-surface-500 hover:text-blue-400 transition-colors"
+        className="flex items-center gap-1.5 text-xs text-surface-500 hover:text-blue-400 transition-colors"
       >
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -176,12 +176,12 @@ function AmsInfoPanel({ fileId, fileType }) {
                   </div>
                 ))}
               </div>
-              <div className="flex items-center gap-2 pt-1 border-t border-surface-800">
+              <div className="flex items-center gap-2 pt-1 border-t border-surface-700">
                 <span className="text-[10px] text-surface-600">ams_mapping:</span>
                 <code className="text-[11px] text-emerald-400 font-mono">{info.ams_mapping_str}</code>
                 <button
                   onClick={() => navigator.clipboard?.writeText(info.ams_mapping_str)}
-                  className="text-[10px] text-surface-600 hover:text-surface-400"
+                  className="text-xs text-surface-600 hover:text-surface-400"
                 >⎘</button>
               </div>
             </>
@@ -235,7 +235,7 @@ function FileFilaments({ fileId, amsSlots }) {
   return (
     <div className="mt-1.5">
       <button onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 text-[11px] text-surface-500 hover:text-blue-400 transition-colors">
+        className="flex items-center gap-1.5 text-xs text-surface-500 hover:text-blue-400 transition-colors">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="9"/></svg>
         {tr('Filamente & AMS-Zuordnung')}{manual ? ` · ${tr('manuell')}` : ''}
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
@@ -269,14 +269,14 @@ function FileFilaments({ fileId, amsSlots }) {
                 )}
                 {slot && <span className="w-3.5 h-3.5 rounded-full border border-white/10 shrink-0"
                   style={{ backgroundColor: slot.color ? `#${String(slot.color).slice(0,6)}` : '#555' }} />}
-                {mism && <span className="text-red-400 text-[9px] shrink-0" title={tr('Anderes Material — Druck pausiert')}>⚠</span>}
+                {mism && <span className="text-red-400 text-[10px] shrink-0" title={tr('Anderes Material — Druck pausiert')}>⚠</span>}
               </div>
             )
           })}
           {fils && fils.length > 0 && amsSlots.length > 0 && (
             <div className="flex items-center gap-3 pt-0.5">
-              <span className="text-[9px] text-surface-600">{manual ? tr('Manuell — wird beim Druck verwendet') : tr('Automatisch (Material + Farbe)')}</span>
-              {manual && <button onClick={resetAuto} className="text-[9px] text-blue-400 hover:text-blue-300">{tr('↺ Automatisch')}</button>}
+              <span className="text-[10px] text-surface-600">{manual ? tr('Manuell — wird beim Druck verwendet') : tr('Automatisch (Material + Farbe)')}</span>
+              {manual && <button onClick={resetAuto} className="text-xs text-blue-400 hover:text-blue-300">{tr('↺ Automatisch')}</button>}
             </div>
           )}
         </div>
@@ -302,13 +302,13 @@ function ColHeader({ label, width, sortable, sortActive, sortDir, onSort, values
   return (
     <div ref={ref} className="relative shrink-0" style={width ? { width } : undefined}>
       <button onClick={() => setOpen(o => !o)}
-        className={`w-full flex items-center gap-1 px-2 py-1.5 text-[11px] font-semibold rounded transition-colors ${
+        className={`w-full flex items-center gap-1 px-2 py-1.5 text-xs font-semibold rounded transition-colors ${
           filtered || sortActive ? 'text-blue-300 bg-blue-950/30' : 'text-surface-200 hover:bg-surface-700/50'}`}
         title={tr('Sortieren / filtern')}>
         <span className="truncate">{label}</span>
-        {sortActive && <span className="text-[9px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+        {sortActive && <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
         {filtered && <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />}
-        <span className="ml-auto text-[8px] opacity-60">▼</span>
+        <span className="ml-auto text-[10px] opacity-60">▼</span>
       </button>
       {open && (
         <div className="absolute left-0 top-full mt-1 z-30 min-w-[11rem] card p-1 shadow-xl border border-surface-700 max-h-72 overflow-y-auto">
@@ -316,7 +316,7 @@ function ColHeader({ label, width, sortable, sortActive, sortDir, onSort, values
             <>
               <button onClick={() => { onSort('asc'); setOpen(false) }} className={`${item} ${sortActive && sortDir === 'asc' ? 'text-blue-300' : 'text-surface-300'}`}>{tr('↑ Aufsteigend')}</button>
               <button onClick={() => { onSort('desc'); setOpen(false) }} className={`${item} ${sortActive && sortDir === 'desc' ? 'text-blue-300' : 'text-surface-300'}`}>{tr('↓ Absteigend')}</button>
-              {values && <div className="border-t border-surface-800 my-1" />}
+              {values && <div className="border-t border-surface-700 my-1" />}
             </>
           )}
           {values && (
@@ -355,7 +355,7 @@ function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sendin
   if (plates === null) return <p className="text-[10px] text-surface-600 mt-1.5">{tr('Lade Platten…')}</p>
   if (!plates.length)  return <p className="text-[10px] text-surface-600 mt-1.5">{tr('Keine Platten-Infos in der Datei gefunden')}</p>
   return (
-    <div className="mt-1.5 space-y-1 border-t border-surface-800/50 pt-1.5">
+    <div className="mt-1.5 space-y-1 border-t border-surface-700 pt-1.5">
       {plates.map(p => (
         <div key={p.plate} className="flex items-center gap-2 text-[11px]">
           {/* Slicer-Plattenname (plater_name) falls vergeben, sonst „Platte N" */}
@@ -369,10 +369,10 @@ function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sendin
           )}
           <span className="flex-1" />
           <button onClick={() => onQueuePlate(file, p.plate, plates.length, p.name || null)} disabled={enqueuing}
-            className="btn btn-ghost btn-sm text-[10px] disabled:opacity-50"
+            className="btn btn-ghost btn-sm text-xs disabled:opacity-50"
             title={tr('Nur diese Platte in die Auto-Farm-Queue legen')}>{tr('+ Queue')}</button>
           <button onClick={() => onSendPlate(file, p.plate)} disabled={!bambuId || sending === file.id || !!printLock}
-            className="btn btn-ghost btn-sm text-[10px] text-cyan-400 disabled:opacity-50"
+            className="btn btn-ghost btn-sm text-xs text-cyan-400 disabled:opacity-50"
             title={printLock || (bambuId ? tr('Nur diese Platte sofort drucken') : tr('Kein Bambu-Gerät konfiguriert'))}>{tr('▶ Drucken')}</button>
         </div>
       ))}
@@ -499,7 +499,7 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
             {/* Multi-Plate-Badge: aufklappen → Platten einzeln (Zeit/Höhe/Druck/Queue) */}
             {isPrintable && (meta?.plate_count ?? 0) > 1 && (
               <button onClick={() => setShowPlates(s => !s)}
-                className={`text-[10px] px-1.5 py-0.5 rounded border font-mono transition-colors ${
+                className={`text-xs px-1.5 py-0.5 rounded border font-mono transition-colors ${
                   showPlates ? 'border-blue-600 bg-blue-950/50 text-blue-200'
                              : 'border-blue-800/50 bg-blue-950/30 text-blue-300 hover:border-blue-600'}`}
                 title={tr('Diese Datei enthält {0} Platten — aufklappen für Einzeldruck', meta.plate_count)}>
@@ -1000,7 +1000,7 @@ function FileLibrary() {
         </div>
         {/* 2.6 — Beispiel-Teil zum Ausprobieren (ohne echten Druck) */}
         <div className="mt-2 text-right">
-          <button onClick={loadDemo} className="text-[11px] text-surface-500 hover:text-blue-400 transition-colors">
+          <button onClick={loadDemo} className="text-xs text-surface-500 hover:text-blue-400 transition-colors">
             {tr('+ Beispiel-Teil laden')}
           </button>
         </div>

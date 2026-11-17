@@ -91,7 +91,7 @@ function AmsPreview({ filaments, amsSlots }) {
   const rows = amsAutoMap(filaments, amsSlots)
   return (
     <div className="space-y-1 mt-1.5">
-      <p className="text-[9px] uppercase tracking-wide text-surface-600">{tr('AMS-Zuordnung (Vorschau)')}</p>
+      <p className="text-[10px] uppercase tracking-wide text-surface-600">{tr('AMS-Zuordnung (Vorschau)')}</p>
       {rows.map((r, i) => {
         const q = AMS_Q[r.quality] ?? AMS_Q.unreadable
         return (
@@ -165,15 +165,15 @@ function AmsMapper({ filaments, amsSlots, value, onChange }) {
               ))}
             </select>
             <AmsDot hex={slot?.color} />
-            <span className={`flex items-center gap-0.5 text-[9px] shrink-0 ${q.text}`} title={tr('Trefferqualität')}>
+            <span className={`flex items-center gap-0.5 text-[10px] shrink-0 ${q.text}`} title={tr('Trefferqualität')}>
               <span className={`w-1.5 h-1.5 rounded-full ${q.dot}`} />{tr(q.label)}
             </span>
           </div>
         )
       })}
-      <div className="flex items-center gap-2 pt-1 border-t border-surface-800/40">
-        <span className="text-[9px] text-surface-700 font-mono">{tr('Map:')} {mapArr.join(',')}</span>
-        <button onClick={autoMatch} className="ml-auto text-[9px] text-blue-400 hover:text-blue-300 transition-colors">
+      <div className="flex items-center gap-2 pt-1 border-t border-surface-700">
+        <span className="text-[10px] text-surface-700 font-mono">{tr('Map:')} {mapArr.join(',')}</span>
+        <button onClick={autoMatch} className="ml-auto text-xs text-blue-400 hover:text-blue-300 transition-colors">
           {tr('Auto-Match')}
         </button>
       </div>
@@ -204,7 +204,7 @@ function CurrentStep({ farmStatus, idle }) {
       <p className="section-label mb-1">{tr('Aktueller Schritt')}</p>
       <div className="flex items-center gap-1.5">
         <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0" />
-        <p className="text-[9px] font-mono text-blue-300 truncate">{tr(farmStatus.seq_step_label)}</p>
+        <p className="text-[10px] font-mono text-blue-300 truncate">{tr(farmStatus.seq_step_label)}</p>
       </div>
     </div>
   )
@@ -245,7 +245,7 @@ function FarmViz({ farmStatus, jobs, curJobId }) {
       {/* Ablauf-Phasen — der „Aktuelle Schritt" sitzt jetzt oben in der Sidebar (CurrentStep) */}
       <div className="card p-2.5 space-y-0.5">
         {PHASES.map(p => (
-          <div key={p.id} className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[8px] font-mono transition-colors ${
+          <div key={p.id} className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
             activePhase === p.id && running
               ? 'bg-blue-900/30 text-blue-300'
               : 'text-surface-700'
@@ -425,16 +425,16 @@ function StreamView({ url, label, grow = 'flex-1' }) {
   // Die Kachel füllt ihren Teil des Panels, das Bild passt sich ein (statt eines
   // festen Seitenverhältnisses, das bis v1.1.67 über die Rasterzelle hinauswuchs).
   return (
-    <div className={`relative ${grow} min-h-0 w-full bg-black rounded-lg overflow-hidden`}>
+    <div className={`relative ${grow} min-h-0 w-full cam-surface rounded-lg overflow-hidden`}>
       {!url ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1 px-3 text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-3 text-center">
           <p className="text-[10px]">{label}</p>
-          <p className="text-[9px] text-surface-700">{tr('URL in Konfiguration → Kameras')}</p>
+          <p className="text-[10px] cam-muted">{tr('URL in Konfiguration → Kameras')}</p>
         </div>
       ) : err ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1.5 px-3 text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-3 text-center">
           <p className="text-[10px]">{tr('{0} nicht erreichbar', label)}</p>
-          <p className="text-[9px] font-mono text-surface-700 break-all">{src}</p>
+          <p className="text-[10px] font-mono cam-muted break-all">{src}</p>
           <button onClick={reconnect} className="btn btn-ghost btn-sm">{tr('Neu verbinden')}</button>
         </div>
       ) : type === 'webrtc' ? (
@@ -444,14 +444,14 @@ function StreamView({ url, label, grow = 'flex-1' }) {
       ) : active ? (
         <img key={k} src={src} alt={label} onError={() => setErr(true)} onLoad={() => setErr(false)} className="absolute inset-0 w-full h-full object-contain" />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-surface-600 text-[10px]">{tr('Pausiert (Seite im Hintergrund)')}</div>
+        <div className="absolute inset-0 flex items-center justify-center cam-muted text-[10px]">{tr('Pausiert (Seite im Hintergrund)')}</div>
       )}
       {url && !err && (
         <>
-          <span className="absolute top-1.5 left-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>
-          <span className="absolute top-1.5 right-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-black/60 text-surface-300">{CAM_TYPE_LABEL[type]}</span>
+          <span className="absolute top-1.5 left-1.5 text-[10px] font-mono px-1 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>
+          <span className="absolute top-1.5 right-1.5 text-[10px] font-mono px-1 py-0.5 rounded bg-black/60 text-white/80">{CAM_TYPE_LABEL[type]}</span>
           <button onClick={reconnect} title={tr('Neu verbinden')}
-            className="absolute bottom-1.5 right-1.5 text-[11px] leading-none px-1.5 py-1 rounded bg-black/50 text-surface-300 hover:text-white">⟳</button>
+            className="absolute bottom-1.5 right-1.5 text-xs leading-none px-1.5 py-1 rounded bg-black/50 text-white/80 hover:text-white">⟳</button>
         </>
       )}
     </div>
@@ -511,12 +511,12 @@ function X1CView({ bambuId, grow = 'flex-1' }) {
           {live ? tr('⏹ Stopp') : tr('📷 Live')}
         </button>
       </div>
-      <div ref={wrapRef} className="relative flex-1 min-h-0 w-full bg-black rounded-lg overflow-hidden">
+      <div ref={wrapRef} className="relative flex-1 min-h-0 w-full cam-surface rounded-lg overflow-hidden">
         {live ? (
           err ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1.5 px-3 text-center">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-3 text-center">
               <p className="text-[10px]">{tr('Drucker-Kamera nicht erreichbar')}</p>
-              {err && <p className="text-[9px] font-mono text-red-400/80 break-all">{err}</p>}
+              {err && <p className="text-[10px] font-mono cam-error break-all">{err}</p>}
               <button onClick={connect} className="btn btn-ghost btn-sm mt-0.5">{tr('Neu verbinden')}</button>
             </div>
           ) : ready ? (
@@ -525,18 +525,18 @@ function X1CView({ bambuId, grow = 'flex-1' }) {
                 onError={() => setErr(e => e || tr('Stream-Verbindung abgebrochen'))}
                 className="absolute inset-0 w-full h-full object-contain" />
             ) : (
-              <div className="absolute inset-0 flex items-center justify-center text-surface-600 text-[10px]">{tr('Pausiert (Seite im Hintergrund)')}</div>
+              <div className="absolute inset-0 flex items-center justify-center cam-muted text-[10px]">{tr('Pausiert (Seite im Hintergrund)')}</div>
             )
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-[10px]">{tr('Verbinde …')}</div>
+            <div className="absolute inset-0 flex items-center justify-center cam-muted text-[10px]">{tr('Verbinde …')}</div>
           )
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1 px-3 text-center">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-3 text-center">
             <p className="text-[10px]">{bambuId ? tr('X1C bereit') : tr('Kein Drucker')}</p>
-            {bambuId && <p className="text-[9px] text-surface-700">{tr('„📷 Live" drücken')}</p>}
+            {bambuId && <p className="text-[10px] cam-muted">{tr('„📷 Live" drücken')}</p>}
           </div>
         )}
-        {live && ready && <span className="absolute top-1.5 left-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>}
+        {live && ready && <span className="absolute top-1.5 left-1.5 text-[10px] font-mono px-1 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>}
       </div>
     </div>
   )
@@ -566,22 +566,22 @@ function HaPollView({ deviceId, label, grow = 'flex-1' }) {
     return () => { alive = false; clearTimeout(timer) }
   }, [deviceId, active])
   return (
-    <div className={`relative ${grow} min-h-0 w-full bg-black rounded-lg overflow-hidden`}>
+    <div className={`relative ${grow} min-h-0 w-full cam-surface rounded-lg overflow-hidden`}>
       {src ? (
         <img src={src} alt={label} className="absolute inset-0 w-full h-full object-contain" />
       ) : !err ? (
-        <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-[10px]">{tr('Verbinde mit Home Assistant …')}</div>
+        <div className="absolute inset-0 flex items-center justify-center cam-muted text-[10px]">{tr('Verbinde mit Home Assistant …')}</div>
       ) : null}
       {err && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1 px-3 text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-3 text-center">
           <p className="text-[10px]">{tr('{0} nicht erreichbar', label)}</p>
-          <p className="text-[9px] text-surface-700">{tr('Home Assistant / Token prüfen')}</p>
+          <p className="text-[10px] cam-muted">{tr('Home Assistant / Token prüfen')}</p>
         </div>
       )}
       {src && !err && (
         <>
-          <span className="absolute top-1.5 left-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>
-          <span className="absolute top-1.5 right-1.5 text-[8px] font-mono px-1 py-0.5 rounded bg-black/60 text-surface-300">HA</span>
+          <span className="absolute top-1.5 left-1.5 text-[10px] font-mono px-1 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>
+          <span className="absolute top-1.5 right-1.5 text-[10px] font-mono px-1 py-0.5 rounded bg-black/60 text-white/80">HA</span>
         </>
       )}
     </div>
@@ -597,7 +597,7 @@ function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, o
       <div className="flex items-center justify-between gap-2 shrink-0">
         <p className="section-label mb-0">{tr('Kameras')}</p>
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[9px] text-surface-600 cq-hide-narrow truncate">{tr('Konfiguration → Kameras')}</span>
+          <span className="text-[10px] text-surface-600 cq-hide-narrow truncate">{tr('Konfiguration → Kameras')}</span>
           {cameraOn && (
             <button
               onClick={onToggleCam2}
@@ -632,7 +632,7 @@ function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, o
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center text-surface-600 gap-1 py-8 text-center">
           <p className="text-[11px]">{tr('Kamera aus')}</p>
-          <p className="text-[9px] text-surface-700">{tr('Kein Livebild, keine automatischen Snapshots')}</p>
+          <p className="text-[10px] text-surface-700">{tr('Kein Livebild, keine automatischen Snapshots')}</p>
         </div>
       )}
     </div>
@@ -714,7 +714,7 @@ function QueuePlanner({ jobs, tr }) {
               <span className="font-mono text-surface-600 w-4 text-right shrink-0">{i + 1}</span>
               <span className="text-surface-300 flex-1 min-w-0 truncate">{j.fileName?.replace(/\.[^.]+$/, '')}</span>
               {j.plate != null && (
-                <span className="shrink-0 font-mono text-[9px] px-1 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300/90"
+                <span className="shrink-0 font-mono text-[10px] px-1 py-0.5 rounded border border-blue-900/60 bg-blue-950/20 text-blue-300/90"
                   title={tr('Platte {0} von {1}', j.plate, j.plateTotal ?? '?') + (j.plateName ? ` — ${j.plateName}` : '')}>
                   {j.plateTotal > 1 ? tr('P{0}/{1}', j.plate, j.plateTotal) : tr('P{0}', j.plate)}
                 </span>
@@ -729,7 +729,7 @@ function QueuePlanner({ jobs, tr }) {
           )
         })}
       </div>
-      <div className="flex items-center justify-between border-t border-surface-800/50 pt-1.5 text-[11px]">
+      <div className="flex items-center justify-between border-t border-surface-700 pt-1.5 text-[11px]">
         <span className="text-surface-500">{tr('{0} Jobs', rows.length)}</span>
         <span className="font-mono text-surface-300">
           {fmtDur(totalSec) ? tr('~{0} · fertig {1} ~{2} Uhr', fmtDur(totalSec), relDay(finishAt), clk(finishAt)) : tr('Gesamtzeit unbekannt')}
@@ -1717,7 +1717,7 @@ function AutoFarm({ setCurrentPage } = {}) {
           <span className="text-[12px] text-red-200 flex-1">
             {tr('Warteschlange nicht geladen: {0}. Nichts wird gespeichert, bis sie geladen ist.', queueError)}
           </span>
-          <button onClick={loadQueue} className="btn btn-secondary btn-sm text-[11px]">{tr('Erneut laden')}</button>
+          <button onClick={loadQueue} className="btn btn-secondary btn-sm text-xs">{tr('Erneut laden')}</button>
         </div>
       )}
 
@@ -1808,7 +1808,7 @@ function AutoFarm({ setCurrentPage } = {}) {
               <button
                 onClick={forceReset}
                 title={tr('Erzwingt das Zurücksetzen des Farm-States — benutze dies wenn Stopp nicht reagiert')}
-                className="btn btn-ghost btn-sm text-surface-600 hover:text-red-400 text-[10px]"
+                className="btn btn-ghost btn-sm text-surface-600 hover:text-red-400 text-xs"
               >↺</button>
             </>
           )}
@@ -1823,7 +1823,7 @@ function AutoFarm({ setCurrentPage } = {}) {
             const on = !dashHidden.includes(p.id)
             return (
               <button key={p.id} onClick={() => toggleDashPanel(p.id)}
-                className={`text-[11px] font-medium px-2 h-7 rounded-lg border transition-colors ${
+                className={`text-xs font-medium px-2 h-7 rounded-lg border transition-colors ${
                   on ? 'border-blue-700 bg-blue-950/40 text-blue-300'
                      : 'border-surface-700 text-surface-600 hover:text-surface-400'}`}
                 title={on ? tr('Ausblenden') : tr('Einblenden')}>
@@ -1832,7 +1832,7 @@ function AutoFarm({ setCurrentPage } = {}) {
             )
           })}
           <button onClick={resetDash}
-            className="ml-auto text-[11px] text-surface-500 hover:text-surface-300 transition-colors"
+            className="ml-auto text-xs text-surface-500 hover:text-surface-300 transition-colors"
             title={tr('Positionen, Größen und Sichtbarkeit auf Standard zurücksetzen')}>
             {tr('↺ Standard')}
           </button>
@@ -1928,11 +1928,11 @@ function AutoFarm({ setCurrentPage } = {}) {
                                 title={tr('{0} Jobs laden', total)}
                               >
                                 <span className="text-[11px] text-surface-200 truncate block">{name}</span>
-                                <span className="text-[9px] text-surface-600 font-mono">{tr('{0} Datei(en) · {1} Jobs', entries.length, total)}</span>
+                                <span className="text-[10px] text-surface-600 font-mono">{tr('{0} Datei(en) · {1} Jobs', entries.length, total)}</span>
                               </button>
                               <button
                                 onClick={() => deleteTemplate(name)}
-                                className="text-[10px] text-surface-700 hover:text-red-400 transition-colors shrink-0"
+                                className="text-xs text-surface-700 hover:text-red-400 transition-colors shrink-0"
                                 title={tr('Vorlage löschen')}
                               >×</button>
                             </div>
@@ -2013,7 +2013,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                     } ${
                       dragId != null && dragId !== job.id && pending ? 'border-dashed border-blue-700/60' :
                       busy                ? 'border-blue-700 bg-blue-950/20' :
-                      job.status==='done'  ? 'border-surface-800 bg-surface-900/20 opacity-40' :
+                      job.status==='done'  ? 'border-surface-700 bg-surface-900/20 opacity-40' :
                       job.status==='error' ? 'border-red-900/70 bg-red-950/15' :
                       isOverflow          ? 'border-amber-900/60 bg-amber-950/10' :
                       'border-surface-700 bg-surface-900'
@@ -2054,16 +2054,16 @@ function AutoFarm({ setCurrentPage } = {}) {
                         >
                           {displayH} mm
                           {slotsUsed > 0 && (
-                            <span className="opacity-70 ml-1 text-[9px]">· {tr(slotsUsed === 1 ? '{0} Fach' : '{0} Fächer', slotsUsed)}</span>
+                            <span className="opacity-70 ml-1 text-[10px]">· {tr(slotsUsed === 1 ? '{0} Fach' : '{0} Fächer', slotsUsed)}</span>
                           )}
                         </span>
                       ) : null}
                       {pending && (
                         <>
                           <button onClick={() => moveJobUp(job.id)} disabled={idx === 0}
-                            className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▲</button>
+                            className="w-5 h-5 flex items-center justify-center text-xs text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▲</button>
                           <button onClick={() => moveJobDown(job.id)} disabled={idx === visibleJobs.length - 1}
-                            className="w-5 h-5 flex items-center justify-center text-[11px] text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▼</button>
+                            className="w-5 h-5 flex items-center justify-center text-xs text-surface-700 hover:text-surface-300 disabled:opacity-20 transition-colors">▼</button>
                           <span
                             draggable
                             onDragStart={(e) => { setDragId(job.id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(job.id)) } catch {} }}
@@ -2099,7 +2099,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                     {jobNeedsAms(job) && (
                       <div className="space-y-1">
                         <span
-                          className="inline-block text-[9px] font-mono px-1 rounded border border-red-800/60 bg-red-950/30 text-red-400"
+                          className="inline-block text-[10px] font-mono px-1 rounded border border-red-800/60 bg-red-950/30 text-red-400"
                           title={jobAmsMissing(job).map(m => `${m.type ?? '?'} ${m.color ?? ''} (${tr(m.reason)})`).join(', ')}
                         >{tr('⚠ Manuelle AMS-Festlegung')}</span>
                         <AmsMapper
@@ -2129,7 +2129,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                       <div className="flex items-center gap-3 pt-0.5">
                         <span className="text-xs text-red-400 flex-1">{tr('Fehlgeschlagen')}</span>
                         {!running && (
-                          <button onClick={() => resetJob(job.id)} className="text-[10px] text-blue-400 hover:text-blue-300 font-mono transition-colors">
+                          <button onClick={() => resetJob(job.id)} className="text-xs text-blue-400 hover:text-blue-300 font-mono transition-colors">
                             {tr('↺ Wiederholen')}
                           </button>
                         )}
@@ -2156,7 +2156,7 @@ function AutoFarm({ setCurrentPage } = {}) {
               <div className="flex items-center gap-2">
                 <p className="section-label">{tr('Regal')}</p>
                 {rackData && (
-                  <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
                     rackData.magazine_count === 0 ? 'border-red-800/60 bg-red-950/30 text-red-400' :
                     rackData.magazine_count <= 1  ? 'border-amber-800/50 bg-amber-950/20 text-amber-400' :
                     'border-surface-700/50 bg-surface-800/30 text-surface-500'
@@ -2188,7 +2188,7 @@ function AutoFarm({ setCurrentPage } = {}) {
               <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${numRacks}, 1fr)` }}>
                 {Array.from({length: numRacks}, (_, ri) => (
                   <div key={ri+1}>
-                    <p className="text-[9px] text-center font-mono text-surface-600 mb-1 tracking-wide">
+                    <p className="text-[10px] text-center font-mono text-surface-600 mb-1 tracking-wide">
                       R{ri+1}
                     </p>
                     {/* Magazin dieses Regals: Bestand anzeigen + direkt setzen (Enter/Blur).
@@ -2269,10 +2269,10 @@ function AutoFarm({ setCurrentPage } = {}) {
                               topJob   ? 'border-surface-700/50 bg-surface-900' :
                               hasPlate ? 'border-emerald-800/40 bg-emerald-950/10' :
                               isGhost  ? 'border-dashed border-surface-700/40 bg-surface-800/15' :
-                              'border-surface-800/20 bg-transparent'
+                              'border-surface-700 bg-transparent'
                             }`}
                           >
-                            <span className="font-mono text-surface-600 text-[9px] w-3 text-right shrink-0">{si2+1}</span>
+                            <span className="font-mono text-surface-600 text-[10px] w-3 text-right shrink-0">{si2+1}</span>
                             <span className={`dot shrink-0 ${
                               isDone   ? 'dot-amber' :
                               isActive ? 'dot-blue animate-pulse' :
@@ -2285,18 +2285,18 @@ function AutoFarm({ setCurrentPage } = {}) {
                             }`} />
                             <div className="flex-1 min-w-0">
                               {isDone ? (
-                                <p className="text-[9px] text-amber-400 truncate leading-tight">{slot.file_name?.replace(/\.[^.]+$/, '') || tr('Fertig')}</p>
+                                <p className="text-[10px] text-amber-400 truncate leading-tight">{slot.file_name?.replace(/\.[^.]+$/, '') || tr('Fertig')}</p>
                               ) : topJob ? (
-                                <p className="text-[9px] text-surface-400 truncate leading-tight">{topJob.fileName.replace(/\.[^.]+$/, '')}</p>
+                                <p className="text-[10px] text-surface-400 truncate leading-tight">{topJob.fileName.replace(/\.[^.]+$/, '')}</p>
                               ) : isGhost ? (
-                                <p className="text-[9px] text-surface-600 italic truncate leading-tight" title={tr('Belegt durch „{0}" (ragt aus Fach {1})', ghostName.replace(/\.[^.]+$/, ''), ghostBase)}>↑ {ghostName.replace(/\.[^.]+$/, '')}</p>
+                                <p className="text-[10px] text-surface-600 italic truncate leading-tight" title={tr('Belegt durch „{0}" (ragt aus Fach {1})', ghostName.replace(/\.[^.]+$/, ''), ghostBase)}>↑ {ghostName.replace(/\.[^.]+$/, '')}</p>
                               ) : isOther ? (
-                                <p className="text-[9px] text-amber-600/80 truncate leading-tight" title={tr('Hängendes Fach (Status: {0}) — ✓ zum Leeren', slot.status)}>{slot.file_name?.replace(/\.[^.]+$/, '') || tr('belegt')}</p>
+                                <p className="text-[10px] text-amber-600/80 truncate leading-tight" title={tr('Hängendes Fach (Status: {0}) — ✓ zum Leeren', slot.status)}>{slot.file_name?.replace(/\.[^.]+$/, '') || tr('belegt')}</p>
                               ) : hasPlate ? (
-                                <p className="text-[9px] text-emerald-500/90 truncate leading-tight"
+                                <p className="text-[10px] text-emerald-500/90 truncate leading-tight"
                                    title={tr('Leere Platte liegt hier — die Farm holt sich von hier Nachschub')}>{tr('▭ Leerplatte')}</p>
                               ) : (
-                                <p className={`text-[9px] ${isLocked ? 'text-surface-400' : 'text-surface-800'}`}>{isLocked ? tr('🔒 Belegt') : ''}</p>
+                                <p className={`text-[10px] ${isLocked ? 'text-surface-400' : 'text-surface-500'}`}>{isLocked ? tr('🔒 Belegt') : ''}</p>
                               )}
                             </div>
                             {(heightPct > 0 || isGhost) && (
@@ -2309,9 +2309,9 @@ function AutoFarm({ setCurrentPage } = {}) {
                             )}
                             {canClear && (
                               <div className="flex items-center gap-0.5 shrink-0 ml-0.5">
-                                <button onClick={() => clearRackSlot(key)} title={tr('Fach leeren')} className={`text-[9px] hover:text-amber-300 ${isStuck || isOther ? 'text-red-500' : 'text-amber-500'}`}>✓</button>
+                                <button onClick={() => clearRackSlot(key)} title={tr('Fach leeren')} className={`text-xs hover:text-amber-300 ${isStuck || isOther ? 'text-red-500' : 'text-amber-500'}`}>✓</button>
                                 {isDone && (
-                                  <button onClick={() => assignJobToSlot(key)} title={tr('Fach leeren')} className="text-[9px] text-blue-500 hover:text-blue-300">↻</button>
+                                  <button onClick={() => assignJobToSlot(key)} title={tr('Fach leeren')} className="text-xs text-blue-500 hover:text-blue-300">↻</button>
                                 )}
                               </div>
                             )}
@@ -2322,17 +2322,17 @@ function AutoFarm({ setCurrentPage } = {}) {
                                 title={hasPlate
                                   ? tr('Hier liegt KEINE leere Platte mehr')
                                   : tr('Hier liegt eine leere Platte — die Farm holt sie von hier und legt nichts darauf ab')}
-                                className={`text-[9px] shrink-0 ml-0.5 ${hasPlate
+                                className={`text-xs shrink-0 ml-0.5 ${hasPlate
                                   ? 'text-emerald-500 hover:text-emerald-300'
                                   : 'text-surface-700 hover:text-emerald-400'}`}>▭</button>
                             )}
                             {canBlock && !hasPlate && (
                               <button onClick={() => toggleSlotBlocked(key)} title={tr('Fach als belegt markieren — der Roboter legt hier nichts ab')}
-                                className="text-[9px] text-surface-700 hover:text-surface-300 shrink-0 ml-0.5">🔒</button>
+                                className="text-xs text-surface-700 hover:text-surface-300 shrink-0 ml-0.5">🔒</button>
                             )}
                             {isLocked && (
                               <button onClick={() => toggleSlotBlocked(key)} title={tr('Fach wieder freigeben')}
-                                className="text-[9px] text-surface-500 hover:text-emerald-300 shrink-0 ml-0.5">🔓</button>
+                                className="text-xs text-surface-500 hover:text-emerald-300 shrink-0 ml-0.5">🔓</button>
                             )}
                           </div>
                         )
@@ -2354,25 +2354,25 @@ function AutoFarm({ setCurrentPage } = {}) {
 
             {/* Rack legend */}
             {slots.length > 0 && (
-              <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-surface-800/40">
-                <span className="text-[9px] text-surface-700 flex items-center gap-1">
+              <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-surface-700">
+                <span className="text-[10px] text-surface-700 flex items-center gap-1">
                   <span className="dot dot-amber w-1.5 h-1.5" /> {tr('Fertig')}
                 </span>
-                <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                <span className="text-[10px] text-surface-700 flex items-center gap-1">
                   <span className="dot dot-blue w-1.5 h-1.5" /> {tr('Druckt')}
                 </span>
-                <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                <span className="text-[10px] text-surface-700 flex items-center gap-1">
                   <span className="dot dot-gray w-1.5 h-1.5 opacity-30" /> {tr('Leer')}
                 </span>
-                <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                <span className="text-[10px] text-surface-700 flex items-center gap-1">
                   🔒 {tr('Belegt')}
                 </span>
                 {noMagazine && (
-                  <span className="text-[9px] text-surface-700 flex items-center gap-1">
+                  <span className="text-[10px] text-surface-700 flex items-center gap-1">
                     <span className="dot dot-green w-1.5 h-1.5 opacity-70" /> {tr('▭ Leerplatte')}
                   </span>
                 )}
-                <span className="flex-1 text-right text-[9px] text-surface-700 font-mono">
+                <span className="flex-1 text-right text-[10px] text-surface-700 font-mono">
                   {tr('{0} mm/Fach', slotH)}
                 </span>
               </div>
@@ -2401,10 +2401,10 @@ function AutoFarm({ setCurrentPage } = {}) {
                       value={logFilter}
                       onChange={e => setLogFilter(e.target.value)}
                       placeholder={tr('Filter…')}
-                      className="w-24 focus:w-32 transition-all bg-surface-900/60 border border-surface-800 rounded px-2 py-0.5 text-[10px] text-surface-300 placeholder-surface-700 focus:outline-none focus:border-blue-700"
+                      className="w-24 focus:w-32 transition-all bg-surface-900/60 border border-surface-700 rounded px-2 py-0.5 text-[10px] text-surface-300 placeholder-surface-700 focus:outline-none focus:border-blue-700"
                     />
                     {logFilter && (
-                      <button onClick={() => setLogFilter('')} className="absolute right-1 top-1/2 -translate-y-1/2 text-surface-600 hover:text-surface-300 text-[10px]" title={tr('Filter löschen')}>✕</button>
+                      <button onClick={() => setLogFilter('')} className="absolute right-1 top-1/2 -translate-y-1/2 text-surface-600 hover:text-surface-300 text-xs" title={tr('Filter löschen')}>✕</button>
                     )}
                   </div>
                 )}

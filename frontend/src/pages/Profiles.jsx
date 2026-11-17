@@ -46,13 +46,13 @@ function SectionDetail({ section, data }) {
 
   if (section === 'sequences') {
     return (
-      <div className="rounded-lg border border-surface-800/60 bg-surface-900/40 p-2.5 space-y-3 mt-1.5">
+      <div className="rounded-lg border border-surface-700 bg-surface-900/40 p-2.5 space-y-3 mt-1.5">
         {['seq_new', 'seq_next'].map(key => {
           const steps = data[key] ?? []
           if (!steps.length) return null
           return (
             <div key={key}>
-              <p className="text-[9px] text-surface-600 uppercase tracking-wide mb-1.5">
+              <p className="text-[10px] text-surface-600 uppercase tracking-wide mb-1.5">
                 {key === 'seq_new' ? tr('Neuer Druck') : tr('Nächster Druck')}
               </p>
               <div className="space-y-0.5">
@@ -63,7 +63,7 @@ function SectionDetail({ section, data }) {
                       {step.label || step.macro || step.action || JSON.stringify(step)}
                     </span>
                     {step.enabled === false && (
-                      <span className="text-[9px] text-surface-700 ml-auto">off</span>
+                      <span className="text-[10px] text-surface-700 ml-auto">off</span>
                     )}
                   </div>
                 ))}
@@ -78,11 +78,11 @@ function SectionDetail({ section, data }) {
   if (section === 'rack_config') {
     const entries = Object.entries(data)
     return (
-      <div className="mt-1.5 rounded-lg border border-surface-800/60 bg-surface-900/40 p-2.5">
+      <div className="mt-1.5 rounded-lg border border-surface-700 bg-surface-900/40 p-2.5">
         <div className="grid gap-x-4 gap-y-1" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
           {entries.map(([k, v]) => (
             <div key={k} className="flex items-center justify-between gap-2 bg-surface-800/40 rounded px-2 py-1">
-              <span className="text-[9px] text-surface-500 truncate">{k}</span>
+              <span className="text-[10px] text-surface-500 truncate">{k}</span>
               <span className="text-[10px] font-mono text-surface-300 shrink-0">{JSON.stringify(v)}</span>
             </div>
           ))}
@@ -98,11 +98,11 @@ function SectionDetail({ section, data }) {
     }
     const entries = Object.entries(data)
     return (
-      <div className="mt-1.5 rounded-lg border border-surface-800/60 bg-surface-900/40 p-2.5">
+      <div className="mt-1.5 rounded-lg border border-surface-700 bg-surface-900/40 p-2.5">
         <div className="grid gap-x-4 gap-y-1" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
           {entries.map(([k, v]) => (
             <div key={k} className="flex items-center justify-between gap-2 bg-surface-800/40 rounded px-2 py-1">
-              <span className="text-[9px] text-surface-500 truncate">{LABELS[k] || k}</span>
+              <span className="text-[10px] text-surface-500 truncate">{LABELS[k] || k}</span>
               <span className={`text-[10px] font-mono shrink-0 font-semibold ${
                 typeof v === 'boolean' ? (v ? 'text-emerald-400' : 'text-surface-600') : 'text-surface-300'
               }`}>{JSON.stringify(v)}</span>
@@ -134,7 +134,7 @@ function SectionTabs({ profile }) {
           <button
             key={k}
             onClick={() => toggle(k)}
-            className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
+            className={`text-xs font-mono px-2 py-0.5 rounded border transition-colors ${
               expanded === k
                 ? 'bg-blue-900/30 border-blue-700/60 text-blue-300'
                 : 'border-surface-700/60 text-surface-400 hover:border-surface-500/70 hover:text-surface-200'
@@ -157,7 +157,7 @@ function Components({ components }) {
     <div className="space-y-2">
       <p className="text-[10px] text-surface-600 uppercase tracking-wide">{tr('Bauteile & Anleitungen')}</p>
       {components.map((c, i) => (
-        <div key={i} className="rounded-lg border border-surface-800/60 bg-surface-900/40 p-2.5">
+        <div key={i} className="rounded-lg border border-surface-700 bg-surface-900/40 p-2.5">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-surface-200">{c.name || tr('Bauteil {0}', i + 1)}</span>
             {safeHref(c.url) && <a href={safeHref(c.url)} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline shrink-0">Link ↗</a>}
@@ -310,10 +310,10 @@ function Profiles() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-[10px] text-surface-600">{tr('Bauteile & Anleitungen')}</label>
-              <button onClick={addComponent} className="text-[10px] text-blue-400 hover:underline">{tr('+ Bauteil')}</button>
+              <button onClick={addComponent} className="text-xs text-blue-400 hover:underline">{tr('+ Bauteil')}</button>
             </div>
             {components.map((c, i) => (
-              <div key={i} className="rounded-lg border border-surface-800/60 p-2 space-y-1.5">
+              <div key={i} className="rounded-lg border border-surface-700 p-2 space-y-1.5">
                 <div className="flex items-center gap-2">
                   <input type="text" placeholder={tr('Name (z.B. Greifer v2)')} value={c.name}
                     onChange={e => updateComponent(i, 'name', e.target.value)}
@@ -330,14 +330,14 @@ function Profiles() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap border-t border-surface-800/50 pt-3">
+          <div className="flex items-center gap-2 flex-wrap border-t border-surface-700 pt-3">
             <button onClick={buildProfile}   className="btn btn-secondary btn-sm">{tr('Aus aktueller Konfig erzeugen')}</button>
             <button onClick={downloadProfile} className="btn btn-ghost btn-sm">{tr('↓ Download (.om4d.json)')}</button>
             <button onClick={saveToLibrary}   className="btn btn-ghost btn-sm">{tr('In Bibliothek speichern')}</button>
           </div>
 
           {built && (
-            <div className="rounded-lg border border-surface-800/60 bg-surface-900/40 p-2.5 space-y-1.5">
+            <div className="rounded-lg border border-surface-700 bg-surface-900/40 p-2.5 space-y-1.5">
               <p className="text-[11px] text-surface-400">{tr('Enthält:')}</p>
               <SectionTabs profile={built} />
             </div>
@@ -368,7 +368,7 @@ function Profiles() {
               </div>
               <SectionTabs profile={preview} />
               <Components components={preview.components} />
-              <div className="flex items-center gap-2 border-t border-surface-800/50 pt-3">
+              <div className="flex items-center gap-2 border-t border-surface-700 pt-3">
                 <button onClick={() => applyProfile(preview)} className="btn btn-primary btn-sm">{tr('Anwenden')}</button>
                 <button onClick={() => setPreview(null)} className="btn btn-ghost btn-sm">{tr('Abbrechen')}</button>
               </div>
@@ -388,7 +388,7 @@ function Profiles() {
         )}
         <div className="space-y-2">
           {library.map((p, i) => (
-            <div key={i} className="flex items-center gap-3 rounded-lg border border-surface-800/60 bg-surface-900/40 p-2.5">
+            <div key={i} className="flex items-center gap-3 rounded-lg border border-surface-700 bg-surface-900/40 p-2.5">
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium text-surface-200 truncate">{p.name}</p>
                 <p className="text-[10px] text-surface-600">

@@ -51,10 +51,10 @@ export default function FarmRail({ racks = [], printers = [], limitX = 0, push =
       <div className="flex items-center justify-between">
         <span className="text-[11px] text-surface-400">{tr('Schiene (X in mm) — 0 rechts')}</span>
         {limitX > 0 && (
-          <span className="text-[9px] font-mono text-surface-600">{tr('Achsgrenze X {0}', limitX)}</span>
+          <span className="text-[10px] font-mono text-surface-600">{tr('Achsgrenze X {0}', limitX)}</span>
         )}
       </div>
-      <div className="relative h-24 rounded-lg bg-surface-950 border border-surface-800 overflow-hidden">
+      <div className="relative h-24 rounded-lg bg-surface-950 border border-surface-700 overflow-hidden">
         <div className="absolute left-0 right-0 top-1/2 h-px bg-surface-700" />
         <span className="absolute left-1 top-1/2 -translate-y-1/2 text-[10px] text-surface-700 leading-none">◀</span>
         {mods.map(m => {
@@ -71,20 +71,20 @@ export default function FarmRail({ racks = [], printers = [], limitX = 0, push =
               style={{ right: `${RAIL_PAD + pct * (100 - 2 * RAIL_PAD) / 100}%`, top: '10%' }}
               title={`${m.name} · X ${m.x}`}>
               <span className="text-sm leading-none">{m.icon}</span>
-              <span className={`text-[9px] whitespace-nowrap max-w-24 truncate ${
+              <span className={`text-[10px] whitespace-nowrap max-w-24 truncate ${
                 bad ? 'text-red-400' : active ? 'text-blue-200' : 'text-surface-400'}`}>{m.name}</span>
-              <span className={`text-[9px] font-mono ${bad ? 'text-red-400' : 'text-surface-600'}`}>
+              <span className={`text-[10px] font-mono ${bad ? 'text-red-400' : 'text-surface-600'}`}>
                 {m.x}
               </span>
-              {m.sub && <span className="text-[8px] text-surface-600 max-w-24 truncate">{m.sub}</span>}
+              {m.sub && <span className="text-[10px] text-surface-600 max-w-24 truncate">{m.sub}</span>}
             </button>
           )
         })}
-        <span className="absolute right-1 bottom-0.5 text-[9px] font-mono text-surface-600">
+        <span className="absolute right-1 bottom-0.5 text-[10px] font-mono text-surface-600">
           {tr('0 · Home')}
         </span>
       </div>
-      <p className="text-[9px] text-surface-600">
+      <p className="text-[10px] text-surface-600">
         {tr('Home liegt bei X 0 (Endschalter, rechts am Gerät) — deshalb ist die Schiene von rechts nach links gezeichnet. Die Positionen kommen aus den Abschnitten unten; es gibt keine zweite Stelle, an der sie stehen. Ein Klick springt zum Abschnitt.')}
       </p>
       {tooClose.size > 0 && (

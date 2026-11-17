@@ -247,8 +247,8 @@ function Projekt() {
                           {f.file_size_kb ? ` · ${f.file_size_kb < 1024 ? `${f.file_size_kb} KB` : `${(f.file_size_kb/1024).toFixed(1)} MB`}` : ''}
                         </p>
                       </div>
-                      {inProj && <span className="text-[9px] text-emerald-500 font-mono shrink-0">×{inProj.quantity}</span>}
-                      <button onClick={() => addFile(f)} className="btn btn-ghost btn-sm opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-[11px]">
+                      {inProj && <span className="text-[10px] text-emerald-500 font-mono shrink-0">×{inProj.quantity}</span>}
+                      <button onClick={() => addFile(f)} className="btn btn-ghost btn-sm opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-xs">
                         {tr('+ Hinzufügen')}
                       </button>
                     </div>

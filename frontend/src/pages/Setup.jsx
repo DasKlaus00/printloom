@@ -31,7 +31,7 @@ function StepDots({ step }) {
               : i === step ? 'bg-blue-600 border-blue-500 text-white'
               : 'border-surface-700 text-surface-600'
             }`}>{i < step ? '✓' : i + 1}</div>
-            <span className={`text-[9px] ${i === step ? 'text-blue-300' : 'text-surface-600'}`}>{tr(label)}</span>
+            <span className={`text-[10px] ${i === step ? 'text-blue-300' : 'text-surface-600'}`}>{tr(label)}</span>
           </div>
           {i < STEPS.length - 1 && <div className={`flex-1 h-px ${i < step ? 'bg-emerald-600' : 'bg-surface-700'}`} />}
         </React.Fragment>
@@ -476,7 +476,7 @@ export default function Setup({ setCurrentPage }) {
       <div className="card p-6">
         <div className="flex items-center justify-between mb-1">
           <PageTitle className="mb-1">{tr('Setup-Assistent')}</PageTitle>
-          <button onClick={skip} className="text-[11px] text-surface-600 hover:text-surface-300">{tr('Überspringen →')}</button>
+          <button onClick={skip} className="text-xs text-surface-600 hover:text-surface-300">{tr('Überspringen →')}</button>
         </div>
         <p className="text-xs text-surface-500 mb-5">{tr('Komponenten · Drucker · OTTOeject · Regal · Kalibrierung · Einmessen in einem Durchlauf.')}</p>
 
@@ -560,7 +560,7 @@ export default function Setup({ setCurrentPage }) {
                         title={soon ? tr('Noch in Arbeit — diese Bauform lässt sich noch nicht auswählen.') : undefined}
                         onClick={() => { if (!soon) setComponents(c => ({ ...c, [group.id]: opt.id })) }}
                         className={`text-left rounded-lg border p-3 transition-colors ${
-                          soon   ? 'border-surface-800 bg-surface-900/20 opacity-50 cursor-not-allowed'
+                          soon   ? 'border-surface-700 bg-surface-900/20 opacity-50 cursor-not-allowed'
                           : active ? 'border-blue-600 bg-blue-950/40'
                           : 'border-surface-700 bg-surface-900/40 hover:border-surface-600'}`}>
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -568,7 +568,7 @@ export default function Setup({ setCurrentPage }) {
                             active ? 'border-blue-400 bg-blue-500' : 'border-surface-600'}`} />
                           <span className={`text-sm font-medium ${active ? 'text-blue-200' : 'text-surface-300'}`}>{tr(opt.name)}</span>
                           {opt.vendor && (
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 border ${
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 border ${
                               opt.vendor === 'ottomat3d'
                                 ? 'border-emerald-800/60 bg-emerald-950/40 text-emerald-400'
                                 : 'border-violet-800/60 bg-violet-950/40 text-violet-300'}`}>
@@ -576,11 +576,11 @@ export default function Setup({ setCurrentPage }) {
                             </span>
                           )}
                           {soon ? (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/40 border border-amber-800/60 text-amber-400 shrink-0">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/40 border border-amber-800/60 text-amber-400 shrink-0">
                               {tr('In Arbeit')}
                             </span>
                           ) : opt.badge && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-surface-800 text-surface-400 shrink-0">{tr(opt.badge)}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-800 text-surface-400 shrink-0">{tr(opt.badge)}</span>
                           )}
                         </div>
                         <p className="text-[10px] leading-relaxed text-surface-500">{tr(opt.desc)}</p>
@@ -658,7 +658,7 @@ export default function Setup({ setCurrentPage }) {
                       )}
                       {discovered.bambu?.map((b, i) => (
                         <button key={i} onClick={() => setPForm(f => ({ ...f, name: b.name || f.name, ip_address: b.ip || '', serial_number: b.serial || '', model: b.model_id || f.model }))}
-                          className="w-full text-left px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-800 hover:border-blue-700 transition-colors">
+                          className="w-full text-left px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-700 hover:border-blue-700 transition-colors">
                           <span className="text-sm text-surface-200">🖨 {b.name || 'Bambu Lab'} <span className="font-mono text-xs text-surface-500">· {b.ip}</span></span>
                           <span className="block text-[10px] font-mono text-surface-600">{b.serial ? `S/N: ${b.serial}` : tr('Seriennummer manuell nötig')}</span>
                         </button>
@@ -744,7 +744,7 @@ export default function Setup({ setCurrentPage }) {
                       )}
                       {discovered.klipper?.map((k, i) => (
                         <button key={i} onClick={() => setKForm(f => ({ ...f, name: k.hostname || f.name, ip_address: k.ip || '', port: k.port || 7125 }))}
-                          className="w-full text-left px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-800 hover:border-blue-700 transition-colors">
+                          className="w-full text-left px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-700 hover:border-blue-700 transition-colors">
                           <span className="text-sm text-surface-200">🦾 {k.hostname || 'Klipper / OTTOeject'} <span className="font-mono text-xs text-surface-500">· {k.ip}:{k.port}</span></span>
                         </button>
                       ))}
@@ -808,12 +808,12 @@ export default function Setup({ setCurrentPage }) {
               <label className="space-y-1">
                 <span className="text-[10px] text-surface-500">{tr('Z-Schritt Fach→Fach (mm)')}</span>
                 <input type="number" min="5" max="300" className="w-full text-sm" value={pitch} onChange={e => setPitch(e.target.value)} />
-                <span className="block text-[9px] text-surface-600">{tr('Gemessener Abstand von Fach zu Fach (Standard 55, Kompakt 25)')}</span>
+                <span className="block text-[10px] text-surface-600">{tr('Gemessener Abstand von Fach zu Fach (Standard 55, Kompakt 25)')}</span>
               </label>
               <label className="space-y-1">
                 <span className="text-[10px] text-surface-500">{tr('Magazin-Fach (0 = keins)')}</span>
                 <input type="number" min="0" max="20" className="w-full text-sm" value={magSlot} onChange={e => setMagSlot(e.target.value)} />
-                <span className="block text-[9px] text-surface-600">{tr('Fach mit dem Stapel leerer Platten')}</span>
+                <span className="block text-[10px] text-surface-600">{tr('Fach mit dem Stapel leerer Platten')}</span>
               </label>
             </div>
             <RackPreview numRacks={nr} slotsPerRack={spr} slotHeightMm={h} />
@@ -849,7 +849,7 @@ export default function Setup({ setCurrentPage }) {
 
             {/* Achsgrenzen: einmal vom Gerät holen — danach verweigert Printloom
                 jede Bewegung, die aus der Achse fahren würde, VOR dem Senden. */}
-            <div className="border-t border-surface-800 pt-3 space-y-2">
+            <div className="border-t border-surface-700 pt-3 space-y-2">
               <p className="text-xs font-medium text-surface-300">{tr('Achsgrenzen des OTTOeject')}</p>
               <p className="text-[10px] text-surface-600">
                 {tr('Einmal vom Gerät holen: danach wird jede Bewegung vorher geprüft und eine, die aus der Achse fährt, gar nicht erst gesendet.')}
@@ -882,7 +882,7 @@ export default function Setup({ setCurrentPage }) {
             <FirstCalibration numRacks={+nr || 1} magazineSlot={+magSlot || 0} />
 
             {/* Trockenlauf: die Sequenz durchspielen, ohne etwas zu senden. */}
-            <div className="border-t border-surface-800 pt-3 space-y-2">
+            <div className="border-t border-surface-700 pt-3 space-y-2">
               <p className="text-xs font-medium text-surface-300">{tr('Trockenlauf')}</p>
               <p className="text-[10px] text-surface-600">
                 {tr('Spielt die Sequenz Schritt für Schritt durch, OHNE etwas an Drucker oder OTTOeject zu senden — zeigt, welches Fach getroffen würde und ob eine Bewegung aus der Achse fährt.')}
@@ -894,7 +894,7 @@ export default function Setup({ setCurrentPage }) {
             </div>
 
             {/* 2.9 — Einrichtungs-Checkliste: was ist bereit, was fehlt noch */}
-            <div className="border-t border-surface-800 pt-3">
+            <div className="border-t border-surface-700 pt-3">
               <p className="text-xs font-medium text-surface-300 mb-2">{tr('Einrichtungs-Status')}</p>
               <SetupHealth />
             </div>

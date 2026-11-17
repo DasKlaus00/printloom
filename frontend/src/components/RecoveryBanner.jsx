@@ -51,7 +51,7 @@ export default function RecoveryBanner({ onDismissed, reloadKey }) {
 
   const confirmBtn = (
     <button onClick={() => dismiss(true)} disabled={busy}
-      className="btn btn-primary btn-sm text-[11px] disabled:opacity-50">
+      className="btn btn-primary btn-sm text-xs disabled:opacity-50">
       {h.bedFull && !h.armFull ? tr('Druckbett ist leer — bestätigen') : tr('Platte ist abgenommen — quittieren')}
     </button>
   )
@@ -100,7 +100,7 @@ export default function RecoveryBanner({ onDismissed, reloadKey }) {
       <div className="flex flex-wrap items-center gap-2">
         {!h.clean && confirmBtn}
         <button onClick={() => dismiss(h.clean)} disabled={busy}
-          className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">
+          className="btn btn-secondary btn-sm text-xs disabled:opacity-50">
           {h.clean ? tr('Verstanden') : tr('Nur quittieren (Platte hängt noch)')}
         </button>
       </div>

@@ -592,7 +592,7 @@ docker compose up -d`}
 
         {/* Automatische Prüfung ist aus → sagen, dass hier nichts ins Netz geht */}
         {info?.online_disabled && (
-          <p className="text-[11px] text-surface-500 bg-surface-900/50 border border-surface-800 rounded-lg px-3 py-2">
+          <p className="text-[11px] text-surface-500 bg-surface-900/50 border border-surface-700 rounded-lg px-3 py-2">
             {tr('Die automatische „Update-Prüfung im Internet" ist aus — Printloom fragt von allein NICHT bei GitHub nach. „Jetzt prüfen" macht eine einmalige Abfrage. Dauerhaft einschalten kannst du sie unter „Online-Dienste".')}
           </p>
         )}
@@ -684,7 +684,7 @@ docker compose up -d`}
         {/* Patchnotes der letzten Updates — ganz unten, damit die Backup-Warnung
             direkt am Installieren-Knopf bleibt (Sprache folgt der Auswahl unten links) */}
         {CHANGELOG.length > 0 && (
-          <div className="pt-3 border-t border-surface-800/60 space-y-3">
+          <div className="pt-3 border-t border-surface-700 space-y-3">
             <p className="text-xs text-surface-500 uppercase tracking-wider">{tr('Was ist neu')}</p>
             <div className="space-y-3">
               {CHANGELOG.slice(0, 5).map(entry => (

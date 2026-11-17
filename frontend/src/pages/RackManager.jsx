@@ -32,7 +32,7 @@ function SlotCard({ id, slotLabel, slot, slotH, onReset, onLock }) {
             <button
               onClick={() => onLock(id)}
               title={slot.status === 'locked' ? tr('Entsperren') : tr('Sperren')}
-              className={`text-[10px] leading-none transition-colors ${
+              className={`text-xs leading-none transition-colors ${
                 slot.status === 'locked'
                   ? 'text-red-400 hover:text-surface-400'
                   : 'text-surface-700 hover:text-amber-400'
@@ -45,7 +45,7 @@ function SlotCard({ id, slotLabel, slot, slotH, onReset, onLock }) {
             <button
               onClick={() => onReset(id)}
               title={tr('Auf Leer zurücksetzen')}
-              className="text-[10px] text-surface-600 hover:text-red-400 transition-colors leading-none"
+              className="text-xs text-surface-600 hover:text-red-400 transition-colors leading-none"
             >
               ✕
             </button>
@@ -343,7 +343,7 @@ function RackManager() {
         </div>
 
         {/* Legend */}
-        <div className="mt-4 pt-3 border-t border-surface-800 flex gap-5 flex-wrap">
+        <div className="mt-4 pt-3 border-t border-surface-700 flex gap-5 flex-wrap">
           {Object.entries(STATUS_META).map(([key, meta]) => (
             <div key={key} className="flex items-center gap-1.5 text-xs text-surface-500">
               <span className={`dot ${meta.dot}`} />

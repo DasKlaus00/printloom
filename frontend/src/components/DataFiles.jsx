@@ -59,7 +59,7 @@ export default function DataFiles() {
             <p className="text-[11px] text-red-300/80 break-words">{tr('unlesbar: {0}', f.reason || '?')}</p>
           </div>
           {f.resettable
-            ? <button onClick={() => reset(f)} disabled={busy === f.key} className="btn btn-danger btn-sm text-[11px]">
+            ? <button onClick={() => reset(f)} disabled={busy === f.key} className="btn btn-danger btn-sm text-xs">
                 {tr('Zurücksetzen (Kopie bleibt)')}
               </button>
             : <span className="text-[11px] text-surface-400">{tr('Aus einem Backup einspielen')}</span>}

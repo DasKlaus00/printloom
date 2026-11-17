@@ -179,7 +179,7 @@ export default function Library({ setCurrentPage }) {
           const n = k.id === 'all' ? items.length : (counts[k.id] || 0)
           return (
             <button key={k.id} onClick={() => setKind(k.id)}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${
+              className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
                 kind === k.id ? 'border-blue-600 bg-blue-950/40 text-blue-300'
                               : 'border-surface-700 text-surface-400 hover:text-surface-200'}`}>
               {k.icon} {tr(k.label)} <span className="text-surface-600">({n})</span>
@@ -214,7 +214,7 @@ export default function Library({ setCurrentPage }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-surface-100 break-words">{it.name}</p>
-                    <span className={`inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded border ${meta.cls || 'border-surface-700 text-surface-400'}`}>
+                    <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded border ${meta.cls || 'border-surface-700 text-surface-400'}`}>
                       {meta.icon} {tr(meta.label || it.kind)}
                     </span>
                   </div>
@@ -228,7 +228,7 @@ export default function Library({ setCurrentPage }) {
                   ? <p className="text-[11px] text-surface-400 leading-relaxed">{it.description}</p>
                   : <p className="text-[11px] text-surface-600 italic">{tr('Keine Beschreibung')}</p>}
 
-                <dl className="text-[10px] space-y-0.5 pt-1.5 border-t border-surface-800/60">
+                <dl className="text-[10px] space-y-0.5 pt-1.5 border-t border-surface-700">
                   <div className="flex gap-2">
                     <dt className="text-surface-600 w-14 shrink-0">{tr('Autor')}</dt>
                     <dd className="text-surface-400 min-w-0 break-words">{it.author || tr('unbekannt')}</dd>
@@ -244,7 +244,7 @@ export default function Library({ setCurrentPage }) {
                 </dl>
 
                 <button onClick={() => openPreview(it)}
-                  className="btn-secondary text-[11px] mt-auto">{tr('Ansehen & übernehmen')}</button>
+                  className="btn-secondary text-xs mt-auto">{tr('Ansehen & übernehmen')}</button>
               </div>
             )
           })}

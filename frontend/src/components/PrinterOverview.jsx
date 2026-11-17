@@ -67,15 +67,15 @@ export default function PrinterOverview() {
           <div key={p.id} className={`rounded-lg border px-3 py-2 ${
             p.busy ? 'border-blue-800/50 bg-blue-950/15'
                    : p.enabled ? 'border-surface-700 bg-surface-900/50'
-                               : 'border-surface-800 bg-surface-900/30 opacity-60'}`}>
+                               : 'border-surface-700 bg-surface-900/30 opacity-60'}`}>
             <div className="flex items-center gap-2">
               <span className={`dot shrink-0 ${p.busy ? 'dot-blue animate-pulse' : p.enabled ? 'dot-green' : 'dot-gray'}`} />
               <span className="text-sm text-surface-200 truncate">{p.name}</span>
               {arm.holder === p.id && (
-                <span className="text-[9px] font-mono text-blue-400 shrink-0">{tr('am Arm')}</span>
+                <span className="text-[10px] font-mono text-blue-400 shrink-0">{tr('am Arm')}</span>
               )}
               {arm.waiting?.includes(p.id) && (
-                <span className="text-[9px] font-mono text-amber-400 shrink-0">{tr('wartet')}</span>
+                <span className="text-[10px] font-mono text-amber-400 shrink-0">{tr('wartet')}</span>
               )}
             </div>
             <p className="text-[11px] text-surface-500 font-mono mt-0.5">
@@ -87,11 +87,11 @@ export default function PrinterOverview() {
       </div>
 
       {printers.length > 1 && (
-        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-surface-800/50">
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-surface-700">
           <button onClick={() => preview(false)} disabled={busy}
-            className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('Verteilung ansehen')}</button>
+            className="btn btn-ghost btn-sm text-xs disabled:opacity-50">{tr('Verteilung ansehen')}</button>
           <button onClick={() => preview(true)} disabled={busy}
-            className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">{tr('⇉ Jetzt verteilen')}</button>
+            className="btn btn-secondary btn-sm text-xs disabled:opacity-50">{tr('⇉ Jetzt verteilen')}</button>
           {plan?.error && <span className="text-[11px] text-red-400">{plan.error}</span>}
           {plan && !plan.error && (
             <span className="text-[11px] text-surface-400">

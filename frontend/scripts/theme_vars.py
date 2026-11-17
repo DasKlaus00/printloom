@@ -18,15 +18,18 @@ light = {
  'gelb':  ['#3d2a00','#523800','#664500','#7a5300','#8a5f00','#694700','#7a5300','#e8c97a','#f3dea6','#fcf1d4','#fdf8ea'],
  'lila':  ['#2a1846','#3a2260','#4a2c7a','#5a3690','#6a44a3','#4f3086','#5a3690','#c4b2e2','#ddd1f0','#efe9f8','#f6f3fb'],
 }
-# Schrift (text-surface-*): wie 's', nur 600/700 lesbar — siehe tailwind.config.js.
-light['t'] = light['s'][:6] + ['#858e97', '#9aa2a9'] + light['s'][8:]
-dark_t_mid = ['#6f7a85', '#5f6a74']
+# Schrift (text-surface-*): wie 's', nur 500–700 lesbar — siehe tailwind.config.js.
+# Jede gedämpfte Stufe hält mindestens 4,5:1 auf Karte (800) und Seite (950), das
+# prüft src/services/contrast.test.js. Bis v1.1.69 lagen 500/600/700 im Hellen bei
+# 4,0 / 3,0 / 2,3:1. Die Stufen bleiben leicht abgestuft, damit „stiller" sichtbar bleibt.
+light['t'] = light['s'][:5] + ['#606a74', '#626c76', '#646e78'] + light['s'][8:]
+dark_t_mid = ['#848f9a', '#808b96']
 dark = {
  's':     ['#f3f5f7','#e2e6ea','#d2d8de','#c9d0d6','#9aa5b0','#87929d','#4a545e','#3a434c','#1d2228','#181d22','#14181c'],
  'akzent':['#eef5fc','#dbe9f7','#b9d4ee','#9cc3ea','#82b4e6','#4f8fcf','#2f6aa3','#275a8a','#22446a','#1d3550','#172636'],
  'rot':   ['#fff1f0','#ffe0dd','#ffc1bb','#ffa59d','#ff8f85','#e5675d','#b8433a','#9a362f','#6e2a25','#4a2420','#2f1a18'],
- 'gruen': ['#eefaf0','#d8f1dc','#b6e3bf','#a2dbaf','#8fd19e','#5fae72','#3f8a51','#337144','#2a5536','#1f3a27','#16281c'],
- 'gelb':  ['#fdf7e8','#faecc8','#f6dc9a','#f3d083','#f0c46b','#d9a441','#a87a1f','#8a641a','#614716','#3f3118','#2a2112'],
+ 'gruen': ['#eefaf0','#d8f1dc','#b6e3bf','#a2dbaf','#8fd19e','#5fae72','#38804a','#337144','#2a5536','#1f3a27','#16281c'],
+ 'gelb':  ['#fdf7e8','#faecc8','#f6dc9a','#f3d083','#f0c46b','#d9a441','#94691a','#7f5c16','#614716','#3f3118','#2a2112'],
  'lila':  ['#f4effc','#e6dcf8','#d0bff0','#bba3e8','#a78bdf','#8a6bc8','#6b4fa6','#58418a','#3f3164','#2c2446','#1f1a31'],
 }
 dark['t'] = dark['s'][:6] + dark_t_mid + dark['s'][8:]

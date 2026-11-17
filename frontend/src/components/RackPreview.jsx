@@ -21,7 +21,7 @@ export default function RackPreview({ numRacks = 1, slotsPerRack = 6, slotHeight
             <div className="flex flex-col-reverse gap-0.5">
               {Array.from({ length: slots }).map((_, s) => {
                 const isMag = magazineSlot != null && (s + 1) === +magazineSlot
-                const base = `w-12 rounded-sm border flex items-center justify-center text-[8px] font-mono ${
+                const base = `w-12 rounded-sm border flex items-center justify-center text-[10px] font-mono ${
                   isMag ? 'border-amber-700 bg-amber-950/40 text-amber-400'
                         : 'border-surface-600 bg-surface-800 text-surface-500'}`
                 const title = isMag ? tr('Magazin (Fach {0})', s + 1) : tr('Fach {0}', s + 1)
@@ -43,7 +43,7 @@ export default function RackPreview({ numRacks = 1, slotsPerRack = 6, slotHeight
                 )
               })}
             </div>
-            <span className="text-[9px] text-surface-500">{tr('Regal {0}', r + 1)}</span>
+            <span className="text-[10px] text-surface-500">{tr('Regal {0}', r + 1)}</span>
           </div>
         ))}
       </div>

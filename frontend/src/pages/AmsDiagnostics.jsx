@@ -15,7 +15,7 @@ function StatusBadge({ result }) {
 function StepBlock({ step }) {
   const [open, setOpen] = useState(true)
   return (
-    <div className={`rounded-lg border text-xs ${step.ok ? 'border-surface-800/60 bg-surface-900/30' : 'border-red-800/50 bg-red-950/20'}`}>
+    <div className={`rounded-lg border text-xs ${step.ok ? 'border-surface-700 bg-surface-900/30' : 'border-red-800/50 bg-red-950/20'}`}>
       <button
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center justify-between px-3 py-2 text-left"
@@ -34,7 +34,7 @@ function StepBlock({ step }) {
         </svg>
       </button>
       {open && (
-        <div className="px-3 pb-2.5 space-y-0.5 border-t border-surface-800/30">
+        <div className="px-3 pb-2.5 space-y-0.5 border-t border-surface-700">
           {(step.lines ?? []).map((line, i) => (
             <p key={i} className={`font-mono text-[11px] leading-5 whitespace-pre ${
               line.includes('✓') ? 'text-emerald-400' :

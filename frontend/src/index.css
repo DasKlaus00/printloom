@@ -32,8 +32,8 @@
   --gelb-600: 122  83   0;  --gelb-700: 232 201 122;  --gelb-800: 243 222 166;  --gelb-900: 252 241 212;  --gelb-950: 253 248 234;
   --lila-50:  42  24  70;  --lila-100:  58  34  96;  --lila-200:  74  44 122;  --lila-300:  90  54 144;  --lila-400: 106  68 163;  --lila-500:  79  48 134;
   --lila-600:  90  54 144;  --lila-700: 196 178 226;  --lila-800: 221 209 240;  --lila-900: 239 233 248;  --lila-950: 246 243 251;
-  --t-50:  17  20  23;  --t-100:  29  33  37;  --t-200:  43  50  56;  --t-300:  59  67  75;  --t-400:  94 104 114;  --t-500: 111 120 130;
-  --t-600: 133 142 151;  --t-700: 154 162 169;  --t-800: 255 255 255;  --t-900: 246 247 248;  --t-950: 242 243 244;
+  --t-50:  17  20  23;  --t-100:  29  33  37;  --t-200:  43  50  56;  --t-300:  59  67  75;  --t-400:  94 104 114;  --t-500:  96 106 116;
+  --t-600:  98 108 118;  --t-700: 100 110 120;  --t-800: 255 255 255;  --t-900: 246 247 248;  --t-950: 242 243 244;
   color-scheme: light;
 }
 
@@ -45,13 +45,13 @@
   --rot-50: 255 241 240;  --rot-100: 255 224 221;  --rot-200: 255 193 187;  --rot-300: 255 165 157;  --rot-400: 255 143 133;  --rot-500: 229 103  93;
   --rot-600: 184  67  58;  --rot-700: 154  54  47;  --rot-800: 110  42  37;  --rot-900:  74  36  32;  --rot-950:  47  26  24;
   --gruen-50: 238 250 240;  --gruen-100: 216 241 220;  --gruen-200: 182 227 191;  --gruen-300: 162 219 175;  --gruen-400: 143 209 158;  --gruen-500:  95 174 114;
-  --gruen-600:  63 138  81;  --gruen-700:  51 113  68;  --gruen-800:  42  85  54;  --gruen-900:  31  58  39;  --gruen-950:  22  40  28;
+  --gruen-600:  56 128  74;  --gruen-700:  51 113  68;  --gruen-800:  42  85  54;  --gruen-900:  31  58  39;  --gruen-950:  22  40  28;
   --gelb-50: 253 247 232;  --gelb-100: 250 236 200;  --gelb-200: 246 220 154;  --gelb-300: 243 208 131;  --gelb-400: 240 196 107;  --gelb-500: 217 164  65;
-  --gelb-600: 168 122  31;  --gelb-700: 138 100  26;  --gelb-800:  97  71  22;  --gelb-900:  63  49  24;  --gelb-950:  42  33  18;
+  --gelb-600: 148 105  26;  --gelb-700: 127  92  22;  --gelb-800:  97  71  22;  --gelb-900:  63  49  24;  --gelb-950:  42  33  18;
   --lila-50: 244 239 252;  --lila-100: 230 220 248;  --lila-200: 208 191 240;  --lila-300: 187 163 232;  --lila-400: 167 139 223;  --lila-500: 138 107 200;
   --lila-600: 107  79 166;  --lila-700:  88  65 138;  --lila-800:  63  49 100;  --lila-900:  44  36  70;  --lila-950:  31  26  49;
   --t-50: 243 245 247;  --t-100: 226 230 234;  --t-200: 210 216 222;  --t-300: 201 208 214;  --t-400: 154 165 176;  --t-500: 135 146 157;
-  --t-600: 111 122 133;  --t-700:  95 106 116;  --t-800:  29  34  40;  --t-900:  24  29  34;  --t-950:  20  24  28;
+  --t-600: 132 143 154;  --t-700: 128 139 150;  --t-800:  29  34  40;  --t-900:  24  29  34;  --t-950:  20  24  28;
   color-scheme: dark;
 }
 /* @@VARS-END@@ */
@@ -118,6 +118,20 @@
   .btn-success { @apply bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-500 hover:border-emerald-500; }
   .btn-warning { @apply bg-amber-600 border-amber-600 text-white hover:bg-amber-500 hover:border-amber-500; }
   .btn-cyan    { @apply bg-blue-600 border-blue-600 text-white hover:bg-blue-500 hover:border-blue-500; }
+  /* Im Dunkeln ist Stufe 500 HELLER als der Vollton: Weiß darauf läge bei grün
+     ≈2,6:1. Darum geht der Hover dort auf 700 (dunkler). Stufe 500 bleibt, weil
+     die Status-Punkte (.dot-*) sie nutzen. */
+  [data-theme="dark"] .btn-primary, [data-theme="dark"] .btn-cyan { @apply hover:bg-blue-700 hover:border-blue-700; }
+  [data-theme="dark"] .btn-danger  { @apply hover:bg-red-700 hover:border-red-700; }
+  [data-theme="dark"] .btn-success { @apply hover:bg-emerald-700 hover:border-emerald-700; }
+  [data-theme="dark"] .btn-warning { @apply hover:bg-amber-700 hover:border-amber-700; }
+
+  /* Kamera-Fläche: immer schwarz, in beiden Themen. Themenfarben passen hier nicht
+     (im Hellen wären gedämpfte Grautöne auf Schwarz unlesbar), darum feste helle
+     Töne. Seit v1.1.70 für StreamView, X1CView und HaPollView. */
+  .cam-surface { background-color: #000; color: rgb(255 255 255 / 0.8); }
+  .cam-surface .cam-muted { color: rgb(255 255 255 / 0.55); }
+  .cam-surface .cam-error { color: #ff9b91; }
   .btn-icon {
     @apply p-1.5 rounded border border-transparent bg-transparent
            text-surface-400 hover:text-surface-100 hover:bg-surface-900 hover:border-surface-700 transition-colors;

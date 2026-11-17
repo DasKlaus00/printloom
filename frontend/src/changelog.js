@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.70',
+    de: [
+      'BESSER LESBAR IN HELL UND DUNKEL: Gedämpfte Texte (Hinweise, Beschriftungen, Einheiten) sind im hellen Thema deutlich dunkler, im dunklen etwas heller. Weiße Schrift auf grünen und gelben Knöpfen ist im Dunkeln wieder gut lesbar, und beim Überfahren werden die Knöpfe dort dunkler statt heller.',
+      'SICHTBARE LINIEN, KEINE MINI-SCHRIFT: Rahmen, die bisher in der Farbe ihrer Fläche verschwanden, sind sichtbar. Nichts ist mehr kleiner als 10 px, Knöpfe haben mindestens 12 px. Erklärtexte im Sequenz-Editor und in der Konfiguration stehen nicht mehr in blassen Tönungsfarben.',
+      'KAMERA-BILD IM HELLEN THEMA: Beschriftungen und Fehlermeldungen auf der schwarzen Kamerafläche sind in beiden Themen hell und lesbar.',
+      'APP-NAME: Als App installiert heißt Printloom jetzt auch „Printloom“ (bisher „Ottomat4d“) und startet mit hellem statt schwarzem Hintergrund. Dafür die App einmal neu installieren.',
+      'Ein Test hält den Mindestkontrast (4,5:1) und die Mindestschriftgröße fest, damit es so bleibt.',
+    ],
+    en: [
+      'EASIER TO READ IN LIGHT AND DARK: muted text (hints, labels, units) is clearly darker in the light theme and slightly lighter in the dark one. White text on green and yellow buttons is readable again in the dark theme, and there buttons get darker on hover instead of lighter.',
+      'VISIBLE LINES, NO TINY TEXT: borders that used to vanish into their own background are visible. Nothing is smaller than 10 px, buttons are at least 12 px. Explanations in the sequence editor and the configuration no longer use pale tint colours.',
+      'CAMERA IMAGE IN THE LIGHT THEME: labels and error messages on the black camera area are light and readable in both themes.',
+      'APP NAME: installed as an app, Printloom is now called “Printloom” (was “Ottomat4d”) and starts with a light instead of a black background. Reinstall the app once for this.',
+      'A test keeps the minimum contrast (4.5:1) and the minimum font size in place.',
+    ],
+  },
+  {
     version: '1.1.69',
     de: [
       'SEITENLEISTE KLAPPT SELBST EIN: Unter 1280 px Breite (Laptop, Tablet quer) zeigt die Leiste nur noch Symbole, die Seite bekommt den Platz. Wer die Leiste mit dem Knopf oben links auf- oder zuklappt, behält diese Wahl.',

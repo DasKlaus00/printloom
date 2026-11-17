@@ -489,7 +489,7 @@ function App() {
           <p className="text-red-200 text-[13px] flex-1">
             {tr('Datendatei unlesbar: {0}. Printloom hat nichts überschrieben und die Farm startet nicht, bis das geklärt ist.', brokenFiles.join(', '))}
           </p>
-          <button onClick={() => setCurrentPage('system')} className="btn btn-danger btn-sm text-[11px]">
+          <button onClick={() => setCurrentPage('system')} className="btn btn-danger btn-sm text-xs">
             {tr('Zum Datenspeicher')}
           </button>
         </div>

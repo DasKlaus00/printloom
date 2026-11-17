@@ -24,14 +24,14 @@ function ColorSwatch({ hex, size = 'md' }) {
 
 function FilamentCard({ f, isCustom, onEdit, onDelete }) {
   return (
-    <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-900/50 border border-surface-800/40 hover:border-surface-700/60 transition-colors group">
+    <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-900/50 border border-surface-700 hover:border-surface-600 transition-colors group">
       <ColorSwatch hex={f.color_hex} />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-surface-200 truncate">{f.name}</p>
         <p className="text-[10px] text-surface-500 truncate">{f.brand} · {f.material}</p>
       </div>
       {f.article && (
-        <span className="text-[9px] font-mono text-surface-600 shrink-0 hidden sm:block">{f.article}</span>
+        <span className="text-[10px] font-mono text-surface-600 shrink-0 hidden sm:block">{f.article}</span>
       )}
       {isCustom && (
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
@@ -64,19 +64,19 @@ function CustomForm({ initial, onSave, onCancel }) {
       <p className="text-[11px] font-semibold text-blue-300">{initial ? tr('Filament bearbeiten') : tr('Neues Filament')}</p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <div>
-          <label className="block text-[9px] text-surface-500 mb-0.5">{tr('Marke*')}</label>
+          <label className="block text-[10px] text-surface-500 mb-0.5">{tr('Marke*')}</label>
           <input value={brand} onChange={e => setBrand(e.target.value)} placeholder={tr('z.B. Bambu Lab')} className="w-full text-[11px] h-7 py-0" />
         </div>
         <div>
-          <label className="block text-[9px] text-surface-500 mb-0.5">{tr('Material*')}</label>
+          <label className="block text-[10px] text-surface-500 mb-0.5">{tr('Material*')}</label>
           <input value={material} onChange={e => setMaterial(e.target.value)} placeholder={tr('z.B. PLA Basic')} className="w-full text-[11px] h-7 py-0" />
         </div>
         <div>
-          <label className="block text-[9px] text-surface-500 mb-0.5">{tr('Name*')}</label>
+          <label className="block text-[10px] text-surface-500 mb-0.5">{tr('Name*')}</label>
           <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('z.B. Midnight Black')} className="w-full text-[11px] h-7 py-0" />
         </div>
         <div>
-          <label className="block text-[9px] text-surface-500 mb-0.5">{tr('Farbe')}</label>
+          <label className="block text-[10px] text-surface-500 mb-0.5">{tr('Farbe')}</label>
           <div className="flex items-center gap-2">
             <input type="color" value={colorHex} onChange={e => setColorHex(e.target.value)}
               className="w-8 h-7 rounded cursor-pointer border border-surface-700 p-0" />
@@ -85,7 +85,7 @@ function CustomForm({ initial, onSave, onCancel }) {
           </div>
         </div>
         <div>
-          <label className="block text-[9px] text-surface-500 mb-0.5">{tr('Artikel-Nr.')}</label>
+          <label className="block text-[10px] text-surface-500 mb-0.5">{tr('Artikel-Nr.')}</label>
           <input value={article} onChange={e => setArticle(e.target.value)} placeholder={tr('z.B. AC-P01A01')} className="w-full text-[11px] font-mono h-7 py-0" />
         </div>
       </div>
@@ -261,7 +261,7 @@ export default function FilamentLibrary() {
             <button
               key={m}
               onClick={() => setFilterMat(m)}
-              className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+              className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
                 filterMat === m
                   ? 'border-blue-600/80 bg-blue-900/30 text-blue-300'
                   : 'border-surface-700/50 text-surface-500 hover:text-surface-300'

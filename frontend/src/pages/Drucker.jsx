@@ -48,7 +48,7 @@ function NumField({ label, hint, value, onChange }) {
   return (
     <label className="block">
       <span className="text-[11px] text-surface-400">{label}</span>
-      {hint && <span className="block text-[9px] text-surface-600">{hint}</span>}
+      {hint && <span className="block text-[10px] text-surface-600">{hint}</span>}
       <input type="text" inputMode="decimal" value={value ?? ''}
         onChange={e => onChange(e.target.value)} className="w-full text-sm font-mono mt-0.5" />
     </label>
@@ -215,7 +215,7 @@ function StressTest({ open, onToggle, busy }) {
       </label>
 
       {plan?.moves?.length > 0 && (
-        <div className="rounded-lg border border-surface-700/60 bg-surface-900/50 divide-y divide-surface-800/60 max-h-52 overflow-y-auto">
+        <div className="rounded-lg border border-surface-700/60 bg-surface-900/50 divide-y divide-surface-700 max-h-52 overflow-y-auto">
           {plan.moves.map((m, i) => (
             <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] font-mono">
               <span className="text-surface-600 w-6 shrink-0">{i + 1}</span>
@@ -254,24 +254,24 @@ function StressTest({ open, onToggle, busy }) {
 
       <div className="flex items-center gap-2 flex-wrap">
         {laeuft ? (
-          <button onClick={stopp} className="btn btn-danger btn-sm text-[11px]">
+          <button onClick={stopp} className="btn btn-danger btn-sm text-xs">
             {tr('■ Stoppen')}
           </button>
         ) : (
           <button onClick={start} disabled={busy || anzahl === 0}
-            className="btn btn-primary btn-sm text-[11px] disabled:opacity-50">
+            className="btn btn-primary btn-sm text-xs disabled:opacity-50">
             {tr('▶ Stresstest starten')}
           </button>
         )}
         <button onClick={ladePlan} disabled={laeuft}
-          className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('↻ Neu würfeln')}</button>
+          className="btn btn-ghost btn-sm text-xs disabled:opacity-50">{tr('↻ Neu würfeln')}</button>
         {plan && (
           <span className="text-[10px] text-surface-600">
             {tr('{0} freie Fächer · weiteste Wege bis Regal {1}', plan.free_count, plan.farthest_rack)}
           </span>
         )}
       </div>
-      <p className="text-[9px] text-surface-600">
+      <p className="text-[10px] text-surface-600">
         {tr('Die Ziele werden beim Start ausgewürfelt — die Liste oben zeigt eine mögliche Verteilung; gefahren wird der Wurf vom Startzeitpunkt. Die Dauer ist hochgerechnet: Printloom erzeugt den G-code, den der Test wirklich fährt, und rechnet Strecke ÷ Vorschub plus Zuschlag fürs Beschleunigen. Die echte Zeit hängt an deiner Klipper-Beschleunigung und liegt eher darüber.')}
       </p>
     </Section>
@@ -310,10 +310,10 @@ function OpCard({ op, icon, title, fields = [], extra, note, busy, gcodeOn, onTe
               „Hierher übernehmen" schreibt die Ist-Position in die Felder. */}
           {onTeach && (
             <button onClick={() => onTeach(op)} disabled={busy} title={tr('Position einmessen')}
-              className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">📐</button>
+              className="btn btn-ghost btn-sm text-xs disabled:opacity-50">📐</button>
           )}
           <button onClick={() => onTest(op, tr('{0}…', title), extra)} disabled={busy}
-            className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">{tr('▶ Test')}</button>
+            className="btn btn-secondary btn-sm text-xs disabled:opacity-50">{tr('▶ Test')}</button>
         </div>
       </div>
 
@@ -323,12 +323,12 @@ function OpCard({ op, icon, title, fields = [], extra, note, busy, gcodeOn, onTe
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-blue-300">{tr('⚙ Eigener G-code — Werte werden ignoriert')}</span>
-            <button onClick={() => onClearGcode(op)} className="text-[10px] text-surface-500 hover:text-surface-300">{tr('✕ zurück zu Werten')}</button>
+            <button onClick={() => onClearGcode(op)} className="text-xs text-surface-500 hover:text-surface-300">{tr('✕ zurück zu Werten')}</button>
           </div>
           <textarea value={gval} onChange={e => onChangeGcode(op, e.target.value)} spellCheck={false} rows={8}
             className="w-full text-[11px] leading-snug font-mono bg-surface-900/70 border border-surface-700/60 rounded-lg p-2 whitespace-pre" />
-          <p className="text-[9px] text-surface-600">{tr('Wird 1:1 an den OTTOeject gesendet. „Test" fährt genau diesen G-code.')}</p>
-          <p className="text-[9px] text-blue-400/80 leading-relaxed">
+          <p className="text-[10px] text-surface-600">{tr('Wird 1:1 an den OTTOeject gesendet. „Test" fährt genau diesen G-code.')}</p>
+          <p className="text-[10px] text-blue-400/80 leading-relaxed">
             {tr('Platzhalter für Regale/Fächer:')}{' '}
             <span className="font-mono text-blue-300">{'{rack_x} {slot_z} {mag_z} {y_engage} {y_pullback} {rack} {slot}'}</span>
             {' — '}{tr('EIN G-code fährt so jedes Regal (R1 am Drucker) und Fach korrekt an. Versätze gehen mit: {slot_z+25} ist die Fachhöhe plus 25 mm.')}
@@ -344,14 +344,14 @@ function OpCard({ op, icon, title, fields = [], extra, note, busy, gcodeOn, onTe
               ))}
             </div>
           ) : (note && <p className="text-[10px] text-surface-500">{note}</p>)}
-          {fields.length > 0 && note && <p className="text-[9px] text-surface-600">{note}</p>}
-          <button onClick={() => onLoadGcode(op, extra)} className="text-[10px] text-blue-400 hover:text-blue-300">
+          {fields.length > 0 && note && <p className="text-[10px] text-surface-600">{note}</p>}
+          <button onClick={() => onLoadGcode(op, extra)} className="text-xs text-blue-400 hover:text-blue-300">
             {tr('⚙ Eigenen G-code bearbeiten (Feinjustage)')}
           </button>
         </>
       )}
 
-      <label className="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-surface-800/50">
+      <label className="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-surface-700">
         <Toggle on={!!gcodeOn} onClick={() => onToggle(op)} color="bg-emerald-600" />
         <span className={`text-[11px] ${gcodeOn ? 'text-emerald-300' : 'text-surface-500'}`}>
           {gcodeOn ? tr('Farm nutzt diese Position ✓') : tr('Farm nutzt diese Position (aus → Geräte-Macro)')}
@@ -448,7 +448,7 @@ function PrinterSettingsPanel({ deviceId, printerName, canCalibrate }) {
   )
 
   return (
-    <div className="rounded-lg border border-surface-800 bg-surface-900/40 p-3 space-y-2">
+    <div className="rounded-lg border border-surface-700 bg-surface-900/40 p-3 space-y-2">
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between text-left">
         <span className="text-[12px] font-medium text-surface-300">{tr('⚙ Drucker-Einstellungen ({0})', printerName)}</span>
         <span className="text-[11px] text-blue-400">{open ? tr('▾ ausblenden') : tr('▸ anzeigen')}</span>
@@ -476,32 +476,32 @@ function PrinterSettingsPanel({ deviceId, printerName, canCalibrate }) {
                   onToggle={v => apply(row.key, v)} />
                 <div className="min-w-0">
                   <p className="text-[11px] text-surface-300">{tr(row.label)}</p>
-                  <p className="text-[9px] text-surface-600">{tr(row.desc)}</p>
+                  <p className="text-[10px] text-surface-600">{tr(row.desc)}</p>
                 </div>
               </div>
             ))}
           </div>
 
           {/* Geschwindigkeit + Auto-Recovery + Licht */}
-          <div className="pt-2 border-t border-surface-800/50 space-y-2">
+          <div className="pt-2 border-t border-surface-700 space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] text-surface-400">{tr('Druckgeschwindigkeit')}</span>
               {SPEED_OPTIONS.map(o => (
                 <button key={o.lvl} onClick={() => apply('speed_level', o.lvl)} disabled={busy === 'speed_level'}
-                  className={`text-[11px] px-2 py-1 rounded border transition-colors disabled:opacity-50 ${
+                  className={`text-xs px-2 py-1 rounded border transition-colors disabled:opacity-50 ${
                     s?.speed_level === o.lvl ? 'border-blue-600 bg-blue-950/40 text-blue-300'
                                              : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>
                   {tr(o.label)}
                 </button>
               ))}
-              {s?.speed_level == null && <span className="text-[9px] text-surface-600">{tr('(aktuell unbekannt)')}</span>}
+              {s?.speed_level == null && <span className="text-[10px] text-surface-600">{tr('(aktuell unbekannt)')}</span>}
             </div>
             <div className="flex items-start gap-2">
               <TriState value={s?.auto_recovery} disabled={busy === 'auto_recovery'}
                 onToggle={v => apply('auto_recovery', v)} />
               <div>
                 <p className="text-[11px] text-surface-300">{tr('Auto-Recovery bei Schrittverlust')}</p>
-                <p className="text-[9px] text-surface-600">{tr('Druckt nach einem Schrittverlust weiter statt abzubrechen.')}</p>
+                <p className="text-[10px] text-surface-600">{tr('Druckt nach einem Schrittverlust weiter statt abzubrechen.')}</p>
               </div>
             </div>
             <div className="flex items-start gap-2">
@@ -509,11 +509,11 @@ function PrinterSettingsPanel({ deviceId, printerName, canCalibrate }) {
                 onToggle={v => apply('chamber_light', v)} />
               <div>
                 <p className="text-[11px] text-surface-300">{tr('Kammerlicht')}</p>
-                <p className="text-[9px] text-surface-600">{tr('Beleuchtung im Bauraum (wird für die Kamera automatisch eingeschaltet).')}</p>
+                <p className="text-[10px] text-surface-600">{tr('Beleuchtung im Bauraum (wird für die Kamera automatisch eingeschaltet).')}</p>
               </div>
             </div>
             {(s?.nozzle_diameter || s?.nozzle_type) && (
-              <p className="text-[9px] text-surface-600 font-mono">
+              <p className="text-[10px] text-surface-600 font-mono">
                 {tr('Düse')}: {s.nozzle_type || '?'} · {s.nozzle_diameter || '?'} mm
               </p>
             )}
@@ -522,9 +522,9 @@ function PrinterSettingsPanel({ deviceId, printerName, canCalibrate }) {
           {/* Kalibrierung — nur bei Modellen, die sie per MQTT annehmen (X1-Serie).
               Vorher stand der Knopf auch beim P1S/A1 da und tat schlicht nichts. */}
           {canCalibrate !== false && (
-            <div className="pt-2 border-t border-surface-800/50 space-y-1.5">
+            <div className="pt-2 border-t border-surface-700 space-y-1.5">
               <p className="text-[11px] font-medium text-surface-300">{tr('Kalibrierung (X1-Serie)')}</p>
-              <p className="text-[9px] text-surface-600">
+              <p className="text-[10px] text-surface-600">
                 {tr('Alle drei zusammen dauern ~16 Minuten und blockieren den Drucker. Nur starten, wenn nichts läuft — die Farm sollte gestoppt sein.')}
               </p>
               <div className="flex items-center gap-3 flex-wrap">
@@ -537,13 +537,13 @@ function PrinterSettingsPanel({ deviceId, printerName, canCalibrate }) {
                 ))}
               </div>
               <button onClick={runCalibration} disabled={calibBusy || !calib.length}
-                className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">
+                className="btn btn-secondary btn-sm text-xs disabled:opacity-50">
                 {calibBusy ? tr('Starte…') : tr('▶ Kalibrierung starten')}
               </button>
             </div>
           )}
           {canCalibrate === false && (
-            <p className="pt-2 border-t border-surface-800/50 text-[10px] text-surface-600">
+            <p className="pt-2 border-t border-surface-700 text-[10px] text-surface-600">
               {tr('{0} nimmt keine Kalibrierung über Printloom entgegen — die läuft am Drucker selbst.', printerName)}
             </p>
           )}
@@ -552,8 +552,8 @@ function PrinterSettingsPanel({ deviceId, printerName, canCalibrate }) {
             <p className={`text-[11px] font-mono ${msg.err ? 'text-red-400' : 'text-emerald-400'}`}>{msg.text}</p>
           )}
           <div className="flex items-center gap-2">
-            <button onClick={load} className="text-[10px] text-blue-400 hover:text-blue-300">{tr('⟳ Zustand neu lesen')}</button>
-            <span className="text-[9px] text-surface-600">
+            <button onClick={load} className="text-xs text-blue-400 hover:text-blue-300">{tr('⟳ Zustand neu lesen')}</button>
+            <span className="text-[10px] text-surface-600">
               {tr('„—" = der Drucker hat den Wert noch nicht gemeldet. Nicht jedes Modell unterstützt jede Option.')}
             </span>
           </div>
@@ -569,7 +569,7 @@ function BedControls({ dev, busy, onGcode }) {
   const { tr } = useLanguage()
   const [z, setZ] = useState(200)
   return (
-    <div className="flex items-center gap-2 flex-wrap rounded-lg border border-surface-800 bg-surface-900/40 p-2.5">
+    <div className="flex items-center gap-2 flex-wrap rounded-lg border border-surface-700 bg-surface-900/40 p-2.5">
       <span className="text-[11px] text-surface-400">{tr('🖨 Druckbett')}</span>
       <label className="flex items-center gap-1">
         <span className="text-[10px] text-surface-500">Z</span>
@@ -578,13 +578,13 @@ function BedControls({ dev, busy, onGcode }) {
       </label>
       <button onClick={() => onGcode(dev.id, `G90\nG1 Z${Math.round(num(z, 200))} F3000`,
                                      tr('Drucker-Bett → Z{0}', Math.round(num(z, 200))))}
-        disabled={busy} className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">{tr('▶ Bett fahren')}</button>
+        disabled={busy} className="btn btn-secondary btn-sm text-xs disabled:opacity-50">{tr('▶ Bett fahren')}</button>
       <button onClick={() => setZ(200)} title={tr('Auf Ladeposition Z200 setzen')}
-        className="text-[10px] text-blue-400 hover:text-blue-300">{tr('= Z200')}</button>
+        className="text-xs text-blue-400 hover:text-blue-300">{tr('= Z200')}</button>
       <button onClick={() => onGcode(dev.id, 'G28', tr('Drucker-Bett homen'))} disabled={busy}
         title={tr('G28 an den Drucker — referenziert die Achsen neu')}
-        className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">{tr('⌂ Bett homen')}</button>
-      <span className="text-[9px] text-surface-600">{tr('Z200 = Ladeposition für den Platten-Wechsel. Drucker muss idle sein.')}</span>
+        className="btn btn-secondary btn-sm text-xs disabled:opacity-50">{tr('⌂ Bett homen')}</button>
+      <span className="text-[10px] text-surface-600">{tr('Z200 = Ladeposition für den Platten-Wechsel. Drucker muss idle sein.')}</span>
     </div>
   )
 }
@@ -655,7 +655,7 @@ function PrinterSection({ p, index, dev, open, onToggle, onPatch,
           <span className="text-surface-400">{tr('Gerät')}:</span>
           <span className="text-surface-200">{dev.name}</span>
           {model && <span className="text-surface-500">· {model.label}</span>}
-          <span className="text-[9px] text-surface-600">
+          <span className="text-[10px] text-surface-600">
             {tr('Name und Modell werden unter Konfiguration → Geräte gepflegt.')}
           </span>
         </div>
@@ -686,16 +686,16 @@ function PrinterSection({ p, index, dev, open, onToggle, onPatch,
              Tür 104/103). Das ist ein Anfang zum Einmessen, kein fertiger Wert. */
           <button onClick={() => onPatch({ door: { open: { x: r1(num(p.eject?.x) - 321), y: 319, z: 105, d: 370 },
                                                    close: { x: r1(num(p.eject?.x) - 322), y: 322, z: 105, d: 375 } } })}
-            className="text-[11px] text-blue-400 hover:text-blue-300">{tr('+ Tür-Positionen anlegen')}</button>
+            className="text-xs text-blue-400 hover:text-blue-300">{tr('+ Tür-Positionen anlegen')}</button>
         )}
         {hasDoor && (
           <button onClick={() => onPatch({ door: null })}
-            className="text-[11px] text-surface-500 hover:text-red-400">{tr('Tür-Positionen entfernen')}</button>
+            className="text-xs text-surface-500 hover:text-red-400">{tr('Tür-Positionen entfernen')}</button>
         )}
         {model?.preset && (
           <button onClick={() => onPatch({ __preset: model.preset })}
             title={tr('Y/Z und Tür-Form der Modell-Vorlage übernehmen; die eingemessene X bleibt')}
-            className="text-[11px] text-blue-400 hover:text-blue-300">{tr('⤓ Werte aus Modell-Vorlage')}</button>
+            className="text-xs text-blue-400 hover:text-blue-300">{tr('⤓ Werte aus Modell-Vorlage')}</button>
         )}
       </div>
       {p.model && !model?.preset && (
@@ -822,7 +822,7 @@ function RackSection({ nr, geo, open, onToggle, onPatch, printers, slots, magazi
           </select>
         </label>
       </div>
-      <p className="text-[9px] text-surface-600">
+      <p className="text-[10px] text-surface-600">
         {tr('Die Zuordnung entscheidet, wo die Farm die fertigen Platten dieses Druckers einlagert und woher sie leere holt. „Alle Drucker" = gemeinsamer Pool.')}
       </p>
       {tooClose && (
@@ -832,9 +832,9 @@ function RackSection({ nr, geo, open, onToggle, onPatch, printers, slots, magazi
       )}
 
       {/* Einmessen + Test */}
-      <div className="flex items-center justify-between pt-1 border-t border-surface-800/50">
+      <div className="flex items-center justify-between pt-1 border-t border-surface-700">
         <span className="text-[11px] text-surface-500">{tr('Einmessen & Test')}</span>
-        <button onClick={onTeach} className="text-[11px] text-blue-400 hover:text-blue-300">
+        <button onClick={onTeach} className="text-xs text-blue-400 hover:text-blue-300">
           {teachOn ? tr('✕ Einmessen schließen') : tr('📐 Regal einmessen')}
         </button>
       </div>
@@ -851,14 +851,14 @@ function RackSection({ nr, geo, open, onToggle, onPatch, printers, slots, magazi
             onChange={e => setSlot(+e.target.value)} className="w-16 text-sm font-mono mt-0.5" />
         </label>
         <button onClick={() => onTest('approach', tr('R{0} Fach {1} anfahren…', nr, slot), { rack: nr, slot })}
-          disabled={busy} className="btn btn-ghost btn-sm text-[11px] disabled:opacity-50">{tr('→ Anfahren')}</button>
+          disabled={busy} className="btn btn-ghost btn-sm text-xs disabled:opacity-50">{tr('→ Anfahren')}</button>
         <button onClick={() => onTest('grab', tr('Greifen…'), { rack: nr, slot })}
-          disabled={busy} className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">{tr('▶ Greifen testen')}</button>
+          disabled={busy} className="btn btn-secondary btn-sm text-xs disabled:opacity-50">{tr('▶ Greifen testen')}</button>
         <button onClick={() => onTest('store', tr('Ablegen…'), { rack: nr, slot })}
-          disabled={busy} className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">{tr('▶ Ablegen testen')}</button>
+          disabled={busy} className="btn btn-secondary btn-sm text-xs disabled:opacity-50">{tr('▶ Ablegen testen')}</button>
         {magazineSlot > 0 && (
           <button onClick={onMagazine} disabled={busy || magazineCount <= 0}
-            className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 flex items-center gap-1.5"
+            className="btn btn-secondary btn-sm text-xs disabled:opacity-50 flex items-center gap-1.5"
             title={magazineCount <= 0 ? tr('Magazin leer — Bestand unter Auto Farm → Regal setzen')
                                       : tr('Platte aus Magazin R{0} holen (NOLIFT, Fach {1})', nr, magazineSlot)}>
             <span>{tr('▶ Magazin')}</span>
@@ -866,7 +866,7 @@ function RackSection({ nr, geo, open, onToggle, onPatch, printers, slots, magazi
           </button>
         )}
       </div>
-      <p className="text-[9px] text-surface-600">
+      <p className="text-[10px] text-surface-600">
         {tr('„Anfahren" fährt nur vors Fach (greift nicht). Magazin = oberstes Fach ({0}) wird ohne Anheben gegriffen; die Entnahme zählt den Bestand runter.', magazineSlot || '—')}
         {owner ? ' ' + tr('Zugeordnet: {0}.', owner.name) : ''}
       </p>
@@ -1411,7 +1411,7 @@ export default function Drucker() {
         {geomStale && (
           <p role="alert" className="text-[12px] px-3 py-2 rounded border border-amber-700 bg-amber-950 text-amber-300 flex flex-wrap items-center gap-2">
             <span className="flex-1">⚠ {tr('Die Geometrie wurde an anderer Stelle geändert. Diese Seite speichert nicht mehr, damit nichts überschrieben wird.')}</span>
-            <button onClick={() => window.location.reload()} className="btn btn-secondary btn-sm text-[11px]">{tr('Neu laden')}</button>
+            <button onClick={() => window.location.reload()} className="btn btn-secondary btn-sm text-xs">{tr('Neu laden')}</button>
           </p>
         )}
         {loadError && (
@@ -1426,28 +1426,28 @@ export default function Drucker() {
         )}
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={homeOtto} disabled={armBusy}
-            className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">{tr('⌂ Referenzfahrt')}</button>
+            className="btn btn-secondary btn-sm text-xs disabled:opacity-50">{tr('⌂ Referenzfahrt')}</button>
           <span className="text-[11px] text-surface-400 ml-2">{tr('Geschwindigkeit (global)')}</span>
           {SPEEDS.map(v => (
             <button key={v} onClick={() => applySpeed(v)} disabled={armBusy}
-              className={`text-[11px] px-2 py-1 rounded border transition-colors disabled:opacity-50 ${(+speedFactor || 100) === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>{v}%</button>
+              className={`text-xs px-2 py-1 rounded border transition-colors disabled:opacity-50 ${(+speedFactor || 100) === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>{v}%</button>
           ))}
-          <span className="text-[9px] text-surface-600">{tr('M220-Fallback · pro Operation eigene Geschwindigkeit einstellbar')}</span>
+          <span className="text-[10px] text-surface-600">{tr('M220-Fallback · pro Operation eigene Geschwindigkeit einstellbar')}</span>
           <span className="text-[10px] text-surface-500 ml-auto">
             {activeFarm === 0
               ? tr('Farm nutzt aktuell die Geräte-Macros (keine App-Position aktiv).')
               : tr('Farm nutzt {0} App-Position(en). Rest über Geräte-Macros.', activeFarm)}
           </span>
         </div>
-        <div className="flex items-center gap-2 pt-1 border-t border-surface-800/50">
+        <div className="flex items-center gap-2 pt-1 border-t border-surface-700">
           <input type="text" value={gcodeLine} onChange={e => setGcodeLine(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') sendGcodeLine() }}
             placeholder={tr('G-code direkt an den OTTOeject — z. B. G1 X100 F6000')}
             className="flex-1 font-mono text-[11px] h-8 py-0 px-2" disabled={armBusy} />
           <button onClick={sendGcodeLine} disabled={armBusy || !gcodeLine.trim()}
-            className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50 shrink-0">{tr('▶ Senden')}</button>
+            className="btn btn-secondary btn-sm text-xs disabled:opacity-50 shrink-0">{tr('▶ Senden')}</button>
         </div>
-        <p className="text-[9px] text-surface-600">
+        <p className="text-[10px] text-surface-600">
           {tr('Wird 1:1 an Klipper geschickt (Enter = Senden). Vorher homen; RACK=-Nummern werden automatisch in die Geräte-Zählung übersetzt.')}
         </p>
         {jog.msg && (
@@ -1455,7 +1455,7 @@ export default function Drucker() {
         )}
         {lastScript && (
           <div className="pt-1">
-            <button onClick={() => setShowScript(s => !s)} className="text-[10px] text-blue-400 hover:text-blue-300">
+            <button onClick={() => setShowScript(s => !s)} className="text-xs text-blue-400 hover:text-blue-300">
               {showScript ? tr('▾ Gesendeten G-code ausblenden') : tr('▸ Gesendeten G-code der letzten Aktion')}
             </button>
             {showScript && (
@@ -1555,26 +1555,26 @@ export default function Drucker() {
             <div className="flex items-center gap-1.5 mt-1">
               {['256', '220'].map(v => (
                 <button key={v} onClick={() => setPlate(v)}
-                  className={`text-[11px] px-2 py-1 rounded border ${plate === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500'}`}>{v} mm</button>
+                  className={`text-xs px-2 py-1 rounded border ${plate === v ? 'border-blue-600 bg-blue-950/40 text-blue-300' : 'border-surface-700 text-surface-500'}`}>{v} mm</button>
               ))}
-              <span className="text-[9px] text-surface-600">{tr('bestimmt den Rückzugs-Y ({0} mm)', yPullback)}</span>
+              <span className="text-[10px] text-surface-600">{tr('bestimmt den Rückzugs-Y ({0} mm)', yPullback)}</span>
             </div>
           </div>
         </div>
-        <p className="text-[9px] text-surface-600">
+        <p className="text-[10px] text-surface-600">
           {isMagnet
             ? tr('Magnet-Greifer: beim GREIFEN fährt der Arm auf Fachhöhe unter die Platte und hebt sie an. Beim ABLEGEN kommt er höher herein und senkt sich UNTER die Fachhöhe — dabei bleibt die Platte liegen und löst sich vom Magneten. Kein Weg nach links/rechts; der Andruck-Weg gilt nur noch für Auswurf und Einlegen am Drucker.')
             : tr('Andruck-Weg: der Arm fährt beim Greifen/Ablegen um diesen Weg über die X hinaus, um den Greifer in die Halterung zu drücken (Auswerfen/Einlegen: +, Greifen/Ablegen: −). Original 30. ACHTUNG: Genau diese Bewegung IST der Griff — bei 0 hakt der Greifer nicht ein, der Arm fährt vor und kommt leer zurück.')}
         </p>
         {isMagnet && (
-          <p className="text-[9px] text-surface-600">
+          <p className="text-[10px] text-surface-600">
             {tr('Die Startwerte stammen aus Messungen: Lagerfach (Regal 3 Fach 1, Höhe 15 mm) Greifen Y280 → Z15 → Y300 → Y342 → Z30 → Y25, Ablegen X/Z zusammen → Y300 → Y340 → Z10 → Y300. Magazin (Höhe 345 mm) X/Y/Z in einem Zug → Y328 → Z350 → Y25 — dort wird nur wenig angehoben, weil die Achse dicht darüber endet, und die Höhe bleibt fest, egal wie voll das Magazin ist. Am Drucker fährt der Magnet eigene Wege — auch dort ohne Andruck. Weicht dein Aufbau ab, sind das die Stellschrauben.')}
           </p>
         )}
 
         {/* Greifen/Ablegen: eigener G-code + Farm-Freigabe. Gilt für ALLE Regale —
             die Bewegung ist dieselbe, nur die Koordinaten kommen aus dem Regal. */}
-        <div className="pt-1 border-t border-surface-800/50 space-y-2">
+        <div className="pt-1 border-t border-surface-700 space-y-2">
           <p className="text-[11px] text-surface-400">{tr('Greifen & Ablegen (alle Regale)')}</p>
           {RACK_OPS.map(op => (
             <div key={op} className="space-y-1.5">
@@ -1589,11 +1589,11 @@ export default function Drucker() {
                 })} />
                 {typeof gcodeOverride[op] === 'string' ? (
                   <button onClick={() => setGcodeOverride(m => { const n = { ...m }; delete n[op]; return n })}
-                    className="text-[10px] text-surface-500 hover:text-surface-300">{tr('✕ zurück zu Werten')}</button>
+                    className="text-xs text-surface-500 hover:text-surface-300">{tr('✕ zurück zu Werten')}</button>
                 ) : (
                   <button onClick={() => loadRackGcode(op)}
                     title={tr('Lädt die eingebaute Bewegung als Vorlage — mit Platzhaltern, damit sie für jedes Regal und Fach gilt')}
-                    className="text-[10px] text-blue-400 hover:text-blue-300">{tr('⚙ Eigenen G-code bearbeiten (Feinjustage)')}</button>
+                    className="text-xs text-blue-400 hover:text-blue-300">{tr('⚙ Eigenen G-code bearbeiten (Feinjustage)')}</button>
                 )}
               </div>
               {typeof gcodeOverride[op] === 'string' && (
@@ -1603,7 +1603,7 @@ export default function Drucker() {
               )}
             </div>
           ))}
-          <p className="text-[9px] text-blue-400/80 leading-relaxed">
+          <p className="text-[10px] text-blue-400/80 leading-relaxed">
             {tr('Platzhalter für Regale/Fächer:')}{' '}
             <span className="font-mono text-blue-300">{'{rack_x} {slot_z} {mag_z} {y_engage} {y_pullback} {rack} {slot}'}</span>
             {' — '}{tr('EIN G-code fährt so jedes Regal (R1 am Drucker) und Fach korrekt an. Versätze gehen mit: {slot_z+25} ist die Fachhöhe plus 25 mm.')}
@@ -1643,12 +1643,12 @@ export default function Drucker() {
             </label>
           ))}
           <button onClick={fetchLimits} disabled={limitsBusy}
-            className="btn btn-secondary btn-sm text-[11px] disabled:opacity-50">
+            className="btn btn-secondary btn-sm text-xs disabled:opacity-50">
             {limitsBusy ? tr('Lese…') : tr('⤓ Grenzen vom Gerät holen')}
           </button>
           {Object.keys(limits).length > 0 && (
             <button onClick={() => { setLimits({}); setLimitsMsg('') }}
-              className="btn btn-ghost btn-sm text-[11px]">{tr('Leeren')}</button>
+              className="btn btn-ghost btn-sm text-xs">{tr('Leeren')}</button>
           )}
         </div>
         {limitsMsg && <p className="text-[11px] font-mono text-surface-400">{limitsMsg}</p>}
@@ -1666,7 +1666,7 @@ export default function Drucker() {
         {check && !check.errors?.length && !check.warnings?.length && (
           <p className="text-[11px] text-emerald-400">{tr('✓ Alle Bewegungen liegen innerhalb der Achsen.')}</p>
         )}
-        <p className="text-[9px] text-surface-600">
+        <p className="text-[10px] text-surface-600">
           {tr('Geprüft werden alle Operationen über alle Drucker, Regale und das erste/letzte Fach — dort liegen die Extremwerte. Ob eine Position mechanisch passt (z. B. genau vor dem Fach), kann nur das Einmessen zeigen.')}
         </p>
       </Section>

@@ -89,7 +89,7 @@ export default function SetupHealth({ compact = false }) {
             {checks ? (allOk ? tr('Alles bereit ✓') : anyBad ? tr('Es fehlt noch etwas') : tr('Fast fertig')) : tr('Prüfe…')}
           </span>
           <button onClick={run} disabled={busy}
-            className="text-[11px] text-blue-400 hover:text-blue-300 disabled:opacity-40">{busy ? tr('Prüfe…') : tr('↻ Neu prüfen')}</button>
+            className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-40">{busy ? tr('Prüfe…') : tr('↻ Neu prüfen')}</button>
         </div>
       )}
       <div className="space-y-1">

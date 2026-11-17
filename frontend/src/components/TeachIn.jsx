@@ -113,7 +113,7 @@ export default function TeachIn({
           </span>
         ))}
         <button onClick={readPos} title={tr('Position neu lesen')}
-          className="ml-auto text-[11px] text-blue-400 hover:text-blue-300">↻</button>
+          className="ml-auto text-xs text-blue-400 hover:text-blue-300">↻</button>
       </div>
 
       {/* Schrittweite */}
@@ -121,7 +121,7 @@ export default function TeachIn({
         <span className="text-[11px] text-surface-500 mr-1">{tr('Schritt')}</span>
         {STEPS_MM.map(s => (
           <button key={s} onClick={() => setStep(s)}
-            className={`text-[11px] px-1.5 py-0.5 rounded border ${
+            className={`text-xs px-1.5 py-0.5 rounded border ${
               step === s ? 'border-blue-600 bg-blue-950/40 text-blue-300'
                          : 'border-surface-700 text-surface-500 hover:text-surface-300'}`}>
             {s}
@@ -136,9 +136,9 @@ export default function TeachIn({
           <div key={a} className="flex items-center gap-2">
             <span className="font-mono text-[11px] text-surface-400 w-3">{a.toUpperCase()}</span>
             <button onClick={() => jog(a, -1)} disabled={busy}
-              className="btn btn-secondary btn-sm text-[11px] w-10 disabled:opacity-40">−</button>
+              className="btn btn-secondary btn-sm text-xs w-10 disabled:opacity-40">−</button>
             <button onClick={() => jog(a, +1)} disabled={busy}
-              className="btn btn-secondary btn-sm text-[11px] w-10 disabled:opacity-40">+</button>
+              className="btn btn-secondary btn-sm text-xs w-10 disabled:opacity-40">+</button>
             <span className="text-[10px] text-surface-600">
               {a === 'x' ? tr('links / rechts') : a === 'y' ? tr('vor / zurück') : tr('runter / hoch')}
             </span>
@@ -146,13 +146,13 @@ export default function TeachIn({
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-surface-800/60">
+      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-surface-700">
         {onApproach && (
           <button onClick={approach} disabled={busy}
-            className="btn btn-ghost btn-sm text-[11px] disabled:opacity-40">{tr('→ Position anfahren')}</button>
+            className="btn btn-ghost btn-sm text-xs disabled:opacity-40">{tr('→ Position anfahren')}</button>
         )}
         <button onClick={apply} disabled={busy || !pos}
-          className="btn btn-primary btn-sm text-[11px] disabled:opacity-40">
+          className="btn btn-primary btn-sm text-xs disabled:opacity-40">
           {applyLabel || tr('✓ Hierher übernehmen')}
         </button>
         {msg && <span className={`text-[11px] font-mono ${err ? 'text-red-400' : 'text-emerald-400'}`}>{msg}</span>}

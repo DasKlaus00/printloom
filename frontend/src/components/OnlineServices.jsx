@@ -115,7 +115,7 @@ export default function OnlineServices({ setCurrentPage }) {
       </div>
 
       {/* Einzelschalter */}
-      <div className="space-y-2 pt-1 border-t border-surface-800/60">
+      <div className="space-y-2 pt-1 border-t border-surface-700">
         {FEATURES.map(f => (
           <div key={f.key} className="flex items-start gap-2.5">
             <Toggle on={!!cfg[f.key]} disabled={busy} onClick={() => toggleFeature(f.key)} />
@@ -128,12 +128,12 @@ export default function OnlineServices({ setCurrentPage }) {
       </div>
 
       {cfg.consented && (
-        <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-surface-800/60">
+        <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-surface-700">
           <span className="text-[10px] text-surface-600">
             {tr('Server')}: <span className="font-mono text-surface-500">{cfg.server_url}</span>
           </span>
           <button onClick={revoke} disabled={busy}
-            className="text-[10px] text-red-400/80 hover:text-red-300 ml-auto">
+            className="text-xs text-red-400/80 hover:text-red-300 ml-auto">
             {tr('Verbindung widerrufen & Zwischenspeicher löschen')}
           </button>
         </div>
@@ -141,14 +141,14 @@ export default function OnlineServices({ setCurrentPage }) {
 
       {/* Bekannte Probleme */}
       {cfg.consented && cfg.notices && (
-        <div className="pt-2 border-t border-surface-800/60 space-y-2">
+        <div className="pt-2 border-t border-surface-700 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <p className="text-[11px] font-medium text-surface-300">
               {tr('Hinweise zu Version {0}', notices?.version || '—')}
             </p>
             <div className="flex items-center gap-2">
-              <span className="text-[9px] text-surface-600">{tr('Stand')}: {timeAgo(notices?.fetched_at, tr)}</span>
-              <button onClick={() => loadNotices(true)} className="text-[10px] text-blue-400 hover:text-blue-300">{tr('⟳ prüfen')}</button>
+              <span className="text-[10px] text-surface-600">{tr('Stand')}: {timeAgo(notices?.fetched_at, tr)}</span>
+              <button onClick={() => loadNotices(true)} className="text-xs text-blue-400 hover:text-blue-300">{tr('⟳ prüfen')}</button>
             </div>
           </div>
           {notices?.error && <p className="text-[10px] text-amber-400">{tr('Abruf fehlgeschlagen')}: {notices.error}</p>}
@@ -171,18 +171,18 @@ export default function OnlineServices({ setCurrentPage }) {
       {/* Bibliothek: eigener Tab (Autor/Version/Beschreibung + Vorschau) — hier nur
           der Verweis, damit es nicht zwei Ansichten für dasselbe gibt. */}
       {cfg.consented && cfg.library && (
-        <div className="pt-2 border-t border-surface-800/60 flex items-center justify-between gap-3">
+        <div className="pt-2 border-t border-surface-700 flex items-center justify-between gap-3">
           <p className="text-[10px] text-surface-500 min-w-0">
             {tr('Bibliothek freigeschaltet — Einträge mit Autor, Version und Vorschau findest du im Tab „Bibliothek".')}
             {library?.items?.length ? ' ' + tr('({0} Einträge)', library.items.length) : ''}
           </p>
           <button onClick={() => setCurrentPage?.('library')}
-            className="btn-secondary text-[11px] shrink-0">{tr('Bibliothek öffnen →')}</button>
+            className="btn-secondary text-xs shrink-0">{tr('Bibliothek öffnen →')}</button>
         </div>
       )}
 
       {/* Diagnose-Paket — rein lokal, kein Upload */}
-      <div className="pt-2 border-t border-surface-800/60 space-y-1">
+      <div className="pt-2 border-t border-surface-700 space-y-1">
         <div className="flex items-center justify-between gap-2">
           <p className="text-[11px] font-medium text-surface-300">{tr('Diagnose-Paket (Support)')}</p>
           <a href={systemService.diagnosticsUrl()} download

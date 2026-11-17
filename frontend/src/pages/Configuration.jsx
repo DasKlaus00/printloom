@@ -93,7 +93,7 @@ function LanguagePacks() {
         <span className="text-[10px] text-surface-600 mr-1">{tr('Aktiv:')}</span>
         {langs.map(l => (
           <button key={l.code} onClick={() => setLanguage(l.code)} title={l.name}
-            className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
+            className={`text-xs font-mono px-2 py-0.5 rounded border transition-colors ${
               lang === l.code ? 'bg-blue-600 border-blue-600 text-white'
                               : 'bg-surface-800 border-surface-700 text-surface-400 hover:text-surface-200'}`}>
             {l.code.toUpperCase()} {!l.builtin && '·'}
@@ -116,7 +116,7 @@ function LanguagePacks() {
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-2 flex-wrap border-t border-surface-800/50 pt-3">
+      <div className="flex items-center gap-2 flex-wrap border-t border-surface-700 pt-3">
         <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={importFile} />
         <button onClick={exportTemplate} className="btn btn-ghost btn-sm">{tr('Template exportieren')}</button>
         <button onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm">{tr('Pack importieren')}</button>
@@ -255,7 +255,7 @@ function FarmSettings() {
       {useAms && (
         <div className="flex items-center gap-3">
           <label className="text-xs text-surface-400 select-none flex-1">{tr('Nur exakte Farbe drucken')}
-            <span className="block text-[9px] text-surface-700">{tr('Keine ähnliche Ersatzfarbe — ohne exakten Treffer pausiert die Farm zur manuellen Zuordnung')}</span></label>
+            <span className="block text-[10px] text-surface-700">{tr('Keine ähnliche Ersatzfarbe — ohne exakten Treffer pausiert die Farm zur manuellen Zuordnung')}</span></label>
           <button onClick={() => setExactColorOnly(v => !v)}
             className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${exactColorOnly ? 'bg-blue-600' : 'bg-surface-700'}`}>
             <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${exactColorOnly ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -264,11 +264,11 @@ function FarmSettings() {
       )}
 
       {/* Watchdog (Roadmap 1.1 / 1.7) */}
-      <div className="border-t border-surface-800/40 pt-3 space-y-2.5">
+      <div className="border-t border-surface-700 pt-3 space-y-2.5">
         <p className="text-[10px] text-surface-400 font-medium">{tr('Watchdog')}</p>
         <div className="flex items-center gap-3">
           <label className="text-xs text-surface-400 select-none flex-1">{tr('Alarm bei Verbindungsverlust')}
-            <span className="block text-[9px] text-surface-700">{tr('Push, wenn der Reconnect zum Drucker mehrfach scheitert')}</span></label>
+            <span className="block text-[10px] text-surface-700">{tr('Push, wenn der Reconnect zum Drucker mehrfach scheitert')}</span></label>
           <button onClick={() => setConnAlarm(v => !v)}
             className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${connAlarm ? 'bg-blue-600' : 'bg-surface-700'}`}>
             <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${connAlarm ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -285,21 +285,21 @@ function FarmSettings() {
         </div>
       </div>
       {/* Betriebszeiten (Roadmap 2.5) */}
-      <div className="border-t border-surface-800/40 pt-3 space-y-2.5">
+      <div className="border-t border-surface-700 pt-3 space-y-2.5">
         {/* Zeitzone — Basis für die Betriebszeiten. Der Server-Container läuft in UTC;
             ohne korrekte Zone startet die Farm zur falschen Uhrzeit. */}
         <div className="flex items-center gap-2 flex-wrap">
           <label className="text-xs text-surface-400 flex-1 min-w-[140px]">{tr('Zeitzone')}
-            <span className="block text-[9px] text-surface-700">{tr('Maßgeblich für Betriebszeiten & Uhrzeiten.')}</span></label>
+            <span className="block text-[10px] text-surface-700">{tr('Maßgeblich für Betriebszeiten & Uhrzeiten.')}</span></label>
           <select value={tz} onChange={e => setTz(e.target.value)} className="text-xs font-mono w-48">
             {(TIMEZONES.includes(tz) || !tz ? TIMEZONES : [tz, ...TIMEZONES]).map(z => (
               <option key={z} value={z}>{z}</option>
             ))}
           </select>
         </div>
-        <div className="flex items-center gap-3 border-t border-surface-800/30 pt-2.5">
+        <div className="flex items-center gap-3 border-t border-surface-700 pt-2.5">
           <label className="text-xs text-surface-400 select-none flex-1">{tr('Betriebszeiten')}
-            <span className="block text-[9px] text-surface-700">{tr('Neue Drucke nur im Zeitfenster starten (Ruhezeiten / Stromtarif). Laufende Drucke werden nicht unterbrochen.')}</span></label>
+            <span className="block text-[10px] text-surface-700">{tr('Neue Drucke nur im Zeitfenster starten (Ruhezeiten / Stromtarif). Laufende Drucke werden nicht unterbrochen.')}</span></label>
           <button onClick={() => setOphEnabled(v => !v)}
             className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${ophEnabled ? 'bg-blue-600' : 'bg-surface-700'}`}>
             <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${ophEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -313,7 +313,7 @@ function FarmSettings() {
               return (
                 <div key={i} className="flex items-center gap-2">
                   <button onClick={() => setDay({ enabled: !day.enabled })}
-                    className={`text-[10px] w-8 h-7 rounded border transition-colors shrink-0 ${day.enabled
+                    className={`text-xs w-8 h-7 rounded border transition-colors shrink-0 ${day.enabled
                       ? 'bg-blue-900/40 border-blue-700/60 text-blue-300'
                       : 'bg-surface-900 border-surface-700 text-surface-600'}`}>{label}</button>
                   {day.enabled ? (
@@ -323,10 +323,10 @@ function FarmSettings() {
                       <span className="text-surface-600 text-xs">–</span>
                       <input type="time" value={day.end} onChange={e => setDay({ end: e.target.value })}
                         className="font-mono text-xs h-7 py-0 px-1.5 w-[88px]" />
-                      <span className="text-[9px] text-surface-700 w-14">{day.start > day.end ? tr('über Nacht') : ''}</span>
+                      <span className="text-[10px] text-surface-700 w-14">{day.start > day.end ? tr('über Nacht') : ''}</span>
                       <button onClick={() => setOphSchedule(s => s.map(() => ({ ...day })))}
                         title={tr('Diese Zeiten auf alle Tage übernehmen')}
-                        className="ml-auto text-[10px] text-surface-600 hover:text-surface-300 shrink-0">⎘ {tr('auf alle')}</button>
+                        className="ml-auto text-xs text-surface-600 hover:text-surface-300 shrink-0">⎘ {tr('auf alle')}</button>
                     </>
                   ) : (
                     <span className="text-[10px] text-surface-600">{tr('kein Druck an diesem Tag')}</span>
@@ -334,22 +334,22 @@ function FarmSettings() {
                 </div>
               )
             })}
-            <p className="text-[9px] text-surface-700 pt-0.5">{tr('Über-Nacht-Fenster (z. B. 22:00–06:00) erlaubt. Gilt nur für den Start neuer Drucke.')}</p>
+            <p className="text-[10px] text-surface-700 pt-0.5">{tr('Über-Nacht-Fenster (z. B. 22:00–06:00) erlaubt. Gilt nur für den Start neuer Drucke.')}</p>
           </div>
         )}
       </div>
 
-      <div className="border-t border-surface-800/40 pt-3 space-y-2">
+      <div className="border-t border-surface-700 pt-3 space-y-2">
         <p className="text-[10px] text-surface-400 font-medium">{tr('Homing-Datei (G28 + Z200)')}</p>
         <div className="flex items-center gap-2">
           {homingFile?.configured
             ? <span className="flex-1 text-[10px] font-mono text-emerald-400 truncate">✓ {homingFile.filename}</span>
             : <span className="flex-1 text-[10px] font-mono text-surface-600">{tr('Nicht konfiguriert')}</span>}
-          <button onClick={setupHoming} disabled={homingBusy} className="btn btn-ghost btn-sm text-[10px]">
+          <button onClick={setupHoming} disabled={homingBusy} className="btn btn-ghost btn-sm text-xs">
             {homingBusy ? '…' : homingFile?.configured ? tr('↺ Neu erstellen') : tr('+ Erstellen')}
           </button>
         </div>
-        <p className="text-[9px] text-surface-700 font-mono">{tr('Generiert eine .3mf mit G28+Z200 — im Sequenzeditor als ⇫ Homing verwenden')}</p>
+        <p className="text-[10px] text-surface-700 font-mono">{tr('Generiert eine .3mf mit G28+Z200 — im Sequenzeditor als ⇫ Homing verwenden')}</p>
       </div>
       <div className="flex items-center gap-2">
         <button onClick={save} disabled={saving} className="btn btn-secondary btn-sm">{tr('Speichern')}</button>
@@ -458,7 +458,7 @@ function RegalKonfiguration() {
         <div className="flex items-center gap-2">
           <input type="number" min="0" max="100" step="1" value={margin} onChange={e => setMargin(e.target.value)} className="w-20 font-mono text-xs" />
           <span className="text-[10px] text-surface-500">%</span>
-          {h > 0 && <span className="text-[9px] text-surface-700 font-mono">{tr('z.B. 100 mm → {0} mm effektiv', Math.round(100 * (1 + margin/100)))}</span>}
+          {h > 0 && <span className="text-[10px] text-surface-700 font-mono">{tr('z.B. 100 mm → {0} mm effektiv', Math.round(100 * (1 + margin/100)))}</span>}
         </div>
       </div>
       {/* Liegt oben schon eine Platte, braucht die einfahrende Platte mehr Luft,
@@ -471,18 +471,18 @@ function RegalKonfiguration() {
           <input type="number" min="0" max="100" step="5" value={stackedPct}
             onChange={e => setStackedPct(e.target.value)} className="w-20 font-mono text-xs" />
           <span className="text-[10px] text-surface-500">%</span>
-          {h > 0 && <span className="text-[9px] text-surface-700 font-mono">
+          {h > 0 && <span className="text-[10px] text-surface-700 font-mono">
             {tr('→ max. {0} mm unter einer Platte', Math.round(h * stackedPct / 100))}
           </span>}
         </div>
-        <p className="text-[9px] text-surface-600 mt-1">
+        <p className="text-[10px] text-surface-600 mt-1">
           {tr('Die Platte fährt nicht waagerecht auf ihre Endhöhe ein, sondern kommt etwa 25 mm höher herein und wird abgesenkt — beim Holen wird sie genauso angehoben. Solange von unten nach oben gefüllt wird, ist das Fach darüber in dem Moment noch leer. Über dem Magazin (immer belegt) und unter einem schon belegten Fach fehlt diese Luft, deshalb zählt dort nur ein Teil der Fachhöhe.')}
         </p>
       </div>
-      <div className="border-t border-surface-800/40 pt-2 space-y-2">
+      <div className="border-t border-surface-700 pt-2 space-y-2">
         <div className="flex items-center gap-2">
           <p className="text-[10px] text-surface-500 flex-1">{tr('Magazin-Fach')}</p>
-          <span className="text-[9px] text-surface-700 font-mono">{'{stack_slot}'} = {magazineSlot}</span>
+          <span className="text-[10px] text-surface-700 font-mono">{'{stack_slot}'} = {magazineSlot}</span>
         </div>
         <div className="flex items-center gap-2">
           <input type="number" min="1" max="99" value={magazineSlot}
@@ -490,9 +490,9 @@ function RegalKonfiguration() {
           <span className="text-[10px] text-surface-600">{tr('Fach in jedem Rack (Standard: 7)')}</span>
         </div>
       </div>
-      <div className="border-t border-surface-800/40 pt-2 space-y-2">
+      <div className="border-t border-surface-700 pt-2 space-y-2">
         <p className="text-[10px] text-surface-500">{tr('Platten pro Magazin')} <span className="text-surface-700">{tr('— feste Sollzahl')}</span></p>
-        <p className="text-[9px] text-surface-700">{tr('Fest je Magazin. „↺ Reset" (Regal-Ansicht) und Auffüllen stellen genau diese Zahl wieder her; sie bildet auch die Obergrenze im Magazin-Badge. Farm leert Rack 1 zuerst, dann 2, dann 3 usw.')}</p>
+        <p className="text-[10px] text-surface-700">{tr('Fest je Magazin. „↺ Reset" (Regal-Ansicht) und Auffüllen stellen genau diese Zahl wieder her; sie bildet auch die Obergrenze im Magazin-Badge. Farm leert Rack 1 zuerst, dann 2, dann 3 usw.')}</p>
         <div className="flex items-center gap-2 flex-wrap">
           {magazineCounts.map((cnt, ri) => (
             <div key={ri} className="flex items-center gap-1.5">
@@ -504,7 +504,7 @@ function RegalKonfiguration() {
               />
             </div>
           ))}
-          <span className="text-[9px] text-surface-700 font-mono ml-1">
+          <span className="text-[10px] text-surface-700 font-mono ml-1">
             {tr('= {0} gesamt', magazineCounts.reduce((s, c) => s + (+c || 0), 0))}
           </span>
         </div>
@@ -705,7 +705,7 @@ function PowerSettings() {
 
       {/* Test + Live + Schalten */}
       {cfg.plug_type !== 'none' && (
-        <div className="flex items-center gap-2 flex-wrap border-t border-surface-800/40 pt-3">
+        <div className="flex items-center gap-2 flex-wrap border-t border-surface-700 pt-3">
           <button onClick={test} className="btn btn-ghost btn-sm">{tr('Live prüfen')}</button>
           {live === 'loading' && <span className="text-[11px] text-surface-500">{tr('Lädt…')}</span>}
           {live && live !== 'loading' && !live.error && (
@@ -713,8 +713,8 @@ function PowerSettings() {
               <span className="text-[11px] font-mono text-surface-300">{live.watts != null ? `${Math.round(live.watts)} W` : '— W'}</span>
               {live.energy_kwh != null && <span className="text-[11px] font-mono text-surface-500">{live.energy_kwh} kWh</span>}
               {live.on != null && <span className={`text-[10px] font-mono ${live.on ? 'text-emerald-400' : 'text-surface-600'}`}>{live.on ? tr('AN') : tr('AUS')}</span>}
-              <button onClick={() => switchPlug(true)} className="btn btn-ghost btn-sm text-[10px]">{tr('Ein')}</button>
-              <button onClick={() => switchPlug(false)} className="btn btn-ghost btn-sm text-[10px]">{tr('Aus')}</button>
+              <button onClick={() => switchPlug(true)} className="btn btn-ghost btn-sm text-xs">{tr('Ein')}</button>
+              <button onClick={() => switchPlug(false)} className="btn btn-ghost btn-sm text-xs">{tr('Aus')}</button>
             </>
           )}
           {live?.error && <span className="text-[11px] font-mono text-red-400">{live.error}</span>}
@@ -722,12 +722,12 @@ function PowerSettings() {
       )}
 
       {/* Auto-Abschaltung + Kosten */}
-      <div className="border-t border-surface-800/40 pt-3 grid grid-cols-2 gap-3">
+      <div className="border-t border-surface-700 pt-3 grid grid-cols-2 gap-3">
         <label className="text-[10px] text-surface-500">{tr('Auto-Abschaltung nach Leerlauf (min)')}
           <div className="flex items-center gap-2 mt-0.5">
             <input type="number" min="0" step="1" value={cost.idle_off_min}
               onChange={e => setCost(c => ({ ...c, idle_off_min: e.target.value }))} className="w-20 font-mono text-xs" />
-            <span className="text-[9px] text-surface-700">{Number(cost.idle_off_min) > 0 ? tr('min') : tr('(aus)')}</span>
+            <span className="text-[10px] text-surface-700">{Number(cost.idle_off_min) > 0 ? tr('min') : tr('(aus)')}</span>
           </div></label>
         <label className="text-[10px] text-surface-500">{tr('Strompreis (€/kWh)')}<div className="mt-0.5">{num('power_price_eur_kwh')}</div></label>
         <label className="text-[10px] text-surface-500">{tr('Maschinenstundensatz (€/h)')}<div className="mt-0.5">{num('machine_rate_eur_h')}</div></label>
@@ -805,7 +805,7 @@ function ErrorStrategy() {
       </div>
       <div className="space-y-2">
         {ERROR_CATALOG.map(err => (
-          <div key={err.key} className="flex items-center gap-3 py-1.5 border-b border-surface-800/40 last:border-0">
+          <div key={err.key} className="flex items-center gap-3 py-1.5 border-b border-surface-700 last:border-0">
             <div className="min-w-0 flex-1">
               <p className="text-xs text-surface-200">{tr(err.label)}</p>
               <p className="text-[10px] text-surface-600">{tr(err.desc)}</p>
@@ -817,7 +817,7 @@ function ErrorStrategy() {
                       onChange={e => setRetries(Math.max(0, Number(e.target.value)))}
                       className="w-12 font-mono text-xs h-6 py-0" />
                   </div>
-                  <p className="text-[10px] text-emerald-700/90 mt-1 leading-snug">
+                  <p className="text-[10px] text-surface-400 mt-1 leading-snug">
                     {tr('„Platte auswerfen & weiter": Bett auf Z200, Tür öffnen, Platte auswerfen und ins Fach einlagern — dann startet der nächste Job automatisch. „Job überspringen" lässt die fehlgeschlagene Platte im Drucker; die Farm hält dann vor dem nächsten Einlegen an, bis du sie entnommen hast.')}
                   </p>
                   <p className="text-[10px] text-surface-600 mt-1 leading-snug">
@@ -1089,7 +1089,7 @@ function Configuration() {
       <PageHeader title={tr('Konfiguration')} />
 
       {/* ── Tabs ─────────────────────────────────────────────────── */}
-      <div className="flex gap-1 border-b border-surface-800">
+      <div className="flex gap-1 border-b border-surface-700">
         {[['devices', 'Geräte'], ['cameras', 'Kameras'], ['general', 'Allgemein']].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
             className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${
@@ -1126,7 +1126,7 @@ function Configuration() {
           <div className="bg-surface-900 rounded-xl border border-surface-700 p-4 mb-4 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-surface-200">{tr('Gefundene Geräte')}</p>
-              <button onClick={() => setDiscovered(null)} className="text-[11px] text-surface-500 hover:text-surface-300">{tr('ausblenden')}</button>
+              <button onClick={() => setDiscovered(null)} className="text-xs text-surface-500 hover:text-surface-300">{tr('ausblenden')}</button>
             </div>
             {discovered.error && <p className="text-xs text-amber-400">{tr('Suche fehlgeschlagen')}: {discovered.error}</p>}
             {/* Docker-Bridge erkannt: eigenes Subnetz angeben, Container sieht das LAN sonst nicht */}
@@ -1150,7 +1150,7 @@ function Configuration() {
               </p>
             )}
             {discovered.bambu?.map((b, i) => (
-              <div key={`b${i}`} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface-950 border border-surface-800">
+              <div key={`b${i}`} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface-950 border border-surface-700">
                 <div className="min-w-0">
                   <p className="text-sm text-surface-200 truncate">🖨 {b.name || 'Bambu Lab'} <span className="text-surface-500 font-mono text-xs">· {b.ip}</span></p>
                   <p className="text-[11px] text-surface-600 font-mono">
@@ -1162,7 +1162,7 @@ function Configuration() {
               </div>
             ))}
             {discovered.klipper?.map((k, i) => (
-              <div key={`k${i}`} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface-950 border border-surface-800">
+              <div key={`k${i}`} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface-950 border border-surface-700">
                 <div className="min-w-0">
                   <p className="text-sm text-surface-200 truncate">🦾 {k.hostname || 'Klipper / OTTOeject'} <span className="text-surface-500 font-mono text-xs">· {k.ip}:{k.port}</span></p>
                   <p className="text-[11px] text-surface-600 font-mono">Moonraker</p>
@@ -1300,7 +1300,7 @@ function Configuration() {
                 {/* Bauraumlüfter dauerhaft aus — nur für Bambu-Drucker (X1C mit Bauraumlüftung).
                     Prüft im 5-s-Takt über die MQTT-Verbindung, ob der Lüfter läuft, und schaltet ihn aus. */}
                 {device.device_type === 'bambu_lab' && (
-                  <div className="flex items-center gap-3 px-4 py-2.5 mt-1 rounded-lg bg-surface-900/60 border border-surface-800">
+                  <div className="flex items-center gap-3 px-4 py-2.5 mt-1 rounded-lg bg-surface-900/60 border border-surface-700">
                     <button
                       onClick={() => toggleFanOff(device.id)}
                       aria-pressed={!!fanOff[device.id]}
@@ -1362,7 +1362,7 @@ function Configuration() {
             <>
               {/* Eingebaute Drucker-Kamera: Protokoll je Modell.
                   X1-Serie = RTSPS (flüssig), P1S/A1 = Port-6000-JPEG (langsame Standbilder). */}
-              <div className="mb-1 pb-2 border-b border-surface-800 space-y-1.5">
+              <div className="mb-1 pb-2 border-b border-surface-700 space-y-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-surface-600 w-32 shrink-0">{tr('Eingebaute Kamera')}</span>
                   <select
@@ -1395,7 +1395,7 @@ function Configuration() {
               </div>
 
               {/* Home-Assistant-Kamera (eingebaute X1C-Cam, Firmware ≥01.11). */}
-              <div className="mt-1 pt-2 border-t border-surface-800 space-y-2">
+              <div className="mt-1 pt-2 border-t border-surface-700 space-y-2">
                 <p className="text-[11px] text-surface-500 font-medium">
                   {tr('🏠 X1C-Kamera über Home Assistant')}
                   <span className="text-surface-600 font-normal">{tr(' — für die eingebaute Cam (oben). Wird in AutoFarm automatisch als „Oben"-Kamera genutzt.')}</span>

@@ -1,13 +1,13 @@
 {
-  "name": "Ottomat4d",
-  "short_name": "Ottomat4d",
+  "name": "Printloom",
+  "short_name": "Printloom",
   "description": "3D Print Farm Controller",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0a0a0a",
-  "theme_color": "#0a0a0a",
+  "background_color": "#f2f3f4",
+  "theme_color": "#ffffff",
   "icons": [
     { "src": "/favicon-16.png", "sizes": "16x16", "type": "image/png" },
     { "src": "/favicon-32.png", "sizes": "32x32", "type": "image/png" },

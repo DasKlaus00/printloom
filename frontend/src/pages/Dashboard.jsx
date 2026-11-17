@@ -103,13 +103,13 @@ function UsageTimeline({ data }) {
       </div>
       <div className="flex justify-between mt-1">
         {ticks.map(h => (
-          <span key={h} className="text-[8px] font-mono text-surface-700">{h === 0 ? tr('jetzt') : `-${h}h`}</span>
+          <span key={h} className="text-[10px] font-mono text-surface-700">{h === 0 ? tr('jetzt') : `-${h}h`}</span>
         )).reverse()}
       </div>
       <div className="flex items-center gap-3 mt-2">
-        <span className="flex items-center gap-1 text-[9px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-emerald-500/80" /> {tr('aktiv')}</span>
-        <span className="flex items-center gap-1 text-[9px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-surface-800 border border-surface-700" /> {tr('idle')}</span>
-        <span className="flex items-center gap-1 text-[9px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-red-400" /> {tr('Fehler')}</span>
+        <span className="flex items-center gap-1 text-[10px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-emerald-500/80" /> {tr('aktiv')}</span>
+        <span className="flex items-center gap-1 text-[10px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-surface-800 border border-surface-700" /> {tr('idle')}</span>
+        <span className="flex items-center gap-1 text-[10px] text-surface-500"><span className="w-2 h-2 rounded-sm bg-red-400" /> {tr('Fehler')}</span>
       </div>
     </div>
   )
@@ -334,7 +334,7 @@ export default function Dashboard() {
             const on = shown(pn.id)
             return (
               <button key={pn.id} onClick={() => togglePanel(pn.id)}
-                className={`text-[11px] font-medium px-2 h-7 rounded-lg border transition-colors ${
+                className={`text-xs font-medium px-2 h-7 rounded-lg border transition-colors ${
                   on ? 'border-blue-700 bg-blue-950/40 text-blue-300'
                      : 'border-surface-700 text-surface-600 hover:text-surface-400'}`}
                 title={on ? tr('Ausblenden') : tr('Einblenden')}>
@@ -343,7 +343,7 @@ export default function Dashboard() {
             )
           })}
           <button onClick={resetLayout}
-            className="ml-auto text-[11px] text-surface-500 hover:text-surface-300 transition-colors"
+            className="ml-auto text-xs text-surface-500 hover:text-surface-300 transition-colors"
             title={tr('Positionen, Größen und Sichtbarkeit auf Standard zurücksetzen')}>
             {tr('↺ Standard')}
           </button>
@@ -430,8 +430,8 @@ export default function Dashboard() {
             <div className="grid grid-cols-3 gap-2 mt-2">
 
               <div className={`rounded-xl border py-3 text-center ${
-                printerActive ? 'border-blue-800/40 bg-blue-950/10' : 'border-surface-800/40'}`}>
-                <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Drucker')}</p>
+                printerActive ? 'border-blue-800/40 bg-blue-950/10' : 'border-surface-700'}`}>
+                <p className="text-[10px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Drucker')}</p>
                 <span className={`w-2 h-2 rounded-full mx-auto block mb-1 ${
                   gcodeState === 'RUNNING' ? 'bg-blue-400 animate-pulse' :
                   gcodeState === 'PAUSE'   ? 'bg-amber-400' :
@@ -452,24 +452,24 @@ export default function Dashboard() {
 
               <div className={`rounded-xl border py-3 text-center ${
                 magCount === 0 ? 'border-red-800/50 bg-red-950/10' :
-                magCount <= 1  ? 'border-amber-800/40 bg-amber-950/10' : 'border-surface-800/40'
+                magCount <= 1  ? 'border-amber-800/40 bg-amber-950/10' : 'border-surface-700'
               }`}>
-                <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Magazin')}</p>
+                <p className="text-[10px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Magazin')}</p>
                 <p className={`text-2xl font-mono font-bold leading-none ${
                   magCount === 0 ? 'text-red-400' :
                   magCount <= 1  ? 'text-amber-400' :
                   'text-surface-100'
                 }`}>{magCount}</p>
-                <p className="text-[9px] text-surface-600 mt-1">{tr('von {0} Platten', magTotal)}</p>
+                <p className="text-[10px] text-surface-600 mt-1">{tr('von {0} Platten', magTotal)}</p>
               </div>
 
               <div className={`rounded-xl border py-3 text-center ${
-                doneSlots > 0 ? 'border-amber-800/40 bg-amber-950/10' : 'border-surface-800/40'}`}>
-                <p className="text-[9px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Regal')}</p>
+                doneSlots > 0 ? 'border-amber-800/40 bg-amber-950/10' : 'border-surface-700'}`}>
+                <p className="text-[10px] text-surface-600 uppercase tracking-widest mb-1.5">{tr('Regal')}</p>
                 <p className={`text-2xl font-mono font-bold leading-none ${doneSlots > 0 ? 'text-amber-400' : 'text-surface-600'}`}>
                   {doneSlots}
                 </p>
-                <p className="text-[9px] text-surface-600 mt-1">{tr('fertig / {0} Fächer', nr * spr)}</p>
+                <p className="text-[10px] text-surface-600 mt-1">{tr('fertig / {0} Fächer', nr * spr)}</p>
               </div>
             </div>
             {printingSlots > 0 && (
@@ -499,7 +499,7 @@ export default function Dashboard() {
                     </span>
                   )}
                   {eta.known < eta.jobs && (
-                    <span className="block text-[9px] text-surface-600 font-mono">{tr('{0}/{1} mit Zeit', eta.known, eta.jobs)}</span>
+                    <span className="block text-[10px] text-surface-600 font-mono">{tr('{0}/{1} mit Zeit', eta.known, eta.jobs)}</span>
                   )}
                 </div>
               )}
@@ -533,13 +533,13 @@ export default function Dashboard() {
           <div className="card h-full">
             <div className="flex items-center justify-between mb-3">
               <p className="section-label">{tr('Regal')}</p>
-              <span className="text-[9px] font-mono text-surface-700">{tr('{0} mm/Fach', slotH)}</span>
+              <span className="text-[10px] font-mono text-surface-700">{tr('{0} mm/Fach', slotH)}</span>
             </div>
             <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${nr}, minmax(0, 1fr))` }}>
               {Array.from({ length: nr }, (_, ri) => (
                 <div key={ri} className="space-y-1">
                   {nr > 1 && (
-                    <p className="text-[9px] text-center font-mono text-surface-700 mb-0.5">R{ri+1}</p>
+                    <p className="text-[10px] text-center font-mono text-surface-700 mb-0.5">R{ri+1}</p>
                   )}
                   {Array.from({ length: spr }, (_, si) => {
                     const si2  = spr - 1 - si
@@ -554,16 +554,16 @@ export default function Dashboard() {
                         done   ? 'border-amber-800/40 bg-amber-950/10' :
                         print  ? 'border-blue-800/40  bg-blue-950/10' :
                         locked ? 'border-red-900/40   bg-red-950/10' :
-                        'border-surface-800/20 bg-transparent'
+                        'border-surface-700 bg-transparent'
                       }`}>
-                        <span className="font-mono text-surface-700 text-[9px] w-3 text-right shrink-0">{si2+1}</span>
+                        <span className="font-mono text-surface-700 text-[10px] w-3 text-right shrink-0">{si2+1}</span>
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                           done   ? 'bg-amber-400' :
                           print  ? 'bg-blue-400 animate-pulse' :
                           locked ? 'bg-red-400' :
                           'bg-surface-800'
                         }`} />
-                        <p className={`text-[9px] flex-1 truncate leading-tight ${
+                        <p className={`text-[10px] flex-1 truncate leading-tight ${
                           done ? 'text-amber-400' : print ? 'text-blue-400' : 'text-surface-700'
                         }`}>
                           {slot.file_name
@@ -571,7 +571,7 @@ export default function Dashboard() {
                             : done ? tr('Fertig') : print ? tr('Druckt') : ''}
                         </p>
                         {objH > 0 && (
-                          <span className="text-[8px] font-mono text-surface-700 shrink-0">{Math.round(objH)}mm</span>
+                          <span className="text-[10px] font-mono text-surface-700 shrink-0">{Math.round(objH)}mm</span>
                         )}
                       </div>
                     )
@@ -580,14 +580,14 @@ export default function Dashboard() {
               ))}
             </div>
 
-            <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-surface-800/40 flex-wrap">
-              <span className="text-[9px] text-surface-700 flex items-center gap-1">
+            <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-surface-700 flex-wrap">
+              <span className="text-[10px] text-surface-700 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" /> {tr('Fertig')}
               </span>
-              <span className="text-[9px] text-surface-700 flex items-center gap-1">
+              <span className="text-[10px] text-surface-700 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" /> {tr('Druckt')}
               </span>
-              <span className="text-[9px] text-surface-700 flex items-center gap-1">
+              <span className="text-[10px] text-surface-700 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-surface-800 inline-block" /> {tr('Leer')}
               </span>
             </div>
@@ -610,10 +610,10 @@ export default function Dashboard() {
               <div className="flex items-center justify-between mb-3 gap-2">
                 <p className="section-label">{tr('Druckstatistiken')}</p>
                 <div className="flex items-center gap-2 shrink-0">
-                  {since && <span className="text-[9px] text-surface-700 font-mono">{tr('seit {0}', since)}</span>}
+                  {since && <span className="text-[10px] text-surface-700 font-mono">{tr('seit {0}', since)}</span>}
                   <button
                     onClick={() => autofarmService.resetStats().then(() => setStats(null)).catch(() => {})}
-                    className="no-drag text-[9px] text-surface-700 hover:text-red-400 transition-colors"
+                    className="no-drag text-xs text-surface-700 hover:text-red-400 transition-colors"
                     title={tr('Statistiken zurücksetzen')}
                   >↺ Reset</button>
                 </div>
@@ -621,33 +621,33 @@ export default function Dashboard() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="text-center">
                   <p className="text-3xl font-bold font-mono text-surface-100">{stats.total_jobs}</p>
-                  <p className="text-[9px] text-surface-600 mt-0.5">{tr('Jobs gesamt')}</p>
+                  <p className="text-[10px] text-surface-600 mt-0.5">{tr('Jobs gesamt')}</p>
                 </div>
                 <div className="text-center">
                   <p className={`text-3xl font-bold font-mono ${rate >= 90 ? 'text-emerald-400' : rate >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
                     {rate}%
                   </p>
-                  <p className="text-[9px] text-surface-600 mt-0.5">{tr('Erfolgsrate')}</p>
+                  <p className="text-[10px] text-surface-600 mt-0.5">{tr('Erfolgsrate')}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-xl font-bold font-mono text-blue-400">{fmtMin(stats.total_print_min)}</p>
-                  <p className="text-[9px] text-surface-600 mt-0.5">{tr('Druckzeit gesamt')}</p>
+                  <p className="text-[10px] text-surface-600 mt-0.5">{tr('Druckzeit gesamt')}</p>
                 </div>
                 <div className="text-center">
                   <p className={`text-xl font-bold font-mono ${stats.failed_jobs > 0 ? 'text-red-400' : 'text-surface-600'}`}>
                     {stats.failed_jobs}
                   </p>
-                  <p className="text-[9px] text-surface-600 mt-0.5">{tr('Fehlschläge')}</p>
+                  <p className="text-[10px] text-surface-600 mt-0.5">{tr('Fehlschläge')}</p>
                 </div>
               </div>
               {topErrors.length > 0 && (
-                <div className="border-t border-surface-800/40 pt-2.5 mt-3">
-                  <p className="text-[9px] text-surface-600 mb-1.5">{tr('Häufigste Fehler')}</p>
+                <div className="border-t border-surface-700 pt-2.5 mt-3">
+                  <p className="text-[10px] text-surface-600 mb-1.5">{tr('Häufigste Fehler')}</p>
                   <div className="space-y-1">
                     {topErrors.map(([msg, count]) => (
                       <div key={msg} className="flex items-start gap-2">
-                        <span className="text-[9px] font-mono text-red-400 shrink-0">{count}×</span>
-                        <span className="text-[9px] text-surface-500 truncate">{msg}</span>
+                        <span className="text-[10px] font-mono text-red-400 shrink-0">{count}×</span>
+                        <span className="text-[10px] text-surface-500 truncate">{msg}</span>
                       </div>
                     ))}
                   </div>
@@ -685,35 +685,35 @@ export default function Dashboard() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                 <div>
                   <p className="text-base font-bold font-mono text-amber-400">{kwh.toFixed(1)}</p>
-                  <p className="text-[9px] text-surface-600">{tr('kWh gesamt')}</p>
+                  <p className="text-[10px] text-surface-600">{tr('kWh gesamt')}</p>
                 </div>
                 <div>
                   <p className="text-base font-bold font-mono text-amber-400">{eCost.toFixed(2)} €</p>
-                  <p className="text-[9px] text-surface-600">{tr('Stromkosten')}</p>
+                  <p className="text-[10px] text-surface-600">{tr('Stromkosten')}</p>
                 </div>
                 <div>
                   <p className="text-base font-bold font-mono text-blue-400">{fCost.toFixed(2)} €</p>
-                  <p className="text-[9px] text-surface-600">
+                  <p className="text-[10px] text-surface-600">
                     {grams > 0 ? tr('Material ({0} g)', Math.round(grams)) : tr('Material')}
                   </p>
                 </div>
                 <div>
                   <p className="text-base font-bold font-mono text-surface-200">{total.toFixed(2)} €</p>
-                  <p className="text-[9px] text-surface-600">{tr('Gesamtkosten')}</p>
+                  <p className="text-[10px] text-surface-600">{tr('Gesamtkosten')}</p>
                 </div>
               </div>
               {kwh === 0 && (
-                <p className="text-[9px] text-surface-700 mt-2 text-center">
+                <p className="text-[10px] text-surface-700 mt-2 text-center">
                   {tr('Noch kein Stromverbrauch erfasst — Smart-Steckdose unter Konfiguration → Allgemein → Energie & Kosten einrichten.')}
                 </p>
               )}
               {fPrice === 0 && grams > 0 && (
-                <p className="text-[9px] text-surface-700 mt-1.5 text-center">
+                <p className="text-[10px] text-surface-700 mt-1.5 text-center">
                   {tr('Filamentpreis steht auf 0 — unter Konfiguration → Allgemein → Energie & Kosten eintragen.')}
                 </p>
               )}
               {fGap && (
-                <p className="text-[9px] text-surface-700 mt-1.5 text-center">
+                <p className="text-[10px] text-surface-700 mt-1.5 text-center">
                   {tr('Material aus {0} von {1} Drucken — die übrigen Dateien nennen keinen Verbrauch.', fJobs, stats.successful_jobs)}
                 </p>
               )}
@@ -735,7 +735,7 @@ export default function Dashboard() {
 
       {/* ══ Zuletzt aktualisiert ══════════════════════════════ */}
       {lastRefresh && (
-        <p className="text-center text-[9px] text-surface-800 font-mono mt-3">
+        <p className="text-center text-[10px] text-surface-500 font-mono mt-3">
           {tr('Aktualisiert {0} · alle 15s', lastRefresh.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}
         </p>
       )}

@@ -98,7 +98,7 @@ export default function History() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-[11px] uppercase tracking-wider text-surface-500 border-b border-surface-800">
+                <tr className="text-[11px] uppercase tracking-wider text-surface-500 border-b border-surface-700">
                   <th className="text-left font-medium px-4 py-2.5">{tr('Datum')}</th>
                   <th className="text-left font-medium px-3 py-2.5">{tr('Start')}</th>
                   <th className="text-left font-medium px-3 py-2.5">{tr('Ende')}</th>
@@ -118,7 +118,7 @@ export default function History() {
                     ? (it.plateName ? ` · ${it.plateName}` : ` · ${tr('Platte {0}', it.plate)}${it.plateTotal > 1 ? `/${it.plateTotal}` : ''}`)
                     : ''
                   return (
-                    <tr key={i} className="border-b border-surface-800/50 hover:bg-surface-900/40">
+                    <tr key={i} className="border-b border-surface-700 hover:bg-surface-900/40">
                       <td className="px-4 py-2.5 font-mono text-surface-400 whitespace-nowrap">{dateStr(s)}</td>
                       <td className="px-3 py-2.5 font-mono text-surface-400 whitespace-nowrap">{timeStr(s)}</td>
                       <td className="px-3 py-2.5 font-mono text-surface-400 whitespace-nowrap">{timeStr(e)}</td>
@@ -135,7 +135,7 @@ export default function History() {
                       </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
                         <button onClick={() => requeue(it)} disabled={it.fileId == null}
-                          className="btn btn-ghost btn-sm text-[11px] text-blue-400 hover:text-blue-300 disabled:opacity-40"
+                          className="btn btn-ghost btn-sm text-xs text-blue-400 hover:text-blue-300 disabled:opacity-40"
                           title={it.fileId == null ? tr('Datei nicht mehr verfügbar') : tr('Dieses Modell erneut in die Warteschlange legen')}>
                           {tr('+ Warteschlange')}
                         </button>
@@ -193,13 +193,13 @@ function HmsHistory() {
           </span>
         </button>
         <div className="flex items-center gap-2">
-          <button onClick={load} className="btn btn-ghost btn-sm text-[11px]">{tr('Aktualisieren')}</button>
+          <button onClick={load} className="btn btn-ghost btn-sm text-xs">{tr('Aktualisieren')}</button>
           {items.length > 0 && (
-            <button onClick={clear} className="btn btn-ghost btn-sm text-[11px] text-red-400 hover:text-red-300">
+            <button onClick={clear} className="btn btn-ghost btn-sm text-xs text-red-400 hover:text-red-300">
               {tr('Leeren')}
             </button>
           )}
-          <button onClick={() => setOpen(o => !o)} className="text-[11px] text-blue-400 hover:text-blue-300">
+          <button onClick={() => setOpen(o => !o)} className="text-xs text-blue-400 hover:text-blue-300">
             {open ? tr('▾ ausblenden') : tr('▸ anzeigen')}
           </button>
         </div>

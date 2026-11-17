@@ -90,7 +90,7 @@ function AmsPanel({ units, activeSlot, deviceId }) {
       <div className="flex items-center justify-between mb-2">
         <p className="section-label mb-0">AMS</p>
         <button onClick={unload} disabled={busy || !deviceId}
-          className="btn btn-ghost btn-sm text-[11px] disabled:opacity-40"
+          className="btn btn-ghost btn-sm text-xs disabled:opacity-40"
           title={tr('Aktuelles Filament aus dem Extruder zurück ins AMS entladen')}>
           {tr('⬇ Entladen')}
         </button>
@@ -109,25 +109,25 @@ function AmsPanel({ units, activeSlot, deviceId }) {
                 const empty    = !slot.type
                 return (
                   <div key={slot.id} className={`rounded-lg border p-2 flex flex-col items-center gap-1 transition-all ${
-                    isActive ? 'border-blue-500 bg-blue-950/30' : empty ? 'border-surface-800 bg-surface-950 opacity-60' : 'border-surface-700 bg-surface-900'
+                    isActive ? 'border-blue-500 bg-blue-950/30' : empty ? 'border-surface-700 bg-surface-950 opacity-60' : 'border-surface-700 bg-surface-900'
                   }`}>
                     <div className="w-5 h-5 rounded-full border-2 flex-shrink-0"
                          style={{ backgroundColor: cssColor ?? 'transparent', borderColor: cssColor ?? '#374151' }} />
-                    <p className="text-[9px] font-mono text-surface-300 leading-none">{slot.type || '—'}</p>
-                    <p className="text-[8px] text-surface-600">S{gid + 1}</p>
+                    <p className="text-[10px] font-mono text-surface-300 leading-none">{slot.type || '—'}</p>
+                    <p className="text-[10px] text-surface-600">S{gid + 1}</p>
                     {slot.remain >= 0 && (
                       <div className="w-full bg-surface-800 rounded-full h-px">
                         <div className="h-px rounded-full bg-emerald-500" style={{ width: `${slot.remain}%` }} />
                       </div>
                     )}
-                    {isActive && <span className="text-[8px] text-blue-400 animate-pulse">{tr('aktiv')}</span>}
+                    {isActive && <span className="text-[10px] text-blue-400 animate-pulse">{tr('aktiv')}</span>}
                     <div className="flex items-center gap-1 pt-0.5">
                       <button onClick={() => readSlot(unit.id, slot.id)} disabled={busy || !deviceId}
-                        className="w-5 h-5 flex items-center justify-center rounded border border-surface-700 text-[10px] text-surface-400 hover:text-surface-100 hover:border-surface-500 disabled:opacity-30 transition-colors"
+                        className="w-5 h-5 flex items-center justify-center rounded border border-surface-700 text-xs text-surface-400 hover:text-surface-100 hover:border-surface-500 disabled:opacity-30 transition-colors"
                         title={tr('Slot neu einlesen (RFID) — wenn die Spule nicht erkannt wurde')}>⟳</button>
                       {!empty && !isActive && (
                         <button onClick={() => loadSlot(gid)} disabled={busy || !deviceId}
-                          className="w-5 h-5 flex items-center justify-center rounded border border-surface-700 text-[10px] text-surface-400 hover:text-emerald-300 hover:border-emerald-700 disabled:opacity-30 transition-colors"
+                          className="w-5 h-5 flex items-center justify-center rounded border border-surface-700 text-xs text-surface-400 hover:text-emerald-300 hover:border-emerald-700 disabled:opacity-30 transition-colors"
                           title={tr('Dieses Filament in den Extruder laden')}>⬆</button>
                       )}
                     </div>
@@ -141,7 +141,7 @@ function AmsPanel({ units, activeSlot, deviceId }) {
       {msg && (
         <p className={`mt-2 text-[10px] font-mono ${msg.err ? 'text-red-400' : 'text-emerald-400'}`}>{msg.text}</p>
       )}
-      <p className="mt-1 text-[9px] text-surface-600">
+      <p className="mt-1 text-[10px] text-surface-600">
         {tr('Laden/Entladen heizt die Düse und dauert ~1 Minute — Fortschritt am Drucker. Während eines Drucks gesperrt (Pause ist ok).')}
       </p>
     </div>
@@ -221,7 +221,7 @@ function KlipperConfigViewer() {
             <button
               key={f.filename}
               onClick={() => loadFile(f.filename)}
-              className={`text-[10px] font-mono px-2 py-1 rounded border transition-colors ${
+              className={`text-xs font-mono px-2 py-1 rounded border transition-colors ${
                 selected === f.filename
                   ? 'border-blue-600 bg-blue-900/30 text-blue-300'
                   : 'border-surface-700 text-surface-500 hover:text-surface-300 hover:border-surface-600'
@@ -236,7 +236,7 @@ function KlipperConfigViewer() {
       {selected && content !== null && (
         <div className="space-y-1.5">
           <p className="text-[10px] text-surface-500 font-mono">{selected}</p>
-          <pre className="text-[9px] font-mono text-surface-400 bg-surface-950 border border-surface-800/50 rounded-lg p-3 max-h-64 overflow-auto whitespace-pre-wrap break-words leading-relaxed">
+          <pre className="text-[10px] font-mono text-surface-400 bg-surface-950 border border-surface-700 rounded-lg p-3 max-h-64 overflow-auto whitespace-pre-wrap break-words leading-relaxed">
             {content}
           </pre>
         </div>
@@ -623,7 +623,7 @@ export default function Steuerung() {
                     {tr('Verbinde mit Kamera …')}
                   </div>
                 )}
-                <span className="absolute top-2 left-2 text-[9px] font-mono px-1.5 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>
+                <span className="absolute top-2 left-2 text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-600/80 text-white">● LIVE</span>
               </div>
             ) : webcamUrl ? (
               <div className="relative bg-black rounded-xl overflow-hidden" style={{ aspectRatio: '16/9' }}>
@@ -640,7 +640,7 @@ export default function Steuerung() {
                 )}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-8 text-surface-600 rounded-xl border-2 border-dashed border-surface-800 gap-2">
+              <div className="flex flex-col items-center justify-center py-8 text-surface-600 rounded-xl border-2 border-dashed border-surface-700 gap-2">
                 <p className="text-sm">{tr('Keine Kamera aktiv')}</p>
                 <div className="flex gap-2">
                   <button onClick={() => { setLiveCamErr(false); setCamKey(k => k + 1); setLiveCam(true) }} disabled={!bambuDevice} className="btn btn-primary btn-sm">{tr('📷 X1C Live starten')}</button>
@@ -736,7 +736,7 @@ export default function Steuerung() {
               <p className="text-[10px] text-surface-500 mb-1.5">{tr('Schrittweite (mm)')}</p>
               <div className="flex gap-1">
                 {[0.1, 0.5, 1, 5, 10].map(s => (
-                  <button key={s} onClick={() => setJogStep(s)} className={`flex-1 text-[10px] py-1 rounded border font-mono transition-colors ${
+                  <button key={s} onClick={() => setJogStep(s)} className={`flex-1 text-xs py-1 rounded border font-mono transition-colors ${
                     jogStep === s ? 'bg-blue-600 border-blue-500 text-white' : 'bg-surface-800 border-surface-700 text-surface-400 hover:border-surface-500'
                   }`}>{s}</button>
                 ))}
@@ -762,20 +762,20 @@ export default function Steuerung() {
               {/* Magazin (Fach 7): nur Holen — Vorrat an leeren Platten. */}
               <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-900 border border-blue-900/40">
                 <span className="text-xs text-surface-400 w-16 shrink-0">{tr('Magazin')}</span>
-                <button onClick={() => runMacro('GRAB_FROM_SLOT_7', tr('Aus Magazin holen'))} disabled={busy} className="btn btn-ghost btn-sm text-[10px]">{tr('Holen')}</button>
+                <button onClick={() => runMacro('GRAB_FROM_SLOT_7', tr('Aus Magazin holen'))} disabled={busy} className="btn btn-ghost btn-sm text-xs">{tr('Holen')}</button>
                 <div className="flex gap-1 ml-auto">
-                  <button onClick={() => runMacro(activePrinter.load,  tr('In Drucker'))}  disabled={busy} className="btn btn-ghost btn-sm text-[9px]">→ Dr.</button>
-                  <button onClick={() => runMacro(activePrinter.eject, tr('Aus Drucker'))} disabled={busy} className="btn btn-ghost btn-sm text-[9px]">← Dr.</button>
+                  <button onClick={() => runMacro(activePrinter.load,  tr('In Drucker'))}  disabled={busy} className="btn btn-ghost btn-sm text-xs">→ Dr.</button>
+                  <button onClick={() => runMacro(activePrinter.eject, tr('Aus Drucker'))} disabled={busy} className="btn btn-ghost btn-sm text-xs">← Dr.</button>
                 </div>
               </div>
               {/* Lager-Fächer 1–6: nur Einlagern (fertige Drucke), kein Holen. */}
               {[1,2,3,4,5,6].map(slot => (
                 <div key={slot} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-900 border border-surface-700/50">
                   <span className="text-xs text-surface-400 w-16 shrink-0">{tr('Fach {0}', slot)}</span>
-                  <button onClick={() => runMacro(`STORE_TO_SLOT_${slot}`, tr('Fach {0} einlagern', slot))} disabled={busy} className="btn btn-ghost btn-sm text-[10px]">{tr('Einlagern')}</button>
+                  <button onClick={() => runMacro(`STORE_TO_SLOT_${slot}`, tr('Fach {0} einlagern', slot))} disabled={busy} className="btn btn-ghost btn-sm text-xs">{tr('Einlagern')}</button>
                   <div className="flex gap-1 ml-auto">
-                    <button onClick={() => runMacro(activePrinter.load,  tr('In Drucker'))}  disabled={busy} className="btn btn-ghost btn-sm text-[9px]">→ Dr.</button>
-                    <button onClick={() => runMacro(activePrinter.eject, tr('Aus Drucker'))} disabled={busy} className="btn btn-ghost btn-sm text-[9px]">← Dr.</button>
+                    <button onClick={() => runMacro(activePrinter.load,  tr('In Drucker'))}  disabled={busy} className="btn btn-ghost btn-sm text-xs">→ Dr.</button>
+                    <button onClick={() => runMacro(activePrinter.eject, tr('Aus Drucker'))} disabled={busy} className="btn btn-ghost btn-sm text-xs">← Dr.</button>
                   </div>
                 </div>
               ))}

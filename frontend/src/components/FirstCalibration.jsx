@@ -207,7 +207,7 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
         </span>
       </div>
 
-      <div className="rounded-lg border border-surface-800 divide-y divide-surface-800/70">
+      <div className="rounded-lg border border-surface-700 divide-y divide-surface-700">
         {STATIONS.map((st, i) => {
           const state = done[st.id]
           const isOpen = open === st.id
@@ -224,7 +224,7 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
                 </span>
                 <span className={`text-xs flex-1 min-w-0 truncate ${
                   state === 'ok' ? 'text-emerald-300' : 'text-surface-300'}`}>{st.label}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-surface-800 text-surface-500 shrink-0">{st.tag}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-800 text-surface-500 shrink-0">{st.tag}</span>
                 <span className="text-[10px] text-surface-600 shrink-0">{isOpen ? '▾' : '▸'}</span>
               </button>
               {isOpen && (
@@ -233,7 +233,7 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
                     onApproach={st.approach} onApply={st.apply}
                     onClose={() => setOpen(null)} />
                   <button type="button" onClick={() => finish(st.id, 'skip')}
-                    className="text-[10px] text-surface-600 hover:text-surface-400">
+                    className="text-xs text-surface-600 hover:text-surface-400">
                     {tr('Diese Station überspringen →')}
                   </button>
                 </div>
@@ -251,7 +251,7 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
       </p>
       {onDone && (
         <div className="flex justify-end">
-          <button type="button" onClick={onDone} className="btn btn-ghost btn-sm text-[11px]">
+          <button type="button" onClick={onDone} className="btn btn-ghost btn-sm text-xs">
             {okCount === total ? tr('✓ Einmessen abgeschlossen') : tr('Einmessen später fortsetzen')}
           </button>
         </div>
