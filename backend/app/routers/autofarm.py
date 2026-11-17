@@ -23,7 +23,7 @@ from app.models.models import Device, PrinterType, UploadedFile
 from app.paths import db_path
 from app.routers.printer import capture_snapshot, publish_live_status
 from app.services import ams_match, bambu_manager, device_settings, farm_settings, hms
-from app.services import print_file, rack_store, storage
+from app.services import print_file, printer_guard, rack_store, storage
 from app.services import geometry_check as _geometry_check
 from app.services import ottoeject_motion as _motion
 from app.services import rack_logic as _rack_logic
@@ -116,6 +116,10 @@ _farm: dict = {
     # Was hält der Greifer? (Phase 3.2) — nach einem Abbruch die einzige Info darüber,
     # ob noch eine Platte am Arm hängt. Wird mitgesichert (farm_state.json).
     "arm":              {"holding": "none", "from": "", "job_id": None},
+    # Was liegt auf dem Druckbett? (BED_STATES) Bis v1.1.44 wusste die Farm das nicht
+    # und legte nach einem übersprungenen oder fehlgeschlagenen Job eine Platte auf
+    # die alte. Gebucht von _book_op, _do_send_file und _wait_print.
+    "bed":              "empty",
     # Nach Notaus/Abbruch ist die Position unbekannt → vor der nächsten Bewegung homen.
     "needs_home":       False,
     # Unterbrochener Lauf aus einer früheren Sitzung (wird beim Import gefüllt).
@@ -169,7 +173,8 @@ def _live_settings(s: dict) -> dict:
         "conn_alarm":              bool(s.get("conn_alarm", True)),
         "progress_stall_min":      int(s.get("progress_stall_min", 0) or 0),
         "error_strategy":          dict(s.get("error_strategy") or {}),
-        "failed_retries":          max(0, int(s.get("failed_retries", 1) or 0)),
+        "failed_retries":          max(0, int(s.get("failed_retries",
+                                                     farm_settings.DEFAULTS["failed_retries"]) or 0)),
         "operating_hours_enabled": bool(s.get("operating_hours_enabled", False)),
         "move_timeout_s":          int(s.get("move_timeout_s", 180) or 180),
         "operating_schedule":      _operating_schedule(s),
@@ -353,6 +358,11 @@ def _record_event(etype: str, job: str = "", detail: str = ""):
 
 # Was der Greifer hält: "none" | "empty" (leere Platte) | "printed" (fertiger Druck)
 _ARM_EMPTY = {"holding": "none", "from": "", "job_id": None}
+# empty = frei · plate = leere Platte eingelegt · printing = Druck gestartet ·
+# printed = fertiger Druck liegt noch im Drucker
+BED_STATES = ("empty", "plate", "printing", "printed")
+_BED_TEXT = {"plate": "eine leere Platte", "printing": "eine Platte mit (laufendem oder "
+             "abgebrochenem) Druck", "printed": "eine fertig gedruckte Platte"}
 
 
 def _persist_state():
@@ -368,6 +378,7 @@ def _persist_state():
             "step_total":     _farm.get("seq_step_total"),
             "step_label":     _farm.get("seq_step_label") or "",
             "arm":            _farm.get("arm") or dict(_ARM_EMPTY),
+            "bed":            _farm.get("bed") or "empty",
             "needs_home":     bool(_farm.get("needs_home")),
             "bambu_id":       _farm.get("bambu_id"),
             "saved_at":       datetime.now().isoformat(),
@@ -379,7 +390,10 @@ def _persist_state():
 def _clear_state():
     """Sauberes Ende → nichts mehr zu bergen."""
     try:
+        # Das Bett bleibt, wie es ist: Auch nach einem sauberen Ende kann dort die
+        # nächste leere Platte liegen.
         storage.write_json(STATE_PATH, {"running": False, "arm": dict(_ARM_EMPTY),
+                                        "bed": _farm.get("bed") or "empty",
                                         "needs_home": bool(_farm.get("needs_home"))})
     except Exception as e:
         logger.warning(f"farm state clear failed: {e}")
@@ -398,6 +412,14 @@ def _load_recovery() -> dict | None:
     if not s.get("running") and arm.get("holding", "none") == "none":
         return None
     return s
+
+
+def _set_bed(state: str) -> None:
+    """Druckbett-Merker setzen und mitschreiben."""
+    if state not in BED_STATES:
+        raise ValueError(f"Unbekannter Bett-Zustand {state!r}")
+    _farm["bed"] = state
+    _persist_state()
 
 
 def _set_arm(holding: str, from_slot: str = "", job_id=None):
@@ -835,7 +857,7 @@ def arm_status() -> dict:
     return {"busy": _arm_lock.locked(), "holder": _arm_holder, "waiting": list(_arm_waiting)}
 
 
-def motion_owner(include_paused: bool = False) -> Optional[str]:
+def motion_owner(include_paused: bool = False, ignore_farm: bool = False) -> Optional[str]:
     """Wer bewegt den Arm gerade? None = niemand, eine Handfahrt darf los.
 
     Bis v1.1.43 konnten Farm, Stresstest und Handfahrten (Joggen, G-code, Drucker-Tab)
@@ -844,6 +866,8 @@ def motion_owner(include_paused: bool = False) -> Optional[str]:
     den Drucker: Dort kann der Arm noch im Bauraum stehen (include_paused=True)."""
     if _stress.get("running") or (_stress_task is not None and not _stress_task.done()):
         return "Stresstest läuft — erst stoppen"
+    if ignore_farm:
+        return None
     if _farm.get("running") and (include_paused or not _farm.get("paused")):
         return ("Auto Farm läuft — erst stoppen" if include_paused
                 else "Auto Farm läuft — erst pausieren oder stoppen")
@@ -956,6 +980,7 @@ async def _do_macro(name: str, _recover: bool = True):
 
 
 async def _do_bambu_gcode(gcode: str, device: Device):
+    _assert_may_command_printer("Drucker-G-code")
     loop = asyncio.get_running_loop()
     # Über die persistente Verbindung (bambu_manager) senden — kein eigener Connect.
     sent = await loop.run_in_executor(bambu_manager.executor, bambu_manager.send_gcode, device, gcode)
@@ -986,6 +1011,9 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool):
     print_name = print_file.make_print_name(file.original_filename)
     if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
         raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
+    # Nie eine Datei in einen laufenden Druck starten. FAILED gilt als frei, der
+    # Wiederholungs-Versuch nach einem Druckfehler geht also durch.
+    await _printer_gate(device, "Datei senden")
 
     ams_mapping: list = []
     ams_map_str = _job_manual_map(job)   # Job-Map oder pro-Datei im Browser gewählt
@@ -1086,6 +1114,73 @@ def _stack_vars() -> tuple[str, str]:
     except Exception:
         pass
     return "1", "7"
+
+
+# Wie lange ein Tor wartet, bevor es die Farm pausiert: Nach einer Bett-Fahrt per
+# G-code oder am Ende der Homing-Datei meldet der Drucker kurz noch „RUNNING".
+GATE_GRACE_S = 60.0
+
+
+async def _hold_until_resumed(error: str, push: str) -> None:
+    """Farm pausieren, Grund anzeigen, einmal Push, auf „Fortsetzen" warten."""
+    _farm["paused"] = True
+    _farm["error"] = error
+    _log(f"⏸ {error}")
+    _persist_state()
+    await _notify(push)
+    while _farm["paused"] and not _farm["stopping"]:
+        await asyncio.sleep(0.5)
+    if _farm["stopping"]:
+        raise RuntimeError("Gestoppt")
+    _farm["error"] = None
+
+
+async def _printer_gate(device, what: str, need_bed_empty: bool = False) -> None:
+    """Bevor der Arm in den Drucker fährt oder eine Datei startet: Drucker frisch
+    gefragt frei (printer_guard) und, beim Einlegen, das Druckbett leer.
+
+    Bis v1.1.44 fuhr die Farm blind: nach „Verbindung verloren → überspringen" in
+    den laufenden Druck, nach einem übersprungenen Job mit der neuen Platte auf die
+    alte. Jetzt pausiert sie und sagt, warum. War nur der Bett-Merker der Grund, gilt
+    das Bett nach dem Fortsetzen als leer (der Nutzer wurde ausdrücklich gefragt)."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + GATE_GRACE_S
+    while True:
+        if _farm["stopping"]:
+            raise RuntimeError("Gestoppt")
+        state = await loop.run_in_executor(bambu_manager.executor, printer_guard.live_state, device)
+        busy = printer_guard.busy_reason(state)
+        bed = _farm.get("bed") or "empty"
+        bed_busy = need_bed_empty and bed != "empty"
+        if not busy and not bed_busy:
+            return
+        if busy and not bed_busy and loop.time() < deadline:
+            await asyncio.sleep(3)
+            continue
+        gruende = [g for g in (busy, bed_busy and f"auf dem Druckbett liegt laut Printloom noch "
+                                                 f"{_BED_TEXT.get(bed, bed)}") if g]
+        grund = "; ".join(gruende)
+        await _hold_until_resumed(
+            f"{what}: {grund} — Drucker prüfen bzw. Platte entnehmen, dann fortsetzen",
+            f"⏸ Printloom — {what} angehalten\n{grund}")
+        if bed_busy:
+            _set_bed("empty")
+            _log("✓ Fortgesetzt — Druckbett gilt als leer")
+        deadline = loop.time() + GATE_GRACE_S
+
+
+async def _gripper_gate(what: str) -> None:
+    """Bevor der Greifer eine Platte holt: Er muss leer sein. Hält er laut Printloom
+    noch eine (abgebrochener Job, Fehler beim Einlegen), pausieren statt zuzugreifen."""
+    holding = (_farm.get("arm") or {}).get("holding", "none")
+    if holding in ("none", "", None):
+        return
+    text = {"empty": "eine leere Platte", "printed": "eine fertige Platte"}.get(holding, holding)
+    await _hold_until_resumed(
+        f"{what}: Der Greifer hält laut Printloom noch {text} — abnehmen, dann fortsetzen",
+        f"⏸ Printloom — {what} angehalten\nGreifer hält noch {text}")
+    _set_arm("none")
+    _log("✓ Fortgesetzt — Greifer gilt als leer")
 
 
 async def _magazine_gate() -> tuple:
@@ -1438,21 +1533,22 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
 # fehlgeschlagene Platte bergen — Z200 → Tür auf → Auswurf → Einlagern — dann weiter
 # mit dem nächsten Job). print_failed-Default ist 'eject', weil 'skip' die kaputte
 # Platte im Drucker lässt und der nächste Zyklus blind darauf laden würde (Kollision).
-_ERROR_DEFAULTS = {
-    "hms":             "pause",
-    "print_failed":    "eject",
-    "connection_lost": "skip",
-    "progress_stall":  "pause",
-    "no_slot":         "pause",
-    "ams_unmatched":   "pause",
-    # Hängende Bewegung (Phase 3.3): Standard „pause" — der Arm steht an unbekannter
-    # Stelle, evtl. mit Platte. Einfach weiterfahren wäre die schlechteste Option.
-    "move_timeout":    "pause",
-}
+# Vorgaben stehen in farm_settings (eine Quelle für Farm und Oberfläche).
+_ERROR_DEFAULTS = farm_settings.ERROR_DEFAULTS
 
 
 def _estrat(key: str) -> str:
-    return (_farm.get("error_strategy") or {}).get(key) or _ERROR_DEFAULTS.get(key, "pause")
+    action = (_farm.get("error_strategy") or {}).get(key) or _ERROR_DEFAULTS.get(key, "pause")
+    if key == "connection_lost" and action == "skip":
+        # Die Einstellungen speichern das ganze Objekt samt alter Vorgabe „skip";
+        # eine geänderte Vorgabe erreichte diese Nutzer sonst nie. Überspringen hieße:
+        # nächster Job, während der Drucker den alten weiterdruckt.
+        if not _farm.get("_conn_skip_logged"):
+            _farm["_conn_skip_logged"] = True
+            _log("⚠ „Verbindung verloren → überspringen“ gibt es nicht mehr: Der Druck "
+                 "läuft am Gerät weiter. Die Farm pausiert stattdessen.")
+        return "pause"
+    return action
 
 
 class _EjectRecovered(RuntimeError):
@@ -1714,6 +1810,12 @@ async def _run_prep(steps: list, slot: str, device: Device):
     _log("⚡ Vorstart fertig.")
 
 
+async def _stop_print_for_skip() -> None:
+    """Einen Druck, den die Farm überspringt, am Drucker auch abbrechen."""
+    await _send_print_cmd("stop")
+    _log("⏹ Druck am Drucker abgebrochen — Platte vor dem nächsten Job entnehmen")
+
+
 async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                        prep_steps: list, fail_steps: list = []) -> bool:
     _set_job(job["id"], {"status": "printing"})
@@ -1821,6 +1923,10 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         _farm["stopping"] = True
                     elif action == "skip":
                         _log(f"🛑 Watchdog: Stillstand bei {pct}% — Job übersprungen (Strategie)")
+                        # Ohne Stopp druckte der Drucker weiter, während die Farm schon
+                        # den nächsten Job vorbereitete. Das Bett bleibt „printing":
+                        # Das Einlege-Tor hält den nächsten Job an, bis die Platte raus ist.
+                        await _stop_print_for_skip()
                         raise RuntimeError(f"Stillstand seit {stall_min} min bei {pct}% — mögliche Verstopfung")
                     else:
                         _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — pausiert")
@@ -1836,6 +1942,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         actual_h  = round(total_layers * layer_h, 1)
                         _set_job(job["id"], {"estimatedMinutes": rem, "object_height_mm": actual_h})
                         if min_min > 0 and rem < min_min:
+                            await _stop_print_for_skip()
                             raise RuntimeError(
                                 f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
                             )
@@ -1856,6 +1963,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         first_run = False
                         _set_job(job["id"], {"estimatedMinutes": rem})
                         if min_min > 0 and rem < min_min:
+                            await _stop_print_for_skip()
                             raise RuntimeError(
                                 f"Druckzeit {rem} min < Mindestdruckzeit {min_min} min — abgebrochen"
                             )
@@ -1878,7 +1986,14 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
             if state == "FINISH" or idle_done:
                 if state != "FINISH":
                     _log(f"Druck fertig erkannt ({state} {pct}%, max {max_pct}%)")
-                snap = await capture_snapshot(device.id)
+                _set_bed("printed")
+                # Festes Zeitlimit: Eine Kamera, die nicht antwortet, hielt bis v1.1.44
+                # die ganze Farm an (der Auswurf wartete auf den Schnappschuss).
+                try:
+                    snap = await asyncio.wait_for(capture_snapshot(device.id), 20)
+                except asyncio.TimeoutError:
+                    snap = None
+                    _log("📷 Snapshot übersprungen (Zeitlimit)")
                 if snap:
                     _set_job(job["id"], {"snapshot": snap})
                     _log("📷 Snapshot gespeichert")
@@ -1895,7 +2010,13 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                 if fail_count < 2:
                     _log(f"⚠ FAILED ({fail_count}/2) — warte…")
                     continue
-                max_retries = int(_farm.get("failed_retries", 1) or 0)
+                max_retries = int(_farm.get("failed_retries",
+                                            farm_settings.DEFAULTS["failed_retries"]) or 0)
+                # Nur wiederholen, solange noch nichts gedruckt wurde: Sonst druckt der
+                # zweite Versuch auf den Resten des ersten (Düse rammt das Teil).
+                if retries < max_retries and (was_running or max_pct > 0):
+                    _log("⚠ Wiederholung übersprungen — die Platte ist nicht mehr leer")
+                    retries = max_retries
                 if retries < max_retries:
                     retries += 1
                     _log(f"⚠ Retry {retries}/{max_retries}…")
@@ -2081,26 +2202,54 @@ def _farm_printer_of(blocks, bambu_id):
     return None
 
 
+def _macro_kind(val: str) -> Optional[str]:
+    """Welche Arm-Operation ist dieses Geräte-Macro? (grab/store/eject/place/…), sonst None."""
+    v = (val or "").strip().upper()
+    if "GRAB_FROM_RACK" in v or v.startswith("GRAB_FROM_SLOT_"):
+        return "grab"
+    if "STORE_TO_RACK" in v or v.startswith("STORE_TO_SLOT_"):
+        return "store"
+    if v.startswith("OPEN_DOOR"):
+        return "open_door"
+    if v.startswith("CLOSE_DOOR"):
+        return "close_door"
+    if v.startswith("MOVE_TO_PRINTER"):
+        return "move_to_printer"
+    if v.startswith("EJECT_FROM"):
+        return "eject"
+    if v.startswith("PLACE_ONTO") or v.startswith("LOAD_ONTO"):
+        return "place"   # place ist die kanonische Op; „load" ist nur ein Alias
+    return None
+
+
 def _macro_to_op(val: str, rack_num: str, slot_num: str, stack_rack: str, stack_slot: str):
     """Bekanntes Farm-Macro → (op, rack, slot) für ottoeject_motion.build_op, sonst None.
     Nur diese Operationen können opt-in als Printloom-G-code laufen; OTTOEJECT_HOME und
     PARK_OTTOEJECT bleiben immer Geräte-Macros."""
-    v = (val or "").strip().upper()
-    if "GRAB_FROM_RACK" in v or v.startswith("GRAB_FROM_SLOT_"):
+    kind = _macro_kind(val)
+    if kind == "grab":
         return ("grab", int(stack_rack), int(stack_slot))
-    if "STORE_TO_RACK" in v or v.startswith("STORE_TO_SLOT_"):
+    if kind == "store":
         return ("store", int(rack_num), int(slot_num))
-    if v.startswith("OPEN_DOOR"):
-        return ("open_door", 1, 1)
-    if v.startswith("CLOSE_DOOR"):
-        return ("close_door", 1, 1)
-    if v.startswith("MOVE_TO_PRINTER"):
-        return ("move_to_printer", 1, 1)
-    if v.startswith("EJECT_FROM"):
-        return ("eject", 1, 1)
-    if v.startswith("PLACE_ONTO") or v.startswith("LOAD_ONTO"):
-        return ("place", 1, 1)   # place ist die kanonische Op; „load" ist nur ein Alias
-    return None
+    return (kind, 1, 1) if kind else None
+
+
+def _book_op(op: Optional[str], job: dict, rack=None, slot=None) -> None:
+    """EINE Stelle, die nach einer Arm-Operation Greifer, Druckbett und Fächer bucht,
+    egal ob sie als Geräte-Macro oder als Printloom-Op lief. Bis v1.1.44 buchte der
+    Macro-Weg Auswerfen und Einlegen gar nicht."""
+    if op in ("grab", "grab_magazine"):
+        _after_grab(job, rack, slot)
+    elif op == "store":
+        _after_store(job)
+    elif op == "eject":
+        # Fertige Platte kommt aus dem Drucker → sie hängt jetzt am Arm, das Bett ist frei.
+        _set_arm("printed", "", job.get("id"))
+        _set_bed("empty")
+    elif op in ("place", "load"):
+        # Leere Platte ist im Drucker abgesetzt → Arm frei, auf dem Bett liegt sie.
+        _set_arm("none")
+        _set_bed("plate")
 
 
 async def _start_homing_print(device: Device) -> None:
@@ -2122,6 +2271,8 @@ async def _start_homing_print(device: Device) -> None:
         logger.warning(f"Homing-Datei nicht erneuerbar ({e}) — nutze vorhandene")
     homing_name = "printloom_homing.3mf"
     loop = asyncio.get_running_loop()
+    # Die Homing-Datei ist ein Druckauftrag: Sie würde einen laufenden Druck ersetzen.
+    await _printer_gate(device, "Homing senden")
     _log("[↑] Homing senden (G28+Z200)…")
     ftp = BambuFTP(device.ip_address, device.access_code)
     up = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, HOMING_3MF_PATH, homing_name)
@@ -2132,6 +2283,7 @@ async def _start_homing_print(device: Device) -> None:
     if not connected:
         raise RuntimeError("MQTT-Verbindung fehlgeschlagen")
     await asyncio.sleep(5)
+    _assert_may_command_printer("Homing starten")
     ok = await loop.run_in_executor(
         bambu_manager.executor,
         lambda: bambu_manager.start_print(device, homing_name, use_ams=False, ams_mapping=[], plate_param="")
@@ -2225,14 +2377,20 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         _log(f"✓ {label} — Z200 erreicht")
 
     elif t == "macro":
-        if "GRAB_FROM_RACK" in val or val.startswith("GRAB_FROM_SLOT_"):
+        kind = _macro_kind(val)
+        if kind == "grab":
             if _plate_ready_skip():
                 return
+            await _gripper_gate("Platte holen")
             # Magazin-Gate: leer → parken/pausieren, nach Auffüllen homen. Liefert das
             # DANN aktive Magazin → Macro-String mit den FRISCHEN Werten neu aufbauen
             # (der vorab substituierte fuhr sonst zum vor der Pause gemerkten Regal).
             stack_rack, stack_slot = await _magazine_gate()
             val = _subst(step.get("value"), rack_num, slot_num, stack_rack, stack_slot)
+        elif kind == "place":
+            await _printer_gate(device, "Platte einlegen", need_bed_empty=True)
+        elif kind == "eject":
+            await _printer_gate(device, "Auswerfen")
         # Opt-in: bekannte Drucker-/Regal-Macros können als Printloom-G-code laufen
         # (geometry.use_gcode[op] = true). Standard aus → Geräte-Macro wie bisher.
         # Die Magazin-/Fach-Buchhaltung unten prüft weiter val (Macro-Name, unverändert).
@@ -2250,10 +2408,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             logger.warning(f"use_gcode-Auswertung fehlgeschlagen ({e}) — nutze Macro {val!r}")
         _log(f"▶ {val}" + (f"  →  Printloom-G-code ({op_used})" if op_used else ""))
         await _do_macro(send_val)
-        if "GRAB_FROM_RACK" in val or val.startswith("GRAB_FROM_SLOT_"):
-            _after_grab(job, stack_rack, stack_slot)
-        elif "STORE_TO_RACK" in val or val.startswith("STORE_TO_SLOT_"):
-            _after_store(job)
+        _book_op(kind, job, stack_rack, stack_slot)
 
     elif t == "app_op":
         # Printloom-eigene Operation (Drucker-Tab-Geometrie → G-code), frei in Sequenzen
@@ -2267,7 +2422,13 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         is_grab, is_store = op in ("grab", "grab_magazine"), op == "store"
         if is_grab and _plate_ready_skip():
             return
+        if op in ("place", "load"):
+            await _printer_gate(device, "Platte einlegen", need_bed_empty=True)
+        elif op == "eject":
+            await _printer_gate(device, "Auswerfen")
         if is_grab:
+            # Erst NACH _plate_ready_skip: Dort hält der Greifer die Platte zu Recht.
+            await _gripper_gate("Platte holen")
             # Magazin-Gate: leer → parken/pausieren, nach Auffüllen homen. Liefert das
             # DANN aktive Magazin (kann nach dem Auffüllen ein anderes Regal sein).
             stack_rack, stack_slot = await _magazine_gate()
@@ -2283,18 +2444,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         script = _motion.build_op(geom, op, rack=rk, slot=sl, printer=_farm_printer(geom))
         _log(f"▶ Printloom-Op: {op}" + (f" (Regal {rk} Fach {sl})" if (is_grab or is_store) else ""))
         await _do_macro(script)   # Klipper HTTP blocks until movement is complete
-        if is_grab:
-            # Gegriffenes Fach ausdrücklich mitgeben — ohne Magazin wird genau dessen
-            # Markierung gelöscht (nicht „das nächstbeste" Fach).
-            _after_grab(job, rk, sl)
-        elif is_store:
-            _after_store(job)
-        elif op == "eject":
-            # Fertige Platte kommt aus dem Drucker → sie hängt jetzt am Arm.
-            _set_arm("printed", "", job.get("id"))
-        elif op in ("place", "load"):
-            # Leere Platte ist im Drucker abgesetzt → Arm ist wieder frei.
-            _set_arm("none")
+        # Gegriffenes Fach ausdrücklich mitgeben — ohne Magazin wird genau dessen
+        # Markierung gelöscht (nicht „das nächstbeste" Fach).
+        _book_op(op, job, rk, sl)
 
     elif t == "delay":
         secs = int(step.get("seconds", 0))
@@ -2968,7 +3120,9 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                     if _farm["stopping"]:
                         break
                     _farm["error"] = None
-                    continue          # denselben Job erneut versuchen
+                    _resume_after_move_timeout(job, cur_slot, job_started_at)
+                    cur_slot = None
+                    continue
                 # skip/ignore → Job als Fehler werten und weitermachen
                 _record_completed(job, "error", job_started_at, datetime.now(),
                                   (datetime.now() - job_started_at).total_seconds() / 60.0, msg[:120])
@@ -3137,7 +3291,7 @@ class SettingsPayload(BaseModel):
     conn_alarm:            bool  = True
     progress_stall_min:    int   = 0
     error_strategy:        dict  = {}
-    failed_retries:        int   = 1
+    failed_retries:        int   = farm_settings.DEFAULTS["failed_retries"]
     timezone:                str  = ""         # IANA-TZ des Nutzers (z. B. "Europe/Berlin")
     operating_hours_enabled: bool = False
     operating_schedule:      List[dict] = []   # 7 Einträge [{enabled,start,end}], Index 0=Mo
@@ -3160,6 +3314,75 @@ def _assert_released() -> None:
         assert_released(db)
     finally:
         db.close()
+
+
+def _resume_after_move_timeout(job: dict, cur_slot, job_started_at) -> None:
+    """Nach „Bewegung hängt → pausieren" und Fortsetzen: Was wird aus dem Job?
+
+    Bis v1.1.44 blieb er „running" stehen, und die Farm nahm den nächsten.
+    - Druck noch nicht gestartet (running): derselbe Job beginnt neu. Liegt noch
+      etwas im Greifer oder Drucker, halten ihn die Tore an.
+    - Druck lief schon (sending/printing): Fehler, kein automatischer Nachdruck."""
+    status = next((j.get("status") for j in _farm["jobs"] if j.get("id") == job["id"]), None)
+    if status == "running":
+        _set_job(job["id"], {"status": "pending", "progress": 0, "remaining": 0})
+        _log("↻ Fortgesetzt — der Job beginnt neu")
+    else:
+        fehler = "Bewegung hing nach dem Druckstart — Platte prüfen"
+        _log(f"🔴 {fehler}")
+        _record_completed(job, "error", job_started_at, datetime.now(),
+                          (datetime.now() - job_started_at).total_seconds() / 60.0, fehler)
+        _set_job(job["id"], {"status": "error"})
+        if cur_slot:
+            _rack_update(job["slot"], "free")
+    _farm["current_job_id"] = None
+
+
+async def _assert_arm_idle_for_start() -> None:
+    """Start nur, wenn der OTTOeject gerade nichts ausführt. Handfahrten (Drucker-Tab,
+    Joggen, Makro) laufen an arm_access vorbei; ein Start währenddessen reihte den
+    ersten Griff hinter die Handfahrt ein, und er begann an deren Endposition. Klipper
+    meldet „Printing", solange es G-code abarbeitet. Nicht erreichbar: nicht sperren,
+    die erste Bewegung meldet den Fehler selbst."""
+    db = SessionLocal()
+    try:
+        klipper = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
+        url = f"http://{klipper.ip_address}:{klipper.port}/printer/objects/query?idle_timeout" if klipper else None
+    finally:
+        db.close()
+    if not url:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(url)
+        state = (((r.json().get("result") or {}).get("status") or {}).get("idle_timeout") or {}).get("state")
+    except (httpx.HTTPError, ValueError, AttributeError) as e:
+        logger.info(f"Klipper-Zustand vor dem Start nicht lesbar: {e}")
+        return
+    if state == "Printing":
+        raise HTTPException(409, "OTTOeject fährt gerade (Handfahrt) — warten, bis die Bewegung fertig ist")
+
+
+async def _assert_printer_idle_for_start(bambu_id) -> None:
+    """Start nur, wenn der Drucker frisch gefragt frei ist. Bis v1.1.44 startete die
+    Farm auch mitten in einen laufenden Druck: Die Homing-Datei ersetzte ihn, oder
+    der Arm fuhr hinein."""
+    db = SessionLocal()
+    try:
+        device = db.query(Device).filter(
+            Device.id == bambu_id, Device.device_type == PrinterType.BAMBU_LAB).first()
+        if device:
+            _ = (device.serial_number, device.ip_address, device.access_code, device.id)
+            db.expunge(device)
+    finally:
+        db.close()
+    if not device:
+        return   # _run_farm meldet das fehlende Gerät selbst
+    loop = asyncio.get_running_loop()
+    state = await loop.run_in_executor(bambu_manager.executor, printer_guard.live_state, device)
+    grund = printer_guard.busy_reason(state)
+    if grund:
+        raise HTTPException(409, f"{grund} — erst laufenden Druck beenden bzw. Drucker prüfen")
 
 
 @router.post("/start")
@@ -3187,6 +3410,8 @@ async def start_farm(req: StartRequest):
     # v1.1.9 gibt es mehrere; ein Gerät ohne eigenen Block würde sonst still die
     # Koordinaten des ersten Druckers fahren — also gegen den falschen Drucker.
     _assert_printer_geometry(req.bambu_id)
+    await _assert_arm_idle_for_start()
+    await _assert_printer_idle_for_start(req.bambu_id)
 
     _farm.update({
         "running":         True,
@@ -3212,8 +3437,11 @@ async def start_farm(req: StartRequest):
         # damit erledigt (der Nutzer startet ja bewusst neu). Position gilt aber
         # weiter als unbekannt → die erste Bewegung referenziert (needs_home).
         "arm":                dict(_ARM_EMPTY),
+        # Annahme beim Start: Bett leer (wer neu startet, hat die Anlage im Blick).
+        "bed":                "empty",
         "recovery":           None,
     })
+    _farm.pop("_conn_skip_logged", None)
 
     _farm.pop("_no_slot_logged", None)   # „Regal voll"-Log-Dedup nicht über Läufe schleppen
     _farm.pop("_settings_mtime", None)   # nächster Durchlauf liest die Einstellungen frisch
@@ -3600,6 +3828,16 @@ def _stress_bambu(device_id=None) -> Device:
         db.close()
 
 
+def _assert_may_command_printer(what: str) -> None:
+    """Direkt vor jedem Druckerbefehl der Farm (Druck starten, G-code): nach Notaus
+    oder Stopp nichts mehr absetzen. halt_all setzt nur „stopping"; ein Upload, der
+    gerade lief, startete bis v1.1.44 danach trotzdem den Druck (Bett homet, der Arm
+    steht womöglich noch im Bauraum). Die Sperre in _do_macro deckt nur Klipper ab."""
+    if _notaus_aktiv() or (_farm.get("running") and _farm.get("stopping")):
+        _log(f"⛔ {what}: Stopp/Notaus — nicht gesendet")
+        raise RuntimeError("Gestoppt")
+
+
 def _notaus_aktiv() -> bool:
     """Notaus-Sperre aus der Datenbank (control.notaus_aktiv), mit eigener Sitzung.
     Unbekannt ist nicht „frei": Kann die DB nicht gelesen werden, gilt der Notaus."""
@@ -3745,6 +3983,8 @@ async def start_stress_test(body: Optional[StressStartBody] = None):
     # Gerät VOR dem Plan holen: fehlt der Drucker, soll der Test gar nicht erst
     # starten statt mitten im Lauf auf halber Strecke stehenzubleiben.
     _assert_released()
+    # Nicht während einer Handfahrt (der erste Griff begänne an deren Endposition).
+    await _assert_arm_idle_for_start()
     device = _stress_bambu(body.device_id) if body.include_printer else None
     plan = _stress_plan(include_printer=body.include_printer)
     if not plan["plate_count"]:
@@ -4078,6 +4318,9 @@ async def get_settings():
     # Immer einen normalisierten 7-Tage-Plan mitliefern (migriert alte Configs),
     # damit das Frontend nicht selbst migrieren muss.
     s["operating_schedule"] = _operating_schedule(s)
+    # Vorgaben der Fehlerstrategie aus EINER Quelle; die Oberfläche hatte eine eigene
+    # Kopie, die mit der Zeit auseinanderlief.
+    s["error_strategy_defaults"] = dict(farm_settings.ERROR_DEFAULTS)
     return s
 
 @router.put("/settings")

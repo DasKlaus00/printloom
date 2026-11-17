@@ -175,12 +175,16 @@ async def list_app_ops():
 PRINTER_PAUSE_TIMEOUT_S = 8.0   # je Drucker — ein toter Drucker darf den Notaus nicht aufhalten
 
 
-async def _klipper_estop(db: Session) -> list:
-    """M112 an jeden OTTOeject. Gleichzeitig, mit kurzem Zeitlimit."""
+def _klipper_estop_start(db: Session) -> tuple:
+    """M112 an jeden OTTOeject losschicken, ohne zu warten → (Geräte, Tasks).
+    Die Tasks laufen beim nächsten Warten los, gleichzeitig, mit kurzem Zeitlimit."""
     from app.services.moonraker import MoonrakerAPI
     arme = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).all()
-    ergebnisse = await asyncio.gather(
-        *(MoonrakerAPI(d).emergency_stop() for d in arme), return_exceptions=True)
+    return arme, [asyncio.ensure_future(MoonrakerAPI(d).emergency_stop()) for d in arme]
+
+
+async def _klipper_estop_result(arme: list, tasks: list) -> list:
+    ergebnisse = await asyncio.gather(*tasks, return_exceptions=True)
     return [{"name": d.name, "ok": r is True} for d, r in zip(arme, ergebnisse)]
 
 
@@ -233,13 +237,16 @@ async def emergency_stop(db: Session = Depends(get_db)):
     laufen die übrigen trotzdem. Die Antwort sagt genau, was gegriffen hat; nie ein
     500 und nie „aktiviert", wenn der Arm nicht angehalten wurde.
     """
-    # 1. Arm anhalten — das Einzige, was in den ersten Millisekunden zählt.
+    # 1. Arm anhalten — das Einzige, was in den ersten Millisekunden zählt. M112 geht
+    # sofort los (sleep(0) lässt die Anfrage starten), gewartet wird erst nach der
+    # Sperre: Bis v1.1.44 liefen Farm und Stresstest bis zu 5 s (Klipper-Timeout)
+    # ohne Sperre weiter, gerade wenn Klipper nicht antwortet.
     try:
-        arme = await _klipper_estop(db)
+        arm_geraete, estops = _klipper_estop_start(db)
     except Exception as e:
         logger.error(f"Notaus: Klipper nicht erreichbar: {e}")
-        arme = []
-    arm_ok = bool(arme) and all(a["ok"] for a in arme)
+        arm_geraete, estops = [], []
+    await asyncio.sleep(0)
 
     # 2. Printloom-Abläufe anhalten, damit nach dem Klipper-Neustart nichts weiterfährt.
     angehalten = []
@@ -264,6 +271,13 @@ async def emergency_stop(db: Session = Depends(get_db)):
         db.commit()
     except Exception as e:
         logger.warning(f"Notaus: Geräte nicht gesperrt: {e}")
+
+    try:
+        arme = await _klipper_estop_result(arm_geraete, estops)
+    except Exception as e:
+        logger.error(f"Notaus: Klipper nicht erreichbar: {e}")
+        arme = []
+    arm_ok = bool(arme) and all(a["ok"] for a in arme)
 
     # 4. Drucker pausieren.
     try:
@@ -313,7 +327,8 @@ async def resume_operations(db: Session = Depends(get_db)):
             "restarted": [d.name for d, r in zip(arme, neu) if r is True],
             "failed": fehlgeschlagen,
             "message": (f"Klipper-Neustart fehlgeschlagen: {', '.join(fehlgeschlagen)} — "
-                        "Geräte bleiben gesperrt, erneut versuchen"),
+                        "Geräte bleiben gesperrt, erneut versuchen. Ist der OTTOeject "
+                        "absichtlich vom Strom getrennt, erst wieder einschalten."),
         }
 
     for device in db.query(Device).all():

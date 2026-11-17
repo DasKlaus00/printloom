@@ -22,14 +22,14 @@ Zusage, die die Software nicht einlöst, ist teurer als ein fehlendes Feature.
 | **Greifer** | Standard (seitlich klemmend) und Magnet-Greifer (seit v1.1.21, eigene Wege, Abkühlen als Sequenz-Schritt) |
 | **Regal** | 1–10 Regale × 1–20 Fächer; alle Fächer = Lager oder oberstes Fach = Magazin |
 | **Einrichten** | Setup-Assistent inkl. geführter Erstkalibrierung, jederzeit wieder aufrufbar (System) |
-| **Farm** | Dauerbetrieb, höhenbasierte Fachwahl, Fehlerklassen mit eigener Strategie, Bergung nach Druckfehler, Zustand übersteht Neustart, Betriebszeiten, Einstellungen wirken live |
+| **Farm** | Dauerbetrieb, höhenbasierte Fachwahl, Druckbett-Merker und Prüfung vor jedem Einfahren (Drucker frei, Bett leer, Greifer leer), Fehlerklassen mit eigener Strategie, Bergung nach Druckfehler, Zustand übersteht Neustart, Betriebszeiten, Einstellungen wirken live |
 | **Kosten** | Strom (Smart-Plug) + Maschinenstunde + Material aus dem G-code-Header |
 | **Oberfläche** | Startseite und Auto-Farm frei konfigurierbar; Hell/Dunkel/System |
 | **Online** | Alles Opt-in: Update-Prüfung, Hinweise, Bibliothek. Diagnose-ZIP ohne Geheimnisse und Adressen |
 | **Sicherheit** | Keine eigene Anmeldung (Reverse-Proxy davor). Kein CORS, schreibende Anfragen fremder Seiten gesperrt (auch über http), nur Heimnetz-Adressen (gegen DNS-Rebinding), kein Einbetten in fremde Seiten, Windows-Update nur aus dem eigenen Release, Backup ohne Zugangsdaten (auf Wunsch verschlüsselt mit) |
 | **Auslieferung** | Docker (amd64/arm64), native Windows-App, native Linux. Version im Image, Update aus der Oberfläche über den Docker-Socket, Promote-Workflow Beta → Stabil |
 | **Slicer** | OrcaSlicer-Plugin (ab Orca 2.5): Farm-Check nach dem Slicen, Senden in die Warteschlange, Drucker und AMS im Geräte-Tab, Farm-Tab |
-| **Qualität** | 891 Backend-, 53 Plugin- und 71 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
+| **Qualität** | 923 Backend-, 53 Plugin- und 73 Frontend-Tests; Tests laufen vor jedem Image-Build und an jedem Pull Request |
 
 ---
 

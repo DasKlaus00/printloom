@@ -18,7 +18,7 @@ class Geraet:
 
 class Ergebnis:
     def __init__(self, rc=0, published=True):
-        self.rc, self._published, self.gewartet = rc, published, False
+        self.rc, self._published, self.gewartet, self.mid = rc, published, False, 5
 
     def wait_for_publish(self, timeout=None):
         self.gewartet = True
@@ -28,11 +28,15 @@ class Ergebnis:
 
 
 class Paho:
+    """Wie paho 2.x: Jede QoS-1-Nachricht landet in _out_messages, auch ohne Verbindung."""
     def __init__(self, ergebnis):
+        import threading
         self.ergebnis, self.gesendet = ergebnis, []
+        self._out_messages, self._out_message_mutex = {}, threading.Lock()
 
     def publish(self, topic, payload, qos=0):
         self.gesendet.append((topic, json.loads(payload)))
+        self._out_messages[self.ergebnis.mid] = payload
         return self.ergebnis
 
 
@@ -48,17 +52,28 @@ def test_bestaetigter_befehl_ist_gesendet():
     assert c.client.gesendet[0][0] == "device/00M00A000000000/request"
 
 
-def test_unbestaetigter_befehl_ist_nicht_gesendet():
+def test_unbestaetigter_befehl_wird_zurueckgenommen():
     e = Ergebnis(published=False)
-    assert _client(e).publish_command({"print": {"command": "pause"}}) is False
+    c = _client(e)
+    assert c.publish_command({"print": {"command": "pause"}}) is False
     assert e.gewartet
+    # Sonst sendet paho ihn nach dem Reconnect doch noch.
+    assert c.client._out_messages == {}
 
 
-def test_abgelehnter_befehl_ist_nicht_gesendet():
-    # rc 4 = MQTT_ERR_NO_CONN: Verbindung weg, nichts in der Leitung.
+def test_befehl_ohne_verbindung_wird_zurueckgenommen():
+    # rc 4 = MQTT_ERR_NO_CONN: paho behält die Nachricht trotzdem für später.
     e = Ergebnis(rc=4)
-    assert _client(e).publish_command({"print": {"command": "pause"}}) is False
+    c = _client(e)
+    assert c.publish_command({"print": {"command": "pause"}}) is False
     assert not e.gewartet
+    assert c.client._out_messages == {}
+
+
+def test_bestaetigter_befehl_bleibt_pahos_sache():
+    c = _client(Ergebnis())
+    c.publish_command({"print": {"command": "pause"}})
+    assert 5 in c.client._out_messages
 
 
 def test_jedes_telegramm_setzt_den_zeitstempel():

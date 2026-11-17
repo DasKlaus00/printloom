@@ -136,6 +136,46 @@ def _camera_enabled(db: Session, device_id: int) -> bool:
     return device_settings.get(db, device_id).get("camera_enabled", True) is not False
 
 
+SNAP_TIMEOUT_S = 15.0
+SNAP_MAX_BYTES = 10 * 1024 * 1024
+
+
+async def _fetch_webcam_jpeg(url: str, client=None) -> Optional[bytes]:
+    """EIN Bild von einer Kamera-Adresse, mit Größenschranke.
+
+    Bis v1.1.44 lud client.get() die ganze Antwort: Bei einem MJPEG-Stream
+    (multipart/x-mixed-replace) endet sie nie, und der Schnappschuss am Druckende
+    hielt die Farm an. Jetzt: ein JPEG direkt, beim Stream das erste Bild
+    zwischen den JPEG-Markern (SOI FF D8 … EOI FF D9), alles andere → None."""
+    own = client is None
+    client = client or httpx.AsyncClient(timeout=8.0)
+    try:
+        async with client.stream("GET", url, follow_redirects=True) as r:
+            r.raise_for_status()
+            ctype = (r.headers.get("content-type") or "").lower()
+            buf = bytearray()
+            if ctype.startswith(("image/jpeg", "image/jpg")):
+                async for chunk in r.aiter_bytes():
+                    buf += chunk
+                    if len(buf) > SNAP_MAX_BYTES:
+                        return None
+                return bytes(buf)
+            if ctype.startswith("multipart/x-mixed-replace"):
+                async for chunk in r.aiter_bytes():
+                    buf += chunk
+                    soi = buf.find(b"\xff\xd8")
+                    if soi >= 0:
+                        eoi = buf.find(b"\xff\xd9", soi + 2)
+                        if eoi >= 0:
+                            return bytes(buf[soi:eoi + 2])
+                    if len(buf) > SNAP_MAX_BYTES:
+                        return None
+            return None
+    finally:
+        if own:
+            await client.aclose()
+
+
 async def capture_snapshot(device_id: int) -> Optional[str]:
     """Best-effort webcam grab for the AutoFarm loop. Uses the configured webcam_url
     if set, otherwise the printer's built-in camera (X1 → RTSPS, P1/A1 → Port 6000;
@@ -160,10 +200,7 @@ async def capture_snapshot(device_id: int) -> Optional[str]:
     try:
         SNAP_DIR.mkdir(parents=True, exist_ok=True)
         if webcam_url:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                r = await client.get(webcam_url, follow_redirects=True)
-                r.raise_for_status()
-                img_bytes = r.content
+            img_bytes = await asyncio.wait_for(_fetch_webcam_jpeg(webcam_url), SNAP_TIMEOUT_S)
         elif ip and code:
             # Kamera global deaktiviert (Energiesparmodus) → kein ffmpeg-Snapshot,
             # auch das Kammerlicht nicht anfassen. Externe webcam_url oben bleibt.
@@ -177,7 +214,8 @@ async def capture_snapshot(device_id: int) -> Optional[str]:
                 camera.executor, camera.single_frame, device, settings)
         else:
             return None
-        if not img_bytes:
+        # Nur echte JPEGs speichern (FF D8 FF), keine Fehlerseite der Kamera.
+        if not img_bytes or not img_bytes.startswith(b"\xff\xd8\xff"):
             return None
         fname = f"snap_{device_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
         (SNAP_DIR / fname).write_bytes(img_bytes)
@@ -453,7 +491,16 @@ async def _assert_printer_may_move(db: Session, device, allow_pause: bool = Fals
     from app.routers.control import assert_released
     from app.services import printer_guard
     assert_released(db)
-    grund = autofarm.motion_owner(include_paused=True)
+    farm_printer = autofarm._farm.get("bambu_id") == getattr(device, "id", None)
+    if farm_printer or not autofarm._farm.get("running"):
+        # Die Farm sperrt nur IHREN Drucker; ein zweiter Drucker bleibt bedienbar.
+        # Filamentwechsel (allow_pause) geht auch in der Farm-Pause: Dafür pausiert man.
+        farm_pause = allow_pause and autofarm._farm.get("running") and autofarm._farm.get("paused")
+        grund = autofarm.motion_owner(include_paused=not farm_pause)
+    else:
+        # Ein zweiter Drucker, den die Farm nicht bedient: nur der Stresstest zählt
+        # (er kann mit jedem Drucker-Block fahren), nicht Farm und Farm-Armbewegung.
+        grund = autofarm.motion_owner(ignore_farm=True)
     if grund:
         raise HTTPException(409, grund)
     loop = asyncio.get_running_loop()

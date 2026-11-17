@@ -108,18 +108,34 @@ class BambuLabMQTT:
             result = self.client.publish(topic, json.dumps(command), qos=1)
             if result.rc != mqtt.MQTT_ERR_SUCCESS:
                 logger.error(f"Befehl nicht gesendet ({topic}): rc={result.rc}")
+                self._drop_unconfirmed(result.mid)
                 return False
             result.wait_for_publish(timeout=5.0)
             # paho ≥ 2 kehrt nach dem Zeitlimit OHNE Fehler zurück. Bis v1.1.43 galt
             # ein Befehl darum auch dann als gesendet, wenn der Drucker ihn nie bekam.
             if not result.is_published():
                 logger.error(f"Befehl nach 5 s nicht vom Drucker bestätigt ({topic})")
+                self._drop_unconfirmed(result.mid)
                 return False
             logger.info(f"Published to {topic}: {command}")
             return True
         except Exception as e:
             logger.error(f"Failed to publish command: {e}")
             return False
+
+    def _drop_unconfirmed(self, mid) -> None:
+        """Einen nicht bestätigten Befehl aus pahos Warteschlange nehmen.
+
+        paho behält QoS-1-Nachrichten (auch ohne Verbindung, rc=4) und sendet sie nach
+        dem Reconnect erneut. Ein „Druck starten", das Printloom als gescheitert
+        gemeldet hat, käme so Minuten später doch noch an, oder ein altes „pause"
+        mitten in den nächsten Druck. Wer False meldet, muss den Befehl auch
+        zurücknehmen. Nutzt pahos interne Ablage (paho 2.x: _out_messages)."""
+        try:
+            with self.client._out_message_mutex:
+                self.client._out_messages.pop(mid, None)
+        except AttributeError as e:
+            logger.warning(f"Unbestätigten MQTT-Befehl nicht zurückgenommen (paho-Version?): {e}")
 
     def start_print(self, remote_filename: str, use_ams: bool = True, ams_mapping: list = None, plate_param: str = None) -> bool:
         """

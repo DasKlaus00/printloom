@@ -728,19 +728,23 @@ function PowerSettings() {
 const ERROR_CATALOG = [
   { key: 'hms',             label: 'Drucker-Fehler (HMS)',        desc: 'Schwere/fatale Druckermeldung (z. B. Hardwarefehler)',        actions: ['pause', 'skip', 'stop', 'ignore'] },
   { key: 'print_failed',    label: 'Druck fehlgeschlagen',         desc: 'Drucker meldet FAILED nach den Wiederholungen',               actions: ['eject', 'skip', 'pause', 'stop'] },
-  { key: 'connection_lost', label: 'Verbindung verloren',          desc: 'Drucker nach mehreren Reconnects nicht erreichbar',           actions: ['skip', 'pause', 'stop'] },
+  // Kein „überspringen": Der Druck läuft am Gerät weiter, nur die Verbindung fehlt.
+  // Der nächste Job würde in den laufenden Druck fahren (bis v1.1.44 die Vorgabe).
+  { key: 'connection_lost', label: 'Verbindung verloren',          desc: 'Drucker nach mehreren Reconnects nicht erreichbar — der Druck läuft am Gerät weiter', actions: ['pause', 'stop'] },
   { key: 'progress_stall',  label: 'Stillstand / kein Fortschritt', desc: 'Watchdog: kein Druckfortschritt (mögliche Verstopfung)',      actions: ['pause', 'skip', 'stop'] },
   { key: 'no_slot',         label: 'Kein freies Regalfach',        desc: 'Regal voll — kein Platz für die fertige Platte',              actions: ['pause', 'stop'] },
   { key: 'ams_unmatched',   label: 'AMS-Festlegung nötig',         desc: 'Kein passendes Filament im AMS gefunden',                     actions: ['pause', 'skip'] },
   { key: 'move_timeout',    label: 'Bewegung hängt',               desc: 'OTTOeject meldet die Bewegung nicht als beendet — Arm steht an unbekannter Stelle', actions: ['pause', 'skip', 'stop'] },
 ]
-const ERROR_DEFAULTS = { hms: 'pause', print_failed: 'eject', connection_lost: 'skip', progress_stall: 'pause', no_slot: 'pause', ams_unmatched: 'pause', move_timeout: 'pause' }
+// Die Vorgaben kommen vom Backend (farm_settings.ERROR_DEFAULTS, eine Quelle). Bis
+// v1.1.44 stand hier eine eigene Kopie, die mit der Zeit auseinanderlief.
 const ACTION_LABEL = { pause: 'Pausieren', skip: 'Job überspringen', stop: 'Farm stoppen', ignore: 'Ignorieren', eject: 'Platte auswerfen & weiter' }
 
 function ErrorStrategy() {
   const { tr } = useLanguage()
   const [strategy, setStrategy] = useState({})
-  const [retries, setRetries]   = useState(1)
+  const [defaults, setDefaults] = useState({})
+  const [retries, setRetries]   = useState(0)
   // Zeitlimit EINER OTTOeject-Bewegung — danach gilt sie als hängend (Phase 3.3).
   const [moveTimeout, setMoveTimeout] = useState(180)
   const [saving, setSaving]     = useState(false)
@@ -748,10 +752,15 @@ function ErrorStrategy() {
 
   useEffect(() => {
     autofarmService.getSettings().then(r => {
-      setStrategy({ ...ERROR_DEFAULTS, ...(r.data.error_strategy || {}) })
-      setRetries(r.data.failed_retries ?? 1)
+      const d = r.data.error_strategy_defaults || {}
+      const saved = { ...(r.data.error_strategy || {}) }
+      // Ein früher gespeichertes „überspringen" wirkt im Backend als „pausieren".
+      if (saved.connection_lost === 'skip') saved.connection_lost = 'pause'
+      setDefaults(d)
+      setStrategy({ ...d, ...saved })
+      setRetries(r.data.failed_retries ?? 0)
       setMoveTimeout(r.data.move_timeout_s ?? 180)
-    }).catch(() => setStrategy({ ...ERROR_DEFAULTS }))
+    }).catch(e => console.warn('Fehlerstrategie nicht geladen:', e?.message || e))
   }, [])
 
   const save = async () => {
@@ -789,7 +798,10 @@ function ErrorStrategy() {
                       className="w-12 font-mono text-xs h-6 py-0" />
                   </div>
                   <p className="text-[10px] text-emerald-700/90 mt-1 leading-snug">
-                    {tr('„Platte auswerfen & weiter": Bett auf Z200, Tür öffnen, Platte auswerfen und ins Fach einlagern — dann startet der nächste Job automatisch. „Job überspringen" lässt die fehlgeschlagene Platte im Drucker (nur wählen, wenn du sie selbst entnimmst).')}
+                    {tr('„Platte auswerfen & weiter": Bett auf Z200, Tür öffnen, Platte auswerfen und ins Fach einlagern — dann startet der nächste Job automatisch. „Job überspringen" lässt die fehlgeschlagene Platte im Drucker; die Farm hält dann vor dem nächsten Einlegen an, bis du sie entnommen hast.')}
+                  </p>
+                  <p className="text-[10px] text-surface-600 mt-1 leading-snug">
+                    {tr('Wiederholt wird nur, solange noch nichts gedruckt wurde (sonst druckt der zweite Versuch auf die Reste des ersten). Vorgabe: 0.')}
                   </p>
                 </>
               )}
@@ -807,7 +819,7 @@ function ErrorStrategy() {
                 </>
               )}
             </div>
-            <select value={strategy[err.key] ?? ERROR_DEFAULTS[err.key]}
+            <select value={strategy[err.key] ?? defaults[err.key] ?? err.actions[0]}
               onChange={e => setStrategy(s => ({ ...s, [err.key]: e.target.value }))}
               className="w-44 text-xs h-8 py-0 px-2 bg-surface-900 border border-surface-700 rounded shrink-0">
               {err.actions.map(a => <option key={a} value={a}>{tr(ACTION_LABEL[a])}</option>)}

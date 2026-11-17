@@ -56,6 +56,8 @@ def lage(monkeypatch):
     monkeypatch.setattr(printer_guard, "live_state", lambda device, **kw: zustand["state"])
     monkeypatch.setitem(af._farm, "running", False)
     monkeypatch.setitem(af._farm, "paused", False)
+    # Echte Form: Die Farm kennt die ID ihres Druckers.
+    monkeypatch.setitem(af._farm, "bambu_id", Drucker.id)
     monkeypatch.setitem(af._stress, "running", False)
     monkeypatch.setattr(af, "_stress_task", None)
     return zustand
@@ -86,9 +88,43 @@ def test_nach_notaus(name, aufruf, lage):
 @pytest.mark.parametrize("name,aufruf", BEFEHLE, ids=IDS)
 @pytest.mark.parametrize("pausiert", [False, True])
 def test_bei_laufender_farm_auch_pausiert(name, aufruf, pausiert, lage, monkeypatch):
+    if pausiert and name.startswith("ams"):
+        pytest.skip("Filamentwechsel in der Farm-Pause ist erlaubt (eigener Test)")
     monkeypatch.setitem(af._farm, "running", True)
     monkeypatch.setitem(af._farm, "paused", pausiert)
     _abgelehnt(aufruf(FakeDB()), "Auto Farm")
+
+
+def test_filamentwechsel_in_der_farm_pause(lage, monkeypatch):
+    """Dafür pausiert man die Farm (Spule leer): AMS entladen geht dann."""
+    monkeypatch.setitem(af._farm, "running", True)
+    monkeypatch.setitem(af._farm, "paused", True)
+    lage["state"] = "PAUSE"
+    gesendet = []
+    monkeypatch.setattr(bambu_manager, "publish_command", lambda d, cmd: gesendet.append(cmd) or True)
+    asyncio.run(printer.ams_unload_filament(2, db=FakeDB()))
+    assert gesendet
+
+
+def test_zweiter_drucker_bleibt_bei_laufender_farm_bedienbar(lage, monkeypatch):
+    monkeypatch.setitem(af._farm, "running", True)
+    monkeypatch.setitem(af._farm, "bambu_id", 99)    # die Farm bedient einen anderen
+    gesendet = []
+    monkeypatch.setattr(bambu_manager, "send_gcode", lambda d, g: gesendet.append(g) or True)
+    monkeypatch.setattr(bambu_manager, "last_status", lambda d: {})
+    monkeypatch.setattr(printer.asyncio, "sleep", _sofort)
+    asyncio.run(printer.send_gcode(2, "G28", db=FakeDB()))
+    assert gesendet == ["G28"]
+
+
+def test_stresstest_sperrt_auch_den_zweiten_drucker(lage, monkeypatch):
+    monkeypatch.setitem(af._stress, "running", True)
+    monkeypatch.setitem(af._farm, "bambu_id", 99)
+    _abgelehnt(printer.send_gcode(2, "G28", db=FakeDB()), "Stresstest")
+
+
+async def _sofort(_):
+    return None
 
 
 @pytest.mark.parametrize("name,aufruf", BEFEHLE, ids=IDS)

@@ -177,6 +177,8 @@ oder Zusagen bricht**, nicht die Menge an Code:
 | `test_rack_logic.py` / `test_slotlogic.py` | Fach-Belegung nach Objekthöhe, Betriebszeiten, Start-Countdown |
 | `test_notaus_sperre.py` / `test_emergency_stop.py` | Nach dem Notaus bewegt sich nichts (auch kein Parken), bis der Klipper-Neustart geklappt hat |
 | `test_arm_belegung.py`   | Farm, Stresstest und Handfahrten bewegen den Arm nie gleichzeitig |
+| `test_drucker_tore.py`   | Vor Einlegen, Auswerfen, Greifen und Senden: Drucker frei, Bett leer, Greifer leer — sonst Pause; Buchung über Macro und Op |
+| `test_druckfehler_ablauf.py` | FAILED nur ohne Druck wiederholen, übersprungene Drucke werden gestoppt, Hänger beenden den Job sauber |
 | `test_drucker_sperren.py` / `test_printer_guard.py` | Bett, Kalibrierung, AMS, Direktdruck nur ohne Notaus/Farm und bei frischem, freiem Druckerstatus |
 | `test_online.py`         | OHNE Zustimmung + Schalter geht KEIN Request nach außen |
 | `test_backup.py`         | Backup vollständig; Zugangsdaten nur auf Wunsch, verschlüsselt; Einspielen löscht keine |

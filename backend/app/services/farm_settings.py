@@ -9,6 +9,23 @@ from app.services import storage
 
 PATH = db_path("farm_settings.json")
 
+# Was die Farm bei welchem Fehler tut, wenn der Nutzer nichts gewählt hat. EINE
+# Quelle für Farm (autofarm._estrat) und Oberfläche (GET /autofarm/settings).
+ERROR_DEFAULTS = {
+    "hms":             "pause",
+    "print_failed":    "eject",
+    # Bis v1.1.44 „skip": Der nächste Job startete, während der Drucker den alten
+    # weiterdruckte (die Verbindung fehlte nur), und der Arm fuhr in den laufenden
+    # Druck. Ein verlorener Kontakt heißt nicht, dass der Drucker frei ist.
+    "connection_lost": "pause",
+    "progress_stall":  "pause",
+    "no_slot":         "pause",
+    "ams_unmatched":   "pause",
+    # Hängende Bewegung: Der Arm steht an unbekannter Stelle, evtl. mit Platte.
+    # Einfach weiterfahren wäre die schlechteste Option.
+    "move_timeout":    "pause",
+}
+
 DEFAULTS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": True,
             "hms_ignore": ["0C00-0100-0001-0004"],
             # Energie & Kosten (Roadmap 3.1/3.2/3.4) — reine Zahlen, keine Geheimnisse
@@ -24,7 +41,10 @@ DEFAULTS = {"poll_interval": 20, "min_print_minutes": 0, "use_ams": True,
             "progress_stall_min":    0,     # 0 = aus; sonst Pause bei N min ohne Fortschritt (1.7)
             # Fehlerstrategie (Roadmap 1.3) — {error_key: action}; leer = Defaults
             "error_strategy":        {},
-            "failed_retries":        1,     # Wiederholungen bei FAILED vor der gewählten Aktion
+            # Wiederholungen bei FAILED vor der gewählten Aktion. Vorgabe 0: Ein
+            # zweiter Versuch auf derselben Platte geht nur, solange noch nichts
+            # gedruckt wurde (das prüft die Farm selbst).
+            "failed_retries":        0,
             # Zeitzone des Nutzers (IANA, z. B. "Europe/Berlin") — der Container
             # läuft i. d. R. in UTC; die Betriebszeiten müssen aber in der lokalen
             # Zeit des Nutzers ausgewertet werden. Frontend liefert sie automatisch.

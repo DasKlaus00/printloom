@@ -4,6 +4,37 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.45',
+    de: [
+      'PRÜFUNG VOR JEDER FAHRT IN DEN DRUCKER: Bevor der Arm eine Platte einlegt, auswirft oder eine Datei startet, fragt Printloom den Drucker frisch. Druckt er noch, oder ist sein Zustand unbekannt, wartet die Farm kurz und pausiert dann mit dem Grund. Bisher fuhr sie blind, auch in einen laufenden Druck.',
+      'Printloom merkt sich jetzt, was auf dem Druckbett liegt. Liegt laut Printloom noch eine Platte darauf (etwa nach einem übersprungenen oder fehlgeschlagenen Job), legt die Farm keine zweite darauf, sondern pausiert: Platte entnehmen, dann fortsetzen. Ebenso, wenn der Greifer vor dem Holen noch eine Platte hält.',
+      'Die Farm startet nicht mehr, solange der Drucker druckt.',
+      '„VERBINDUNG VERLOREN“ PAUSIERT JETZT. Das galt bisher als „Job überspringen“: Dann fuhr der nächste Job in den Druck, der am Gerät einfach weiterlief. Das gilt auch, wenn du früher „überspringen“ gespeichert hattest; die Auswahl gibt es nicht mehr.',
+      'Ein fehlgeschlagener Druck wird nur noch wiederholt, solange noch nichts gedruckt wurde, und die Vorgabe für Wiederholungen ist jetzt 0. Bisher druckte der zweite Versuch auf die Reste des ersten.',
+      'Überspringt die Farm einen Druck (Mindestdruckzeit, Stillstand), bricht sie ihn am Drucker auch ab. Bisher druckte er weiter.',
+      'Hängt eine Bewegung und du setzt nach der Pause fort, beginnt der Job neu (vor dem Druckstart) oder endet als Fehler (danach). Bisher blieb er für immer „läuft“.',
+      'Der Schnappschuss am Druckende hat ein festes Zeitlimit und nimmt nur ein Bild. Eine Kamera, die einen Dauer-Stream liefert oder nicht antwortet, hielt bisher die Farm an.',
+      'BEHOBEN (aus v1.1.44): Drucker-Tab und Bibliothek fragten ununterbrochen den Stresstest-Status ab, solange sie offen waren.',
+      'Kommt der Notaus, während eine Druckdatei hochlädt, startet der Druck danach nicht mehr. Befehle an den Drucker, die er nicht bestätigt, nimmt Printloom zurück; bisher kamen sie nach dem Wiederverbinden doch noch an (etwa ein „Druck starten“, das schon als gescheitert galt).',
+      'Farm und Stresstest starten nicht, solange der Arm noch eine Handfahrt ausführt. Der Notaus sperrt die Geräte jetzt sofort, auch wenn Klipper nicht antwortet.',
+      'Filament laden/entladen geht in der Farm-Pause wieder, und ein zweiter Drucker, den die Farm nicht bedient, bleibt während der Farm bedienbar.',
+    ],
+    en: [
+      'CHECK BEFORE EVERY MOVE INTO THE PRINTER: before the arm places or ejects a plate or a file starts, Printloom asks the printer afresh. If it is still printing or its state is unknown, the farm waits briefly and then pauses with the reason. Until now it moved blindly, even into a running print.',
+      'Printloom now remembers what is on the build plate. If, according to Printloom, a plate is still there (for example after a skipped or failed job), the farm does not put a second one on top but pauses: remove the plate, then resume. Likewise if the gripper still holds a plate before picking one up.',
+      'The farm no longer starts while the printer is printing.',
+      '“CONNECTION LOST” NOW PAUSES. It used to mean “skip job”: the next job then moved into the print that simply kept running on the printer. This also applies if you saved “skip” earlier; the option is gone.',
+      'A failed print is only retried while nothing has been printed yet, and the default number of retries is now 0. Until now the second attempt printed onto the remains of the first.',
+      'When the farm skips a print (minimum print time, stall), it now also cancels it on the printer. Until now it kept printing.',
+      'If a move hangs and you resume after the pause, the job starts over (before the print started) or ends as an error (after). Until now it stayed “running” forever.',
+      'The snapshot at the end of a print has a fixed time limit and takes a single image. A camera that delivers an endless stream or does not answer used to stop the farm.',
+      'FIXED (from v1.1.44): the Printer tab and the library kept polling the stress test status for as long as they were open.',
+      'If the emergency stop comes while a print file is uploading, the print no longer starts afterwards. Commands the printer does not confirm are withdrawn; until now they still arrived after reconnecting (for example a “start print” already reported as failed).',
+      'Farm and stress test do not start while the arm is still doing a manual move. The emergency stop now locks the devices immediately, even if Klipper does not answer.',
+      'Loading/unloading filament works again while the farm is paused, and a second printer that the farm does not use stays usable while the farm runs.',
+    ],
+  },
+  {
     version: '1.1.44',
     de: [
       'NUR EINER BEWEGT DEN ARM: Solange die Auto Farm oder der Stresstest läuft, sind Joggen, G-code, Referenzfahrt und die Testfahrten im Drucker-Tab gesperrt; oben steht, warum. Bisher konnte ein Klick im Drucker-Tab den Arm mitten in eine Bewegung der Farm schicken. Pausierst du die Farm, darfst du den Arm von Hand fahren; die Farm fährt danach zuerst eine Referenzfahrt.',

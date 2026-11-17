@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { autofarmService } from './api'
 import { useFarmStatusStream } from './useFarmStatusStream'
 import { useAutoRefresh } from './useAutoRefresh'
@@ -29,11 +29,15 @@ export function useMotionLock() {
   const [farm, setFarm] = useState(null)
   const [stress, setStress] = useState(null)
   useFarmStatusStream(setFarm)
-  useAutoRefresh(() => {
+  // useCallback: useAutoRefresh hängt am Funktions-Objekt. Eine neue Funktion je
+  // Render startete den Effekt neu, der sofort fragte, die Antwort renderte neu …
+  // (v1.1.44: Anfrage-Schleife, solange Drucker-Tab oder Bibliothek offen war).
+  const loadStress = useCallback(() => {
     autofarmService.stressStatus()
       .then(r => setStress(r.data))
       .catch(e => console.warn('Stresstest-Status:', e?.message || e))
-  }, 5000)
+  }, [])
+  useAutoRefresh(loadStress, 5000)
   const r = motionLockReason(farm, stress)
   return { arm: text(r.arm), printer: text(r.printer) }
 }

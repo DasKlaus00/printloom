@@ -1427,6 +1427,10 @@ const EN_STRINGS = {
   // Notaus-Baustein in der Kopfzeile (seit v1.1.43)
   'Fortsetzen': 'Resume',
   'Notaus: Arm sofort anhalten': 'Emergency stop: halt the arm immediately',
+  // Fehlerstrategie und Tore (seit v1.1.45)
+  'Drucker nach mehreren Reconnects nicht erreichbar — der Druck läuft am Gerät weiter': 'Printer unreachable after several reconnects — the print keeps running on the printer',
+  '„Platte auswerfen & weiter": Bett auf Z200, Tür öffnen, Platte auswerfen und ins Fach einlagern — dann startet der nächste Job automatisch. „Job überspringen" lässt die fehlgeschlagene Platte im Drucker; die Farm hält dann vor dem nächsten Einlegen an, bis du sie entnommen hast.': '“Eject plate & continue”: bed to Z200, open the door, eject the plate and store it in its slot — then the next job starts automatically. “Skip job” leaves the failed plate in the printer; the farm then stops before the next plate goes in, until you have removed it.',
+  'Wiederholt wird nur, solange noch nichts gedruckt wurde (sonst druckt der zweite Versuch auf die Reste des ersten). Vorgabe: 0.': 'A retry only happens while nothing has been printed yet (otherwise the second attempt prints onto the remains of the first). Default: 0.',
   // Arm-Belegung und Direktdruck (seit v1.1.44)
   'Stresstest läuft — erst stoppen': 'Stress test running — stop it first',
   'Auto Farm läuft — erst pausieren oder stoppen': 'Auto Farm is running — pause or stop it first',

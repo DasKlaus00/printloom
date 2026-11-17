@@ -70,9 +70,10 @@ export default function EmergencyStop({ compact = false }) {
     )
   }
 
+  // Kein eigenes Banner in der großen Form: Die kompakte Form in der Kopfzeile (bzw.
+  // Handy-Ansicht) zeigt es schon, sonst stünde es in der Steuerung doppelt.
   return (
     <>
-      {banner}
       <div className="flex gap-3">
         <button onClick={stop} className="flex-1 btn btn-danger">
           {icon}{tr('Notaus')}
