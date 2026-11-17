@@ -221,16 +221,30 @@
 
 /* ── Auto-Farm-Dashboard (react-grid-layout) ───────────────── */
 /* Jedes Panel füllt seine Rasterzelle; langer Inhalt scrollt intern. */
-.dashboard-grid .react-grid-item > .panel-fill {
+/* Jedes Panel füllt seine Rasterzelle (sonst ist es nur inhaltshoch, und neben-
+   einander liegende Panels wirken trotz gleicher Zellhöhe verschieden groß). Das
+   ERSTE Kind füllt die Zelle und scrollt selbst, falls der Inhalt höher ist. Bis
+   v1.1.67 galt das nur für eine direkte `.card` — die Phasen-Karte (in einem
+   Wrapper) und die Kamera (höher als die Zelle) liefen über die Nachbarn. Der
+   Container erlaubt Regeln nach der Panel-Breite (@container, .cq-hide-narrow).
+   Wichtig: react-grid-layout setzt `react-grid-item` auf GENAU das div mit
+   .panel-fill (kein Eltern-Element) — `.react-grid-item > .panel-fill` griff nie. */
+.dashboard-grid .react-grid-item.panel-fill {
   height: 100%;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
 }
-/* Die Karte füllt ihre Rasterzelle komplett aus (sonst ist sie nur inhaltshoch →
-   nebeneinander liegende Panels wirken trotz gleicher Zellhöhe unterschiedlich groß).
-   Eigener Scroll, falls der Inhalt höher als die Zelle ist. */
-.dashboard-grid .react-grid-item > .panel-fill > .card {
-  height: 100%;
-  overflow: auto;
+.dashboard-grid .react-grid-item.panel-fill > :first-child {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+/* Kurztexte, die in schmalen Panels nur Platz kosten (z. B. Kamera-Hinweis). */
+@container (max-width: 360px) {
+  .cq-hide-narrow { display: none; }
 }
 /* Platzhalter (Zielposition beim Ziehen) */
 .dashboard-grid .react-grid-placeholder {

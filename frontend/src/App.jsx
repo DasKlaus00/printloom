@@ -69,6 +69,7 @@ import ThemeToggle from './components/ThemeToggle'
 import { learnFromAms } from './services/amsLearn'
 import { loadLangPacks, useLanguage } from './services/i18n'
 import { useFarmStatusStream } from './services/useFarmStatusStream'
+import { tabTitle, farmTitleState } from './services/tabTitle'
 import { VERSION } from './version'
 
 /* ── URL ↔ page-id mapping ──────────────────────────────────── */
@@ -378,7 +379,7 @@ function App() {
     history:       'Historie',
     library:       'Bibliothek',
     projekt:       'Projekt',
-    rack:          'Rack Manager',
+    rack:          'Regal',
     drucker:       'Drucker',
     configuration: 'Konfiguration',
     system:        'System',
@@ -391,9 +392,11 @@ function App() {
   // Die Kopfzeile nennt die Seite nicht mehr (das tut die Überschrift der Seite,
   // wie in der Prüfplanung) — der Browser-Tab schon.
   const currentTitle = tr(pageTitle[currentPage] ?? '')
+  // Eine Stelle für den Tab-Titel (services/tabTitle.js), mit Fortschritt der Farm.
+  const titleFarm = farmTitleState(farmStatus)
   useEffect(() => {
-    document.title = currentTitle ? `${currentTitle} · Printloom` : 'Printloom'
-  }, [currentTitle])
+    document.title = tabTitle(currentTitle, titleFarm)
+  }, [currentTitle, titleFarm.running, titleFarm.progress, titleFarm.fileName]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Render a page — lazy mount, never unmount ────────────── */
   // Components are only created on first visit, then kept in the DOM

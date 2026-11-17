@@ -147,3 +147,77 @@ export function mergeChange(prevByBp, allByBp) {
 export function shouldPersist({ editing, loaded }) {
   return !!editing && !!loaded
 }
+
+
+/* ── Auto Farm je Rasterbreite (seit v1.1.68) ───────────────────────────────────
+   Gemessen an der Breite des Rasters (nicht am Fenster): Bei offener Seitenleiste
+   ist das Raster eines Laptops (1366 px) rund 1100 px breit. Bis v1.1.67 hatte die
+   Auto Farm EINE Anordnung für 24 Spalten; auf dem Laptop drängten sich die Panels,
+   am Handy waren sie unbenutzbar. */
+export const FARM_BREAKPOINTS = { xl: 1500, lg: 1100, md: 700, xs: 0 }
+export const FARM_COLS = { xl: 24, lg: 24, md: 12, xs: 1 }
+export const FARM_GRID_VERSION = 3
+
+const fm = (arr) => arr.map(l => {
+  const d = DEFAULT_LAYOUT.find(x => x.i === l.i)
+  return { ...l, minW: Math.min(d.minW, l.w), minH: d.minH }
+})
+
+export const FARM_LAYOUTS = {
+  xl: DEFAULT_LAYOUT,
+  lg: fm([
+    { i: 'camera',   x: 0,  y: 0,  w: 6,  h: 30 },
+    { i: 'phases',   x: 0,  y: 30, w: 6,  h: 16 },
+    { i: 'queue',    x: 6,  y: 0,  w: 10, h: 46 },
+    { i: 'step',     x: 16, y: 0,  w: 8,  h: 6  },
+    { i: 'rack',     x: 16, y: 6,  w: 8,  h: 24 },
+    { i: 'activity', x: 16, y: 30, w: 8,  h: 16 },
+  ]),
+  md: fm([
+    { i: 'step',     x: 0, y: 0,  w: 12, h: 6  },
+    { i: 'camera',   x: 0, y: 6,  w: 6,  h: 30 },
+    { i: 'rack',     x: 6, y: 6,  w: 6,  h: 30 },
+    { i: 'queue',    x: 0, y: 36, w: 12, h: 40 },
+    { i: 'phases',   x: 0, y: 76, w: 6,  h: 16 },
+    { i: 'activity', x: 6, y: 76, w: 6,  h: 16 },
+  ]),
+  // Handy: eine Spalte in der Reihenfolge, die man unterwegs braucht.
+  xs: fm([
+    { i: 'step',     x: 0, y: 0,   w: 1, h: 6  },
+    { i: 'camera',   x: 0, y: 6,   w: 1, h: 24 },
+    { i: 'queue',    x: 0, y: 30,  w: 1, h: 40 },
+    { i: 'rack',     x: 0, y: 70,  w: 1, h: 26 },
+    { i: 'activity', x: 0, y: 96,  w: 1, h: 16 },
+    { i: 'phases',   x: 0, y: 112, w: 1, h: 16 },
+  ]),
+}
+
+export function mergeFarmLayouts(saved) {
+  const out = {}
+  for (const bp of Object.keys(FARM_LAYOUTS)) {
+    out[bp] = sanitizeLayout(saved?.[bp], FARM_LAYOUTS[bp], FARM_COLS[bp])
+  }
+  return out
+}
+
+/* Gespeichertes Farm-Layout → Fassungen je Breite. Bis Raster-Version 2 gab es nur
+   EIN Layout (24 Spalten): Es gilt dann für xl und lg weiter; md und xs kommen aus
+   dem Standard. Version 1 (12 Spalten) wird vorher ×2 gehoben. */
+export function migrateFarmLayout(saved) {
+  const d = saved || {}
+  if ((d.grid_v ?? 1) >= FARM_GRID_VERSION && d.layouts && Object.keys(d.layouts).length) {
+    return mergeFarmLayouts(d.layouts)
+  }
+  const one = migrateLayout(d.layout, d.grid_v)
+  if (Array.isArray(one) && one.length) {
+    const flat = sanitizeLayout(one, DEFAULT_LAYOUT, COLS)
+    return mergeFarmLayouts({ xl: flat, lg: flat })
+  }
+  return mergeFarmLayouts({})
+}
+
+/* Welche Fassung gilt bei dieser Rasterbreite? */
+export function breakpointFor(width, bps) {
+  const sorted = Object.entries(bps).sort((a, b) => b[1] - a[1])
+  return (sorted.find(([, min]) => width >= min) || sorted[sorted.length - 1])[0]
+}

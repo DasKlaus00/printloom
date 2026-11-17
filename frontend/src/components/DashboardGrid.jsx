@@ -71,7 +71,8 @@ export default function DashboardGrid({ layout, editing, onLayoutChange, childre
 }
 
 /* ── Startseite: responsives Raster ────────────────────────────────────────── */
-export function ResponsiveDashboardGrid({ layouts, editing, onLayoutChange, children }) {
+export function ResponsiveDashboardGrid({ layouts, editing, onLayoutChange, children,
+  breakpoints = HOME_BREAKPOINTS, cols = HOME_COLS, rowHeight = HOME_ROW_HEIGHT, margin = [12, 12] }) {
   const [ref, width] = useMeasuredWidth()
   return (
     <div ref={ref}>
@@ -80,10 +81,10 @@ export function ResponsiveDashboardGrid({ layouts, editing, onLayoutChange, chil
           className={`dashboard-grid ${editing ? 'is-editing' : ''}`}
           width={width}
           layouts={layouts}
-          breakpoints={HOME_BREAKPOINTS}
-          cols={HOME_COLS}
-          rowHeight={HOME_ROW_HEIGHT}
-          margin={[12, 12]}
+          breakpoints={breakpoints}
+          cols={cols}
+          rowHeight={rowHeight}
+          margin={margin}
           containerPadding={[0, 0]}
           isDraggable={editing}
           isResizable={editing}

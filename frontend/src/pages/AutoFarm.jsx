@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { apiError } from '../services/apiError'
 import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService, systemService } from '../services/api'
 import { parseNumber, rackSaveError } from '../services/rackForm'
-import DashboardGrid, { PANELS, DEFAULT_LAYOUT, mergeLayout, GRID_VERSION } from '../components/DashboardGrid'
-import { migrateLayout, mergeVisible, shouldPersist } from '../services/dashboardLayout'
+import { ResponsiveDashboardGrid, PANELS, ROW_HEIGHT } from '../components/DashboardGrid'
+import {
+  FARM_BREAKPOINTS, FARM_COLS, FARM_LAYOUTS, FARM_GRID_VERSION, migrateFarmLayout, mergeChange, shouldPersist,
+} from '../services/dashboardLayout'
 import { parseSlotKey, slotsNeeded, autoSlot, checkClearance, slotTolerance } from '../services/rackUtils'
 import { amsMissing, colorDist, amsAutoMap, EXACT_COLOR_THRESHOLD, AMS_COLOR_THRESHOLD } from '../services/amsUtils'
 import { colorLabel } from '../services/colorNames'
@@ -407,17 +410,21 @@ function guessCamType(url) {
 
 /* Ein Stream (Typ aus URL erkannt: WebRTC/HLS/MJPEG). Blendet sich bei Fehler
    sauber aus (statt kaputtem Bild) und bietet einen Reconnect-Knopf. */
-function StreamView({ url, portrait, label }) {
+function StreamView({ url, label, grow = 'flex-1' }) {
   const { tr } = useLanguage()
+  // MJPEG lädt nur auf der sichtbaren Seite (wie X1CView): Ein verstecktes <img>
+  // zog bis v1.1.67 weiter Bilder vom Kamera-Server.
+  const active = usePageActive()
   const [err, setErr] = useState(false)
   const [k,   setK]   = useState(0)
   useEffect(() => { setErr(false); setK(x => x + 1) }, [url])
   const reconnect = () => { setErr(false); setK(x => x + 1) }
   const type = guessCamType(url)
   const src  = type === 'hls' ? hlsUrlFrom(url) : type === 'webrtc' ? whepUrlFrom(url) : url
-  const aspect = portrait ? '9/16' : '16/9'
+  // Die Kachel füllt ihren Teil des Panels, das Bild passt sich ein (statt eines
+  // festen Seitenverhältnisses, das bis v1.1.67 über die Rasterzelle hinauswuchs).
   return (
-    <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: aspect, maxWidth: '100%' }}>
+    <div className={`relative ${grow} min-h-0 w-full bg-black rounded-lg overflow-hidden`}>
       {!url ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1 px-3 text-center">
           <p className="text-[10px]">{label}</p>
@@ -430,11 +437,13 @@ function StreamView({ url, portrait, label }) {
           <button onClick={reconnect} className="btn btn-ghost btn-sm">{tr('Neu verbinden')}</button>
         </div>
       ) : type === 'webrtc' ? (
-        <WhepVideo key={k} src={src} onError={() => setErr(true)} className="w-full h-full object-contain" />
+        <WhepVideo key={k} src={src} onError={() => setErr(true)} className="absolute inset-0 w-full h-full object-contain" />
       ) : type === 'hls' ? (
-        <HlsVideo key={k} src={src} onError={() => setErr(true)} className="w-full h-full object-contain" />
+        <HlsVideo key={k} src={src} onError={() => setErr(true)} className="absolute inset-0 w-full h-full object-contain" />
+      ) : active ? (
+        <img key={k} src={src} alt={label} onError={() => setErr(true)} onLoad={() => setErr(false)} className="absolute inset-0 w-full h-full object-contain" />
       ) : (
-        <img key={k} src={src} alt={label} onError={() => setErr(true)} onLoad={() => setErr(false)} className="w-full h-full object-contain" />
+        <div className="absolute inset-0 flex items-center justify-center text-surface-600 text-[10px]">{tr('Pausiert (Seite im Hintergrund)')}</div>
       )}
       {url && !err && (
         <>
@@ -450,7 +459,7 @@ function StreamView({ url, portrait, label }) {
 
 /* Eingebaute X1C-Kamera (proprietäres Port-6000-Protokoll übers Backend).
    Fallback für die obere Kachel, wenn keine Bambu-URL hinterlegt ist. */
-function X1CView({ bambuId }) {
+function X1CView({ bambuId, grow = 'flex-1' }) {
   const { tr } = useLanguage()
   const [live,  setLive]  = useState(false)
   const [ready, setReady] = useState(false)
@@ -492,16 +501,16 @@ function X1CView({ bambuId }) {
   }, [])
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-surface-500">{tr('Oben · Drucker-Kamera (direkt)')}</span>
+    <div className={`flex flex-col gap-1.5 ${grow} min-h-0`}>
+      <div className="flex items-center justify-between gap-2 shrink-0">
+        <span className="text-[10px] text-surface-500 truncate">{tr('Oben · Drucker-Kamera (direkt)')}</span>
         <button onClick={() => live ? stop() : connect()} disabled={!bambuId}
           className={`btn btn-sm px-2 ${live ? 'btn-primary' : 'btn-ghost'}`}
           title={tr('LAN-Liveview muss am Drucker aktiv sein')}>
           {live ? tr('⏹ Stopp') : tr('📷 Live')}
         </button>
       </div>
-      <div ref={wrapRef} className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '16/9', maxWidth: '100%' }}>
+      <div ref={wrapRef} className="relative flex-1 min-h-0 w-full bg-black rounded-lg overflow-hidden">
         {live ? (
           err ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-600 gap-1.5 px-3 text-center">
@@ -513,7 +522,7 @@ function X1CView({ bambuId }) {
             visible ? (
               <img key={key} src={`${printerService.cameraStreamUrl(bambuId)}?t=${key}`} alt="Drucker-Kamera Live"
                 onError={() => setErr(e => e || tr('Stream-Verbindung abgebrochen'))}
-                className="w-full h-full object-contain" />
+                className="absolute inset-0 w-full h-full object-contain" />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center text-surface-600 text-[10px]">{tr('Pausiert (Seite im Hintergrund)')}</div>
             )
@@ -536,12 +545,14 @@ function X1CView({ bambuId }) {
    Stream), daher laden wir das Einzelbild im ~1-s-Takt nach (≈1 fps Live-Ansicht).
    Doppelpuffer: das sichtbare Bild wird erst getauscht, wenn das nächste geladen
    ist → kein Flackern, keine Blackframes. */
-function HaPollView({ deviceId, label, portrait = false }) {
+function HaPollView({ deviceId, label, grow = 'flex-1' }) {
   const { tr } = useLanguage()
   const [src, setSrc] = useState(null)
   const [err, setErr] = useState(false)
+  // Nur auf der sichtbaren Seite nachladen (bis v1.1.67 lief der Takt auch versteckt).
+  const active = usePageActive()
   useEffect(() => {
-    if (!deviceId) return
+    if (!deviceId || !active) return
     let alive = true, timer
     const load = () => {
       const u = `${printerService.haCameraStreamUrl(deviceId)}/frame?t=${Date.now()}`
@@ -552,12 +563,11 @@ function HaPollView({ deviceId, label, portrait = false }) {
     }
     load()
     return () => { alive = false; clearTimeout(timer) }
-  }, [deviceId])
-  const aspect = portrait ? '9/16' : '16/9'
+  }, [deviceId, active])
   return (
-    <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: aspect, maxWidth: '100%' }}>
+    <div className={`relative ${grow} min-h-0 w-full bg-black rounded-lg overflow-hidden`}>
       {src ? (
-        <img src={src} alt={label} className="w-full h-full object-contain" />
+        <img src={src} alt={label} className="absolute inset-0 w-full h-full object-contain" />
       ) : !err ? (
         <div className="absolute inset-0 flex items-center justify-center text-surface-500 text-[10px]">{tr('Verbinde mit Home Assistant …')}</div>
       ) : null}
@@ -582,11 +592,11 @@ function HaPollView({ deviceId, label, portrait = false }) {
 function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, onToggle, hideCam2, onToggleCam2 }) {
   const { tr } = useLanguage()
   return (
-    <div className="card p-2.5 space-y-2.5">
-      <div className="flex items-center justify-between gap-2">
+    <div className="card p-2.5 flex flex-col gap-2.5 h-full">
+      <div className="flex items-center justify-between gap-2 shrink-0">
         <p className="section-label mb-0">{tr('Kameras')}</p>
-        <div className="flex items-center gap-2">
-          <span className="text-[9px] text-surface-600 hidden sm:inline">{tr('Konfiguration → Kameras')}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[9px] text-surface-600 cq-hide-narrow truncate">{tr('Konfiguration → Kameras')}</span>
           {cameraOn && (
             <button
               onClick={onToggleCam2}
@@ -609,16 +619,17 @@ function CameraPanel({ bambuId, webcamUrl, webcamUrlTop, haCamReady, cameraOn, o
       {cameraOn ? (
         <>
           {/* Oben: X1C via Home Assistant > externe Bambu-URL > eingebaute X1C (Port 6000) */}
+          {/* Zwei Kameras teilen sich die Höhe 2:3 (unten hochkant), eine füllt allein. */}
           {haCamReady
-            ? <HaPollView deviceId={bambuId} label={tr('X1C (Home Assistant)')} />
+            ? <HaPollView deviceId={bambuId} label={tr('X1C (Home Assistant)')} grow={hideCam2 ? 'flex-1' : 'flex-[2]'} />
             : webcamUrlTop
-              ? <StreamView url={webcamUrlTop} portrait={false} label={tr('Bambu (oben)')} />
-              : <X1CView bambuId={bambuId} />}
+              ? <StreamView url={webcamUrlTop} label={tr('Bambu (oben)')} grow={hideCam2 ? 'flex-1' : 'flex-[2]'} />
+              : <X1CView bambuId={bambuId} grow={hideCam2 ? 'flex-1' : 'flex-[2]'} />}
           {/* Unten: Hochkant — optional ausblendbar */}
-          {!hideCam2 && <StreamView url={webcamUrl} portrait={true} label={tr('Hochkant (unten)')} />}
+          {!hideCam2 && <StreamView url={webcamUrl} label={tr('Hochkant (unten)')} grow="flex-[3]" />}
         </>
       ) : (
-        <div className="flex flex-col items-center justify-center text-surface-600 gap-1 py-8 text-center">
+        <div className="flex-1 flex flex-col items-center justify-center text-surface-600 gap-1 py-8 text-center">
           <p className="text-[11px]">{tr('Kamera aus')}</p>
           <p className="text-[9px] text-surface-700">{tr('Kein Livebild, keine automatischen Snapshots')}</p>
         </div>
@@ -759,6 +770,10 @@ function AutoFarm({ setCurrentPage } = {}) {
   const [addCount,        setAddCount]        = useState(1)
   const [templates,       setTemplates]       = useState(loadTemplates)
   const [tplOpen,         setTplOpen]         = useState(false)
+  // Lage des Vorlagen-Menüs (fixed, am Knopf ausgerichtet; nach oben, wenn unten kein Platz).
+  const tplBtnRef  = useRef(null)
+  const tplMenuRef = useRef(null)
+  const [tplPos, setTplPos] = useState(null)
   const [tplName,         setTplName]         = useState('')
   const [plannerOpen,     setPlannerOpen]     = useState(false)
   const [showDone,        setShowDone]        = useState(false)   // fertige Jobs ausgeblendet (→ Historie)
@@ -776,7 +791,8 @@ function AutoFarm({ setCurrentPage } = {}) {
   const [heightMarginPct, setHeightMarginPct] = useState(15)
   // Frei konfigurierbares Dashboard (Position/Größe/Ein-Aus der Panels, serverseitig)
   const [editingDash, setEditingDash] = useState(false)
-  const [dashLayout,  setDashLayout]  = useState(DEFAULT_LAYOUT)
+  // Je Rasterbreite eine Anordnung (seit v1.1.68), wie auf der Startseite.
+  const [dashLayouts, setDashLayouts] = useState(FARM_LAYOUTS)
   const [dashHidden,  setDashHidden]  = useState([])
   const [logFilter,   setLogFilter]   = useState('')   // Q2: Aktivitäts-Log durchsuchen
   const [dragId,      setDragId]      = useState(null) // Q1: gezogener Job (Drag-&-Drop)
@@ -832,20 +848,21 @@ function AutoFarm({ setCurrentPage } = {}) {
     systemService.getDashboardLayout()
       .then(r => {
         const d = r.data || {}
-        // Altes Raster (Version 1) ×2 heben, dann bereinigen (kaputte Werte, Ränder).
-        const layout = migrateLayout(d.layout, d.grid_v)
-        if (Array.isArray(layout) && layout.length) setDashLayout(mergeLayout(layout))
+        // Alte Fassungen (EIN Layout, Raster-Version 1/2) heben, dann bereinigen.
+        setDashLayouts(migrateFarmLayout(d))
         if (Array.isArray(d.hidden)) setDashHidden(d.hidden)
       })
       .catch(() => {})
       .finally(() => { dashLoadedRef.current = true })
   }, [])
 
-  const persistDash = useCallback((layout, hidden) => {
+  // `layout` (= lg) bleibt mit gespeichert: Eine ältere Version (bis v1.1.67) liest nur das.
+  const persistDash = useCallback((layouts, hidden) => {
     if (!dashLoadedRef.current) return          // nicht während des Erst-Ladens speichern
     clearTimeout(dashSaveRef.current)
     dashSaveRef.current = setTimeout(() => {
-      systemService.saveDashboardLayout({ layout, hidden, grid_v: GRID_VERSION }).catch(() => {})
+      systemService.saveDashboardLayout({ layouts, layout: layouts.lg, hidden, grid_v: FARM_GRID_VERSION })
+        .catch(e => console.warn('Layout nicht gespeichert:', e?.message || e))
     }, 600)
   }, [])
 
@@ -855,10 +872,10 @@ function AutoFarm({ setCurrentPage } = {}) {
   // melden ebenfalls ein Layout; gespeichert wurde es bis v1.1.66 jedes Mal.
   const editingDashRef = useRef(false)
   editingDashRef.current = editingDash
-  const onDashLayoutChange = useCallback((lay) => {
-    if (!shouldPersist({ editing: editingDashRef.current, loaded: dashLoadedRef.current })) return
-    setDashLayout(prev => {
-      const next = mergeVisible(prev, lay)
+  const onDashLayoutChange = useCallback((_cur, all) => {
+    if (!all || !shouldPersist({ editing: editingDashRef.current, loaded: dashLoadedRef.current })) return
+    setDashLayouts(prev => {
+      const next = mergeChange(prev, all)
       persistDash(next, dashHidden)
       return next
     })
@@ -867,16 +884,18 @@ function AutoFarm({ setCurrentPage } = {}) {
   const toggleDashPanel = useCallback((id) => {
     setDashHidden(prev => {
       const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-      persistDash(dashLayout, next)
+      persistDash(dashLayouts, next)
       return next
     })
-  }, [dashLayout, persistDash])
+  }, [dashLayouts, persistDash])
 
   const resetDash = useCallback(() => {
-    setDashLayout(DEFAULT_LAYOUT)
+    setDashLayouts(FARM_LAYOUTS)
     setDashHidden([])
     dashLoadedRef.current = true
-    systemService.saveDashboardLayout({ layout: DEFAULT_LAYOUT, hidden: [], grid_v: GRID_VERSION }).catch(() => {})
+    systemService.saveDashboardLayout({ layouts: FARM_LAYOUTS, layout: FARM_LAYOUTS.lg, hidden: [],
+                                        grid_v: FARM_GRID_VERSION })
+      .catch(e => console.warn('Layout nicht gespeichert:', e?.message || e))
     showFeedback(tr('Dashboard auf Standard zurückgesetzt'))
   }, [])
 
@@ -934,17 +953,8 @@ function AutoFarm({ setCurrentPage } = {}) {
      aktuellen Regalzustands — nur der startende/druckende Job erscheint dann im
      Regal, die wartenden bewusst nicht. (Früher gab es hier eine Vorschau.) */
 
-  /* ── Browser tab title ───────────────────────────────────── */
-  useEffect(() => {
-    if (!running) { document.title = 'Printloom'; return }
-    const active = jobs.find(j => j.id === curJobId)
-    if (active?.status === 'printing' && active.progress > 0) {
-      document.title = `[${active.progress}%] ${active.fileName} — Printloom`
-    } else {
-      document.title = '[Auto Farm] Printloom'
-    }
-  }, [running, curJobId, jobs])
-  useEffect(() => () => { document.title = 'Printloom' }, [])
+  /* Tab-Titel: App.jsx (services/tabTitle.js) — eine Stelle. */
+
 
   /* ── Farm status polling ─────────────────────────────────── */
   const fetchStatus = useCallback(async () => {
@@ -971,6 +981,35 @@ function AutoFarm({ setCurrentPage } = {}) {
   }, [farmStatus?.running, farmStatus?.stop_reason]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const pageActive = usePageActive()
+
+  // Vorlagen-Menü: Lage, Schließen (erst NACH pageActive — sonst Zugriff vor der Deklaration).
+  useEffect(() => {
+    if (!tplOpen) { setTplPos(null); return undefined }
+    if (!pageActive) { setTplOpen(false); return undefined }
+    const r = tplBtnRef.current?.getBoundingClientRect()
+    if (!r) return undefined
+    const right = Math.max(8, window.innerWidth - r.right)
+    const unten = window.innerHeight - r.bottom
+    setTplPos(unten < 320 && r.top > unten
+      ? { right, bottom: window.innerHeight - r.top + 4, top: 'auto' }
+      : { right, top: r.bottom + 4, bottom: 'auto' })
+    const close = () => setTplOpen(false)
+    const onDown = (e) => {
+      if (tplMenuRef.current?.contains(e.target) || tplBtnRef.current?.contains(e.target)) return
+      close()
+    }
+    const onKey = (e) => { if (e.key === 'Escape') close() }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('resize', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [tplOpen, pageActive])
   useEffect(() => {
     if (running && pageActive) {
       // Status läuft jetzt über den WebSocket (P6). Während die Farm läuft ziehen
@@ -1632,9 +1671,11 @@ function AutoFarm({ setCurrentPage } = {}) {
       {pageActive && (feedback || !bambuId || paused
         || (running && !curJobId && !pendingJobs.length)
         || (running && !!curJobId && !jobs.find(j => j.id === curJobId))) && (
-        <div className="fixed top-2 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-1.5 max-w-[92vw] pointer-events-none">
+        // Unter der Kopfzeile (47 px, z-40): Bis v1.1.67 lagen die Hinweise darüber und
+        // verdeckten Logo, Statuspillen und Theme-Schalter (#74).
+        <div className="fixed top-[55px] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 w-max max-w-[92vw] pointer-events-none">
           {feedback && (
-            <div className={`pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full text-sm border shadow-xl backdrop-blur-md ${
+            <div className={`pointer-events-auto max-w-full min-w-0 flex items-center gap-2 px-4 py-1.5 rounded-full text-sm border shadow-xl backdrop-blur-md ${
               feedback.ok
                 ? 'bg-emerald-950/85 border-emerald-800 text-emerald-300'
                 : 'bg-red-950/85 border-red-800 text-red-300'
@@ -1644,22 +1685,22 @@ function AutoFarm({ setCurrentPage } = {}) {
             </div>
           )}
           {!bambuId && (
-            <div className="pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/85 border border-amber-800 text-amber-300 text-sm shadow-xl backdrop-blur-md">
+            <div className="pointer-events-auto max-w-full min-w-0 flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/85 border border-amber-800 text-amber-300 text-sm shadow-xl backdrop-blur-md">
               <span className="dot dot-amber shrink-0" /> <span className="truncate">{tr('Kein Bambu Lab Gerät konfiguriert — bitte erst unter Konfiguration → Geräte einrichten')}</span>
             </div>
           )}
           {paused && (
-            <div className="pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/85 border border-amber-800 text-amber-300 text-sm shadow-xl backdrop-blur-md">
+            <div className="pointer-events-auto max-w-full min-w-0 flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/85 border border-amber-800 text-amber-300 text-sm shadow-xl backdrop-blur-md">
               <span className="dot dot-amber animate-pulse shrink-0" /> <span className="truncate">{tr('Pausiert — warte auf Fortsetzen…')}</span>
             </div>
           )}
           {running && !curJobId && !pendingJobs.length && (
-            <div className="pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-800/90 border border-surface-700 text-surface-400 text-sm shadow-xl backdrop-blur-md">
+            <div className="pointer-events-auto max-w-full min-w-0 flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-800/90 border border-surface-700 text-surface-400 text-sm shadow-xl backdrop-blur-md">
               <span className="dot dot-gray animate-pulse shrink-0" /> <span className="truncate">{tr('Wartet auf neue Jobs — Dateien in der Datei-Bibliothek einreihen')}</span>
             </div>
           )}
           {running && !jobs.find(j => j.id === curJobId) && !!curJobId && (
-            <div className="pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-950/85 border border-blue-800 text-blue-300 text-sm shadow-xl backdrop-blur-md">
+            <div className="pointer-events-auto max-w-full min-w-0 flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-950/85 border border-blue-800 text-blue-300 text-sm shadow-xl backdrop-blur-md">
               <span className="dot dot-blue animate-pulse shrink-0" /> <span className="truncate">{tr('Auto Farm läuft im Server — Status wird live aktualisiert')}</span>
             </div>
           )}
@@ -1797,8 +1838,15 @@ function AutoFarm({ setCurrentPage } = {}) {
         </div>
       )}
 
-      {/* ── Frei konfigurierbares Dashboard-Raster ── */}
-      <DashboardGrid layout={dashLayout} editing={editingDash} onLayoutChange={onDashLayoutChange}>
+      {editingDash && (
+        <p className="text-[10px] text-surface-600 -mt-1">
+          {tr('Panel am Rahmen ziehen zum Verschieben, an der rechten unteren Ecke zum Größe-Ändern. Jede Bildschirmbreite hat ihre eigene Anordnung — am Handy liegt alles untereinander.')}
+        </p>
+      )}
+
+      {/* ── Frei konfigurierbares Dashboard-Raster, je Rasterbreite ── */}
+      <ResponsiveDashboardGrid layouts={dashLayouts} editing={editingDash} onLayoutChange={onDashLayoutChange}
+        breakpoints={FARM_BREAKPOINTS} cols={FARM_COLS} rowHeight={ROW_HEIGHT} margin={[14, 14]}>
         {[
           !dashHidden.includes('camera') && (
             <div key="camera" className="panel-fill">
@@ -1827,7 +1875,7 @@ function AutoFarm({ setCurrentPage } = {}) {
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 flex-wrap justify-end min-w-0">
               {/* B.3 Planer */}
               {activeJobs.length > 0 && (
                 <button
@@ -1839,12 +1887,16 @@ function AutoFarm({ setCurrentPage } = {}) {
               {/* Queue-Vorlagen */}
               <div className="relative">
                 <button
+                  ref={tplBtnRef}
                   onClick={() => setTplOpen(o => !o)}
                   className="btn btn-ghost btn-sm shrink-0"
                   title={tr('Warteschlangen-Vorlagen speichern/laden')}
                 >{tr('☰ Vorlagen')}{tplOpen ? ' ▲' : ' ▼'}</button>
-                {tplOpen && (
-                  <div className="absolute right-0 top-full mt-1 z-20 w-64 card p-2 space-y-2 shadow-xl border border-surface-700">
+                {tplOpen && tplPos && createPortal(
+                  // Am <body> statt im Panel: In einer kleinen Rasterzelle schnitt das Panel
+                  // das Menü bis v1.1.67 ab, und unter dem Nachbarpanel lag es verdeckt.
+                  <div ref={tplMenuRef} style={{ position: 'fixed', right: tplPos.right, top: tplPos.top, bottom: tplPos.bottom }}
+                    className="z-50 w-64 card p-2 space-y-2 shadow-xl border border-surface-700">
                     <div className="flex items-center gap-1">
                       <input
                         type="text"
@@ -1887,10 +1939,11 @@ function AutoFarm({ setCurrentPage } = {}) {
                         })
                       )}
                     </div>
-                  </div>
+                  </div>,
+                  document.body,
                 )}
               </div>
-              <span className="text-[11px] text-surface-500 italic px-1">
+              <span className="text-[11px] text-surface-500 italic px-1 min-w-0 truncate">
                 {tr('Jobs in der')} <span className="text-surface-300">{tr('Datei-Bibliothek')}</span> {tr('hinzufügen →')}
               </span>
             </div>
@@ -2328,9 +2381,9 @@ function AutoFarm({ setCurrentPage } = {}) {
           ),
           !dashHidden.includes('activity') && (
             <div key="activity" className="panel-fill">
-          {/* Activity log */}
-          <div className="card">
-            <div className="flex items-center justify-between mb-2">
+          {/* Activity log — füllt die Zelle (bis v1.1.67 fest max-h-52) */}
+          <div className="card flex flex-col">
+            <div className="flex items-center justify-between flex-wrap gap-y-1 mb-2 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
                 <p className="section-label shrink-0">{tr('Aktivität')}</p>
                 {seqProgress && (
@@ -2371,8 +2424,8 @@ function AutoFarm({ setCurrentPage } = {}) {
               const shown = logFilter ? farmLog.filter(l => l.toLowerCase().includes(logFilter.toLowerCase())) : farmLog
               if (!shown.length) return <p className="text-[10px] text-surface-700 py-2">{tr('Kein Treffer für „{0}"', logFilter)}</p>
               return (
-              <div className="space-y-0.5 font-mono text-[10px] max-h-52 overflow-y-auto">
-                {logFilter && <p className="text-[10px] text-surface-600 sticky top-0 bg-surface-900 py-0.5">{tr('{0} von {1} Zeilen', shown.length, farmLog.length)}</p>}
+              <div className="space-y-0.5 font-mono text-[10px] flex-1 min-h-0 overflow-y-auto">
+                {logFilter && <p className="text-[10px] text-surface-600 sticky top-0 bg-surface-800 py-0.5">{tr('{0} von {1} Zeilen', shown.length, farmLog.length)}</p>}
                 {shown.map((line, i) => (
                   <p key={i} className={
                     line.includes('FEHLER') ? 'text-red-400' :
@@ -2389,7 +2442,7 @@ function AutoFarm({ setCurrentPage } = {}) {
             </div>
           ),
         ].filter(Boolean)}
-      </DashboardGrid>
+      </ResponsiveDashboardGrid>
     </div>
   )
 }

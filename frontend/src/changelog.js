@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.68',
+    de: [
+      'AUTO FARM JE BILDSCHIRMBREITE: Wie die Startseite hat die Auto Farm jetzt eine eigene Anordnung für großen Monitor, Laptop, Tablet und Handy (dort eine Spalte). Eine bisher gespeicherte Anordnung gilt weiter für große Bildschirme und Laptops.',
+      'PANELS FÜLLEN IHRE ZELLE: Warteschlange, Regal, Schritt und Aktivität schließen bündig mit ihrer Zelle ab, das Log wächst mit der Zelle, und die Kamera passt sich ein, statt über das Panel darunter zu ragen. Bei zwei Kameras teilen sie sich die Höhe.',
+      'HINWEISE UNTER DER KOPFZEILE: Schwebende Hinweise (etwa „Kein Bambu Lab Gerät konfiguriert“) verdecken Logo, Statusanzeigen und Theme-Schalter nicht mehr und werden auf dem Handy gekürzt. Das Vorlagen-Menü der Warteschlange wird nicht mehr vom Panel abgeschnitten.',
+      'TAB-TITEL: Der Browser-Tab zeigt die geöffnete Seite und, während gedruckt wird, Fortschritt und Datei. Bisher überschrieb die versteckte Auto-Farm-Seite den Titel jeder anderen Seite.',
+      'Kamerabilder (MJPEG, Home Assistant) laden nur noch, wenn die Auto Farm sichtbar ist.',
+    ],
+    en: [
+      'AUTO FARM PER SCREEN WIDTH: like the home page, Auto Farm now has its own arrangement for a large monitor, laptop, tablet and phone (one column there). A previously saved arrangement keeps applying to large screens and laptops.',
+      'PANELS FILL THEIR CELL: queue, rack, step and activity end flush with their cell, the log grows with the cell, and the camera fits in instead of reaching over the panel below. With two cameras they share the height.',
+      'HINTS BELOW THE HEADER: floating hints (such as “No Bambu Lab device configured”) no longer cover the logo, status indicators and theme switch, and are shortened on a phone. The queue templates menu is no longer cut off by its panel.',
+      'TAB TITLE: the browser tab shows the open page and, while printing, progress and file. Until now the hidden Auto Farm page overwrote the title of every other page.',
+      'Camera images (MJPEG, Home Assistant) only load while Auto Farm is visible.',
+    ],
+  },
+  {
     version: '1.1.67',
     de: [
       'RASTER SPRINGEN NICHT MEHR: Startseite und Auto Farm messen ihre Breite selbst und zeichnen erst mit der echten Breite. Bisher lagen die Panels nach einem Seitenwechsel kurz links übereinander und glitten zurück.',
