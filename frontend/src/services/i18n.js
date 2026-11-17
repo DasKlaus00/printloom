@@ -1438,6 +1438,9 @@ const EN_STRINGS = {
   'Regal {0}: {1}': 'Rack {0}: {1}',
   'muss über den Fächern liegen (> {0}) oder 0 sein': 'must be above the slots (> {0}) or 0',
   'Fächer {0} sind belegt — erst im Rack Manager leeren': 'Slots {0} are occupied — empty them in the Rack Manager first',
+  // Verwaiste Drucker-Positionen (seit v1.1.54)
+  'Positionen übernehmen?': 'Adopt positions?',
+  'Positionen von „{0}“ für „{1}“ übernehmen? Sie gehörten zu einem Gerät, das es nicht mehr gibt. „Abbrechen“ legt neue Positionen an, die eingemessen werden müssen.': 'Adopt the positions of “{0}” for “{1}”? They belonged to a device that no longer exists. “Cancel” creates new positions that need to be calibrated.',
   // Positionsfelder nie 0 (seit v1.1.53)
   'Nicht gespeichert — Felder ohne Zahl: {0}': 'Not saved — fields without a number: {0}',
   // Geometrie mit Revision (seit v1.1.52)

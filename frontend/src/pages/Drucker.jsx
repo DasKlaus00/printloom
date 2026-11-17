@@ -6,6 +6,7 @@ import { confirmDialog } from '../services/confirm'
 import { useMotionLock } from '../services/motionLock'
 import { saveGeometry } from '../services/geometryClient'
 import { numOrNull, invalidFields } from '../services/geometryDraft'
+import { reconcilePrinters, adoptBlock } from '../services/printerBlocks'
 import { findPrinter } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
 import TeachIn from '../components/TeachIn'
@@ -925,6 +926,9 @@ export default function Drucker() {
   const geomRev = useRef(null)
   const [geomStale, setGeomStale] = useState(false)
   const [draftErrors, setDraftErrors] = useState([])
+  // Offene Rückfrage „verwaiste Positionen übernehmen?" (sperrt den Autosave).
+  const [adoptAsk, setAdoptAsk] = useState(null)
+  const declinedAdopt = useRef(new Set())
   const armBusy = jog.busy || !!lock.arm
   const blocked = (reason) => { setJog({ busy: false, msg: reason, err: true }); return true }
   const [lastScript, setLastScript] = useState('')
@@ -1007,30 +1011,34 @@ export default function Drucker() {
      wer ein Gerät versehentlich löscht und neu anlegt, verliert sonst die
      eingemessenen Positionen. Gibt unverändert dieselbe Referenz zurück, sonst
      würde der Effekt unten sich selbst immer wieder auslösen. */
-  const reconcile = (ps, devs) => {
-    if (!devs.length) return ps
-    const taken = new Set()
-    const out = []
-    for (const [i, d] of devs.entries()) {
-      let idx = ps.findIndex((p, k) => !taken.has(k) && p.device_id === d.id)
-      if (idx < 0) idx = ps.findIndex((p, k) => !taken.has(k) && p.device_id == null)
-      if (idx < 0) { out.push(seedPrinter(out[out.length - 1] || ps[0], d, i)); continue }
-      taken.add(idx)
-      const p = ps[idx]
-      out.push(p.device_id === d.id && p.name === d.name && (p.model || '') === (d.model || '')
-        ? p
-        // Name und Modell gehören dem Gerät — hier stünden sie sonst ein zweites Mal.
-        : { ...p, device_id: d.id, name: d.name, model: d.model || p.model || '' })
-    }
-    const next = [...out, ...ps.filter((_, k) => !taken.has(k))]
-    return (next.length === ps.length && next.every((p, i) => p === ps[i])) ? ps : next
-  }
+  // Abgleich als reine Funktion (services/printerBlocks). Ein verwaister Block (Gerät
+  // gelöscht und neu angelegt) wird nicht still durch erfundene Positionen ersetzt,
+  // sondern als Übernahme-Kandidat gefragt; bis zur Antwort speichert der Autosave nicht.
+  useEffect(() => {
+    if (!hydrated.current || !printers.length || !devicesReady || adoptAsk) return
+    const { printers: next, adopt } = reconcilePrinters(printers, devices, seedPrinter,
+                                                        { declined: declinedAdopt.current })
+    if (next !== printers) setPrinters(next)
+    if (adopt.length) setAdoptAsk(adopt[0])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [devices, printers, devicesReady, adoptAsk])
 
   useEffect(() => {
-    if (!hydrated.current || !printers.length || !devicesReady) return
-    setPrinters(ps => reconcile(ps, devices))
+    if (!adoptAsk) return
+    let vorbei = false
+    confirmDialog({
+      title: tr('Positionen übernehmen?'),
+      message: tr('Positionen von „{0}“ für „{1}“ übernehmen? Sie gehörten zu einem Gerät, das es nicht mehr gibt. „Abbrechen“ legt neue Positionen an, die eingemessen werden müssen.', adoptAsk.blockName, adoptAsk.deviceName),
+      confirmLabel: tr('Übernehmen'), danger: false,
+    }).then(ok => {
+      if (vorbei) return
+      if (ok) setPrinters(ps => adoptBlock(ps, adoptAsk))
+      else declinedAdopt.current.add(adoptAsk.deviceId)
+      setAdoptAsk(null)
+    })
+    return () => { vorbei = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [devices, printers, devicesReady])
+  }, [adoptAsk])
 
   // Angezeigt (und gespeichert) wird ein Block je Gerät; ohne jedes Gerät genau einer,
   // damit sich die Anlage auch vor dem Anlegen des Druckers einmessen lässt.
@@ -1163,7 +1171,7 @@ export default function Drucker() {
     if (!hydrated.current || !printers.length || !rackReady || !devicesReady) return
     // Speichern liefert die Plausibilitätsprüfung mit zurück (Achsgrenzen) — so sieht
     // der Nutzer sofort, wenn ein Wert eine Bewegung aus der Achse fahren würde.
-    if (geomStale) return
+    if (geomStale || adoptAsk) return
     // Ein geleertes Positionsfeld ist ungültig (nie 0): erst speichern, wenn alle stimmen.
     const bad = invalidFields(geometry)
     setDraftErrors(bad)
@@ -1181,7 +1189,7 @@ export default function Drucker() {
         })
     }, 600)
     return () => clearTimeout(t)
-  }, [geometry, printers.length, rackReady, devicesReady, geomStale])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [geometry, printers.length, rackReady, devicesReady, geomStale, adoptAsk])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Eine andere Seite hat die Geometrie gespeichert → diese Kopie ist veraltet.
   useEffect(() => {

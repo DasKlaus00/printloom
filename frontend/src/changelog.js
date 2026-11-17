@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.54',
+    de: [
+      'EINGEMESSENE POSITIONEN GEHEN NICHT VERLOREN: Legt man ein Gerät neu an, nachdem das alte gelöscht wurde (oder nach einem Backup auf einem neuen Rechner), fragt der Drucker-Tab, ob die Positionen des alten übernommen werden sollen. Bisher bekam das neue Gerät erfundene Positionen (400 mm daneben), und das nächste Speichern löschte die eingemessenen.',
+    ],
+    en: [
+      'CALIBRATED POSITIONS ARE NOT LOST: if you add a device after deleting the old one (or after restoring a backup on a new computer), the Printer tab asks whether to adopt the old positions. Until now the new device got made-up positions (400 mm off), and the next save deleted the calibrated ones.',
+    ],
+  },
+  {
     version: '1.1.53',
     de: [
       'DRUCKER-TAB: EIN LEERES FELD IST NIE 0. Wer ein Positionsfeld (Auswerfen, Einlegen, Tür, Regal-X, erste Fach-Höhe, Fach-Abstand) leert oder Unsinn eintippt, bekommt einen Hinweis mit den Feldern, und gespeichert wird erst, wenn alle eine Zahl haben. Bisher machte der Tab daraus die Koordinate 0 und speicherte sie, und die nächste Fahrt ging dorthin.',
