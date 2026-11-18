@@ -39,15 +39,43 @@ export const HOLDERS = [
   },
   {
     id: 'compact',
-    name: 'Kompakt-Halterung',
+    name: 'Kompakt-Regal',
     vendor: 'printloom',
-    soon: true,
-    desc: 'Flache Halter: alle 25 mm ein Fach, ~260 mm von Aluprofil zu Aluprofil → 10 Positionen je Regal. Viel mehr Platten, aber nur ~20 mm Bauhöhe je Druck. Noch in Arbeit: die Y-Tiefe des Greifpunkts ist am realen Aufbau noch nicht nachgemessen.',
-    positions: 10,
-    pitch: 25,
-    slot_height_mm: 20,
+    badge: 'Neu',
+    desc: 'Alle 16 mm ein Fach, 24 Fächer je Regal, kein Magazin. Die leeren Platten liegen im letzten Regal (von unten eingelegt), fertige Drucke füllen Regal 1 von oben nach unten — jeder bekommt genau so viel Platz, wie er hoch ist. Abgelegt wird waagerecht: Platte an den Regaleingang, auf Fachhöhe hineinschieben. Nur mit dem Magnet-Greifer.',
+    positions: 24,
+    pitch: 16,
+    // Beim Kompakt-Regal ist die „Fachhöhe" der Fachabstand: Ein Druck belegt so viele
+    // Fächer, wie er samt Zugabe hoch ist (backend rack_logic „Kompakt-Regal").
+    slot_height_mm: 16,
+    rackType: 'compact',
+    // Was diese Bauart festlegt: kein Magazin, Magnet-Greifer (siehe lockedBy).
+    implies: { topSlot: 'storage', gripper: 'magnet' },
   },
 ]
+
+/** Kompakt-Regal gewählt? */
+export const isCompactSelection = (sel) => optionOf('holder', sel?.holder)?.rackType === 'compact'
+
+/** Ist diese Option durch eine andere Wahl ausgeschlossen? → Grund oder null.
+ *  Das Kompakt-Regal hat kein Magazin und ist nur für den Magnet-Greifer gebaut. */
+export function lockedBy(groupId, optId, sel) {
+  const holder = optionOf('holder', sel?.holder)
+  const want = holder?.implies?.[groupId]
+  if (want && want !== optId) {
+    return groupId === 'gripper'
+      ? 'Das Kompakt-Regal ist für den Magnet-Greifer gebaut.'
+      : 'Das Kompakt-Regal hat kein Magazin.'
+  }
+  return null
+}
+
+/** Auswahl übernehmen und, was die Bauart festlegt, gleich mitsetzen. */
+export function selectComponent(sel, groupId, optId) {
+  const next = { ...sel, [groupId]: optId }
+  const holder = optionOf('holder', next.holder)
+  return holder?.implies ? { ...next, ...holder.implies } : next
+}
 
 /* GREIFER — Greifarm und Greifmechanismus. Betrifft nicht das Regal, sondern WIE
    der Arm eine Platte aufnimmt und wieder loslässt:
@@ -126,10 +154,12 @@ export function optionOf(groupId, selectedId) {
 export function derivedConfig(selection) {
   const sel = { ...DEFAULT_COMPONENTS, ...(selection || {}) }
   const holder = optionOf('holder', sel.holder)
-  const gripper = optionOf('gripper', sel.gripper)
-  const withMag = optionOf('topSlot', sel.topSlot)?.id !== 'storage'
+  const gripper = optionOf('gripper', holder.implies?.gripper || sel.gripper)
+  const compact = holder.rackType === 'compact'
+  const withMag = !compact && optionOf('topSlot', sel.topSlot)?.id !== 'storage'
   const positions = holder.positions
   return {
+    rack_type: compact ? 'compact' : 'standard',
     holder_id: holder.id,
     gripper_id: gripper.id,
     gripper_motion: gripper.motion || 'clamp',
@@ -141,7 +171,8 @@ export function derivedConfig(selection) {
     slots_per_rack: withMag ? positions - 1 : positions,
     magazine_slot: withMag ? positions : 0,
     // Mit Magazin = Stapelhöhe im Magazin; ohne Magazin = wie viele Fächer
-    // beim Start mit einer leeren Platte belegt sind (von unten gezählt).
+    // beim Start mit einer leeren Platte belegt sind (von unten gezählt). Beim
+    // Kompakt-Regal trägt man die Zahl der leeren Platten selbst ein (ein Regal voll).
     plates_per_rack: withMag ? 4 : positions,
   }
 }

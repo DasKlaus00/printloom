@@ -54,7 +54,9 @@ one unattended, with live status, cameras and ETA in a clean web UI.
 - **Bambu Lab printer** — tested on the **X1 Carbon**. Also recognized: X1, X1E, P1S,
   P1P, A1, A1 mini and H2D (geometry templates for X1C, P1S, P1P and A1). Needs the LAN
   access code; for the camera, "LAN Mode Liveview" must be on.
-- **OTTOeject** running Klipper/Moonraker (the auto-ejector).
+- **OTTOeject** running Klipper/Moonraker (the auto-ejector). Racks: the original holders
+  (55 mm per slot, magazine on top) or the **compact rack** (16 mm per slot, 24 slots,
+  no magazine, magnet gripper — set up in the setup wizard).
 - A host for Printloom: anything that runs Docker (a small x86/ARM box, NUC, Pi 4/5, a
   Proxmox LXC), a Windows PC (native app, see below) or a Linux box without Docker
   ([docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md)).

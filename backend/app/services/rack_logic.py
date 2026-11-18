@@ -91,6 +91,8 @@ def storable(height_mm: float, data: dict) -> dict:
     liegt aber das Magazin (falls vorhanden), dort gilt nur der Stapel-Anteil. Die
     Farm pausiert bei einem höheren Objekt („im Drucker lassen"); das OrcaSlicer-
     Plugin warnt schon beim Slicen. Beide fragen hier, damit sie gleich urteilen."""
+    if is_compact(data):
+        return compact_storable(height_mm, data)
     slot_h = float((data or {}).get("slot_height_mm", 50) or 50)
     spr = int((data or {}).get("slots_per_rack", 6) or 6)
     tol = tolerance_of(data)
@@ -212,6 +214,9 @@ def empty_plate_count(data: dict) -> int:
 
 def plate_source(data: dict) -> tuple:
     """→ (rack, slot, from_magazine) für den nächsten Griff einer LEEREN Platte."""
+    if is_compact(data):
+        src = compact_plate_source(data)
+        return (src[0], src[1], False) if src else (1, 1, False)
     mag = magazine_slot_of(data)
     counts = _counts(data)
     if mag > 0:
@@ -263,3 +268,152 @@ def free_slots_for_empty_plate(data: dict) -> list:
             continue
     out.sort()
     return out
+
+
+# ── Kompakt-Regal (seit v1.1.80) ─────────────────────────────────────────────
+# Dichte Halterung (~16 mm von Fach zu Fach, ~24 Fächer je Regal), KEIN Magazin.
+# Abläufe nach Alex (18.11.2026):
+#
+#   LEERE PLATTEN liegen im LETZTEN Regal (bei drei Regalen Regal 3), von unten
+#     eingelegt; reicht es nicht, geht es im Regal davor weiter (compact_fill_order).
+#     Gegriffen wird immer die OBERSTE leere Platte des höchsten Regals: Der Magnet
+#     hebt die Platte zum Herausziehen an, darüber muss also frei sein.
+#   FERTIGE DRUCKE füllen Regal 1 von OBEN nach unten, danach Regal 2, …
+#     Abgelegt wird waagerecht (Vorderkante an den Regaleingang, auf Fachhöhe
+#     hineinschieben). Ein Druck braucht deshalb nur seine Höhe plus eine kleine
+#     Zugabe (compact_clearance_mm: Plattenstärke, Hub beim Tragen, Luft) — nicht
+#     mehr den Einfahr-Hub des alten Ablaufs (siehe Modulkopf).
+#   Es wird nur ANGEHÄNGT: Ein neuer Druck kommt direkt unter den untersten im Regal,
+#     mit Platz für seine eigene Höhe darüber. Lücken werden nicht nachgefüllt: Beim
+#     Ablegen senkt sich der Magnet unter die Fachhöhe, darunter muss frei sein.
+#   Über dem obersten Fach ist es offen oder zu (compact_top_open). Offen: Der
+#     erste Druck eines Regals darf beliebig hoch sein. Zu: Er muss in die Fächer passen.
+#
+# Ein Druck im Fach s mit der Höhe h reicht bis unter Fach s + span(h),
+# span = ceil((h + Zugabe) / Fachabstand).
+
+COMPACT = "compact"
+DEFAULT_COMPACT_PITCH_MM = 16.0
+DEFAULT_COMPACT_CLEARANCE_MM = 8.0
+
+
+def is_compact(data) -> bool:
+    return str((data or {}).get("rack_type") or "").strip().lower() == COMPACT
+
+
+def compact_pitch(data) -> float:
+    """Abstand von Fach zu Fach (mm). Beim Kompakt-Regal steht er in slot_height_mm —
+    eine Zahl für Fachwahl und Anzeige; die Bewegung rechnet mit slot_gap + 30 in der
+    Geometrie, beide schreibt die Einrichtung aus derselben Eingabe."""
+    try:
+        v = float((data or {}).get("slot_height_mm") or DEFAULT_COMPACT_PITCH_MM)
+    except (TypeError, ValueError):
+        return DEFAULT_COMPACT_PITCH_MM
+    return v if v > 0 else DEFAULT_COMPACT_PITCH_MM
+
+
+def compact_clearance(data) -> float:
+    """Zugabe über dem Druck (mm): Plattenstärke + Hub beim Tragen + Luft."""
+    try:
+        v = float((data or {}).get("compact_clearance_mm", DEFAULT_COMPACT_CLEARANCE_MM))
+    except (TypeError, ValueError):
+        return DEFAULT_COMPACT_CLEARANCE_MM
+    return max(0.0, v)
+
+
+def compact_top_open(data) -> bool:
+    """Ist über dem obersten Fach frei? Ohne Angabe: NEIN (unbekannt ist nicht offen)."""
+    return bool((data or {}).get("compact_top_open", False))
+
+
+def compact_span(height_mm, data) -> int:
+    """Wie viele Fächer ein Druck nach oben belegt, sein eigenes mitgezählt."""
+    try:
+        h = float(height_mm or 0)
+    except (TypeError, ValueError):
+        h = 0.0
+    if h <= 0:
+        return 1
+    # Runden vor dem Aufrunden: (24 + 8) / 16 darf nicht als 2,0000001 → 3 enden.
+    return max(1, math.ceil(round((h + compact_clearance(data)) / compact_pitch(data), 6)))
+
+
+def _compact_state(data: dict, rack: int, slot: int, taken) -> str:
+    """'free' | 'empty' (leere Platte) | 'stored' (Druck, reserviert oder gesperrt)."""
+    key = f"{rack}-{slot}"
+    if taken and key in taken:
+        return "stored"
+    s = ((data or {}).get("slots") or {}).get(key)
+    if not isinstance(s, dict):
+        return "free"
+    if s.get("empty_plate"):
+        return "empty"
+    if s.get("status", "free") not in ("free", "ready"):
+        return "stored"          # auch „Gesperrt": Höhe unbekannt, nie überbauen
+    return "free"
+
+
+def _compact_target(data: dict, rack: int, span: int, taken) -> int | None:
+    """Ablagefach in EINEM Regal oder None. Siehe Abschnittskopf."""
+    spr = int((data or {}).get("slots_per_rack", 24) or 24)
+    states = {s: _compact_state(data, rack, s, taken) for s in range(1, spr + 1)}
+    stored = [s for s, st in states.items() if st == "stored"]
+    if stored:
+        s = min(stored) - span                # direkt unter den untersten Druck
+    elif compact_top_open(data):
+        s = spr                               # oben offen: oberstes Fach, beliebig hoch
+    else:
+        s = spr - span + 1                    # oben zu: muss in die Fächer passen
+    if s < 1:
+        return None
+    # Der eigene Druck braucht s … s+span−1 (soweit es diese Fächer gibt).
+    if any(states[t] != "free" for t in range(s, min(spr, s + span - 1) + 1)):
+        return None
+    # Darunter liegen höchstens noch leere Platten (Drucke liegen bei reinem Anhängen
+    # alle darüber). Zwischen Druck und leerer Platte bleibt ein Fach frei: Der Magnet
+    # senkt sich beim Ablegen unter die Fachhöhe, und die leere Platte muss sich
+    # später noch zum Greifen anheben lassen.
+    below = [t for t in range(1, s) if states[t] != "free"]
+    if below and s - max(below) < 2:
+        return None
+    return s
+
+
+def compact_store_slot(data: dict, height_mm, taken=None) -> str | None:
+    """Ablagefach für einen fertigen Druck: Regal 1 zuerst, von oben nach unten."""
+    span = compact_span(height_mm, data)
+    nr = int((data or {}).get("num_racks", 3) or 3)
+    for r in range(1, nr + 1):
+        s = _compact_target(data, r, span, taken or set())
+        if s:
+            return f"{r}-{s}"
+    return None
+
+
+def compact_storable(height_mm, data: dict) -> dict:
+    """Passt ein Druck dieser Höhe in ein Kompakt-Regal? Oben offen: immer (er liegt
+    dann im obersten Fach eines leeren Regals) — max_height_mm ist dann None."""
+    span = compact_span(height_mm, data)
+    if compact_top_open(data):
+        return {"ok": True, "slots_needed": span, "max_height_mm": None}
+    spr = int((data or {}).get("slots_per_rack", 24) or 24)
+    max_h = spr * compact_pitch(data) - compact_clearance(data)
+    return {"ok": float(height_mm or 0) <= max_h, "slots_needed": span,
+            "max_height_mm": round(max_h, 1)}
+
+
+def compact_plate_source(data: dict) -> tuple | None:
+    """Nächste LEERE Platte: oberste des höchsten Regals, das noch welche hat."""
+    marks = marked_empty_plates(data)
+    if not marks:
+        return None
+    return sorted(marks, key=lambda rs: (-rs[0], -rs[1]))[0]
+
+
+def compact_fill_order(data: dict) -> list:
+    """Wo leere Platten eingelegt werden, in dieser Reihenfolge: letztes Regal von
+    unten nach oben, dann das Regal davor (bei 24 Fächern und 18 Platten:
+    Regal 3, Fächer 1–18)."""
+    nr = int((data or {}).get("num_racks", 3) or 3)
+    spr = int((data or {}).get("slots_per_rack", 24) or 24)
+    return [(r, s) for r in range(nr, 0, -1) for s in range(1, spr + 1)]

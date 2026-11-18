@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.80',
+    de: [
+      'NEU: KOMPAKT-REGAL. Alle 16 mm ein Fach, 24 Fächer je Regal, kein Magazin. Die leeren Platten liegen im letzten Regal (von unten eingelegt, bei mehr Platten auch im Regal davor); die Farm holt immer die oberste. Fertige Drucke füllen Regal 1 von oben nach unten, danach Regal 2 — jeder Druck bekommt genau so viel Platz, wie er hoch ist (plus einer kleinen Zugabe). Über dem obersten Fach darf ein Druck herausragen, wenn es dort offen ist.',
+      'NEUE BEWEGUNG FÜRS KOMPAKT-REGAL (Magnet-Greifer): Ablegen waagerecht — Vorderkante der Platte an den Regaleingang, auf Fachhöhe ganz hineinschieben, zum Lösen kurz absenken. Holen auf Fachhöhe unter die Platte, nur wenige Millimeter anheben, herausziehen. Die Farm fährt dabei immer Printlooms eigene Bewegung, nie die alten Geräte-Makros.',
+      'NEUES EINRICHTEN: Im Setup-Assistenten „Kompakt-Regal“ wählen (setzt Magnet-Greifer und „kein Magazin“). Im Schritt „Regal“ nur Regale, Fächer, Abstand, „oben offen“ und die Zahl der leeren Platten — das Bild zeigt sofort, wo sie liegen. Im Schritt „Einmessen“ drei Handgriffe: unterstes und oberstes Fach von Regal 1 (daraus der echte Fachabstand), Einlege-Punkt; für jedes weitere Regal nur noch X. Dazu je ein Test-Knopf zum Holen und Ablegen.',
+      'Sicher: Zwischen einem fertigen Druck und einer leeren Platte bleibt immer ein Fach frei; Lücken werden nicht nachgefüllt. Ohne eingemessenen Einlege-Punkt startet keine Ablage, und die Prüfung meldet es. Den Stresstest gibt es fürs Kompakt-Regal nicht (er legt Platten in zufällige Fächer).',
+    ],
+    en: [
+      'NEW: COMPACT RACK. A slot every 16 mm, 24 slots per rack, no magazine. The empty plates sit in the last rack (loaded from the bottom, with more plates also in the rack before it); the farm always takes the top one. Finished prints fill rack 1 from the top down, then rack 2 — every print gets exactly as much room as it is tall (plus a small allowance). If it is open above the top slot, a print may stick out there.',
+      'NEW MOTION FOR THE COMPACT RACK (magnet gripper): storing is horizontal — front edge of the plate to the rack entrance, push all the way in at slot height, lower briefly to release. Grabbing goes under the plate at slot height, lifts only a few millimetres and pulls out. The farm always runs Printloom’s own motion for this, never the old device macros.',
+      'NEW SETUP: choose “Compact rack” in the setup wizard (sets the magnet gripper and “no magazine”). The “Rack” step only asks for racks, slots, pitch, “open at the top” and the number of empty plates — the picture shows right away where they are. The “Calibrate” step takes three steps: bottom and top slot of rack 1 (giving the real pitch) and the insert point; every further rack only needs X. Plus a test button each for grabbing and storing.',
+      'Safe: one slot always stays free between a finished print and an empty plate; gaps are not refilled. Without a calibrated insert point no store starts, and the check reports it. There is no stress test for the compact rack (it puts plates into random slots).',
+    ],
+  },
+  {
     version: '1.1.79',
     de: [
       'Intern umgebaut, keine sichtbare Änderung: Teile der Auto-Farm-Seite (AMS-Zuordnung, Kameras, Zeitplaner) und des Farm-Servers (Homing-Datei, Laufzeit-Historie) liegen jetzt in eigenen Dateien. Das macht spätere Änderungen sicherer.',

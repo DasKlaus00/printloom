@@ -111,7 +111,7 @@ def test_struktur_aendern_bei_laufender_farm_409(regal, monkeypatch):
 
 def test_grenzen_kommen_vom_backend(regal):
     limits = client.get("/api/rack-manager/").json()["limits"]
-    assert limits["slots_per_rack"] == [1, 20]
+    assert limits["slots_per_rack"] == [1, 40]   # bis v1.1.79: 20 (Kompakt-Regal hat ~24 Fächer)
 
 
 # ── Magazin-Fach ist nie Ablageziel ───────────────────────────────────────────

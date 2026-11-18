@@ -85,6 +85,11 @@ function isBlockedFromBelow(rackNum, slotNum, rSlots, slotH, tol = SLOT_TOLERANC
  * Respects: existing slot statuses, job-assigned slots, clearance from tall objects below.
  */
 export function autoSlot(jobs, rackData, heightMm, slotH) {
+  if (isCompact(rackData)) {
+    const taken = new Set(jobs.filter(j => !['done', 'error'].includes(j.status) && j.slot && j.slot !== '1-0')
+      .map(j => j.slot))
+    return compactStoreSlot(rackData, heightMm, taken) ?? '1-0'
+  }
   const nr     = rackData?.num_racks      ?? 3
   const spr    = rackData?.slots_per_rack  ?? 6
   const rSlots = rackData?.slots          ?? {}
@@ -184,4 +189,74 @@ export function checkClearance(slotKey, heightMm, rackData, slotH) {
     if (status !== 'free' && status !== 'ready') blocked.push(`Fach ${k} (${status})`)
   }
   return { ok: blocked.length === 0, needed, blocked }
+}
+
+/* ── Kompakt-Regal (seit v1.1.80) ──────────────────────────────────────────
+   Gegenstück zu backend/app/services/rack_logic.py „Kompakt-Regal" — MUSS dasselbe
+   Fach wählen, sonst zeigt die Vorschau ein anderes Fach, als die Farm nimmt.
+   Leere Platten im letzten Regal (oberste zuerst gegriffen), Drucke ab Regal 1
+   von oben, nur angehängt; zwischen Druck und leerer Platte bleibt ein Fach frei. */
+export const isCompact = (rackData) => String(rackData?.rack_type ?? '').toLowerCase() === 'compact'
+
+export function compactSpan(heightMm, rackData) {
+  const pitch = +rackData?.slot_height_mm > 0 ? +rackData.slot_height_mm : 16
+  const c = rackData?.compact_clearance_mm
+  const clear = (typeof c === 'number' && c >= 0) ? c : 8
+  const h = +heightMm || 0
+  if (h <= 0) return 1
+  // wie im Backend: erst runden, dann aufrunden (24 + 8) / 16 → 2, nicht 3
+  return Math.max(1, Math.ceil(Math.round(((h + clear) / pitch) * 1e6) / 1e6))
+}
+
+function compactState(rackData, r, s, taken) {
+  const k = `${r}-${s}`
+  if (taken?.has(k)) return 'stored'
+  const slot = rackData?.slots?.[k]
+  if (!slot) return 'free'
+  if (slot.empty_plate) return 'empty'
+  const st = slot.status ?? 'free'
+  return (st === 'free' || st === 'ready') ? 'free' : 'stored'
+}
+
+export function compactStoreSlot(rackData, heightMm, taken = new Set()) {
+  const span = compactSpan(heightMm, rackData)
+  const nr = +rackData?.num_racks || 3
+  const spr = +rackData?.slots_per_rack || 24
+  for (let r = 1; r <= nr; r++) {
+    const st = {}
+    for (let s = 1; s <= spr; s++) st[s] = compactState(rackData, r, s, taken)
+    const stored = Object.keys(st).map(Number).filter(s => st[s] === 'stored')
+    let s
+    if (stored.length) s = Math.min(...stored) - span
+    else if (rackData?.compact_top_open) s = spr
+    else s = spr - span + 1
+    if (s < 1) continue
+    let ok = true
+    for (let t = s; t <= Math.min(spr, s + span - 1); t++) if (st[t] !== 'free') ok = false
+    const below = Object.keys(st).map(Number).filter(t => t < s && st[t] !== 'free')
+    if (below.length && s - Math.max(...below) < 2) ok = false
+    if (ok) return `${r}-${s}`
+  }
+  return null
+}
+
+/** Woher die nächste leere Platte kommt: oberste des höchsten Regals. */
+export function compactPlateSource(rackData) {
+  const marks = (rackData?.empty_plates ?? []).map(parseSlotKey)
+  if (!marks.length) return null
+  marks.sort((a, b) => (b[0] - a[0]) || (b[1] - a[1]))
+  return marks[0]
+}
+
+/** Fächer, in die ein eingelagerter Druck von unten hineinragt (nur Anzeige). */
+export function compactCoveredSlots(rackData) {
+  const out = new Set()
+  if (!isCompact(rackData)) return out
+  for (const [k, slot] of Object.entries(rackData?.slots ?? {})) {
+    const h = slot?.object_height_mm
+    if (!(h > 0)) continue
+    const [r, s] = parseSlotKey(k)
+    for (let i = 1; i < compactSpan(h, rackData); i++) out.add(`${r}-${s + i}`)
+  }
+  return out
 }

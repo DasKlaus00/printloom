@@ -107,6 +107,13 @@ DEFAULT_GEOMETRY = {
     "magnet_mag_y_clear_mm": 33.0, # Y-Vorposition vor dem Magazin
     "magnet_store_y_back_mm": 2.0,   # Ablegen: so weit vor y_engage wird abgesetzt
     "magnet_store_x_mm": 0.0,    # X-Versatz beim Ablegen (0 = wie beim Greifen)
+    # Kompakt-Regal (seit v1.1.80, nur Magnet-Greifer; siehe _grab_compact/_store_compact).
+    # Hub: so weit hebt der Magnet die Platte zum Herausziehen an bzw. trägt sie beim
+    # Ablegen über der Fachhöhe. Einlege-Weg: Abstand von „Platte ganz drin" (y_engage)
+    # zurück bis dorthin, wo ihre Vorderkante gerade auf dem Regaleingang liegt. Er
+    # hängt am Aufbau und wird eingemessen — ohne ihn gibt es keine Ablage-Bewegung.
+    "compact_lift_mm": 5.0,
+    "compact_entry_mm": None,
     # Achsgrenzen des Geräts in mm ({} = unbekannt) — für die Plausibilitätsprüfung
     # (geometry_check). Am besten per „Grenzen vom Gerät holen" aus Klipper geholt,
     # dann wird eine Bewegung außerhalb der Achse gar nicht erst gesendet. Leer
@@ -158,9 +165,10 @@ def _sanitize_geometry(g: dict) -> dict:
               "magnet_y_clear_mm", "magnet_store_x_mm",
               "magnet_y_travel_mm", "magnet_y_retract_mm",
               "magnet_y_min_loaded_mm", "magnet_store_y_back_mm",
-              "magnet_mag_lift_mm", "magnet_mag_y_clear_mm"):
+              "magnet_mag_lift_mm", "magnet_mag_y_clear_mm",
+              "compact_lift_mm", "compact_entry_mm"):
         if g.get(k) is not None:
-            g[k] = _num(g.get(k), d.get(k, 0))
+            g[k] = _num(g.get(k), d.get(k) or 0)
     sf = g.get("speed_factors")
     if isinstance(sf, dict):
         g["speed_factors"] = {k: _num(v, 100) for k, v in sf.items() if v is not None}
@@ -245,10 +253,20 @@ def merge_defaults(g: dict | None) -> dict:
 
 
 def magazine_slot(g: dict) -> int:
+    if is_compact(g):
+        return 0
     ms = g.get("magazine_slot")
     if ms:
         return int(ms)
     return (int(g["storage_slots"]) + 1) if g.get("magazine") else 0
+
+
+COMPACT = "compact"
+
+
+def is_compact(g: dict) -> bool:
+    """Kompakt-Regal? Kommt aus der Regal-Konfiguration (apply_rack_config)."""
+    return str((g or {}).get("rack_type") or "").strip().lower() == COMPACT
 
 
 def apply_layout(g: dict, layout: dict | None) -> dict:
@@ -279,6 +297,13 @@ def apply_rack_config(g: dict, rack_cfg: dict | None) -> dict:
     if ms:
         g["magazine_slot"] = int(ms)
         g["magazine"] = True
+    # Bauart: Quelle ist die Regal-Konfiguration (rack_store.apply_config). Hier nur
+    # übernommen, damit Test-Knopf und Farm dieselbe Bewegung wählen.
+    g["rack_type"] = str(rack_cfg.get("rack_type") or "standard").strip().lower()
+    if g["rack_type"] == COMPACT:
+        # Kein Magazin: auch eine alte Geometrie mit „magazine: true" darf nie den
+        # Magazin-Griff fahren — es gibt kein Magazin-Fach mehr.
+        g["magazine_slot"], g["magazine"] = 0, False
     # Platten pro Magazin (je Regal) — für die Z-Absenkung beim Magazin-Griff
     # (Durchbiegung, siehe magazine_z_offset). Rack Manager pflegt die Zähler.
     counts = rack_cfg.get("magazine_counts")
@@ -492,6 +517,11 @@ def op_uses_gcode(g: dict, op: str, printer=None) -> bool:
     Drucker-Operationen fragen den jeweiligen Drucker, Regal-Operationen die
     gemeinsame Liste."""
     op = canon_op(op)
+    # Kompakt-Regal: Die Makros auf der OTTOeject kennen diese Bewegung nicht. Ein
+    # Geräte-Macro würde den alten Ablauf fahren (25 mm über Fachhöhe einfahren) —
+    # bei 16 mm Fachabstand mitten in die Platte darüber.
+    if is_compact(g) and op in ("grab", "grab_magazine", "store"):
+        return True
     if op in PRINTER_OPS:
         v = (printer_block(g, printer).get("use_gcode") or {}).get(op)
         if v is not None:
@@ -696,6 +726,8 @@ def gripper_motion(g: dict) -> str:
 # ── Bewegungen (1:1 aus ottoeject_macros.cfg) ───────────────────────────────
 def grab_from_rack(g: dict, rack: int, slot: int, nolift=None) -> list[str]:
     x_unclamp, y_engage, z_flat, y_pb = slot_position(g, rack, slot)
+    if is_compact(g):
+        return _grab_compact(g, rack, slot, x_unclamp, y_engage, z_flat)
     mag = magazine_slot(g)
     if nolift is None:
         nolift = (mag > 0 and int(slot) == mag)
@@ -842,8 +874,83 @@ def _store_magnet(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
     ]
 
 
+# ── Kompakt-Regal (seit v1.1.80) ────────────────────────────────────────────
+# ~16 mm von Fach zu Fach: Für die alten Wege (Einfahren 25–35 mm über der
+# Fachhöhe) ist kein Platz mehr. Die Bewegungen nach Alex' Beschreibung:
+#   Holen   — auf Fachhöhe unter die Platte, um den kleinen Hub anheben (darüber ist
+#             frei: es wird immer die OBERSTE leere Platte geholt), herausziehen.
+#   Ablegen — auf Tragehöhe (Fachhöhe + Hub) vor das Fach, so weit vor, dass die
+#             Vorderkante der Platte auf dem Regaleingang liegt, auf Fachhöhe absenken,
+#             die Platte auf Fachhöhe ganz hineinschieben, zum Lösen unter die
+#             Fachhöhe absenken (darunter ist frei: es wird nur angehängt, siehe
+#             rack_logic „Kompakt-Regal"), unter der Platte herausziehen.
+# Nur mit dem Magnet-Greifer gebaut. Der Klemm-Greifer löst seitlich und bräuchte
+# eigene, gemessene Wege — eine andere Bewegung still zu fahren, wäre falsch.
+COMPACT_LIFT_MM = 5.0
+COMPACT_NEEDS_MAGNET = "Das Kompakt-Regal ist für den Magnet-Greifer gebaut — im Setup-Assistenten unter Komponenten den Magnet-Greifer wählen"
+COMPACT_ENTRY_MISSING = "Kompakt-Regal: Der Einlege-Punkt ist noch nicht eingemessen (Setup-Assistent → Einmessen)"
+
+
+def _compact_lift(g: dict) -> float:
+    return max(0.5, _num(g.get("compact_lift_mm"), COMPACT_LIFT_MM))
+
+
+def _assert_compact_gripper(g: dict) -> None:
+    if gripper_motion(g) != "magnet":
+        raise ValueError(COMPACT_NEEDS_MAGNET)
+
+
+def compact_entry(g: dict) -> float | None:
+    """Einlege-Weg (mm) oder None, solange er nicht eingemessen ist."""
+    v = g.get("compact_entry_mm")
+    if v is None or v == "":
+        return None
+    v = _num(v, 0.0)
+    return v if v > 0 else None
+
+
+def _grab_compact(g, rack, slot, x_slot, y_engage, z_flat) -> list[str]:
+    _assert_compact_gripper(g)
+    lift = _compact_lift(g)
+    y_travel, y_clear, y_retract = _magnet_y(g)
+    return [
+        f"M117 Grab rack {rack} slot {slot} (compact)...",
+        f"G1 X{_n(x_slot)} Y{_n(y_travel)} F4000", "M400",   # X ausrichten, auf Reise-Y
+        f"G1 Z{_n(z_flat)} F1000", "M400",                   # auf Fachhöhe, unter die Platte
+        f"G1 Y{_n(y_engage - y_clear)} F4000", "M400",       # vor das Fach
+        f"G1 Y{_n(y_engage)} F600", "M400",                  # unter die Platte einfahren
+        "M117 Picking up new bed (compact)...",
+        f"G1 Z{_n(z_flat + lift)} F600", "M400",             # anheben → Platte haftet
+        f"G1 Y{_n(_y_loaded(g, y_retract))} F2000", "M400",  # waagerecht herausziehen
+    ]
+
+
+def _store_compact(g, rack, slot, x_slot, y_engage, z_flat, y_pb) -> list[str]:
+    _assert_compact_gripper(g)
+    entry = compact_entry(g)
+    if entry is None:
+        raise ValueError(COMPACT_ENTRY_MISSING)
+    lift = _compact_lift(g)
+    _lift, _store_z, release = _magnet_z(g)
+    _y_travel, y_clear, _y_retract = _magnet_y(g)
+    y_back = max(0.0, _num(g.get("magnet_store_y_back_mm"), MAGNET_STORE_Y_BACK_MM))
+    x_store = x_slot + _num(g.get("magnet_store_x_mm"), 0.0)
+    return [
+        f"M117 Store rack {rack} slot {slot} (compact)...",
+        # Quer durch die Anlage am Rückzugsanschlag, dabei schon auf Tragehöhe.
+        f"G1 X{_n(x_store)} Y{_n(_y_loaded(g, y_pb))} Z{_n(z_flat + lift)} F4000", "M400",
+        f"G1 Y{_n(_y_loaded(g, y_engage - entry))} F2000", "M400",   # Vorderkante an den Eingang
+        f"G1 Z{_n(z_flat)} F300", "M400",                    # auflegen, Arm auf Fachhöhe
+        f"G1 Y{_n(y_engage - y_back)} F600", "M400",         # auf Fachhöhe hineinschieben
+        f"G1 Z{_n(z_flat - release)} F300", "M400",          # absenken → Magnet löst
+        f"G1 Y{_n(y_engage - y_clear)} F2000", "M400",       # unter der Platte heraus
+    ]
+
+
 def store_to_rack(g: dict, rack: int, slot: int) -> list[str]:
     x_unclamp, y_engage, z_flat, y_pb = slot_position(g, rack, slot)
+    if is_compact(g):
+        return _store_compact(g, rack, slot, x_unclamp, y_engage, z_flat, y_pb)
     if gripper_motion(g) == "magnet":
         return _store_magnet(g, rack, slot, x_unclamp, y_engage, z_flat, y_pb)
     x_mid = x_unclamp - _clamp_push(g)

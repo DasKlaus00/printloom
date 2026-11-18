@@ -743,6 +743,11 @@ def _find_slot_for_height(height_mm: float, exclude_job_id: int = None) -> Optio
                  if j.get("status") not in ("done", "error")
                  and j.get("slot")
                  and j.get("id") != exclude_job_id}
+        if _rack_logic.is_compact(data):
+            # Kompakt-Regal: eigene Regeln (Regal 1 von oben, nur anhängen, Zugabe über
+            # dem Druck). Die Leerplatten-Fächer kennt sie selbst — sie zählen dort als
+            # leere Platten, nicht als Drucke (sonst rückte der Abstand falsch).
+            return _rack_logic.compact_store_slot(data, height_mm, taken - {"1-0"})
         # Ohne Magazin liegen in den unteren Fächern noch LEERE Platten als Nachschub —
         # die sind physisch belegt, obwohl ihr Status „free" ist. Niemals als Ziel
         # vergeben, sonst legt der Arm den fertigen Druck auf eine liegende Platte.
@@ -4649,7 +4654,13 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
         _stress["step"] = ""
 
 
+STRESS_NOT_COMPACT = "Den Stresstest gibt es für das Kompakt-Regal nicht — er legt Platten in zufällige Fächer, und bei 16 mm Abstand träfe der Magnet beim Lösen die Platte darunter"
+
+
 def _stress_plan(seed=None, include_printer: bool = False) -> dict:
+    data = _rack_data()
+    if _rack_logic.is_compact(data):
+        raise ValueError(STRESS_NOT_COMPACT)
     geom = _stress_geometry()
     return _stress_service.plan(_rack_data(), geom, seed=seed,
                                 printer=_farm_printer(geom),
@@ -4693,6 +4704,8 @@ async def start_stress_test(body: Optional[StressStartBody] = None):
         _farm["recovery"] = _load_recovery() or _farm.get("recovery")
         raise HTTPException(409, "Laut letztem Stand liegt noch eine Platte im Greifer oder "
                                  "Drucker — nachsehen und im Hinweis bestätigen")
+    if _rack_logic.is_compact(_rack_data()):
+        raise HTTPException(409, STRESS_NOT_COMPACT)
     device = _stress_bambu(body.device_id) if body.include_printer else None
     if device is not None:
         await _assert_printer_idle_for_start(device.id)

@@ -396,6 +396,20 @@ def _structure_problems(g: dict) -> list:
                 [seen[key], pb["name"], f"{key:g}"], printer=pb["id"]))
         else:
             seen[key] = pb["name"]
+
+    # Kompakt-Regal (seit v1.1.80): Ohne diese zwei Dinge gibt es keine Bewegung —
+    # build_op wirft dann, und check_op würde das still übergehen.
+    if motion.is_compact(g):
+        if not magnet:
+            out.append(problem(
+                "compact_needs_magnet", "error",
+                "Das Kompakt-Regal ist für den Magnet-Greifer gebaut — im Setup-Assistenten "
+                "unter Komponenten den Magnet-Greifer wählen."))
+        if motion.compact_entry(g) is None:
+            out.append(problem(
+                "compact_entry_missing", "error",
+                "Kompakt-Regal: Der Einlege-Punkt ist noch nicht eingemessen — ohne ihn kann "
+                "die Farm keine Platte ablegen (Setup-Assistent → Einmessen)."))
     return out
 
 

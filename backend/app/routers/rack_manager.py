@@ -60,16 +60,37 @@ def get_all():
         # Ohne Magazin: welche Fächer halten eine leere Platte (Markierung des Nutzers).
         "empty_plates":       empty_plates,
         "max_plates":         data.get("max_plates", 4),
+        # Bauart (seit v1.1.80) und die Kompakt-Werte; siehe rack_logic „Kompakt-Regal".
+        "rack_type":          data.get("rack_type") or "standard",
+        "compact_clearance_mm": rack_logic.compact_clearance(data),
+        "compact_top_open":   rack_logic.compact_top_open(data),
         "slots":              data["slots"],
         "statuses":           STATUSES,
     }
+
+
+@router.post("/compact/empty-plates")
+def compact_empty_plates(body: dict = None):
+    """Kompakt-Regal: „Ich habe N leere Platten eingelegt" → die Fächer in der festen
+    Reihenfolge markieren (letztes Regal von unten, dann das davor). Nicht während
+    Farm oder Stresstest: Die Farm greift gerade nach genau diesen Marken."""
+    from app.routers import autofarm
+    if autofarm._farm.get("running") or autofarm._stress.get("running"):
+        raise HTTPException(409, "Auto Farm oder Stresstest läuft — leere Platten erst nach dem Stopp eintragen")
+    try:
+        with rack_store.edit() as data:
+            marked = rack_store.place_empty_plates(data, (body or {}).get("count"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"success": True, "empty_plates": marked, "count": len(marked)}
 
 
 @router.put("/config")
 def update_config(body: dict):
     # Aufbau (Regale, Fächer, Höhe, Magazin-Fach) nicht während Farm oder Stresstest:
     # Die Fachwahl des laufenden Jobs rechnet mit dem alten Raster.
-    struktur = {"num_racks", "slots_per_rack", "slot_height_mm", "magazine_slot"}
+    struktur = {"num_racks", "slots_per_rack", "slot_height_mm", "magazine_slot",
+                "rack_type", "compact_clearance_mm", "compact_top_open"}
     if struktur & set(body or {}):
         from app.routers import autofarm
         if autofarm._farm.get("running") or autofarm._stress.get("running"):

@@ -185,6 +185,8 @@ export const rackManagerService = {
   updateConfig:  (data)                => api.put('/rack-manager/config', data),
   refillMagazine:(value)               => api.post('/rack-manager/magazine/refill', value != null ? { value } : {}),
   takeFromMagazine:(rack)              => api.post('/rack-manager/magazine/take', { rack }),
+  // Kompakt-Regal: „N leere Platten eingelegt" → Fächer in fester Reihenfolge markieren
+  compactEmptyPlates:(count)           => api.post('/rack-manager/compact/empty-plates', { count }),
   updateSlot:    (slotId, data)        => api.put(`/rack-manager/slots/${slotId}`, data),
   clearSlots:    (body)                => api.post('/rack-manager/slots/clear', body ?? {}),
   analyzeFile:   (fileId, plate = null) => api.post(`/rack-manager/analyze/${fileId}`, null, { params: (plate !== null && plate !== undefined) ? { plate } : {} }),

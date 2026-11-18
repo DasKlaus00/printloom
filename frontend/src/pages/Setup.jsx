@@ -13,7 +13,9 @@ import { isExistingInstall, hasMixedSlotGaps, printerBlockIsCalibrated } from '.
 import RackPreview from '../components/RackPreview'
 import FirstCalibration from '../components/FirstCalibration'
 import { COMPONENT_GROUPS, derivedConfig, loadComponents, saveComponents,
-         pitchToGap, gapToPitch, VENDOR_LABEL } from '../services/hardware'
+         pitchToGap, gapToPitch, VENDOR_LABEL,
+         isCompactSelection, lockedBy, selectComponent } from '../services/hardware'
+import { CompactRackPlan, CompactRackMeasure } from '../components/CompactRack'
 
 
 const STEPS = ['Willkommen', 'Komponenten', 'Drucker', 'OTTOeject', 'Regal', 'Kalibrierung', 'Einmessen']
@@ -204,6 +206,10 @@ export default function Setup({ setCurrentPage }) {
         ...(g.gripper ? { gripper: g.gripper } : {}),
         // Magazin-Fach 0 = kein Magazin → „alle Fächer sind Lagerfächer"
         ...(g.magazine_slot != null ? { topSlot: +g.magazine_slot ? 'magazine' : 'storage' } : {}),
+        // Bauart kommt aus der Regal-Konfiguration (über apply_rack_config in der
+        // Geometrie) und steht ZULETZT: Sie legt Magazin und Greifer fest, auch wenn
+        // die Geometrie noch einen anderen Greifer trägt.
+        ...(g.rack_type === 'compact' ? { holder: 'compact', topSlot: 'storage', gripper: 'magnet' } : {}),
       }))
     }).catch(() => {})
   }, [])
@@ -275,12 +281,21 @@ export default function Setup({ setCurrentPage }) {
         rackManagerService.getAll().then(r => r.data).catch(() => null),
       ])
       const existing = isExistingInstall(devs, rack)
-      const refill = !existing || await confirmDialog({
+      const compact = cfg.rack_type === 'compact'
+      const refill = !compact && (!existing || await confirmDialog({
         title: tr('Magazin jetzt voll bestückt?'),
         message: tr('Soll der Bestand jedes Magazins auf {0} Platten gesetzt werden? „Abbrechen" lässt den heutigen Bestand stehen.', cfg.plates_per_rack),
         confirmLabel: tr('Bestand setzen'), danger: false,
-      })
-      await rackManagerService.updateConfig({
+      }))
+      // Kompakt-Regal: Bauart setzen; Fächer, Abstand und leere Platten folgen im
+      // Schritt „Regal" (CompactRackPlan). Kein Magazin, also keine Magazin-Zahlen.
+      await rackManagerService.updateConfig(compact ? {
+        rack_type: 'compact',
+        num_racks: racks,
+        slots_per_rack: cfg.slots_per_rack,
+        slot_height_mm: cfg.slot_height_mm,
+      } : {
+        rack_type: 'standard',
         num_racks: racks,
         slots_per_rack: cfg.slots_per_rack,
         slot_height_mm: cfg.slot_height_mm,
@@ -552,12 +567,16 @@ export default function Setup({ setCurrentPage }) {
                     const active = (components[group.id] ?? group.options[0].id) === opt.id
                     // „soon" = gebaut, aber noch nicht vermessen. Bewusst SICHTBAR und
                     // gesperrt statt versteckt: der Aufbau existiert, nur die Maße fehlen.
-                    const soon = !!opt.soon && !active
+                    // Dazu: was die gewählte Bauart ausschließt (Kompakt: kein Magazin,
+                    // nur Magnet-Greifer) — ebenfalls sichtbar, mit Grund.
+                    const lockReason = lockedBy(group.id, opt.id, components)
+                    const soon = (!!opt.soon || !!lockReason) && !active
                     return (
                       <button key={opt.id} type="button" disabled={soon}
                         aria-disabled={soon}
-                        title={soon ? tr('Noch in Arbeit — diese Bauform lässt sich noch nicht auswählen.') : undefined}
-                        onClick={() => { if (!soon) setComponents(c => ({ ...c, [group.id]: opt.id })) }}
+                        title={lockReason ? tr(lockReason)
+                          : soon ? tr('Noch in Arbeit — diese Bauform lässt sich noch nicht auswählen.') : undefined}
+                        onClick={() => { if (!soon) setComponents(c => selectComponent(c, group.id, opt.id)) }}
                         className={`text-left rounded-lg border p-3 transition-colors ${
                           soon   ? 'border-surface-700 bg-surface-900/20 opacity-50 cursor-not-allowed'
                           : active ? 'border-blue-600 bg-blue-950/40'
@@ -576,7 +595,7 @@ export default function Setup({ setCurrentPage }) {
                           )}
                           {soon ? (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/40 border border-amber-800/60 text-amber-400 shrink-0">
-                              {tr('In Arbeit')}
+                              {lockReason ? tr('Nicht mit dem Kompakt-Regal') : tr('In Arbeit')}
                             </span>
                           ) : opt.badge && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-800 text-surface-400 shrink-0">{tr(opt.badge)}</span>
@@ -606,7 +625,9 @@ export default function Setup({ setCurrentPage }) {
                     {' · '}{tr('Fachhöhe {0} mm', cfg.slot_height_mm)}
                   </p>
                   <p className="text-[10px] text-surface-500">
-                    {cfg.with_magazine
+                    {cfg.rack_type === 'compact'
+                      ? tr('Leere Platten im letzten Regal, fertige Drucke ab Regal 1 von oben. Wie viele Platten du eingelegt hast, fragt der Schritt „Regal".')
+                      : cfg.with_magazine
                       ? tr('Nachschub: {0} leere Platten je Magazin (später änderbar).', cfg.plates_per_rack)
                       : tr('Start-Bestückung: {0} Fächer je Regal mit leerer Platte. Die Farm greift von OBEN nach unten und legt den fertigen Druck in dasselbe Fach zurück.', cfg.plates_per_rack)}
                   </p>
@@ -785,8 +806,11 @@ export default function Setup({ setCurrentPage }) {
           </div>
         )}
 
-        {/* ── Step 4: Rack ── */}
-        {step === 4 && (
+        {/* ── Step 4: Rack ── (Kompakt-Regal: eigene, neue Einrichtung) */}
+        {step === 4 && isCompactSelection(components) && (
+          <CompactRackPlan onSaved={next} onBack={prev} />
+        )}
+        {step === 4 && !isCompactSelection(components) && (
           <div className="space-y-3">
             <p className="text-xs text-surface-500">{tr('Aus den Komponenten vorbelegt — hier fein justieren.')}</p>
             <div className="grid grid-cols-3 gap-3">
@@ -807,7 +831,7 @@ export default function Setup({ setCurrentPage }) {
               <label className="space-y-1">
                 <span className="text-[10px] text-surface-500">{tr('Z-Schritt Fach→Fach (mm)')}</span>
                 <input type="number" min="5" max="300" className="w-full text-sm" value={pitch} onChange={e => setPitch(e.target.value)} />
-                <span className="block text-[10px] text-surface-600">{tr('Gemessener Abstand von Fach zu Fach (Standard 55, Kompakt 25)')}</span>
+                <span className="block text-[10px] text-surface-600">{tr('Gemessener Abstand von Fach zu Fach (Standard 55)')}</span>
               </label>
               <label className="space-y-1">
                 <span className="text-[10px] text-surface-500">{tr('Magazin-Fach (0 = keins)')}</span>
@@ -875,10 +899,14 @@ export default function Setup({ setCurrentPage }) {
         {step === 6 && (
           <div className="space-y-3">
             <p className="text-xs text-surface-500">
-              {tr('Jetzt die echten Positionen: Regal 1 als Anker, dann Magazin, äußerstes Regal und Drucker. Printloom fährt hin, du justierst nach.')}
+              {isCompactSelection(components)
+                ? tr('Jetzt die echten Positionen: erst das Kompakt-Regal, dann der Drucker. Printloom fährt hin, du justierst nach.')
+                : tr('Jetzt die echten Positionen: Regal 1 als Anker, dann Magazin, äußerstes Regal und Drucker. Printloom fährt hin, du justierst nach.')}
             </p>
 
-            <FirstCalibration numRacks={+nr || 1} magazineSlot={+magSlot || 0} />
+            {isCompactSelection(components) && <CompactRackMeasure />}
+            <FirstCalibration numRacks={+nr || 1} magazineSlot={+magSlot || 0}
+              withRacks={!isCompactSelection(components)} />
 
             {/* Trockenlauf: die Sequenz durchspielen, ohne etwas zu senden. */}
             <div className="border-t border-surface-700 pt-3 space-y-2">

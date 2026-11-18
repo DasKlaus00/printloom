@@ -217,7 +217,9 @@ def edit():
 # Oberfläche bekommt sie über GET /api/rack-manager/ (limits) für ihre Formulare.
 LIMITS = {
     "num_racks":         (1, 10),
-    "slots_per_rack":    (1, 20),
+    # Bis 40: Das Kompakt-Regal hat ~24 Fächer (bis v1.1.79 war bei 20 Schluss).
+    "slots_per_rack":    (1, 40),
+    "compact_clearance_mm": (0.0, 60.0),
     "slot_height_mm":    (1.0, 500.0),
     "slot_tolerance_mm": (0.0, 100.0),
     "slot_stacked_pct":  (0.0, 100.0),
@@ -300,6 +302,27 @@ def apply_config(data: dict, body: dict) -> dict:
         data["max_plates"] = _number(body, "max_plates", int)
     if "height_margin_pct" in body:
         data["height_margin_pct"] = _number(body, "height_margin_pct")
+    # Bauart (seit v1.1.80): „standard" oder „compact" (dichte Halterung, kein Magazin,
+    # siehe rack_logic „Kompakt-Regal"). Die EINE Quelle dafür — die Geometrie
+    # übernimmt sie über ottoeject_motion.apply_rack_config.
+    if "rack_type" in body:
+        rt = str(body.get("rack_type") or "standard").strip().lower()
+        if rt not in ("standard", rack_logic.COMPACT):
+            raise ValueError(f"rack_type: unbekannte Bauart ({body.get('rack_type')!r})")
+        if rt == rack_logic.COMPACT and not rack_logic.is_compact(data):
+            data["empty_plates_migrated"] = True     # nichts aus Magazin-Zählern erfinden
+        data["rack_type"] = rt
+    if rack_logic.is_compact(data):
+        # Kein Magazin: Die leeren Platten liegen in den Fächern (compact_fill_order).
+        # Auch wenn ein altes Formular ein Magazin-Fach mitschickt — dessen Zweig unten
+        # würde sonst alle Leerplatten-Marken löschen.
+        body = {k: v for k, v in body.items() if k != "magazine_slot"}
+        data["magazine_slot"] = 0
+        data["stack_slot"] = 1
+    if "compact_clearance_mm" in body:
+        data["compact_clearance_mm"] = _number(body, "compact_clearance_mm")
+    if "compact_top_open" in body:
+        data["compact_top_open"] = bool(body.get("compact_top_open"))
     if "magazine_slot" in body:
         # 0 = KEIN Magazin (alle Fächer lagern; leere Platten werden manuell eingelegt).
         data["magazine_slot"] = max(0, _number(body, "magazine_slot", int))
@@ -353,6 +376,40 @@ def apply_config(data: dict, body: dict) -> dict:
         cnts = [min(c, defs[i]) for i, c in enumerate(cnts)]
     data["magazine_counts"] = cnts
     return data
+
+
+def place_empty_plates(data: dict, count: int) -> list:
+    """Kompakt-Regal: „Ich habe `count` leere Platten eingelegt." Markiert genau so
+    viele Fächer in der Einlege-Reihenfolge (rack_logic.compact_fill_order: letztes
+    Regal von unten, dann das davor) und löscht alle anderen Leerplatten-Marken.
+    Fächer mit einem Druck werden übersprungen — dort liegt keine leere Platte.
+    → markierte Fächer als ["3-1", …]. Zu viele Platten → ValueError."""
+    if not rack_logic.is_compact(data):
+        raise ValueError("Leere Platten nach Reihenfolge einlegen gibt es nur beim Kompakt-Regal")
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        raise ValueError(f"count: keine Zahl ({count!r})")
+    if count < 0:
+        raise ValueError("count: darf nicht negativ sein")
+    slots = data.get("slots") or {}
+    for s in slots.values():
+        if isinstance(s, dict):
+            s["empty_plate"] = False
+    marked = []
+    for r, s in rack_logic.compact_fill_order(data):
+        if len(marked) >= count:
+            break
+        slot = slots.get(f"{r}-{s}")
+        if not isinstance(slot, dict) or slot.get("status", "free") not in ("free", "ready") \
+                or slot.get("object_height_mm"):
+            continue
+        slot["empty_plate"] = True
+        marked.append(f"{r}-{s}")
+    if len(marked) < count:
+        raise ValueError(f"Nur {len(marked)} freie Fächer für {count} leere Platten")
+    data["empty_plates_migrated"] = True
+    return marked
 
 
 def update_slot(slot: str, status: str, file_name: str = None,

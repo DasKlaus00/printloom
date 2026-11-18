@@ -32,9 +32,11 @@ import TeachIn from './TeachIn'
 
 const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d)
 
-export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDone }) {
+// withRacks=false: nur der Drucker. Das Kompakt-Regal misst seine Regale selbst
+// (components/CompactRack.jsx) — hier würden sie mit dem alten Ablauf gemessen.
+export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDone, withRacks = true }) {
   const { tr } = useLanguage()
-  const [open, setOpen] = useState('rack1')   // offene Station
+  const [open, setOpen] = useState(withRacks ? 'rack1' : 'eject')   // offene Station
   const [done, setDone] = useState({})        // id → 'ok' | 'skip'
   const [busy, setBusy] = useState(false)
   const [err, setErr]   = useState('')
@@ -75,8 +77,8 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
   /* Stations-Reihenfolge. Steht VOR den Handlern, damit `finish` nicht auf die
      weiter unten gebaute Stationsliste zugreifen muss — das Magazin entfällt ohne
      Magazin-Fach, das äußerste Regal bei nur einem Regal. */
-  const IDS = ['rack1', ...(mag > 0 ? ['magazine'] : []),
-               ...(nr > 1 ? ['lastRack'] : []), 'eject', 'place']
+  const IDS = [...(withRacks ? ['rack1'] : []), ...(withRacks && mag > 0 ? ['magazine'] : []),
+               ...(withRacks && nr > 1 ? ['lastRack'] : []), 'eject', 'place']
 
   const finish = (id, how) => {
     setDone(d => {
@@ -176,7 +178,7 @@ export default function FirstCalibration({ numRacks = 1, magazineSlot = 7, onDon
       hint: tr('Position, an der die Platte im Drucker abgesetzt wird.'),
       approach: approachPrinter, apply: applyPrinter('load', 'place'),
     },
-  ].filter(Boolean).sort((a, b) => IDS.indexOf(a.id) - IDS.indexOf(b.id))
+  ].filter(st => st && IDS.includes(st.id)).sort((a, b) => IDS.indexOf(a.id) - IDS.indexOf(b.id))
 
   const total = STATIONS.length
   const okCount = STATIONS.filter(st => done[st.id] === 'ok').length
