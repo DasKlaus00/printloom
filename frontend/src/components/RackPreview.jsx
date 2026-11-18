@@ -4,11 +4,15 @@ import { useLanguage } from '../services/i18n'
 /* 2.4 — Live-Vorschau des Regals. Raster aus Regalen × Fächern, aktualisiert sich
    sofort beim Ändern der Werte; Fachhöhe wird proportional als Pixelhöhe gezeigt,
    damit man hohe/niedrige Fächer sieht. Optional ein Magazin-Fach hervorheben.
-   onSlotClick(rack, slot) → Fächer werden anklickbar (z.B. zum Anfahren). */
-export default function RackPreview({ numRacks = 1, slotsPerRack = 6, slotHeightMm = 50, magazineSlot = null, onSlotClick = null, busy = false }) {
+   onSlotClick(rack, slot) → Fächer werden anklickbar (z.B. zum Anfahren).
+   topDown: Fach 1 oben (Kompakt-Regal), sonst unten. limits: Grenzen aus
+   GET /rack-manager/ — ohne sie wird nur gegen Unsinn (0, NaN) abgesichert. */
+export default function RackPreview({ numRacks = 1, slotsPerRack = 6, slotHeightMm = 50, magazineSlot = null, onSlotClick = null, busy = false, topDown = false, limits = null }) {
   const { tr } = useLanguage()
-  const racks = Math.max(1, Math.min(9, +numRacks || 1))
-  const slots = Math.max(1, Math.min(20, +slotsPerRack || 1))
+  const maxR  = limits?.num_racks?.[1] ?? Infinity
+  const maxS  = limits?.slots_per_rack?.[1] ?? Infinity
+  const racks = Math.max(1, Math.min(maxR, +numRacks || 1))
+  const slots = Math.max(1, Math.min(maxS, +slotsPerRack || 1))
   const h     = Math.max(1, +slotHeightMm || 1)
   const px    = Math.round(12 + Math.min(300, h) / 300 * 22)   // 10–300 mm → ~13–34 px
   const clickable = typeof onSlotClick === 'function'
@@ -18,7 +22,7 @@ export default function RackPreview({ numRacks = 1, slotsPerRack = 6, slotHeight
       <div className="flex items-end justify-center gap-3 overflow-x-auto">
         {Array.from({ length: racks }).map((_, r) => (
           <div key={r} className="flex flex-col items-center gap-1 shrink-0">
-            <div className="flex flex-col-reverse gap-0.5">
+            <div className={`flex ${topDown ? 'flex-col' : 'flex-col-reverse'} gap-0.5`}>
               {Array.from({ length: slots }).map((_, s) => {
                 const isMag = magazineSlot != null && (s + 1) === +magazineSlot
                 const base = `w-12 rounded-sm border flex items-center justify-center text-[10px] font-mono ${

@@ -16,17 +16,19 @@ import TeachIn from './TeachIn'
 
      Aufbau      vier vorbelegte Angaben und die Zahl der leeren Platten — das Bild
                  daneben zeigt sofort, wo was liegt.
-     Einmessen   drei Handgriffe: unterstes Fach von Regal 1 (daraus X, Greif-Y, Höhe),
-                 oberstes Fach (daraus der echte Fachabstand), Einlege-Punkt. Für jedes
+     Einmessen   drei Handgriffe: Fach 1 (oben) von Regal 1 (daraus X, Greif-Y, Höhe),
+                 unterstes Fach (daraus der echte Fachabstand), Einlege-Punkt. Für jedes
                  weitere Regal nur noch X.
-     Testen      eine leere Platte holen, in Regal 1 oben ablegen.
+     Testen      eine leere Platte holen, in Regal 1 Fach 1 ablegen.
+
+   FACH 1 IST OBEN (seit v1.1.81), die Nummern zählen nach unten.
 
    Die Regeln, nach denen die Farm dann holt und ablegt, stehen in
    backend/app/services/rack_logic.py („Kompakt-Regal"). */
 
 const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d)
 
-/* Kleines Bild: je Regal eine Spalte, unten Fach 1. */
+/* Kleines Bild: je Regal eine Spalte, oben Fach 1 — die leeren Platten liegen oben. */
 function CompactPicture({ nr, spr, plates, tr }) {
   const n = Math.max(1, Math.min(10, num(nr, 3)))
   const s = Math.max(1, Math.min(40, num(spr, 24)))
@@ -40,7 +42,7 @@ function CompactPicture({ nr, spr, plates, tr }) {
           <span className="text-[10px] text-surface-500">
             {r === 1 ? tr('Drucke ↓') : (filled[r] ? tr('leer') : '')}
           </span>
-          <div className="flex flex-col-reverse gap-px border border-surface-600 rounded-sm p-0.5">
+          <div className="flex flex-col gap-px border border-surface-600 rounded-sm p-0.5">
             {Array.from({ length: s }, (_, j) => j + 1).map(f => (
               <span key={f} className={`block w-6 h-1 rounded-[1px] ${
                 f <= (filled[r] || 0) ? 'bg-surface-400' : 'bg-surface-800'}`} />
@@ -79,7 +81,7 @@ export function CompactRackPlan({ onSaved, onBack }) {
   }, [tr])
 
   // Wo die leeren Platten liegen werden — genau die Reihenfolge des Backends
-  // (rack_logic.compact_fill_order): letztes Regal von unten, dann das davor.
+  // (rack_logic.compact_fill_order): letztes Regal ab Fach 1 (oben), dann das davor.
   const where = (() => {
     const out = []
     let left = Math.max(0, num(plates, 0))
@@ -157,7 +159,7 @@ export function CompactRackPlan({ onSaved, onBack }) {
         <CompactPicture nr={nr} spr={spr} plates={plates} tr={tr} />
       </div>
       <p className="text-[10px] text-surface-500">
-        {tr('Lege die leeren Platten von unten in das letzte Regal, ohne Lücke. Die Farm holt immer die oberste. Zwischen einem fertigen Druck und einer leeren Platte lässt sie ein Fach frei.')}
+        {tr('Lege die leeren Platten ab Fach 1 (oben) in das letzte Regal, ohne Lücke. Die Farm holt immer die oberste. Zwischen einem fertigen Druck und einer leeren Platte lässt sie ein Fach frei.')}
       </p>
       {err && <p className="text-xs text-red-400">{err}</p>}
       <div className="flex justify-between pt-2">
@@ -231,8 +233,8 @@ export function CompactRackMeasure() {
     } finally { setBusy(false) }
   }
 
-  // ① Unterstes Fach von Regal 1 → X, Greif-Y und Höhe. Greif-Y und Höhe gelten
-  //   für alle Regale (gleich gebaut); X misst jedes Regal einzeln (④).
+  // ① Fach 1 (oben) von Regal 1 → X, Greif-Y und Höhe von Fach 1 (first_z). Greif-Y
+  //   und Höhe gelten für alle Regale (gleich gebaut); X misst jedes Regal einzeln (④).
   const applyR1 = (pos) => patch(g => {
     const rg = { ...(g.rack_geo || {}) }
     for (let r = 1; r <= nr; r++) {
@@ -241,12 +243,13 @@ export function CompactRackMeasure() {
     return { ...g, rack_geo: rg }
   }, 'r1', tr('✓ Regal 1: X {0} · Y {1} · Z {2}', pos.x, pos.y, pos.z))
 
-  // ② Oberstes Fach → echter Fachabstand aus zwei gemessenen Höhen.
-  const applyTop = async (pos) => {
+  // ② Unterstes Fach → echter Fachabstand aus zwei gemessenen Höhen. Fach 1 liegt
+  //   oben, also ist das unterste Fach um (Fächer − 1) Abstände TIEFER.
+  const applyBottom = async (pos) => {
     const z1 = num(r1.first_z, NaN)
-    const pitch = (num(pos.z) - z1) / Math.max(1, spr - 1)
+    const pitch = (z1 - num(pos.z)) / Math.max(1, spr - 1)
     if (!Number.isFinite(pitch) || pitch < 8 || pitch > 60) {
-      setErr(tr('Gemessener Fachabstand {0} mm ist unplausibel — erst das unterste Fach einmessen.',
+      setErr(tr('Gemessener Fachabstand {0} mm ist unplausibel — erst Fach 1 (oben) einmessen.',
                 Number.isFinite(pitch) ? pitch.toFixed(1) : '?'))
       return
     }
@@ -258,14 +261,14 @@ export function CompactRackMeasure() {
       const rg = { ...(g.rack_geo || {}) }
       for (let r = 1; r <= nr; r++) rg[r] = { ...(rg[r] || {}), slot_gap: p - SLOT_Z_EXTRA }
       return { ...g, rack_geo: rg, storage: { ...(g.storage || {}), slot_gap: p - SLOT_Z_EXTRA } }
-    }, 'top', tr('✓ Fachabstand gemessen: {0} mm', p))
+    }, 'bottom', tr('✓ Fachabstand gemessen: {0} mm', p))
   }
 
   // ③ Einlege-Punkt: wie weit vor „ganz drin" die Vorderkante auf dem Eingang liegt.
   const applyEntry = (pos) => {
     const entry = num(r1.y_engage, NaN) - num(pos.y)
     if (!(entry > 0)) {
-      setErr(tr('Der Einlege-Punkt muss vor dem Greifpunkt liegen (kleinere Y) — erst das unterste Fach einmessen.'))
+      setErr(tr('Der Einlege-Punkt muss vor dem Greifpunkt liegen (kleinere Y) — erst Fach 1 (oben) einmessen.'))
       return
     }
     return patch(g => ({ ...g, compact_entry_mm: Math.round(entry * 10) / 10 }),
@@ -316,22 +319,22 @@ export function CompactRackMeasure() {
         </button>
       </div>
 
-      <Station {...st('r1')} id="r1" nrLabel="1" title={tr('Regal 1 · unterstes Fach')}
-        text={tr('Greifer auf Fachhöhe ganz unter die Platte im untersten Fach fahren — so tief, wie er beim Holen hineinfährt.')}
+      <Station {...st('r1')} id="r1" nrLabel="1" title={tr('Regal 1 · Fach 1 (oben)')}
+        text={tr('Greifer auf Fachhöhe ganz unter die Platte in Fach 1, dem obersten Fach, fahren — so tief, wie er beim Holen hineinfährt.')}
         value={`X ${r1.x ?? '—'} · Y ${r1.y_engage ?? '—'} · Z ${r1.first_z ?? '—'}`}>
-        <TeachIn title={tr('Regal 1 · unterstes Fach')} axes={['x', 'y', 'z']}
+        <TeachIn title={tr('Regal 1 · Fach 1 (oben)')} axes={['x', 'y', 'z']}
           hint={tr('Unter die Platte, ganz hinein.')}
           onApproach={() => controlService.runOp({ op: 'approach', rack: 1, slot: 1 })}
           onApply={applyR1} onClose={() => setOpen('')} />
       </Station>
 
-      <Station {...st('top')} id="top" nrLabel="2" title={tr('Regal 1 · oberstes Fach')}
-        text={tr('Nur die Höhe: genauso unter das oberste Fach (Fach {0}). Daraus rechnet Printloom den echten Fachabstand.', spr)}
+      <Station {...st('bottom')} id="bottom" nrLabel="2" title={tr('Regal 1 · unterstes Fach')}
+        text={tr('Nur die Höhe: genauso unter das unterste Fach (Fach {0}). Daraus rechnet Printloom den echten Fachabstand.', spr)}
         value={rack.slot_height_mm ? tr('Fachabstand {0} mm', rack.slot_height_mm) : ''}>
-        <TeachIn title={tr('Regal 1 · oberstes Fach')} axes={['z']}
-          hint={tr('Auf die Höhe des obersten Fachs.')}
+        <TeachIn title={tr('Regal 1 · unterstes Fach')} axes={['z']}
+          hint={tr('Auf die Höhe des untersten Fachs.')}
           onApproach={() => controlService.runOp({ op: 'approach', rack: 1, slot: spr })}
-          onApply={applyTop} onClose={() => setOpen('')} />
+          onApply={applyBottom} onClose={() => setOpen('')} />
       </Station>
 
       <Station {...st('entry')} id="entry" nrLabel="3" title={tr('Einlege-Punkt')}
@@ -339,16 +342,16 @@ export function CompactRackMeasure() {
         value={geo.compact_entry_mm ? tr('Einlege-Weg {0} mm', geo.compact_entry_mm) : tr('noch nicht eingemessen')}>
         <TeachIn title={tr('Einlege-Punkt')} axes={['y']}
           hint={tr('Vorderkante ~1 cm auf dem Regaleingang.')}
-          onApproach={() => controlService.runOp({ op: 'approach', rack: 1, slot: spr })}
+          onApproach={() => controlService.runOp({ op: 'approach', rack: 1, slot: 1 })}
           onApply={applyEntry} onClose={() => setOpen('')} />
       </Station>
 
       {Array.from({ length: Math.max(0, nr - 1) }, (_, i) => i + 2).map(r => (
         <Station key={r} {...st(`x${r}`)} id={`x${r}`} nrLabel={`R${r}`} title={tr('Regal {0} · Position', r)}
-          text={tr('Nur X: vor das unterste Fach von Regal {0}. Höhe und Tiefe sind wie bei Regal 1.', r)}
+          text={tr('Nur X: vor Fach 1 (oben) von Regal {0}. Höhe und Tiefe sind wie bei Regal 1.', r)}
           value={`X ${geo.rack_geo?.[String(r)]?.x ?? '—'}`}>
           <TeachIn title={tr('Regal {0} · Position', r)} axes={['x']}
-            hint={tr('Vor das unterste Fach.')}
+            hint={tr('Vor Fach 1 (oben).')}
             onApproach={() => controlService.runOp({ op: 'approach', rack: r, slot: 1 })}
             onApply={applyX(r)} onClose={() => setOpen('')} />
         </Station>
@@ -366,8 +369,8 @@ export function CompactRackMeasure() {
             {src ? tr('Leere Platte holen (Regal {0} · Fach {1})', src[0], src[1]) : tr('Keine leere Platte eingetragen')}
           </button>
           <button disabled={busy || !geo.compact_entry_mm} className="btn-secondary text-sm disabled:opacity-50"
-            onClick={() => runTest('store', 1, spr,
-              tr('Der Arm legt die Platte im Greifer in Regal 1 Fach {0} ab (Vorderkante an den Eingang, dann hineinschieben).', spr))}>
+            onClick={() => runTest('store', 1, 1,
+              tr('Der Arm legt die Platte im Greifer in Regal 1 Fach {0} ab (Vorderkante an den Eingang, dann hineinschieben).', 1))}>
             {tr('In Regal 1 oben ablegen')}
           </button>
         </div>

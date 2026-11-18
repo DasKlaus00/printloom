@@ -194,9 +194,14 @@ export function checkClearance(slotKey, heightMm, rackData, slotH) {
 /* ── Kompakt-Regal (seit v1.1.80) ──────────────────────────────────────────
    Gegenstück zu backend/app/services/rack_logic.py „Kompakt-Regal" — MUSS dasselbe
    Fach wählen, sonst zeigt die Vorschau ein anderes Fach, als die Farm nimmt.
-   Leere Platten im letzten Regal (oberste zuerst gegriffen), Drucke ab Regal 1
-   von oben, nur angehängt; zwischen Druck und leerer Platte bleibt ein Fach frei. */
+   FACH 1 IST OBEN (seit v1.1.81). Gerechnet wird mit der Höhe (1 = unten).
+   Leere Platten im letzten Regal ab Fach 1 (oberste zuerst gegriffen), Drucke ab
+   Regal 1 Fach 1, nur angehängt; zwischen Druck und leerer Platte bleibt ein Fach frei. */
 export const isCompact = (rackData) => String(rackData?.rack_type ?? '').toLowerCase() === 'compact'
+
+/** Welche Fachnummer steht in Zeile `row` (0 = oberste Zeile) der Regal-Ansicht?
+ *  Original-Regal: oben das höchste Fach (Magazin), Kompakt-Regal: oben Fach 1. */
+export const slotForRow = (rackData, row, spr) => (isCompact(rackData) ? row + 1 : spr - row)
 
 export function compactSpan(heightMm, rackData) {
   const pitch = +rackData?.slot_height_mm > 0 ? +rackData.slot_height_mm : 16
@@ -208,8 +213,8 @@ export function compactSpan(heightMm, rackData) {
   return Math.max(1, Math.ceil(Math.round(((h + clear) / pitch) * 1e6) / 1e6))
 }
 
-function compactState(rackData, r, s, taken) {
-  const k = `${r}-${s}`
+function compactState(rackData, r, fach, taken) {
+  const k = `${r}-${fach}`
   if (taken?.has(k)) return 'stored'
   const slot = rackData?.slots?.[k]
   if (!slot) return 'free'
@@ -222,10 +227,11 @@ export function compactStoreSlot(rackData, heightMm, taken = new Set()) {
   const span = compactSpan(heightMm, rackData)
   const nr = +rackData?.num_racks || 3
   const spr = +rackData?.slots_per_rack || 24
+  const fach = (h) => spr - h + 1          // Höhe (1 = unten) ↔ Fach (1 = oben)
   for (let r = 1; r <= nr; r++) {
-    const st = {}
-    for (let s = 1; s <= spr; s++) st[s] = compactState(rackData, r, s, taken)
-    const stored = Object.keys(st).map(Number).filter(s => st[s] === 'stored')
+    const st = {}                          // nach Höhe
+    for (let h = 1; h <= spr; h++) st[h] = compactState(rackData, r, fach(h), taken)
+    const stored = Object.keys(st).map(Number).filter(h => st[h] === 'stored')
     let s
     if (stored.length) s = Math.min(...stored) - span
     else if (rackData?.compact_top_open) s = spr
@@ -235,28 +241,29 @@ export function compactStoreSlot(rackData, heightMm, taken = new Set()) {
     for (let t = s; t <= Math.min(spr, s + span - 1); t++) if (st[t] !== 'free') ok = false
     const below = Object.keys(st).map(Number).filter(t => t < s && st[t] !== 'free')
     if (below.length && s - Math.max(...below) < 2) ok = false
-    if (ok) return `${r}-${s}`
+    if (ok) return `${r}-${fach(s)}`
   }
   return null
 }
 
-/** Woher die nächste leere Platte kommt: oberste des höchsten Regals. */
+/** Woher die nächste leere Platte kommt: oberste (kleinste Nummer) des höchsten Regals. */
 export function compactPlateSource(rackData) {
   const marks = (rackData?.empty_plates ?? []).map(parseSlotKey)
   if (!marks.length) return null
-  marks.sort((a, b) => (b[0] - a[0]) || (b[1] - a[1]))
+  marks.sort((a, b) => (b[0] - a[0]) || (a[1] - b[1]))
   return marks[0]
 }
 
-/** Fächer, in die ein eingelagerter Druck von unten hineinragt (nur Anzeige). */
+/** Fächer, in die ein eingelagerter Druck hineinragt — nach OBEN, also zu kleineren
+ *  Nummern (nur Anzeige). */
 export function compactCoveredSlots(rackData) {
   const out = new Set()
   if (!isCompact(rackData)) return out
   for (const [k, slot] of Object.entries(rackData?.slots ?? {})) {
     const h = slot?.object_height_mm
     if (!(h > 0)) continue
-    const [r, s] = parseSlotKey(k)
-    for (let i = 1; i < compactSpan(h, rackData); i++) out.add(`${r}-${s + i}`)
+    const [r, f] = parseSlotKey(k)
+    for (let i = 1; i < compactSpan(h, rackData) && f - i >= 1; i++) out.add(`${r}-${f - i}`)
   }
   return out
 }

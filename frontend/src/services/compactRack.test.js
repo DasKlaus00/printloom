@@ -2,7 +2,7 @@
    backend/tests/test_compact_rack.py — die Vorschau MUSS dasselbe Fach wählen wie
    die Farm (rack_logic „Kompakt-Regal"). */
 import { describe, it, expect } from 'vitest'
-import { compactSpan, compactStoreSlot, compactPlateSource, compactCoveredSlots, autoSlot, isCompact } from './rackUtils'
+import { compactSpan, compactStoreSlot, compactPlateSource, compactCoveredSlots, autoSlot, isCompact, slotForRow } from './rackUtils'
 import { derivedConfig, lockedBy, selectComponent, isCompactSelection } from './hardware'
 
 // Echte Form von GET /api/rack-manager/ (Auszug)
@@ -22,46 +22,61 @@ function kompakt({ nr = 3, spr = 24, topOpen = true, platten = 0 } = {}) {
 }
 const ablegen = (d, k, h) => { d.slots[k].status = 'done'; d.slots[k].object_height_mm = h }
 
-describe('Kompakt-Regal: Fachwahl wie im Backend', () => {
+describe('Kompakt-Regal: Fachwahl wie im Backend (Fach 1 = oben)', () => {
   it('belegt Fächer nach Höhe plus Zugabe', () => {
     const d = kompakt()
     expect([8, 24, 30, 0].map(h => compactSpan(h, d))).toEqual([1, 2, 3, 1])
   })
-  it('erster Druck ganz oben in Regal 1, dann darunter angehängt', () => {
+  it('erster Druck in Fach 1 von Regal 1, dann darunter angehängt', () => {
     const d = kompakt({ platten: 18 })
-    expect(compactStoreSlot(d, 30)).toBe('1-24')
-    ablegen(d, '1-24', 30)
-    expect(compactStoreSlot(d, 30)).toBe('1-21')
-    expect(compactStoreSlot(d, 8)).toBe('1-23')
+    expect(compactStoreSlot(d, 30)).toBe('1-1')
+    ablegen(d, '1-1', 30)
+    expect(compactStoreSlot(d, 30)).toBe('1-4')
+    expect(compactStoreSlot(d, 8)).toBe('1-2')
   })
   it('keine Lücke wird nachgefüllt, Regal 1 voll → Regal 2', () => {
     const d = kompakt()
-    ablegen(d, '1-24', 30); ablegen(d, '1-21', 60)
-    expect(compactStoreSlot(d, 8)).toBe('1-20')
-    const e = kompakt(); ablegen(e, '1-2', 8)
-    expect(compactStoreSlot(e, 30)).toBe('2-24')
+    ablegen(d, '1-1', 30); ablegen(d, '1-4', 60)
+    expect(compactStoreSlot(d, 8)).toBe('1-5')
+    const e = kompakt(); ablegen(e, '1-23', 8)
+    expect(compactStoreSlot(e, 30)).toBe('2-1')
+    expect(compactStoreSlot(e, 8)).toBe('1-24')
   })
   it('oben zu: der erste Druck muss in die Fächer passen', () => {
-    expect(compactStoreSlot(kompakt({ topOpen: false }), 30)).toBe('1-22')
+    expect(compactStoreSlot(kompakt({ topOpen: false }), 30)).toBe('1-3')
+  })
+  it('solange oben leere Platten liegen, kommt kein Druck darunter', () => {
+    expect(compactStoreSlot(kompakt({ nr: 1, platten: 20 }), 8)).toBeNull()
   })
   it('zwischen Druck und leerer Platte bleibt ein Fach frei', () => {
     const d = kompakt({ nr: 1, platten: 20 })
-    for (const k of ['1-24', '1-23', '1-22']) { expect(compactStoreSlot(d, 8)).toBe(k); ablegen(d, k, 8) }
-    expect(compactStoreSlot(d, 8)).toBeNull()
+    for (let f = 1; f <= 18; f++) d.slots[`1-${f}`].empty_plate = false   // oben 18 geholt
+    for (let f = 1; f <= 17; f++) { expect(compactStoreSlot(d, 8)).toBe(`1-${f}`); ablegen(d, `1-${f}`, 8) }
+    expect(compactStoreSlot(d, 8)).toBeNull()   // Fach 18 läge direkt über der Platte in 19
   })
   it('die Warteschlangen-Vorschau nutzt dieselben Regeln', () => {
     const d = kompakt()
     expect(isCompact(d)).toBe(true)
-    expect(autoSlot([{ status: 'pending', slot: '1-24' }], d, 8)).toBe('1-23')
+    expect(autoSlot([{ status: 'pending', slot: '1-1' }], d, 8)).toBe('1-2')
     expect(autoSlot([], kompakt({ nr: 1, platten: 24 }), 8)).toBe('1-0')
   })
-  it('gegriffen wird die oberste leere Platte des höchsten Regals', () => {
-    expect(compactPlateSource(kompakt({ platten: 30 }))).toEqual([3, 24])
+  it('gegriffen wird die oberste leere Platte (Fach 1) des höchsten Regals', () => {
+    const d = kompakt({ platten: 30 })
+    expect(compactPlateSource(d)).toEqual([3, 1])
+    d.empty_plates = d.empty_plates.filter(k => k !== '3-1')
+    expect(compactPlateSource(d)).toEqual([3, 2])
     expect(compactPlateSource(kompakt())).toBeNull()
   })
-  it('ein hoher Druck verdeckt die Fächer über sich (Anzeige)', () => {
-    const d = kompakt(); ablegen(d, '1-20', 30)
-    expect([...compactCoveredSlots(d)].sort()).toEqual(['1-21', '1-22'])
+  it('ein hoher Druck verdeckt die Fächer über sich (kleinere Nummern, Anzeige)', () => {
+    const d = kompakt(); ablegen(d, '1-5', 30)
+    expect([...compactCoveredSlots(d)].sort()).toEqual(['1-3', '1-4'])
+    const e = kompakt(); ablegen(e, '1-1', 30)
+    expect([...compactCoveredSlots(e)]).toEqual([])   // ragt oben hinaus
+  })
+  it('Regal-Ansicht: Kompakt Fach 1 oben, Original das höchste Fach oben', () => {
+    expect([0, 1, 23].map(row => slotForRow(kompakt(), row, 24))).toEqual([1, 2, 24])
+    expect([0, 1, 6].map(row => slotForRow({ rack_type: 'standard' }, row, 7))).toEqual([7, 6, 1])
+    expect(slotForRow(null, 0, 7)).toBe(7)
   })
 })
 

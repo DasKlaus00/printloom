@@ -8,7 +8,7 @@ import { ResponsiveDashboardGrid, PANELS, ROW_HEIGHT } from '../components/Dashb
 import {
   FARM_BREAKPOINTS, FARM_COLS, FARM_LAYOUTS, FARM_GRID_VERSION, migrateFarmLayout, mergeChange, shouldPersist,
 } from '../services/dashboardLayout'
-import { parseSlotKey, slotsNeeded, autoSlot, slotTolerance } from '../services/rackUtils'
+import { parseSlotKey, slotsNeeded, autoSlot, slotTolerance, slotForRow } from '../services/rackUtils'
 import { amsMissing } from '../services/amsUtils'
 import { useQueueEta, fmtDur, getCachedMeta } from '../services/useQueueEta'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
@@ -106,7 +106,7 @@ function FarmViz({ farmStatus, jobs, curJobId }) {
   const isPrinting = curJob?.status === 'printing'
 
   const PHASES = [
-    { id: 'grab_mag',   label: 'Holen aus Magazin' },
+    { id: 'grab_mag',   label: 'Leere Platte holen' },   // Magazin, Lagerfach oder Kompakt-Regal
     { id: 'to_printer', label: 'Zum Drucker' },
     { id: 'load',       label: 'Einlegen' },
     { id: 'printing',   label: 'Druckt…' },
@@ -1635,7 +1635,8 @@ function AutoFarm({ setCurrentPage } = {}) {
                     )}
                     <div className="space-y-1">
                       {Array.from({length: slotsPerRack}, (_, si) => {
-                        const si2          = slotsPerRack - 1 - si  // visual: 6→1 top to bottom
+                        // oben das höchste Fach (Original) bzw. Fach 1 (Kompakt-Regal)
+                        const si2          = slotForRow(rackData, si, slotsPerRack) - 1
                         const key          = `${ri+1}-${si2+1}`
                         const slot         = rackData?.slots?.[key] ?? { status: 'free' }
                         const assignedJobs = slotJobMap[key] ?? []

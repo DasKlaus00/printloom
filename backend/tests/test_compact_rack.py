@@ -1,9 +1,10 @@
 """Kompakt-Regal (seit v1.1.80): 16 mm Fachabstand, 24 Fächer, kein Magazin.
 
 So hat Alex es beschrieben (18.11.2026):
-- Leere Platten liegen in Regal 3 (bei 18 Platten in den Fächern 1–18); gegriffen wird
-  die oberste, sie wird mit dem Magnet-Greifer angehoben und herausgezogen.
-- Fertige Drucke füllen Regal 1 von OBEN nach unten, dann Regal 2 …
+- FACH 1 IST OBEN, die Nummern zählen nach unten (seit v1.1.81).
+- Leere Platten liegen in Regal 3 (bei 18 Platten in den Fächern 1–18, also oben);
+  gegriffen wird die oberste, sie wird mit dem Magnet-Greifer angehoben und herausgezogen.
+- Fertige Drucke füllen Regal 1 von OBEN (Fach 1) nach unten, dann Regal 2 …
 - Abgelegt wird waagerecht: Vorderkante an den Regaleingang, auf Fachhöhe hineinschieben.
   Ein Druck braucht nur seine Höhe plus eine kleine Zugabe.
 - Über dem obersten Fach ist es offen.
@@ -87,60 +88,63 @@ def test_neu_eintragen_ersetzt_die_alten_marken():
 def test_gegriffen_wird_die_oberste_leere_platte_aus_regal_3():
     data = kompakt()
     rack_store.place_empty_plates(data, 30)          # Regal 3 voll, Regal 2 Fächer 1–6
-    assert rack_logic.plate_source(data) == (3, 24, False)
-    data["slots"]["3-24"]["empty_plate"] = False      # gegriffen
-    assert rack_logic.plate_source(data) == (3, 23, False)
+    assert rack_logic.plate_source(data) == (3, 1, False)     # Fach 1 = oben
+    data["slots"]["3-1"]["empty_plate"] = False       # gegriffen
+    assert rack_logic.plate_source(data) == (3, 2, False)
 
 
 # ── Ablage ──────────────────────────────────────────────────────────────────
 
 def test_erster_druck_kommt_ganz_oben_in_regal_1():
-    assert rack_logic.compact_store_slot(kompakt(platten=18), 30) == "1-24"
+    assert rack_logic.compact_store_slot(kompakt(platten=18), 30) == "1-1"
 
 
 def test_naechste_drucke_haengen_darunter_an_mit_platz_fuer_ihre_hoehe():
     data = kompakt(platten=18)
-    ablegen(data, "1-24", 30)
-    # Der NEUE Druck (30 mm) braucht 3 Fächer bis zur Platte darüber: 24 − 3 = 21.
-    assert rack_logic.compact_store_slot(data, 30) == "1-21"
+    ablegen(data, "1-1", 30)
+    # Der NEUE Druck (30 mm) braucht 3 Fächer bis zur Platte darüber: Fach 1 + 3 = 4.
+    assert rack_logic.compact_store_slot(data, 30) == "1-4"
     # Ein flacher Druck (8 mm) braucht nur ein Fach: direkt darunter.
-    assert rack_logic.compact_store_slot(data, 8) == "1-23"
+    assert rack_logic.compact_store_slot(data, 8) == "1-2"
 
 
 def test_keine_luecke_wird_nachgefuellt():
     data = kompakt()
-    ablegen(data, "1-24", 30)
-    ablegen(data, "1-21", 60)        # unter 21 ist die Lücke 22–23 frei, bleibt aber leer
-    assert rack_logic.compact_store_slot(data, 8) == "1-20"
+    ablegen(data, "1-1", 30)
+    ablegen(data, "1-4", 60)         # über Fach 4 ist die Lücke 2–3 frei, bleibt aber leer
+    assert rack_logic.compact_store_slot(data, 8) == "1-5"
 
 
 def test_reservierte_faecher_anderer_jobs_zaehlen_als_druck():
     data = kompakt()
-    assert rack_logic.compact_store_slot(data, 8, {"1-24"}) == "1-23"
+    assert rack_logic.compact_store_slot(data, 8, {"1-1"}) == "1-2"
 
 
 def test_ist_regal_1_voll_geht_es_in_regal_2():
     data = kompakt()
-    ablegen(data, "1-2", 8)          # unterster Druck in Regal 1 bei Fach 2
-    assert rack_logic.compact_store_slot(data, 30) == "2-24"   # 2 − 3 < 1
-    assert rack_logic.compact_store_slot(data, 8) == "1-1"
+    ablegen(data, "1-23", 8)         # unterster Druck in Regal 1 bei Fach 23
+    assert rack_logic.compact_store_slot(data, 30) == "2-1"    # 23 + 3 > 24
+    assert rack_logic.compact_store_slot(data, 8) == "1-24"
 
 
 def test_oben_zu_muss_der_erste_druck_in_die_faecher_passen():
     data = kompakt(top_open=False)
-    assert rack_logic.compact_store_slot(data, 30) == "1-22"   # 22, 23, 24 frei
+    assert rack_logic.compact_store_slot(data, 30) == "1-3"    # 1–3 frei, ragt nicht hinaus
+
+
+def test_solange_oben_leere_platten_liegen_kein_druck_darunter():
+    data = kompakt(nr=1, platten=20)          # ein Regal: Fächer 1–20 (oben) leer belegt
+    assert rack_logic.compact_store_slot(data, 8) is None
 
 
 def test_zwischen_druck_und_leerer_platte_bleibt_ein_fach_frei():
-    data = kompakt(nr=1, platten=20)          # ein Regal: Fächer 1–20 leer belegt
-    assert rack_logic.compact_store_slot(data, 8) == "1-24"
-    ablegen(data, "1-24", 8)
-    assert rack_logic.compact_store_slot(data, 8) == "1-23"
-    ablegen(data, "1-23", 8)
-    # 22 läge direkt über der leeren Platte in 20? Nein: 22 − 20 = 2 → erlaubt.
-    assert rack_logic.compact_store_slot(data, 8) == "1-22"
-    ablegen(data, "1-22", 8)
-    # 21 läge direkt auf der leeren Platte 20 → nicht erlaubt.
+    data = kompakt(nr=1, platten=20)
+    for f in range(1, 19):                    # die oberen 18 leeren Platten sind geholt
+        data["slots"][f"1-{f}"]["empty_plate"] = False
+    for f in range(1, 18):                    # Drucke hängen sich von oben an …
+        assert rack_logic.compact_store_slot(data, 8) == f"1-{f}"
+        ablegen(data, f"1-{f}", 8)
+    # … bis Fach 17: Fach 18 läge direkt über der leeren Platte in Fach 19.
     assert rack_logic.compact_store_slot(data, 8) is None
 
 
@@ -162,11 +166,11 @@ def test_farm_waehlt_ueber_die_kompakt_regeln(monkeypatch):
     pytest.importorskip("fastapi")
     from app.routers import autofarm as af
     data = kompakt(platten=18)
-    ablegen(data, "1-24", 30)
+    ablegen(data, "1-1", 30)
     monkeypatch.setattr(af, "_rack_data", lambda: data)
-    monkeypatch.setitem(af._farm, "jobs", [{"id": 7, "slot": "1-21", "status": "running"}])
-    # Fach 1-21 hält ein laufender Job → nächster 8-mm-Druck direkt darunter: 20.
-    assert af._find_slot_for_height(8, exclude_job_id=1) == "1-20"
+    monkeypatch.setitem(af._farm, "jobs", [{"id": 7, "slot": "1-4", "status": "running"}])
+    # Fach 1-4 hält ein laufender Job → nächster 8-mm-Druck direkt darunter: 5.
+    assert af._find_slot_for_height(8, exclude_job_id=1) == "1-5"
 
 
 # ── Bewegung ────────────────────────────────────────────────────────────────
@@ -174,7 +178,7 @@ def test_farm_waehlt_ueber_die_kompakt_regeln(monkeypatch):
 def geometrie(gripper="magnet", entry=230.0):
     g = motion.merge_defaults({
         "gripper": gripper, "compact_entry_mm": entry, "compact_lift_mm": 5,
-        "rack_geo": {str(r): {"x": 100 + r * 200, "y_engage": 340, "first_z": 10,
+        "rack_geo": {str(r): {"x": 100 + r * 200, "y_engage": 340, "first_z": 400,
                               "slot_gap": 16 - motion.SLOT_Z_EXTRA} for r in (1, 2, 3)},
     })
     data = kompakt()
@@ -188,9 +192,15 @@ def test_kompakt_faehrt_immer_printloom_gcode():
     assert motion.magazine_slot(g) == 0
 
 
+def test_fach_1_ist_oben():
+    g = geometrie()
+    assert motion.slot_position(g, 1, 1)[2] == 400            # first_z = Fach 1 (oben)
+    assert motion.slot_position(g, 1, 24)[2] == 400 - 23 * 16  # unterstes Fach
+
+
 def test_holen_auf_fachhoehe_mit_kleinem_hub():
     g = geometrie()
-    z3 = 10 + 2 * 16                      # Fach 3
+    z3 = 400 - 2 * 16                     # Fach 3 (von oben)
     gc = motion.build_op(g, "grab", rack=3, slot=3, check=False)
     assert f"G1 Z{z3} F1000" in gc        # auf Fachhöhe unter die Platte
     assert "G1 Y340 F600" in gc           # ganz unter die Platte
@@ -199,8 +209,8 @@ def test_holen_auf_fachhoehe_mit_kleinem_hub():
 
 def test_ablegen_vorderkante_an_den_eingang_dann_hineinschieben():
     g = geometrie()
-    z = 10 + 23 * 16                      # Fach 24
-    lines = [l for l in motion.build_op(g, "store", rack=1, slot=24, check=False).splitlines()
+    z = 400                               # Fach 1 (oben)
+    lines = [l for l in motion.build_op(g, "store", rack=1, slot=1, check=False).splitlines()
              if l.startswith("G1")]
     y_eingang = 340 - 230
     assert f"Z{z + 5}" in lines[0]                         # quer auf Tragehöhe

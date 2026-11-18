@@ -381,7 +381,7 @@ def apply_config(data: dict, body: dict) -> dict:
 def place_empty_plates(data: dict, count: int) -> list:
     """Kompakt-Regal: „Ich habe `count` leere Platten eingelegt." Markiert genau so
     viele Fächer in der Einlege-Reihenfolge (rack_logic.compact_fill_order: letztes
-    Regal von unten, dann das davor) und löscht alle anderen Leerplatten-Marken.
+    Regal ab Fach 1 (oben), dann das davor) und löscht alle anderen Leerplatten-Marken.
     Fächer mit einem Druck werden übersprungen — dort liegt keine leere Platte.
     → markierte Fächer als ["3-1", …]. Zu viele Platten → ValueError."""
     if not rack_logic.is_compact(data):

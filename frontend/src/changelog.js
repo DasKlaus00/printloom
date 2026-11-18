@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.81',
+    de: [
+      'KOMPAKT-REGAL: FACH 1 IST OBEN. Die Fächer zählen jetzt von oben nach unten, so wie man vor dem Regal steht. Die leeren Platten liegen ab Fach 1 im letzten Regal (bei 18 Platten in den Fächern 1–18), fertige Drucke kommen ab Regal 1, Fach 1. Regal-Seite, Auto-Farm, Dashboard und das Bild im Setup-Assistenten zeigen Fach 1 oben.',
+      'EINMESSEN ANGEPASST: Schritt 1 ist jetzt Fach 1 (oben), Schritt 2 das unterste Fach. Wer das Kompakt-Regal mit v1.1.80 schon eingemessen hat, misst diese beiden Schritte bitte neu ein: Die gespeicherte Höhe gehörte bisher zum untersten Fach.',
+      'Regal-Seite: Beim Kompakt-Regal lässt sich das Formular nur lesen. Regale, Fächer und Abstand ändert der Setup-Assistent, damit Regal und Armbewegung zusammen gespeichert werden. Die Vorschau zeigt jetzt alle Fächer (bis 40), nicht nur 20.',
+      'Ablauf-Anzeige der Farm: „Leere Platte holen“ statt „Holen aus Magazin“. Das stimmt jetzt auch ohne Magazin.',
+      'NEUE ROADMAP, ganz neu aus dem heutigen Stand der Software: erst an der echten Farm beweisen, dann nachts weiterdrucken statt anhalten, mehrere Drucker an einem Arm, weitere Druckermarken, Aufträge statt Dateien, Material, Sensoren und Kamera als zweite Prüfung.',
+    ],
+    en: [
+      'COMPACT RACK: SLOT 1 IS AT THE TOP. Slots now count from the top down, the way you stand in front of the rack. The empty plates sit in the last rack starting at slot 1 (with 18 plates in slots 1–18); finished prints go to rack 1 starting at slot 1. The rack page, Auto Farm, the dashboard and the picture in the setup wizard show slot 1 at the top.',
+      'CALIBRATION ADJUSTED: step 1 is now slot 1 (top), step 2 the bottom slot. If you already calibrated the compact rack with v1.1.80, please redo these two steps: the stored height used to belong to the bottom slot.',
+      'Rack page: with the compact rack the form is read-only. Racks, slots and pitch are changed in the setup wizard, so the rack and the arm motion are saved together. The preview now shows all slots (up to 40), not just 20.',
+      'Farm progress: “Grab empty plate” instead of “Grab from magazine”. This is now also correct without a magazine.',
+      'NEW ROADMAP, written from scratch from the current state of the software: prove it on the real farm first, then keep printing at night instead of stopping, several printers on one arm, more printer brands, orders instead of files, material, and sensors and the camera as a second check.',
+    ],
+  },
+  {
     version: '1.1.80',
     de: [
       'NEU: KOMPAKT-REGAL. Alle 16 mm ein Fach, 24 Fächer je Regal, kein Magazin. Die leeren Platten liegen im letzten Regal (von unten eingelegt, bei mehr Platten auch im Regal davor); die Farm holt immer die oberste. Fertige Drucke füllen Regal 1 von oben nach unten, danach Regal 2 — jeder Druck bekommt genau so viel Platz, wie er hoch ist (plus einer kleinen Zugabe). Über dem obersten Fach darf ein Druck herausragen, wenn es dort offen ist.',

@@ -272,12 +272,16 @@ def free_slots_for_empty_plate(data: dict) -> list:
 
 # ── Kompakt-Regal (seit v1.1.80) ─────────────────────────────────────────────
 # Dichte Halterung (~16 mm von Fach zu Fach, ~24 Fächer je Regal), KEIN Magazin.
+# FACH 1 IST OBEN (seit v1.1.81), die Nummern zählen nach unten — anders als beim
+# Original-Regal (Fach 1 unten, Magazin oben). Gerechnet wird intern mit der HÖHE
+# (1 = unterstes Fach, _height/_fach), damit „darüber/darunter" eindeutig bleibt.
 # Abläufe nach Alex (18.11.2026):
 #
-#   LEERE PLATTEN liegen im LETZTEN Regal (bei drei Regalen Regal 3), von unten
-#     eingelegt; reicht es nicht, geht es im Regal davor weiter (compact_fill_order).
-#     Gegriffen wird immer die OBERSTE leere Platte des höchsten Regals: Der Magnet
-#     hebt die Platte zum Herausziehen an, darüber muss also frei sein.
+#   LEERE PLATTEN liegen im LETZTEN Regal (bei drei Regalen Regal 3) ab Fach 1, also
+#     von oben ("bei 18 Platten die ersten 18 Plätze"); reicht es nicht, geht es im
+#     Regal davor weiter (compact_fill_order). Gegriffen wird immer die OBERSTE leere
+#     Platte des höchsten Regals: Der Magnet hebt die Platte zum Herausziehen an,
+#     darüber muss also frei sein.
 #   FERTIGE DRUCKE füllen Regal 1 von OBEN nach unten, danach Regal 2, …
 #     Abgelegt wird waagerecht (Vorderkante an den Regaleingang, auf Fachhöhe
 #     hineinschieben). Ein Druck braucht deshalb nur seine Höhe plus eine kleine
@@ -289,8 +293,8 @@ def free_slots_for_empty_plate(data: dict) -> list:
 #   Über dem obersten Fach ist es offen oder zu (compact_top_open). Offen: Der
 #     erste Druck eines Regals darf beliebig hoch sein. Zu: Er muss in die Fächer passen.
 #
-# Ein Druck im Fach s mit der Höhe h reicht bis unter Fach s + span(h),
-# span = ceil((h + Zugabe) / Fachabstand).
+# Ein Druck mit der Höhe h reicht span(h) − 1 Fächer nach OBEN (zu kleineren
+# Fachnummern), span = ceil((h + Zugabe) / Fachabstand).
 
 COMPACT = "compact"
 DEFAULT_COMPACT_PITCH_MM = 16.0
@@ -353,10 +357,19 @@ def _compact_state(data: dict, rack: int, slot: int, taken) -> str:
     return "free"
 
 
+def _height(fach: int, spr: int) -> int:
+    """Fachnummer (1 = oben) → Höhe (1 = unten). Die Abbildung ist ihr eigenes Gegenstück."""
+    return spr - int(fach) + 1
+
+
+_fach = _height
+
+
 def _compact_target(data: dict, rack: int, span: int, taken) -> int | None:
-    """Ablagefach in EINEM Regal oder None. Siehe Abschnittskopf."""
+    """Ablagefach (Fachnummer, 1 = oben) in EINEM Regal oder None. Gerechnet wird
+    mit der Höhe s (1 = unten), siehe Abschnittskopf."""
     spr = int((data or {}).get("slots_per_rack", 24) or 24)
-    states = {s: _compact_state(data, rack, s, taken) for s in range(1, spr + 1)}
+    states = {s: _compact_state(data, rack, _fach(s, spr), taken) for s in range(1, spr + 1)}
     stored = [s for s, st in states.items() if st == "stored"]
     if stored:
         s = min(stored) - span                # direkt unter den untersten Druck
@@ -376,7 +389,7 @@ def _compact_target(data: dict, rack: int, span: int, taken) -> int | None:
     below = [t for t in range(1, s) if states[t] != "free"]
     if below and s - max(below) < 2:
         return None
-    return s
+    return _fach(s, spr)
 
 
 def compact_store_slot(data: dict, height_mm, taken=None) -> str | None:
@@ -403,17 +416,18 @@ def compact_storable(height_mm, data: dict) -> dict:
 
 
 def compact_plate_source(data: dict) -> tuple | None:
-    """Nächste LEERE Platte: oberste des höchsten Regals, das noch welche hat."""
+    """Nächste LEERE Platte: oberste (kleinste Fachnummer) des höchsten Regals,
+    das noch welche hat."""
     marks = marked_empty_plates(data)
     if not marks:
         return None
-    return sorted(marks, key=lambda rs: (-rs[0], -rs[1]))[0]
+    return sorted(marks, key=lambda rs: (-rs[0], rs[1]))[0]
 
 
 def compact_fill_order(data: dict) -> list:
-    """Wo leere Platten eingelegt werden, in dieser Reihenfolge: letztes Regal von
-    unten nach oben, dann das Regal davor (bei 24 Fächern und 18 Platten:
-    Regal 3, Fächer 1–18)."""
+    """Wo leere Platten eingelegt werden, in dieser Reihenfolge: letztes Regal ab
+    Fach 1 (oben) nach unten, dann das Regal davor (bei 24 Fächern und 18 Platten:
+    Regal 3, Fächer 1–18, die unteren sechs bleiben frei)."""
     nr = int((data or {}).get("num_racks", 3) or 3)
     spr = int((data or {}).get("slots_per_rack", 24) or 24)
     return [(r, s) for r in range(nr, 0, -1) for s in range(1, spr + 1)]

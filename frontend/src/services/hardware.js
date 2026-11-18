@@ -42,7 +42,7 @@ export const HOLDERS = [
     name: 'Kompakt-Regal',
     vendor: 'printloom',
     badge: 'Neu',
-    desc: 'Alle 16 mm ein Fach, 24 Fächer je Regal, kein Magazin. Die leeren Platten liegen im letzten Regal (von unten eingelegt), fertige Drucke füllen Regal 1 von oben nach unten — jeder bekommt genau so viel Platz, wie er hoch ist. Abgelegt wird waagerecht: Platte an den Regaleingang, auf Fachhöhe hineinschieben. Nur mit dem Magnet-Greifer.',
+    desc: 'Alle 16 mm ein Fach, 24 Fächer je Regal, kein Magazin. Fach 1 ist oben. Die leeren Platten liegen im letzten Regal ab Fach 1, fertige Drucke füllen Regal 1 ab Fach 1 nach unten — jeder bekommt genau so viel Platz, wie er hoch ist. Abgelegt wird waagerecht: Platte an den Regaleingang, auf Fachhöhe hineinschieben. Nur mit dem Magnet-Greifer.',
     positions: 24,
     pitch: 16,
     // Beim Kompakt-Regal ist die „Fachhöhe" der Fachabstand: Ein Druck belegt so viele

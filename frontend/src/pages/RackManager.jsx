@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { rackManagerService } from '../services/api'
 import { parseRackForm, rackSaveError } from '../services/rackForm'
+import { slotForRow, isCompact } from '../services/rackUtils'
 import { useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
@@ -189,6 +190,9 @@ function RackManager() {
   const slots = data?.slots ?? {}
   const nr    = data?.num_racks      ?? 3
   const spr   = data?.slots_per_rack  ?? 6
+  // Kompakt-Regal: Fachabstand und Armbewegung hängen zusammen (CompactRackPlan
+  // speichert beides). Hier geändert, liefen sie auseinander — deshalb nur lesen.
+  const compact = isCompact(data)
 
   const counts = Object.values(slots).reduce((acc, s) => {
     acc[s.status] = (acc[s.status] ?? 0) + 1
@@ -217,6 +221,11 @@ function RackManager() {
       {/* ── Config ───────────────────────────────────────── */}
       <div className="card">
         <p className="section-label">{tr('Regal-Konfiguration')}</p>
+        {compact && (
+          <p className="text-xs text-surface-500 mb-3">
+            {tr('Kompakt-Regal: Regale, Fächer, Fachabstand und leere Platten änderst du im Setup-Assistenten (Schritt „Regal“) — dort werden Regal und Armbewegung zusammen gespeichert.')}
+          </p>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <div>
             <label className="text-xs text-surface-500 block mb-1">
@@ -224,7 +233,7 @@ function RackManager() {
               <span className="text-surface-700 ml-1">{tr('(nebeneinander)')}</span>
             </label>
             <input
-              type="number" min="1" max="10" value={numRacks}
+              type="number" min="1" max={data?.limits?.num_racks?.[1]} value={numRacks} disabled={compact}
               onChange={e => setNumRacks(e.target.value)}
               className="font-mono w-full"
             />
@@ -235,7 +244,7 @@ function RackManager() {
               <span className="text-surface-700 ml-1">{tr('(übereinander)')}</span>
             </label>
             <input
-              type="number" min="1" max="20" value={slotsPerRack}
+              type="number" min="1" max={data?.limits?.slots_per_rack?.[1]} value={slotsPerRack} disabled={compact}
               onChange={e => setSlotsPerRack(e.target.value)}
               className="font-mono w-full"
             />
@@ -243,12 +252,12 @@ function RackManager() {
           <div>
             <label className="text-xs text-surface-500 block mb-1">{tr('Fachhöhe (mm)')}</label>
             <input
-              type="number" min="10" max="500" step="1" value={slotH}
+              type="number" min="10" max="500" step="1" value={slotH} disabled={compact}
               onChange={e => setSlotH(e.target.value)}
               className="font-mono w-full"
             />
           </div>
-          <div>
+          {!compact && <div>
             <label className="text-xs text-surface-500 block mb-1">
               {tr('Fächer-Toleranz (mm)')}
               <span className="text-surface-700 ml-1">{tr('(Überstand nach oben)')}</span>
@@ -261,14 +270,15 @@ function RackManager() {
             <p className="text-[10px] text-surface-600 mt-1">
               {tr('Wie weit ein Objekt über sein oberstes Fach ragen darf, bevor ein weiteres reserviert wird. Höher = weniger Fächer, aber Kollisionsgefahr.')}
             </p>
-          </div>
+          </div>}
         </div>
 
         {/* 2.4 — Live-Vorschau: aktualisiert sich beim Tippen */}
-        <RackPreview numRacks={numRacks} slotsPerRack={slotsPerRack} slotHeightMm={slotH} />
+        <RackPreview numRacks={numRacks} slotsPerRack={slotsPerRack} slotHeightMm={slotH}
+          topDown={compact} limits={data?.limits} />
 
         <div className="flex items-center gap-4">
-          <button onClick={handleSave} disabled={saving || !hasChanges} className="btn btn-primary">
+          <button onClick={handleSave} disabled={saving || !hasChanges || compact} className="btn btn-primary">
             {saving ? tr('Speichert...') : tr('Speichern')}
           </button>
           {data && (
@@ -321,7 +331,7 @@ function RackManager() {
               </p>
               <div className="space-y-2">
                 {Array.from({length: spr}, (_, s) => {
-                  const s2   = spr - 1 - s  // visual: slot 6→1 top to bottom
+                  const s2   = slotForRow(data, s, spr) - 1  // oben: höchstes Fach bzw. Kompakt Fach 1
                   const id   = `${r+1}-${s2+1}`
                   const slot = slots[id]
                   if (!slot) return null

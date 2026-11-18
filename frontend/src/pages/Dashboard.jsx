@@ -5,6 +5,7 @@ import { PageTitle } from '../components/PageHeader'
 import { deviceService, printerService, rackManagerService, autofarmService,
          systemService } from '../services/api'
 import { useQueueEta, fmtDur } from '../services/useQueueEta'
+import { slotForRow } from '../services/rackUtils'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { useAutoRefresh } from '../services/useAutoRefresh'
 import { useLanguage, locale } from '../services/i18n'
@@ -537,7 +538,7 @@ export default function Dashboard() {
                     <p className="text-[10px] text-center font-mono text-surface-700 mb-0.5">R{ri+1}</p>
                   )}
                   {Array.from({ length: spr }, (_, si) => {
-                    const si2  = spr - 1 - si
+                    const si2  = slotForRow(rackData, si, spr) - 1   // Kompakt: Fach 1 oben
                     const key  = `${ri+1}-${si2+1}`
                     const slot = allSlots[key] ?? { status: 'free' }
                     const done    = slot.status === 'done'

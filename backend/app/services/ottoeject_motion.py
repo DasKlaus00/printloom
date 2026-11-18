@@ -30,6 +30,7 @@ Bestandsanlagen ohne diese Blöcke werden weiter über die Formel gerechnet
 sich beim Update keine einzige Position verschiebt.
 
     z_flat(slot) = first_z(rack) + (slot-1)*(slot_gap(rack)+30) + rack_z_trim[rack]
+    Kompakt-Regal: Fach 1 ist OBEN → first_z(rack) − (slot-1)*(slot_gap(rack)+30) + Trim
 """
 from __future__ import annotations
 import math
@@ -606,7 +607,9 @@ def slot_position(g: dict, rack: int, slot: int) -> tuple[float, float, float, f
     """
     r = rack_block(g, rack)
     zt = float(g.get("rack_z_trim", {}).get(str(rack), 0) or 0)
-    z = r["first_z"] + (int(slot) - 1) * (r["slot_gap"] + SLOT_Z_EXTRA) + zt
+    step = (int(slot) - 1) * (r["slot_gap"] + SLOT_Z_EXTRA)
+    # Kompakt-Regal: Fach 1 ist OBEN, first_z ist seine Höhe, es geht nach unten.
+    z = (r["first_z"] - step if is_compact(g) else r["first_z"] + step) + zt
     return r["x"], r["y_engage"], z, float((g.get("storage") or {}).get("y_pullback_limit", 5))
 
 
