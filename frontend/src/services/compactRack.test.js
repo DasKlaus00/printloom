@@ -2,7 +2,8 @@
    backend/tests/test_compact_rack.py — die Vorschau MUSS dasselbe Fach wählen wie
    die Farm (rack_logic „Kompakt-Regal"). */
 import { describe, it, expect } from 'vitest'
-import { compactSpan, compactStoreSlot, compactPlateSource, compactCoveredSlots, autoSlot, isCompact, slotForRow } from './rackUtils'
+import { compactSpan, compactStoreSlot, compactPlateSource, compactCoveredSlots, autoSlot, isCompact, slotForRow,
+         compactBottomZ, compactReach } from './rackUtils'
 import { derivedConfig, lockedBy, selectComponent, isCompactSelection } from './hardware'
 
 // Echte Form von GET /api/rack-manager/ (Auszug)
@@ -98,5 +99,24 @@ describe('Kompakt-Regal in der Komponenten-Auswahl', () => {
     const cfg = derivedConfig({ holder: 'standard', gripper: 'standard', topSlot: 'magazine' })
     expect(cfg).toMatchObject({ rack_type: 'standard', slots_per_rack: 6, magazine_slot: 7, gripper_id: 'standard' })
     expect(lockedBy('gripper', 'standard', { holder: 'standard' })).toBeNull()
+  })
+})
+
+describe('Kompakt-Regal: Höhen beim Einmessen', () => {
+  // Echte Form von GET /control/ottoeject/geometry (Auszug, mit Vorgaben aufgefüllt)
+  const geo = (z) => ({ machine_limits: z ? { x: 700, y: 400, z } : {}, compact_lift_mm: 5, magnet_release_mm: 5 })
+
+  it('alte Höhe aus v1.1.80 (unterstes Fach) fällt auf: Fach 24 läge unter Z 0', () => {
+    expect(compactBottomZ(14, 24, 16)).toBe(-354)
+    expect(compactBottomZ(380, 24, 16)).toBe(12)
+  })
+  it('Z-Weg 365 mm reicht bei 16 mm nur für 23 Fächer', () => {
+    const r = compactReach(geo(365), 16, 24)
+    expect(r).toMatchObject({ zmax: 365, maxSlots: 23, ok: false, need: 378 })
+    expect(compactReach(geo(365), 16, 23).ok).toBe(true)
+  })
+  it('ohne bekannte Z-Grenze wird nichts behauptet', () => {
+    expect(compactReach(geo(null), 16, 24)).toBeNull()
+    expect(compactReach(geo(365), 0, 24)).toBeNull()
   })
 })

@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.82',
+    de: [
+      'KOMPAKT-REGAL: EINMESSEN AN EINEM REGAL DEINER WAHL. Oben im Schritt „Einmessen“ wählst du, an welchem Regal du Höhe, Tiefe und Einlege-Punkt misst — zum Beispiel an Regal 2 oder 3, wenn du dort besser herankommst. Alle Regale sind gleich gebaut; für die anderen misst du nur noch X.',
+      'Behoben: Schritt 2 („unterstes Fach“) rechnete mit der alten Höhe aus v1.1.80 und wollte auf Z −354 mm fahren; die Prüfung hat das abgelehnt. Jetzt merkt Schritt 1, wenn die gespeicherte Höhe nicht zu Fach 1 oben passt, und Schritt 2 bleibt gesperrt, bis Fach 1 eingemessen ist.',
+      'NEU: Reichweite in Z. Kennt Printloom die Z-Grenze des Arms (Schritt „OTTOeject“ liest sie aus Klipper), rechnet es vor, wie viele Fächer der Arm samt Anheben und Absenken erreicht. Bei 365 mm und 16 mm Abstand sind das 23, nicht 24. Der Schritt „Regal“ warnt dann und bietet „Auf 23 Fächer setzen“ an.',
+    ],
+    en: [
+      'COMPACT RACK: CALIBRATE AT A RACK OF YOUR CHOICE. At the top of the “Calibrate” step you choose the rack where you measure height, depth and insert point — for example rack 2 or 3 if you can reach it better. All racks are built the same; for the others you only measure X.',
+      'Fixed: step 2 (“bottom slot”) used the old height from v1.1.80 and tried to move to Z −354 mm; the check refused it. Now step 1 notices when the stored height does not fit slot 1 at the top, and step 2 stays locked until slot 1 is calibrated.',
+      'NEW: reach in Z. When Printloom knows the arm’s Z limit (the “OTTOeject” step reads it from Klipper), it works out how many slots the arm reaches including lifting and lowering. With 365 mm and a 16 mm pitch that is 23, not 24. The “Rack” step then warns and offers “Set to 23 slots”.',
+    ],
+  },
+  {
     version: '1.1.81',
     de: [
       'KOMPAKT-REGAL: FACH 1 IST OBEN. Die Fächer zählen jetzt von oben nach unten, so wie man vor dem Regal steht. Die leeren Platten liegen ab Fach 1 im letzten Regal (bei 18 Platten in den Fächern 1–18), fertige Drucke kommen ab Regal 1, Fach 1. Regal-Seite, Auto-Farm, Dashboard und das Bild im Setup-Assistenten zeigen Fach 1 oben.',

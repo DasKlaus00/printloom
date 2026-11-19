@@ -267,3 +267,24 @@ export function compactCoveredSlots(rackData) {
   }
   return out
 }
+
+/** Höhe des untersten Fachs, wenn Fach 1 (oben) auf `firstZ` liegt. */
+export const compactBottomZ = (firstZ, spr, pitch) => firstZ - (Math.max(1, +spr || 1) - 1) * pitch
+
+/** Wie viele Fächer erreicht der Arm in Z? Über Fach 1 braucht er den Hub beim Holen
+ *  und Einlegen (compact_lift_mm), unter dem untersten Fach das Absenken zum Lösen
+ *  (magnet_release_mm) — wie ottoeject_motion._grab_compact/_store_compact. Nur eine
+ *  Vorschau fürs Einrichten: Was wirklich gesendet wird, prüft das Backend gegen die
+ *  Achsgrenzen. null = Z-Grenze unbekannt (Setup-Schritt „OTTOeject“ liest sie aus
+ *  Klipper), dann wird nichts behauptet. */
+export function compactReach(geo, pitch, spr) {
+  const zmax = +geo?.machine_limits?.z
+  const p = +pitch
+  if (!(zmax > 0) || !(p > 0)) return null
+  const lift = Math.max(0.5, +geo?.compact_lift_mm || 0)     // Untergrenze wie im Backend
+  const release = Math.max(0, +geo?.magnet_release_mm || 0)
+  const n = Math.max(1, +spr || 1)
+  const need = Math.round(((n - 1) * p + lift + release) * 10) / 10
+  const maxSlots = Math.max(0, Math.floor((zmax - lift - release) / p + 1e-6) + 1)
+  return { zmax, lift, release, need, maxSlots, ok: n <= maxSlots }
+}
