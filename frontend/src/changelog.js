@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.85',
+    de: [
+      'Printloom lässt sich unter einem Unterpfad betreiben, zum Beispiel hinter einem Proxy unter „/live/“: beim Bauen PRINTLOOM_BASE_PATH=/live/ setzen. Alle Adressen im Browser — Schnittstelle, Live-Kanal, Seiten-Adressen, Kamerabilder, Service Worker — laufen dafür über eine Stelle. Normale Installationen ändern sich nicht. Die Live-Demo auf der Website nutzt das.',
+      'Manifest und Benachrichtigungen verweisen relativ auf ihre Symbole, damit sie auch unter einem Unterpfad stimmen.',
+    ],
+    en: [
+      'Printloom can run under a sub-path, for example behind a proxy at “/live/”: set PRINTLOOM_BASE_PATH=/live/ when building. All addresses in the browser — API, live channel, page addresses, camera images, service worker — go through one place for this. Normal installations do not change. The live demo on the website uses it.',
+      'The manifest and notifications refer to their icons relatively, so they also work under a sub-path.',
+    ],
+  },
+  {
     version: '1.1.84',
     de: [
       'Native Installation (Linux ohne Docker): Das Update-Paket wird jetzt zuverlässig veröffentlicht — erst das Paket, dann seine Prüfsumme, jeweils mit Wiederholung. Bei v1.1.83 war das Hochladen des Pakets abgebrochen; das Update-Skript hat das unpassende Paar zu Recht abgelehnt.',

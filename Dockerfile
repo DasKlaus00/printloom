@@ -9,6 +9,9 @@ COPY frontend/package*.json ./
 RUN npm install
 
 COPY frontend/ .
+# Basis-Pfad im Browser (Standard „/“; die Website-Demo baut mit /live/).
+ARG PRINTLOOM_BASE_PATH=/
+ENV PRINTLOOM_BASE_PATH=$PRINTLOOM_BASE_PATH
 RUN npm run build
 
 # Backend stage

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { PageTitle } from '../components/PageHeader'
 import { createPortal } from 'react-dom'
 import { apiError } from '../services/apiError'
+import { withBase } from '../services/basePath'
 import { rackManagerService, fileService, deviceService, printerService, controlService, autofarmService, deviceSettingsService, systemService } from '../services/api'
 import { parseNumber, rackSaveError } from '../services/rackForm'
 import { ResponsiveDashboardGrid, PANELS, ROW_HEIGHT } from '../components/DashboardGrid'
@@ -27,7 +28,7 @@ import QueuePlanner from '../components/farm/QueuePlanner'
 function JobSnapshot({ name }) {
   const [err, setErr] = useState(false)
   if (!name || err) return null
-  const src = `/api/printer/snapshots/${name}`
+  const src = withBase(`/api/printer/snapshots/${name}`)
   return (
     <a href={src} target="_blank" rel="noreferrer" className="block w-fit">
       <img src={src} alt="Snapshot" onError={() => setErr(true)}

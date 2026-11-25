@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { autofarmService } from './api'
+import { withBase } from './basePath'
 
 /* P6 — geteilter WebSocket-Live-Kanal für den Auto-Farm-Status.
    EINE Verbindung für die ganze App: Dashboard, Auto Farm und Mobile-View
@@ -11,7 +12,7 @@ import { autofarmService } from './api'
 
 function wsUrl() {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${window.location.host}/api/autofarm/ws`
+  return `${proto}//${window.location.host}${withBase('/api/autofarm/ws')}`
 }
 
 // ── Modulweiter Singleton: eine Verbindung, viele Abonnenten ──

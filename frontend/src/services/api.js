@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { withBase } from './basePath'
 import { SETUP_DONE_KEY } from './constants'
 import { tr } from './i18n'
 
@@ -11,7 +12,7 @@ import { tr } from './i18n'
 const DEFAULT_TIMEOUT_MS = 45000
 const NO_TIMEOUT = 0            // axios: 0 = unbegrenzt
 
-const api = axios.create({ baseURL: '/api', timeout: DEFAULT_TIMEOUT_MS })
+const api = axios.create({ baseURL: withBase('/api'), timeout: DEFAULT_TIMEOUT_MS })
 
 // Kaputte Datendatei (Backend: 503 DATEI_UNLESBAR, seit v1.1.48). EINE Stelle für
 // alle Aufrufe: die Meldung übersetzt, und die Kopfzeile erfährt davon.
@@ -88,7 +89,7 @@ export const fileService = {
   crashCheck:   (id, plate = null) => api.get(`/files/${id}/crash-check`, {
     params: plate != null ? { plate } : {}, timeout: 20000,
   }),
-  thumbnailUrl: (id)       => `/api/files/${id}/thumbnail`,
+  thumbnailUrl: (id)       => withBase(`/api/files/${id}/thumbnail`),
 }
 
 export const folderService = {
@@ -150,11 +151,11 @@ export const printerService = {
   sendFile:             (deviceId, fileId, useAms = true, amsSlot = null, plate = null) => api.post(`/printer/send/${deviceId}/${fileId}`, null, { timeout: NO_TIMEOUT, params: { use_ams: useAms, ...(amsSlot !== null && amsSlot !== undefined && { ams_slot: amsSlot }), ...(plate !== null && plate !== undefined && { plate }) } }),
   sendGcode:            (deviceId, gcode)  => api.post(`/printer/gcode/${deviceId}`, null, { params: { gcode } }),
   getStatus:            (deviceId)         => _getPrinterStatus(deviceId),
-  cameraStreamUrl:      (deviceId)         => `/api/printer/camera/${deviceId}`,
-  cameraFrameUrl:       (deviceId)         => `/api/printer/camera/${deviceId}/frame`,
+  cameraStreamUrl:      (deviceId)         => withBase(`/api/printer/camera/${deviceId}`),
+  cameraFrameUrl:       (deviceId)         => withBase(`/api/printer/camera/${deviceId}/frame`),
   // Kammerlicht für die Live-Ansicht; die Kamera-GETs schalten es nicht mehr selbst.
   cameraLight:          (deviceId)         => api.post(`/printer/camera/${deviceId}/light`),
-  haCameraStreamUrl:    (deviceId)         => `/api/printer/ha-camera/${deviceId}`,
+  haCameraStreamUrl:    (deviceId)         => withBase(`/api/printer/ha-camera/${deviceId}`),
   haCameraTest:         (deviceId)         => api.get(`/printer/ha-camera/${deviceId}/test`),
   getPlates:            (fileId)           => api.get(`/printer/plates/${fileId}`),
   // Drucker-Einstellungen (KI-Erkennung, Geschwindigkeit, Auto-Recovery, Licht)
@@ -227,7 +228,7 @@ export const systemService = {
   getCameraSettings:   () => api.get('/system/camera'),
   saveCameraSettings:  (data) => api.post('/system/camera', data),
   // Diagnose-Paket (ZIP, ohne Zugangsdaten) — direkter Download-Link
-  diagnosticsUrl:      () => '/api/system/diagnostics',
+  diagnosticsUrl:      () => withBase('/api/system/diagnostics'),
 }
 
 /* Online-Dienste — ALLE opt-in. Ohne Zustimmung + Schalter macht das Backend
@@ -278,7 +279,7 @@ export const autofarmService = {
   getHomingFileInfo: ()      => api.get('/autofarm/homing_file/info'),
   setupHomingFile:   ()      => api.post('/autofarm/homing_file/setup'),
   clearLog:          ()      => api.post('/autofarm/clear_log'),
-  downloadLogFile:   ()      => window.open('/api/autofarm/log/download', '_blank'),
+  downloadLogFile:   ()      => window.open(withBase('/api/autofarm/log/download'), '_blank'),
   getStats:          ()      => api.get('/autofarm/stats'),
   resetStats:        ()      => api.delete('/autofarm/stats'),
   getCompleted:      (limit = 500) => api.get('/autofarm/completed', { params: { limit } }),

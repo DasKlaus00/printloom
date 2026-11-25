@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { PageTitle } from '../components/PageHeader'
+import { withBase } from '../services/basePath'
 import { apiError, apiDetail } from '../services/apiError'
 import { confirmDialog } from '../services/confirm'
 import { systemService, healthService, pushService } from '../services/api'
@@ -439,7 +440,7 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
           <p className="text-[11px] text-surface-500 min-w-0">
             {tr('Prüft Drucke direkt nach dem Slicen gegen deine Farm (Arm-Kollision, Regalhöhe, Spulen), schickt sie mit „Senden“ in die Warteschlange und zeigt Farm und Drucker in einem eigenen Tab in OrcaSlicer (ab 2.5).')}
           </p>
-          <a href="/api/slicer/plugin" download="printloom_orca.py"
+          <a href={withBase('/api/slicer/plugin')} download="printloom_orca.py"
             className="btn btn-secondary text-sm shrink-0">{tr('↓ Plugin herunterladen')}</a>
         </div>
         <ol className="list-decimal list-inside text-[11px] text-surface-500 space-y-0.5">

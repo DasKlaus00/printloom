@@ -73,9 +73,10 @@ import { useFarmStatusStream } from './services/useFarmStatusStream'
 import { tabTitle, farmTitleState } from './services/tabTitle'
 import { navCompact, NAV_KEY, NAV_AUTO_MAX } from './services/navState'
 import { VERSION } from './version'
+import { withBase, stripBase } from './services/basePath'
 
 /* Adressen, Titel und Seitenleiste kommen aus services/pages.js (eine Tabelle). */
-const pageFromPath = () => pageForPath(window.location.pathname)
+const pageFromPath = () => pageForPath(stripBase(window.location.pathname))
 
 // Seite → Komponente; welche Seiten es gibt, sagt services/pages.js (pages.test.js
 // prüft, dass jede dort genannte Seite hier eine Komponente hat).
@@ -212,8 +213,8 @@ function App() {
     setCurrentPageState(page)
     setVisitedPages(prev => new Set([...prev, page]))
     const path = PAGE_TO_PATH[page] ?? '/dashboard'
-    if (window.location.pathname !== path) {
-      window.history.pushState({ page }, '', path)
+    if (stripBase(window.location.pathname) !== path) {
+      window.history.pushState({ page }, '', withBase(path))
     }
   }, [])
 
@@ -239,7 +240,7 @@ function App() {
         const hasDevice = (r.data ?? []).some(d => d.device_type === 'bambu_lab')
         if (hasDevice) {
           localStorage.setItem(SETUP_DONE_KEY, '1')  // existing install → never nag
-        } else if (window.location.pathname === '/' || window.location.pathname === '/dashboard') {
+        } else if (['/', '/dashboard'].includes(stripBase(window.location.pathname))) {
           setCurrentPage('setup')
         }
       })

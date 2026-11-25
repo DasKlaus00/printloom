@@ -4,6 +4,7 @@ import App from './App.jsx'
 import './index.css'
 import { initTheme } from './services/theme'
 import { reloadOnceForStaleChunk } from './services/reloadGuard'
+import { withBase } from './services/basePath'
 
 // Thema anwenden (index.html hat es schon vor dem ersten Bild gesetzt) und auf
 // Wechsel des Betriebssystems hören. Speichert nichts — siehe services/theme.js.
@@ -20,7 +21,7 @@ window.addEventListener('vite:preloadError', (e) => {
 // Register the service worker for web-push (PWA). Best-effort.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {})
+    navigator.serviceWorker.register(withBase('/sw.js'), { scope: withBase('/') }).catch(() => {})
   })
 }
 

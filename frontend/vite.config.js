@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  // Basis-Pfad im Browser (src/services/basePath.js). Normal „/“, die Website-Demo baut
+  // mit PRINTLOOM_BASE_PATH=/live/. Immer mit Schrägstrich am Ende.
+  base: (process.env.PRINTLOOM_BASE_PATH || '/').replace(/\/?$/, '/'),
   server: {
     host: '0.0.0.0',
     port: 3000,
