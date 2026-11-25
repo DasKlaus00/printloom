@@ -16,6 +16,8 @@ import { COMPONENT_GROUPS, derivedConfig, loadComponents, saveComponents,
          pitchToGap, gapToPitch, VENDOR_LABEL,
          isCompactSelection, lockedBy, selectComponent } from '../services/hardware'
 import { CompactRackPlan, CompactRackMeasure } from '../components/CompactRack'
+import { driverOf, canSave, devicePayload, nameForModel, setupPrinter,
+         moonrakerPrinters, armCandidates, MOONRAKER_PORT } from '../services/setupPrinter'
 
 
 const STEPS = ['Willkommen', 'Komponenten', 'Drucker', 'OTTOeject', 'Regal', 'Kalibrierung', 'Einmessen']
@@ -102,12 +104,13 @@ export default function Setup({ setCurrentPage }) {
 
   // Step 2 — printer
   const [devices, setDevices]   = useState([])
-  const [pForm, setPForm]       = useState({ name: 'Bambu X1C', model: '', ip_address: '', serial_number: '', access_code: '' })
+  // `port` gilt nur für Moonraker (U1); ein Bambu läuft fest über 8883.
+  const [pForm, setPForm]       = useState({ name: 'Bambu X1C', model: '', ip_address: '', serial_number: '', access_code: '', port: '' })
   // Modelle aus dem Backend (printer_models): bestimmt Kamera-Protokoll + Fähigkeiten.
   const [models, setModels]     = useState([])
   const [pSaving, setPSaving]   = useState(false)
   const [pErr, setPErr]         = useState(null)
-  const [pTest, setPTest]       = useState(null)   // Bambu-Testergebnis
+  const [pTest, setPTest]       = useState(null)   // Testergebnis (Bambu oder U1)
   const [pTesting, setPTesting] = useState(false)
 
   // Step 3 — klipper / OTTOeject (eigenes Gerät, wie der Drucker)
@@ -189,8 +192,10 @@ export default function Setup({ setCurrentPage }) {
     </div>
   ) : null
 
-  const bambu = devices.find(d => d.device_type === 'bambu_lab')
+  const printerDev = setupPrinter(devices)
   const klipperDev = devices.find(d => d.device_type === 'klipper')
+  const pDriver = driverOf(models, pForm.model)
+  const foundU1 = moonrakerPrinters(discovered?.klipper)
 
   /* Verbaute Komponenten aus der GEOMETRIE übernehmen (serverseitig, gilt für alle
      Geräte). localStorage ist nur noch Vorbelegung für den Erstlauf: sonst zeigte ein
@@ -399,16 +404,9 @@ export default function Setup({ setCurrentPage }) {
   const createPrinter = async () => {
     setPErr(null); setPSaving(true)
     try {
-      await deviceService.createDevice({
-        name: pForm.name || 'Bambu X1C',
-        device_type: 'bambu_lab',
-        ip_address: pForm.ip_address,
-        port: 8883, mqtt_port: 8883, use_tls: true,
-        serial_number: pForm.serial_number,
-        access_code: pForm.access_code,
-        model: pForm.model || '',
-      })
-      if (pForm.model) await applyPrinterPackage(pForm.model)
+      await deviceService.createDevice(devicePayload(pForm, pDriver))
+      // Arm-Vorlage und Tür-Frage nur für Bambu: Den U1 fährt die Farm noch nicht.
+      if (pForm.model && pDriver === 'bambu') await applyPrinterPackage(pForm.model)
       const r = await deviceService.listDevices()
       setDevices(r.data ?? [])
       window.dispatchEvent(new CustomEvent('printloom:devicesChanged'))
@@ -418,11 +416,11 @@ export default function Setup({ setCurrentPage }) {
     } finally { setPSaving(false) }
   }
 
-  const testBambu = async () => {
-    if (!bambu) return
+  const testPrinter = async () => {
+    if (!printerDev) return
     setPTesting(true); setPTest(null)
     try {
-      const r = await deviceService.testDevice(bambu.id)
+      const r = await deviceService.testDevice(printerDev.id)
       setPTest(r.data)
     } catch (e) {
       setPTest({ success: false, message: apiError(e) })
@@ -656,13 +654,20 @@ export default function Setup({ setCurrentPage }) {
         {/* ── Step 2: Printer ── */}
         {step === 2 && (
           <div className="space-y-3">
-            {bambu ? (
-              <div className="bg-emerald-950/40 border border-emerald-800 rounded-lg px-4 py-3 text-sm text-emerald-300">
-                {tr('✓ Drucker bereits konfiguriert:')} <span className="font-mono">{bambu.name}</span> ({bambu.ip_address})
-              </div>
+            {printerDev ? (
+              <>
+                <div className="bg-emerald-950/40 border border-emerald-800 rounded-lg px-4 py-3 text-sm text-emerald-300">
+                  {tr('✓ Drucker bereits konfiguriert:')} <span className="font-mono">{printerDev.name}</span> ({printerDev.ip_address})
+                </div>
+                {printerDev.device_type === 'moonraker' && (
+                  <p className="text-xs text-amber-300">{tr('Die Farm fährt den U1 noch nicht. Für den Farm-Betrieb brauchst du derzeit einen Bambu-Lab-Drucker — den legst du unter Konfiguration → Geräte an.')}</p>
+                )}
+              </>
             ) : (
               <>
-                <p className="text-xs text-surface-500">{tr('Bambu Lab Drucker verbinden. Access-Code & Seriennummer findest du am Druckerdisplay unter Einstellungen → WLAN.')}</p>
+                <p className="text-xs text-surface-500">{pDriver === 'moonraker'
+                  ? tr('Snapmaker U1 verbinden: Er braucht nur seine IP-Adresse. Seriennummer und Access-Code wie bei Bambu gibt es hier nicht.')
+                  : tr('Bambu Lab Drucker verbinden. Access-Code & Seriennummer findest du am Druckerdisplay unter Einstellungen → WLAN.')}</p>
 
                 {/* Netzwerk-Suche: findet X1C per SSDP inkl. IP + Seriennummer */}
                 <div className="border border-surface-700 rounded-lg p-3 bg-surface-900/50 space-y-2">
@@ -673,7 +678,7 @@ export default function Setup({ setCurrentPage }) {
                     <div className="space-y-1.5">
                       {discovered.error && <p className="text-[11px] text-amber-400">{tr('Suche fehlgeschlagen')}: {discovered.error}</p>}
                       <DockerBridgeHint />
-                      {!discovered.error && !discovered.docker_bridge && !discovered.bambu?.length && (
+                      {!discovered.error && !discovered.docker_bridge && !discovered.bambu?.length && !foundU1.length && (
                         <p className="text-[11px] text-surface-600">{tr('Kein Bambu gefunden — bitte manuell eintragen. (In Docker-Bridge-Netzen kommt SSDP nicht an.)')}</p>
                       )}
                       {discovered.bambu?.map((b, i) => (
@@ -683,9 +688,19 @@ export default function Setup({ setCurrentPage }) {
                           <span className="block text-[10px] font-mono text-surface-600">{b.serial ? `S/N: ${b.serial}` : tr('Seriennummer manuell nötig')}</span>
                         </button>
                       ))}
+                      {foundU1.map((k, i) => (
+                        <button key={`u1-${i}`} onClick={() => setPForm(f => ({ ...f, model: 'u1', name: nameForModel(f.name, models, f.model, 'u1'),
+                                                                               ip_address: k.ip || '', port: k.port || MOONRAKER_PORT }))}
+                          className="w-full text-left px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-700 hover:border-blue-700 transition-colors">
+                          <span className="text-sm text-surface-200">🖨 {k.hostname || 'Snapmaker U1'} <span className="font-mono text-xs text-surface-500">· {k.ip}:{k.port}</span></span>
+                          <span className="block text-[10px] text-surface-600">{tr('Moonraker · Drucker mit Extruder (z. B. Snapmaker U1) — nicht der Arm')}</span>
+                        </button>
+                      ))}
                     </div>
                   )}
-                  <p className="text-[10px] text-surface-600">{tr('Access-Code wird nie mitgesendet — den trägst du selbst ein.')}</p>
+                  {pDriver === 'bambu' && (
+                    <p className="text-[10px] text-surface-600">{tr('Access-Code wird nie mitgesendet — den trägst du selbst ein.')}</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -694,23 +709,39 @@ export default function Setup({ setCurrentPage }) {
                   {/* Modell: davon hängt das Kamera-Protokoll ab (X1-Serie RTSP, P1/A1
                       Port 6000). Ohne Angabe erkennt Printloom es selbst. */}
                   <select className="w-full text-sm" value={pForm.model}
-                    onChange={e => setPForm(f => ({ ...f, model: e.target.value }))}>
+                    onChange={e => { const v = e.target.value
+                      setPForm(f => ({ ...f, model: v, name: nameForModel(f.name, models, f.model, v) })) }}>
                     <option value="">{tr('Modell wählen (optional — wird sonst erkannt)')}</option>
                     {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
                   </select>
                   <input className="w-full text-sm" placeholder={tr('IP-Adresse (192.168.1.100)')} value={pForm.ip_address}
                     onChange={e => setPForm(f => ({ ...f, ip_address: e.target.value }))} />
-                  <input className="w-full text-sm" placeholder={tr('Seriennummer (z. B. 00M…)')} value={pForm.serial_number}
-                    onChange={e => setPForm(f => ({ ...f, serial_number: e.target.value }))} />
-                  <input className="w-full text-sm" type="password" placeholder={tr('Access-Code')} value={pForm.access_code}
-                    onChange={e => setPForm(f => ({ ...f, access_code: e.target.value }))} />
+                  {pDriver === 'moonraker' ? (
+                    <>
+                      <input className="w-full text-sm" type="number" placeholder={tr('Port (7125)')} value={pForm.port}
+                        onChange={e => setPForm(f => ({ ...f, port: e.target.value }))} />
+                      <input className="w-full text-sm" type="password" value={pForm.access_code}
+                        placeholder={`${tr('API-Schlüssel (optional)')} — ${tr('nur nötig, wenn am Drucker eine Anmeldung eingerichtet ist')}`}
+                        onChange={e => setPForm(f => ({ ...f, access_code: e.target.value }))} />
+                      <p className="text-[11px] text-surface-600">
+                        {tr('Verbindung über Moonraker im Heimnetz: Port 7125 (Standard) oder 80 (über die Weboberfläche des Druckers). Die Farm fährt den U1 noch nicht — verbinden, überwachen, einstellen und drucken geht im Drucker-Tab.')}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <input className="w-full text-sm" placeholder={tr('Seriennummer (z. B. 00M…)')} value={pForm.serial_number}
+                        onChange={e => setPForm(f => ({ ...f, serial_number: e.target.value }))} />
+                      <input className="w-full text-sm" type="password" placeholder={tr('Access-Code')} value={pForm.access_code}
+                        onChange={e => setPForm(f => ({ ...f, access_code: e.target.value }))} />
+                    </>
+                  )}
                 </div>
                 {pErr && <p className="text-xs text-red-400">{pErr}</p>}
               </>
             )}
-            {bambu && (
+            {printerDev && (
               <div className="space-y-2">
-                <button onClick={testBambu} disabled={pTesting} className="btn-secondary text-sm">
+                <button onClick={testPrinter} disabled={pTesting} className="btn-secondary text-sm">
                   {pTesting ? tr('Teste…') : tr('🔌 Verbindung testen')}
                 </button>
                 {pTest && (
@@ -728,9 +759,9 @@ export default function Setup({ setCurrentPage }) {
             )}
             <div className="flex justify-between pt-2">
               <button onClick={prev} className="btn-secondary text-sm">{tr('← Zurück')}</button>
-              {bambu
+              {printerDev
                 ? <button onClick={next} className="btn-primary text-sm">{tr('Weiter →')}</button>
-                : <button onClick={createPrinter} disabled={pSaving || !pForm.ip_address || !pForm.access_code} className="btn-primary text-sm disabled:opacity-50">
+                : <button onClick={createPrinter} disabled={pSaving || !canSave(pForm, pDriver)} className="btn-primary text-sm disabled:opacity-50">
                     {pSaving ? tr('Speichere…') : tr('Drucker speichern →')}
                   </button>}
             </div>
@@ -759,10 +790,11 @@ export default function Setup({ setCurrentPage }) {
                     <div className="space-y-1.5">
                       {discovered.error && <p className="text-[11px] text-amber-400">{tr('Suche fehlgeschlagen')}: {discovered.error}</p>}
                       <DockerBridgeHint />
-                      {!discovered.error && !discovered.docker_bridge && !discovered.klipper?.length && (
+                      {!discovered.error && !discovered.docker_bridge && !armCandidates(discovered.klipper).length && (
                         <p className="text-[11px] text-surface-600">{tr('Kein Klipper/Moonraker gefunden — bitte manuell eintragen.')}</p>
                       )}
-                      {discovered.klipper?.map((k, i) => (
+                      {/* Ein gefundener U1 ist ein Drucker, kein Arm — er steht im Schritt davor. */}
+                      {armCandidates(discovered.klipper).map((k, i) => (
                         <button key={i} onClick={() => setKForm(f => ({ ...f, name: k.hostname || f.name, ip_address: k.ip || '', port: k.port || 7125 }))}
                           className="w-full text-left px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-700 hover:border-blue-700 transition-colors">
                           <span className="text-sm text-surface-200">🦾 {k.hostname || 'Klipper / OTTOeject'} <span className="font-mono text-xs text-surface-500">· {k.ip}:{k.port}</span></span>

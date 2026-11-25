@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.86',
+    de: [
+      'Startkonfiguration: Wer beim Drucker „Snapmaker U1“ wählt, gibt nur noch die IP-Adresse ein (Port und API-Schlüssel optional). Bisher verlangte der Schritt Seriennummer und Access-Code wie bei Bambu und legte den U1 als Bambu-Drucker an — so konnte er sich nie verbinden.',
+      'Die Netzwerk-Suche im Assistenten bietet einen gefundenen U1 beim Drucker an und nicht mehr beim OTTOeject.',
+      'Der Server lehnt einen U1 ab, der als Bambu-Drucker oder Arm angelegt werden soll, und sagt, welcher Gerätetyp richtig ist.',
+    ],
+    en: [
+      'Setup: if you choose “Snapmaker U1” as the printer, you now enter only its IP address (port and API key optional). Until now the step asked for a serial number and access code like on a Bambu and saved the U1 as a Bambu printer — so it could never connect.',
+      'The network search in the setup offers a found U1 as the printer, no longer as the OTTOeject.',
+      'The server rejects a U1 that is to be saved as a Bambu printer or as the arm, and says which device type is right.',
+    ],
+  },
+  {
     version: '1.1.85',
     de: [
       'Printloom lässt sich unter einem Unterpfad betreiben, zum Beispiel hinter einem Proxy unter „/live/“: beim Bauen PRINTLOOM_BASE_PATH=/live/ setzen. Alle Adressen im Browser — Schnittstelle, Live-Kanal, Seiten-Adressen, Kamerabilder, Service Worker — laufen dafür über eine Stelle. Normale Installationen ändern sich nicht. Die Live-Demo auf der Website nutzt das.',

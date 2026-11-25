@@ -346,6 +346,35 @@ def test_neues_moonraker_geraet_ist_ein_u1(db):
     assert b.model == "x1c"
 
 
+def test_u1_als_bambu_wird_abgelehnt(db):
+    # Bis v1.1.85 legte die Startkonfiguration einen gewählten U1 als Bambu an (MQTT,
+    # Seriennummer, Access-Code) — das Gerät blieb tot. Jetzt sagt der Server, warum nicht.
+    from app.routers import devices
+    from app.schemas.schemas import DeviceCreate, DeviceUpdate
+    with pytest.raises(HTTPException) as e:
+        run(devices.create_device(DeviceCreate(name="U1", device_type=PrinterType.BAMBU_LAB, model="u1",
+                                               ip_address="192.0.2.30", port=8883, serial_number="",
+                                               access_code="12345678"), db=db))
+    assert e.value.status_code == 400 and "Moonraker" in e.value.detail
+    assert db.query(Device).count() == 0
+    with pytest.raises(HTTPException):     # auch nicht als Arm
+        run(devices.create_device(DeviceCreate(name="Arm", device_type=PrinterType.KLIPPER, model="u1",
+                                               ip_address="192.0.2.31", port=7125), db=db))
+
+    # Ändern: Der Typ ist nach dem Anlegen fest. Ein Bambu bekommt kein U1-Modell,
+    # ein anderes Bambu-Modell schon.
+    x1 = run(devices.create_device(DeviceCreate(name="X1", device_type=PrinterType.BAMBU_LAB, model="x1c",
+                                                ip_address="192.0.2.6", port=8883), db=db))
+    with pytest.raises(HTTPException):
+        run(devices.update_device(x1.id, DeviceUpdate(model="u1"), db=db))
+    assert run(devices.update_device(x1.id, DeviceUpdate(model="p1s"), db=db)).model == "p1s"
+    assert run(devices.update_device(x1.id, DeviceUpdate(name="X1 links"), db=db)).model == "p1s"
+    # Ein Bambu ohne Modell bleibt erlaubt (Modell wird dann erkannt).
+    n = run(devices.create_device(DeviceCreate(name="X1C", device_type=PrinterType.BAMBU_LAB, model="",
+                                               ip_address="192.0.2.5", port=8883), db=db))
+    assert n.model is None
+
+
 def test_netzwerksuche_haelt_den_u1_nicht_fuer_den_arm():
     from app.services import discovery
     assert discovery.moonraker_kind(OBJECTS) == "printer"

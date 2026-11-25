@@ -122,6 +122,19 @@ def _clean_model(raw, serial=None) -> str:
     return printer_models.normalize(raw) or printer_models.from_serial(serial)
 
 
+def _reject_moonraker_model_as_other_type(device_type, model) -> None:
+    """Ein Moonraker-Modell (Snapmaker U1) unter einem anderen Gerätetyp ablehnen.
+
+    Als Bambu angelegt, liefe der U1 über MQTT mit Seriennummer und Access-Code ins
+    Leere — die Startkonfiguration hat das bis v1.1.85 so gespeichert. Ein totes Gerät
+    mit Grund abzulehnen ist besser, als es still zu speichern."""
+    from app.services import printer_models
+    if model and printer_models.driver(model) == "moonraker" and device_type != PrinterType.MOONRAKER:
+        # Fester Text, damit die Oberfläche ihn übersetzt (apiError → tr()). Bisher gibt
+        # es genau ein Moonraker-Modell: den U1.
+        raise HTTPException(status_code=400, detail="Der Snapmaker U1 spricht Moonraker, nicht Bambu-MQTT — Gerätetyp „Snapmaker U1“ wählen (nur IP-Adresse, ohne Seriennummer und Access-Code)")
+
+
 @router.post("/", response_model=DeviceResponse)
 async def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
     existing = db.query(Device).filter(Device.name == device.name).first()
@@ -129,6 +142,7 @@ async def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Ein Gerät mit diesem Namen gibt es schon")
     data = device.model_dump()
     data["model"] = _clean_model(data.get("model"), data.get("serial_number")) or None
+    _reject_moonraker_model_as_other_type(data.get("device_type"), data["model"])
     if data.get("device_type") == PrinterType.MOONRAKER:
         # Ein Moonraker-Drucker braucht ein Moonraker-Modell — sonst liefen Kamera und
         # Fähigkeiten über die Bambu-Annahmen. Bisher gibt es genau eins: den U1.
@@ -155,6 +169,9 @@ async def update_device(device_id: int, device: DeviceUpdate, db: Session = Depe
         # sofort zurück. Vorbelegen aus der Seriennummer passiert nur beim Anlegen.
         from app.services import printer_models
         fields["model"] = printer_models.normalize(fields["model"]) or None
+    # Der Gerätetyp ist nach dem Anlegen fest (DeviceUpdate kennt ihn nicht) — also nur
+    # prüfen, ob das neue Modell zum bestehenden Typ passt.
+    _reject_moonraker_model_as_other_type(db_device.device_type, fields.get("model"))
     for field, value in fields.items():
         setattr(db_device, field, value)
     db.add(db_device)
