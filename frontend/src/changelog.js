@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.88',
+    de: [
+      'Sicherheit: Die Home-Assistant-Kamera reicht nur noch Kamerabilder (JPEG/MJPEG) durch. Bisher ging jede Antwort der eingetragenen Adresse mit ihrem Inhaltstyp an den Browser — eine Adresse, die HTML lieferte, lief damit als Seite auf Printloom selbst, mit Skript im Namen des Nutzers. Zusätzlich läuft die Antwort in einer Sandbox.',
+      'Jede Antwort von Printloom trägt jetzt „nosniff“: Der Browser deutet nichts mehr in einen anderen Typ um.',
+    ],
+    en: [
+      'Security: the Home Assistant camera now only passes camera images (JPEG/MJPEG) through. Until now any response from the configured address reached the browser with its own content type — an address that returned HTML ran as a page on Printloom itself, with script acting as the user. The response is also sandboxed now.',
+      'Every Printloom response now carries “nosniff”: the browser no longer reinterprets content as another type.',
+    ],
+  },
+  {
     version: '1.1.87',
     de: [
       'Die Farm fährt jetzt auch den Snapmaker U1: Warteschlange drucken, auswerfen, einlagern, nachlegen — wie beim Bambu. Gedruckt wird G-code, der für den U1 gesliced ist, oder eine .3mf mit geslicetem G-code darin. Eine Datei für einen anderen Drucker druckt Printloom auf dem U1 nicht und lehnt sie schon beim Einreihen ab.',

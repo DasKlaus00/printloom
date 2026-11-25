@@ -142,7 +142,9 @@ class _NoForeignWrites:
 
         # Gegen das Einbetten in fremde Seiten: Köpfe an jede Antwort hängen, auch an
         # Kamera-Streams (dort stören sie nicht).
-        extra = request_guard.frame_headers()
+        # nosniff überall: Der Browser soll nie aus einer Antwort etwas anderes machen,
+        # als ihr Typ sagt (z. B. Text von einem Gerät als HTML ausführen).
+        extra = [*request_guard.frame_headers(), (b"x-content-type-options", b"nosniff")]
 
         async def send_with_frame_headers(message):
             if message["type"] == "http.response.start":

@@ -429,7 +429,15 @@ async def ha_camera_stream(device_id: int, db: Session = Depends(get_db)):
         hint = "Token ungültig?" if resp.status_code == 401 else \
                "Entity-ID falsch?" if resp.status_code == 404 else ""
         raise HTTPException(502, f"HA-Kamera HTTP {resp.status_code} {hint}".strip())
-    ctype = resp.headers.get("content-type", "multipart/x-mixed-replace; boundary=frame")
+    # Nur ein Kamerabild durchreichen. Bis v1.1.87 ging der Content-Type der Gegenstelle
+    # 1:1 an den Browser: Eine eingetragene „HA-Adresse", die HTML liefert, lief so als
+    # Seite auf Printloom selbst — mit Skript im Namen des Nutzers (in der Website-Demo
+    # sogar auf derselben Adresse wie deren Admin-Bereich).
+    ctype = (resp.headers.get("content-type") or "multipart/x-mixed-replace; boundary=frame").strip()
+    if not ctype.lower().startswith(HA_CAMERA_TYPES):
+        await resp.aclose()
+        await client.aclose()
+        raise HTTPException(502, "HA-Kamera liefert kein Kamerabild")
 
     async def gen():
         try:
@@ -441,7 +449,15 @@ async def ha_camera_stream(device_id: int, db: Session = Depends(get_db)):
             await resp.aclose()
             await client.aclose()
 
-    return StreamingResponse(gen(), media_type=ctype)
+    return StreamingResponse(gen(), media_type=ctype, headers=PASSTHROUGH_HEADERS)
+
+
+# Was die HA-Kamera durchreichen darf, und Köpfe für alles, was von fremden Geräten
+# kommt: kein Typ-Raten (nosniff), und selbst wenn doch etwas Aktives darin steckt,
+# läuft es in einer Sandbox ohne Skript und ohne Zugriff auf Printloom.
+HA_CAMERA_TYPES = ("multipart/x-mixed-replace", "image/jpeg", "image/jpg")
+PASSTHROUGH_HEADERS = {"X-Content-Type-Options": "nosniff",
+                       "Content-Security-Policy": "default-src 'none'; sandbox"}
 
 
 @router.get("/ha-camera/{device_id}/test")
