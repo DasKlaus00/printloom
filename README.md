@@ -54,6 +54,10 @@ one unattended, with live status, cameras and ETA in a clean web UI.
 - **Bambu Lab printer** — tested on the **X1 Carbon**. Also recognized: X1, X1E, P1S,
   P1P, A1, A1 mini and H2D (geometry templates for X1C, P1S, P1P and A1). Needs the LAN
   access code; for the camera, "LAN Mode Liveview" must be on.
+- **Snapmaker U1** (since v1.1.83, over Moonraker on the LAN): connect, monitor the four
+  toolheads, change settings (speed, flow, fans, temperatures, light, top cover), start
+  prints and see the camera. The farm does not run it yet — that comes with the driver
+  interface (ROADMAP part 4).
 - **OTTOeject** running Klipper/Moonraker (the auto-ejector). Racks: the original holders
   (55 mm per slot, magazine on top) or the **compact rack** (16 mm per slot, 24 slots,
   no magazine, magnet gripper — set up in the setup wizard).

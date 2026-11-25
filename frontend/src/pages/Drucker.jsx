@@ -12,6 +12,7 @@ import { reconcilePrinters, adoptBlock } from '../services/printerBlocks'
 import { findPrinter } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
 import TeachIn from '../components/TeachIn'
+import MoonrakerPrinterPanel from '../components/MoonrakerPrinterPanel'
 import FarmRail from '../components/FarmRail'
 
 /* ── Drucker-Tab ────────────────────────────────────────────────────────────────
@@ -910,6 +911,9 @@ export default function Drucker() {
   const [rackCfg, setRackCfg] = useState({ num_racks: 3, slots_per_rack: 6, magazine_slot: 7 })
   const [rackReady, setRackReady] = useState(false)
   const [devices, setDevices] = useState([])
+  // Moonraker-Drucker (Snapmaker U1): eigene Abschnitte mit eigenem Panel. Nicht in
+  // `devices` — die füllen die Farm-Positionen, und die Farm fährt den U1 noch nicht.
+  const [moonDevices, setMoonDevices] = useState([])
   const [devicesReady, setDevicesReady] = useState(false)
   const [models, setModels]   = useState([])
 
@@ -1224,6 +1228,7 @@ export default function Drucker() {
       .then(r => {
         setDevices((r?.data || []).filter(d => d.device_type === 'bambu_lab')
           .map(d => ({ id: d.id, name: d.name, model: d.model || '' })))
+        setMoonDevices((r?.data || []).filter(d => d.device_type === 'moonraker'))
         setDevicesReady(true)
       })
       .catch(e => setLoadError(apiError(e)))
@@ -1469,8 +1474,8 @@ export default function Drucker() {
       <div className="flex items-center justify-between px-1">
         <p className="section-label">{tr('Drucker')}</p>
         <span className="text-[10px] text-surface-600">
-          {devices.length
-            ? tr('{0} Drucker — Anzahl in Konfiguration → Geräte', devices.length)
+          {devices.length + moonDevices.length
+            ? tr('{0} Drucker — Anzahl in Konfiguration → Geräte', devices.length + moonDevices.length)
             : tr('Noch kein Drucker angelegt — Konfiguration → Geräte')}
         </span>
       </div>
@@ -1492,6 +1497,14 @@ export default function Drucker() {
       {!printers.length && (
         <p className="text-[11px] text-surface-500 px-1">{tr('Geometrie wird geladen …')}</p>
       )}
+      {moonDevices.map(d => (
+        <Section key={`moon-${d.id}`} id={`sec-moon-${d.id}`}
+          title={<>{d.name}<span className="badge">{tr('Snapmaker U1 · nicht in der Farm')}</span></>}
+          subtitle={`${d.ip_address}:${d.port}`}
+          open={openSec === `moon-${d.id}`} onToggle={() => toggleSec(`moon-${d.id}`)}>
+          <MoonrakerPrinterPanel device={d} />
+        </Section>
+      ))}
 
       {/* ── Regale ── */}
       <div className="flex items-center justify-between px-1 pt-1">

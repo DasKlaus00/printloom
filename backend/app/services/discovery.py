@@ -167,20 +167,35 @@ async def _port_open(ip: str, port: int, timeout: float = 0.4) -> bool:
         return False
 
 
+def moonraker_kind(objects) -> str:
+    """Was hinter einem Moonraker-Fund steckt: „printer" (hat einen Extruder, z. B.
+    Snapmaker U1), „arm" (kein Extruder — so ist der OTTOeject gebaut) oder
+    „unknown" (Objektliste nicht lesbar). Wichtig, weil Printloom das erste
+    Klipper-Gerät als Arm nimmt: Ein Drucker darf nicht als „OTTOeject" übernommen werden."""
+    if not isinstance(objects, list):
+        return "unknown"
+    return "printer" if any(str(n).startswith("extruder") for n in objects) else "arm"
+
+
 async def _probe_host(ip: str, sem: asyncio.Semaphore, klipper: list, bambu: list):
     async with sem:
         # Moonraker (7125)?
         if await _port_open(ip, 7125):
             hostname = None
+            objects = None
             try:
                 import httpx
                 async with httpx.AsyncClient(timeout=2.0) as c:
                     r = await c.get(f"http://{ip}:7125/printer/info")
-                if r.status_code == 200:
-                    hostname = (r.json().get("result") or {}).get("hostname")
+                    if r.status_code == 200:
+                        hostname = (r.json().get("result") or {}).get("hostname")
+                    o = await c.get(f"http://{ip}:7125/printer/objects/list")
+                    if o.status_code == 200:
+                        objects = (o.json().get("result") or {}).get("objects")
             except Exception:
                 pass
-            klipper.append({"ip": ip, "port": 7125, "hostname": hostname, "source": "scan"})
+            klipper.append({"ip": ip, "port": 7125, "hostname": hostname, "source": "scan",
+                            "kind": moonraker_kind(objects)})
             return
         # Bambu-Fallback für Docker-Bridge (kein SSDP): 8883 MQTTS + 990 FTPS offen.
         if await _port_open(ip, 8883):

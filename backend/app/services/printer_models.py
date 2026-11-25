@@ -64,6 +64,15 @@ MODELS = [
      "bed_mm": 350, "preset": None, "enclosed": True, "ams": True, "calibration": False,
      "serial_prefixes": (), "dev_models": (),
      "aliases": ("h2d",)},
+    # Snapmaker U1 (seit v1.1.83): Moonraker statt MQTT/FTP, vier Köpfe (SnapSwap),
+    # Bauraum 270 mm, Düse bis 300 °C (Herstellerangaben). Ob er eine Tür hat, die der
+    # Arm öffnen müsste, ist nicht geprüft → None (unbekannt). Keine Geometrie-Vorlage:
+    # Positionen für den Arm hat niemand gemessen, und die Farm fährt ihn noch nicht.
+    {"id": "u1", "label": "Snapmaker U1", "series": "u1", "driver": "moonraker",
+     "camera": None, "bed_mm": 270, "preset": None, "enclosed": None, "ams": False,
+     "calibration": False, "tools": 4, "max_nozzle_c": 300,
+     "serial_prefixes": (), "dev_models": (),
+     "aliases": ("snapmaker u1", "snapmaker-u1")},
     {"id": "other", "label": "Anderer / unbekannter Drucker", "series": None, "camera": None,
      "bed_mm": None, "preset": None, "enclosed": True, "ams": True, "calibration": False,
      "serial_prefixes": (), "dev_models": (), "aliases": ()},
@@ -126,10 +135,19 @@ def capability(model_id, name: str, default=None):
     return default if m is None else m.get(name, default)
 
 
+def driver(model_id) -> str:
+    """Wie Printloom mit dem Modell spricht: „bambu" (MQTT + FTP, Vorgabe) oder
+    „moonraker" (HTTP, z. B. Snapmaker U1)."""
+    m = by_id(model_id)
+    return (m or {}).get("driver") or "bambu"
+
+
 def public_list() -> list:
     """Für die UI: nur Anzeige-relevante Felder, in fester Reihenfolge."""
     return [{"id": m["id"], "label": m["label"], "series": m["series"],
+             "driver": m.get("driver") or "bambu",
              "camera": m["camera"], "enclosed": m["enclosed"],
              "ams": m["ams"], "calibration": m["calibration"],
-             "bed_mm": m["bed_mm"], "preset": m["preset"]}
+             "bed_mm": m["bed_mm"], "preset": m["preset"],
+             "tools": m.get("tools"), "max_nozzle_c": m.get("max_nozzle_c")}
             for m in MODELS]

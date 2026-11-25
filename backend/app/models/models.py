@@ -16,8 +16,12 @@ def _utcnow() -> datetime:
 
 class PrinterType(str, enum.Enum):
     BAMBU_LAB = "bambu_lab"
+    # KLIPPER ist der OTTOeject-ARM (die Farm nimmt das erste Klipper-Gerät als Arm).
     KLIPPER = "klipper"
     OTTO = "otto"
+    # Drucker mit Moonraker, zuerst der Snapmaker U1 (seit v1.1.83). Eigener Typ,
+    # damit ihn keine Stelle für den Arm hält; Treiber: services/moonraker_printer.py.
+    MOONRAKER = "moonraker"
 
 
 # Ältere Installationen haben noch die Tabellen rack_configuration, rack_slots,

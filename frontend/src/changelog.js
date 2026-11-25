@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.83',
+    de: [
+      'NEU: SNAPMAKER U1. Unter Konfiguration → Geräte als „Snapmaker U1“ anlegen (IP, Port 7125; ein API-Schlüssel nur, wenn am Drucker eine Anmeldung eingerichtet ist). „Test“ prüft die Verbindung zu Moonraker und Klipper.',
+      'Im Drucker-Tab bekommt der U1 eigene Einstellungen statt der Bambu-Einstellungen: Zustand mit Fortschritt, Restzeit und Schicht; die vier Köpfe mit Temperatur, Filament (Hersteller, Sorte, Farbe) und Filament-Sensor; Düse je Kopf und Bett heizen; Geschwindigkeit, Fluss, Bauteillüfter; Licht im Bauraum; Top-Cover (Aus, Kühlen, Warmhalten, Vorheizen, Abluft und Umluft); pausieren, fortsetzen, abbrechen; Dateien auf dem Drucker oder .gcode aus der Bibliothek drucken; Kamerabild.',
+      'Sicher: Eine Düsentemperatur wechselt nie den Kopf (beim U1 wäre „T1“ eine echte Bewegung). Gedruckt wird nur bei freiem Drucker. Der Notaus pausiert auch einen druckenden U1 und sperrt Heizen und Fortsetzen bis „Betrieb fortsetzen“. Werte, die der Drucker nicht meldet, stehen als „—“. Die Netzwerk-Suche erkennt einen Moonraker-Drucker mit Extruder als Drucker und schlägt ihn nie als OTTOeject vor (Printloom nimmt das erste Klipper-Gerät als Arm).',
+      'Noch nicht: Die Farm fährt den U1 nicht, sie steuert weiter nur Bambu-Drucker. Dafür fehlen die Arm-Positionen am U1 und der Treiber in der Farm (Roadmap Teil 4).',
+    ],
+    en: [
+      'NEW: SNAPMAKER U1. Add it under Configuration → Devices as “Snapmaker U1” (IP, port 7125; an API key only if a login is set up on the printer). “Test” checks the connection to Moonraker and Klipper.',
+      'In the Printer tab the U1 gets its own settings instead of the Bambu ones: state with progress, time left and layer; the four toolheads with temperature, filament (vendor, type, colour) and filament sensor; heat each nozzle and the bed; speed, flow, part fan; chamber light; top cover (off, cooling, keep warm, preheat, exhaust and circulation fan); pause, resume, cancel; print files on the printer or .gcode from the library; camera image.',
+      'Safe: a nozzle temperature never changes the toolhead (on the U1 “T1” would be a real move). Prints only start on an idle printer. The emergency stop also pauses a printing U1 and blocks heating and resuming until “Resume operation”. Values the printer does not report show as “—”. The network search recognises a Moonraker printer with an extruder as a printer and never offers it as the OTTOeject (Printloom takes the first Klipper device as the arm).',
+      'Not yet: the farm does not run the U1; it still drives Bambu printers only. That needs the arm positions at the U1 and the driver in the farm (roadmap part 4).',
+    ],
+  },
+  {
     version: '1.1.82',
     de: [
       'KOMPAKT-REGAL: EINMESSEN AN EINEM REGAL DEINER WAHL. Oben im Schritt „Einmessen“ wählst du, an welchem Regal du Höhe, Tiefe und Einlege-Punkt misst — zum Beispiel an Regal 2 oder 3, wenn du dort besser herankommst. Alle Regale sind gleich gebaut; für die anderen misst du nur noch X.',

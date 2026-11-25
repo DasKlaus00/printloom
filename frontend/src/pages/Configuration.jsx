@@ -969,6 +969,12 @@ function Configuration() {
         model: item.model_id || '',
         serial_number: item.serial || '', port: 8883, mqtt_port: 8883, use_tls: true,
       })
+    } else if (type === 'moonraker') {
+      setForm({
+        ...INITIAL_FORM, device_type: 'moonraker', model: 'u1',
+        name: item.hostname || 'Snapmaker U1', ip_address: item.ip || '',
+        port: item.port || 7125,
+      })
     } else {
       setForm({
         ...INITIAL_FORM, device_type: 'klipper',
@@ -1002,7 +1008,9 @@ function Configuration() {
       const updated = { ...prev, [name]: type === 'checkbox' ? checked : value }
       // Auto-set sensible default port when device type changes
       if (name === 'device_type') {
-        updated.port = value === 'klipper' ? 7125 : 8883
+        // Moonraker (OTTOeject und Snapmaker U1) hört auf 7125, Bambu auf 8883.
+        updated.port = value === 'klipper' || value === 'moonraker' ? 7125 : 8883
+        updated.model = value === 'moonraker' ? 'u1' : ''
       }
       return updated
     })
@@ -1036,7 +1044,8 @@ function Configuration() {
           name: form.name, device_type: form.device_type, ip_address: form.ip_address,
           port: +form.port, mqtt_port: +form.mqtt_port, use_tls: form.use_tls,
           serial_number: form.serial_number,
-          model: form.device_type === 'bambu_lab' ? (form.model || '') : '',
+          model: form.device_type === 'bambu_lab' ? (form.model || '')
+            : form.device_type === 'moonraker' ? (form.model || 'u1') : '',
         }
         if (form.access_code) payload.access_code = form.access_code
         await deviceService.updateDevice(editId, payload)
@@ -1074,7 +1083,8 @@ function Configuration() {
     }
   }
 
-  const typeLabel = { bambu_lab: 'Bambu Lab X1C', klipper: 'Klipper / OTTOeject', otto: 'OTTOeject' }
+  const typeLabel = { bambu_lab: 'Bambu Lab X1C', klipper: 'Klipper / OTTOeject', otto: 'OTTOeject',
+                      moonraker: 'Snapmaker U1' }
 
   return (
     <div className="space-y-6">
@@ -1156,10 +1166,17 @@ function Configuration() {
             {discovered.klipper?.map((k, i) => (
               <div key={`k${i}`} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface-950 border border-surface-700">
                 <div className="min-w-0">
-                  <p className="text-sm text-surface-200 truncate">🦾 {k.hostname || 'Klipper / OTTOeject'} <span className="text-surface-500 font-mono text-xs">· {k.ip}:{k.port}</span></p>
-                  <p className="text-[11px] text-surface-600 font-mono">Moonraker</p>
+                  <p className="text-sm text-surface-200 truncate">{k.kind === 'printer' ? '🖨' : '🦾'} {k.hostname || (k.kind === 'printer' ? 'Snapmaker U1' : 'Klipper / OTTOeject')} <span className="text-surface-500 font-mono text-xs">· {k.ip}:{k.port}</span></p>
+                  <p className="text-[11px] text-surface-600 font-mono">
+                    {k.kind === 'printer' ? tr('Moonraker · Drucker mit Extruder (z. B. Snapmaker U1) — nicht der Arm') : 'Moonraker'}
+                  </p>
                 </div>
-                <button onClick={() => applyDiscovered(k, 'klipper')} className="btn btn-secondary btn-sm shrink-0">{tr('Übernehmen')}</button>
+                {/* Ein Drucker darf nie als OTTOeject übernommen werden: Printloom nimmt
+                    das erste Klipper-Gerät als Arm. */}
+                <button onClick={() => applyDiscovered(k, k.kind === 'printer' ? 'moonraker' : 'klipper')}
+                  className="btn btn-secondary btn-sm shrink-0">
+                  {k.kind === 'printer' ? tr('Als Snapmaker U1 übernehmen') : tr('Übernehmen')}
+                </button>
               </div>
             ))}
           </div>
@@ -1183,6 +1200,7 @@ function Configuration() {
                 <select name="device_type" value={form.device_type} onChange={handleChange} disabled={editId != null}
                   className={editId != null ? 'opacity-60 cursor-not-allowed' : ''}>
                   <option value="bambu_lab">Bambu Lab X1C</option>
+                  <option value="moonraker">Snapmaker U1</option>
                   <option value="klipper">Klipper / OTTOeject</option>
                 </select>
               </div>
@@ -1205,7 +1223,7 @@ function Configuration() {
                   <label className="text-xs text-surface-500 block mb-1">{tr('Modell')}</label>
                   <select name="model" value={form.model} onChange={handleChange}>
                     <option value="">{tr('Nicht angegeben (automatisch erkennen)')}</option>
-                    {models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    {models.filter(m => (m.driver || 'bambu') === 'bambu').map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
                   </select>
                   {form.model && (
                     <p className="text-[11px] text-surface-600 mt-1">
@@ -1233,6 +1251,25 @@ function Configuration() {
                 <div className="col-span-2 flex items-center gap-2">
                   <input type="checkbox" name="use_tls" id="use_tls" checked={form.use_tls} onChange={handleChange} />
                   <label htmlFor="use_tls" className="text-sm text-surface-400 cursor-pointer">{tr('TLS verwenden (empfohlen)')}</label>
+                </div>
+              </div>
+            )}
+
+            {form.device_type === 'moonraker' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="text-xs text-surface-500 block mb-1">{tr('Modell')}</label>
+                  <select name="model" value={form.model || 'u1'} onChange={handleChange}>
+                    {models.filter(m => m.driver === 'moonraker').map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                  <p className="text-[11px] text-surface-600 mt-1">
+                    {tr('Verbindung über Moonraker im Heimnetz: Port 7125 (Standard) oder 80 (über die Weboberfläche des Druckers). Die Farm fährt den U1 noch nicht — verbinden, überwachen, einstellen und drucken geht im Drucker-Tab.')}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs text-surface-500 block mb-1">{tr('API-Schlüssel (optional)')}</label>
+                  <input name="access_code" type="password" value={form.access_code} onChange={handleChange}
+                    placeholder={editId != null ? tr('leer lassen = unverändert') : tr('nur nötig, wenn am Drucker eine Anmeldung eingerichtet ist')} />
                 </div>
               </div>
             )}

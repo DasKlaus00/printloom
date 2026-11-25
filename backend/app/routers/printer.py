@@ -23,7 +23,8 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db, SessionLocal
 from app.models.models import Device, PrinterType, UploadedFile
-from app.services import ams_match, bambu_manager, camera, device_settings, print_file, storage
+from app.services import (ams_match, bambu_manager, camera, device_settings, moonraker_printer,
+                          print_file, storage)
 from app.services.timestamps import as_aware_iso, now_iso
 from app.services.credentials import scrub
 from app.services.bambu_ftp import BambuFTP
@@ -294,6 +295,9 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
         raise HTTPException(503, appsettings.CAMERA_DISABLED_TEXT)
     if not _camera_enabled(db, device_id):
         raise HTTPException(503, CAMERA_OFF_FOR_DEVICE)
+    if device.device_type == PrinterType.MOONRAKER:
+        # Der U1 liefert Einzelbilder (/frame); den Bambu-Weg (RTSP/Port 6000) hat er nicht.
+        raise HTTPException(400, "Für den Snapmaker U1 gibt es Einzelbilder (…/frame), keinen Live-Stream")
     settings = device_settings.get(db, device_id)
     boundary = "ottoframe"
 
@@ -357,6 +361,11 @@ def camera_frame(device_id: int, db: Session = Depends(get_db)):
         raise HTTPException(503, appsettings.CAMERA_DISABLED_TEXT)
     if not _camera_enabled(db, device_id):
         raise HTTPException(503, CAMERA_OFF_FOR_DEVICE)
+    if device.device_type == PrinterType.MOONRAKER:
+        img = moonraker_printer.snapshot(device)
+        if not img:
+            raise HTTPException(502, "Kein Kamerabild vom Snapmaker U1 empfangen")
+        return Response(content=img, media_type="image/jpeg")
     settings = device_settings.get(db, device_id)
     try:
         img = camera.single_frame(device, settings)
@@ -512,6 +521,33 @@ async def _assert_printer_may_move(db: Session, device, allow_pause: bool = Fals
         raise HTTPException(409, grund)
 
 
+def _moonraker_device(device_id: int, db: Session):
+    """Das Gerät, wenn es ein Moonraker-Drucker ist (z. B. Snapmaker U1), sonst None."""
+    d = db.query(Device).filter(Device.id == device_id).first()
+    return d if d is not None and d.device_type == PrinterType.MOONRAKER else None
+
+
+def _need_moonraker(device_id: int, db: Session) -> Device:
+    d = _moonraker_device(device_id, db)
+    if d is None:
+        raise HTTPException(404, "Kein Moonraker-Drucker (z. B. Snapmaker U1) mit dieser ID")
+    return d
+
+
+def _moon_error(e: Exception) -> HTTPException:
+    """Fehler vom Moonraker-Drucker → verständliche HTTP-Antwort (nie ein 500)."""
+    if isinstance(e, ValueError):
+        return HTTPException(400, str(e))
+    if isinstance(e, RuntimeError):
+        return HTTPException(409, str(e))
+    if isinstance(e, PermissionError):
+        return HTTPException(502, str(e))
+    return HTTPException(502, f"Drucker nicht erreichbar ({type(e).__name__})")
+
+
+_MOON_ERRORS = (ValueError, RuntimeError, PermissionError, httpx.HTTPError)
+
+
 def _get_bambu_device(device_id: int, db: Session) -> Device:
     device = db.query(Device).filter(
         Device.id == device_id,
@@ -588,8 +624,12 @@ def _diag_file_lines(file) -> tuple:
 async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = True, ams_slot: Optional[int] = None,
                                plate: Optional[int] = None, db: Session = Depends(get_db)):
     """Datei per FTPS auf den Drucker laden und Druck per MQTT starten.
-    `plate`: bei Multi-Plate-.3mf GENAU diese Platte drucken (sonst die erste)."""
+    `plate`: bei Multi-Plate-.3mf GENAU diese Platte drucken (sonst die erste).
+    Snapmaker U1: Moonraker-Upload (nur .gcode), siehe _send_to_moonraker."""
     from app.services import farm_settings
+    moon = _moonraker_device(device_id, db)
+    if moon is not None:
+        return await _send_to_moonraker(moon, file_id, db)
     device = _get_bambu_device(device_id, db)
     await _assert_printer_may_move(db, device)
 
@@ -824,7 +864,11 @@ def _status_from_raw(raw: dict) -> dict:
 async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
     """Druckerstatus aus der EINEN persistenten MQTT-Verbindung (bambu_manager) —
     kein Connect pro Poll mehr. Der Cache wird laufend über dieselbe Verbindung
-    aktualisiert; nur wenn noch nichts/keine AMS da ist, wird einmal pushall angefragt."""
+    aktualisiert; nur wenn noch nichts/keine AMS da ist, wird einmal pushall angefragt.
+    Moonraker-Drucker (Snapmaker U1) antworten mit derselben Form (moonraker_printer)."""
+    moon = _moonraker_device(device_id, db)
+    if moon is not None:
+        return await moonraker_printer.state(moon)
     device = _get_bambu_device(device_id, db)
     loop = asyncio.get_running_loop()
 
@@ -874,7 +918,15 @@ async def get_printer_status(device_id: int, db: Session = Depends(get_db)):
 async def get_printer_settings(device_id: int, db: Session = Depends(get_db)):
     """Aktuelle Drucker-Einstellungen (KI-Erkennung, Geschwindigkeit, Auto-Recovery,
     Kammerlicht) aus dem letzten MQTT-Push-Report. Felder, die der Drucker (noch)
-    nicht gemeldet hat, sind null — die UI zeigt dann „—" statt zu raten."""
+    nicht gemeldet hat, sind null — die UI zeigt dann „—" statt zu raten.
+    Beim Snapmaker U1 (Moonraker) kommen andere Einstellungen — `driver` sagt welche."""
+    moon = _moonraker_device(device_id, db)
+    if moon is not None:
+        s = await moonraker_printer.state(moon)
+        keys = ("speed_factor", "flow_factor", "fan_speed", "work_light", "top_cover")
+        return {"online": bool(s.get("online")), "driver": "moonraker",
+                "settings": {k: s.get(k) for k in keys},
+                "capabilities": s.get("capabilities") or {}, "state": s}
     device = _get_bambu_device(device_id, db)
     from app.services import bambu_settings
     loop = asyncio.get_running_loop()
@@ -896,6 +948,9 @@ async def set_printer_settings(device_id: int, body: dict, db: Session = Depends
 
     Bewusst OHNE _assert_printer_may_move: Licht, KI-Erkennung und Geschwindigkeit
     bewegen nichts und sollen auch während des Drucks gehen."""
+    moon = _moonraker_device(device_id, db)
+    if moon is not None:
+        return await _set_moonraker_settings(moon, body, db)
     device = _get_bambu_device(device_id, db)
     from app.services import bambu_settings
     if not isinstance(body, dict) or not body:
@@ -919,6 +974,102 @@ async def set_printer_settings(device_id: int, body: dict, db: Session = Depends
     # Frischen Report anfragen, damit die UI den neuen Zustand zeitnah sieht.
     await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
     return {"success": True, "applied": applied, "failed": failed}
+
+
+_HEATERS = ("nozzle_target", "bed_target")
+
+
+async def _set_moonraker_settings(device: Device, body, db: Session) -> dict:
+    """Snapmaker U1: jede Einstellung als eigener G-code-Befehl (moonraker_printer.
+    build_setting). Heizen ist bei aktivem Notaus gesperrt, Ausschalten nicht."""
+    from app.routers.control import notaus_aktiv, NOTAUS_AKTIV
+    if not isinstance(body, dict) or not body:
+        raise HTTPException(400, "Keine Einstellung übergeben")
+    try:
+        caps = moonraker_printer.capabilities(await moonraker_printer.objects(device), device.model)
+    except _MOON_ERRORS as e:
+        raise _moon_error(e)
+    applied, failed = [], {}
+    gesperrt = notaus_aktiv(db)
+    for key, value in body.items():
+        if gesperrt and key in _HEATERS:
+            temp = value.get("temp") if isinstance(value, dict) else value
+            if not isinstance(temp, (int, float)) or isinstance(temp, bool) or temp > 0:
+                failed[key] = NOTAUS_AKTIV
+                continue
+        try:
+            lines = moonraker_printer.build_setting(key, value, caps)
+        except ValueError as e:
+            failed[key] = str(e)
+            continue
+        try:
+            await moonraker_printer.run_gcode(device, "\n".join(lines))
+            applied.append(key)
+        except _MOON_ERRORS as e:
+            failed[key] = scrub(str(e)) or type(e).__name__
+    if not applied and failed:
+        raise HTTPException(400, "; ".join(f"{k}: {v}" for k, v in failed.items()))
+    return {"success": True, "applied": applied, "failed": failed}
+
+
+@router.post("/moonraker/{device_id}/action")
+async def moonraker_action(device_id: int, body: dict = None, db: Session = Depends(get_db)):
+    """Snapmaker U1: Druck pausieren, fortsetzen oder abbrechen ({"action": …}).
+    Fortsetzen startet Bewegung → bei aktivem Notaus gesperrt."""
+    device = _need_moonraker(device_id, db)
+    action = str((body or {}).get("action") or "")
+    if action == "resume":
+        from app.routers.control import assert_released
+        assert_released(db)
+    try:
+        await moonraker_printer.print_action(device, action)
+    except _MOON_ERRORS as e:
+        raise _moon_error(e)
+    return {"success": True, "action": action}
+
+
+@router.get("/moonraker/{device_id}/files")
+async def moonraker_files(device_id: int, db: Session = Depends(get_db)):
+    """Snapmaker U1: Dateien, die schon auf dem Drucker liegen (neueste zuerst)."""
+    device = _need_moonraker(device_id, db)
+    try:
+        return {"files": await moonraker_printer.list_files(device)}
+    except _MOON_ERRORS as e:
+        raise _moon_error(e)
+
+
+@router.post("/moonraker/{device_id}/print")
+async def moonraker_print(device_id: int, body: dict = None, db: Session = Depends(get_db)):
+    """Snapmaker U1: eine Datei vom Drucker starten ({"filename": …}). Nur bei freiem,
+    bereitem Drucker und ohne aktiven Notaus."""
+    from app.routers.control import assert_released
+    device = _need_moonraker(device_id, db)
+    assert_released(db)
+    name = str((body or {}).get("filename") or "").strip()
+    if not name or ".." in name.replace("\\", "/").split("/"):
+        raise HTTPException(400, "Dateiname fehlt oder ist ungültig")
+    try:
+        await moonraker_printer.start_print(device, name)
+    except _MOON_ERRORS as e:
+        raise _moon_error(e)
+    return {"success": True, "filename": name}
+
+
+async def _send_to_moonraker(device: Device, file_id: int, db: Session) -> dict:
+    """Direktdruck auf den Snapmaker U1: Datei hochladen und starten."""
+    from app.routers.control import assert_released
+    assert_released(db)
+    file = db.query(UploadedFile).filter(UploadedFile.id == file_id).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    if file.file_type != ".gcode":
+        raise HTTPException(400, moonraker_printer.ONLY_GCODE)
+    name = print_file.make_print_name(file.original_filename, file.file_type)
+    try:
+        await moonraker_printer.upload_and_print(device, file.file_path, name)
+    except _MOON_ERRORS as e:
+        raise _moon_error(e)
+    return {"success": True, "message": f"Druck gestartet: {name}", "file": name}
 
 
 @router.post("/calibrate/{device_id}")

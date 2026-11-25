@@ -168,6 +168,10 @@ export const printerService = {
   amsLoad:              (deviceId, tray)          => api.post(`/printer/ams/${deviceId}/load`, { tray }),
   amsUnload:            (deviceId)                => api.post(`/printer/ams/${deviceId}/unload`),
   amsReadSlot:          (deviceId, amsId, slotId) => api.post(`/printer/ams/${deviceId}/read`, { ams_id: amsId, slot_id: slotId }),
+  // Snapmaker U1 (Moonraker): pausieren/fortsetzen/abbrechen, Dateien auf dem Drucker
+  moonrakerAction:      (deviceId, action)  => api.post(`/printer/moonraker/${deviceId}/action`, { action }),
+  moonrakerFiles:       (deviceId)          => api.get(`/printer/moonraker/${deviceId}/files`),
+  moonrakerPrint:       (deviceId, filename) => api.post(`/printer/moonraker/${deviceId}/print`, { filename }),
 }
 
 export const deviceSettingsService = {

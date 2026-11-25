@@ -226,8 +226,26 @@ async def _pause_printers(db: Session) -> list:
         except Exception:
             return False
 
-    ergebnisse = await asyncio.gather(*(eins(d) for d in drucker))
-    return [{"name": d.name, "ok": bool(r)} for d, r in zip(drucker, ergebnisse)]
+    # Moonraker-Drucker (Snapmaker U1): ebenfalls PAUSE — aber nur, wenn er druckt;
+    # Klipper meldet eine Pause ohne laufenden Druck als Fehler.
+    from app.services import moonraker_printer
+    moon = db.query(Device).filter(Device.device_type == PrinterType.MOONRAKER).all()
+
+    async def eins_moon(d):
+        try:
+            s = await asyncio.wait_for(moonraker_printer.state(d), timeout=PRINTER_PAUSE_TIMEOUT_S)
+            if s.get("print_state") != "printing":
+                return True                       # nichts zu pausieren
+            await asyncio.wait_for(moonraker_printer.print_action(d, "pause"),
+                                   timeout=PRINTER_PAUSE_TIMEOUT_S)
+            return True
+        except Exception as e:
+            logger.warning(f"Notaus: {d.name} nicht pausiert: {type(e).__name__}")
+            return False
+
+    ergebnisse = await asyncio.gather(*(eins(d) for d in drucker),
+                                      *(eins_moon(d) for d in moon))
+    return [{"name": d.name, "ok": bool(r)} for d, r in zip(list(drucker) + list(moon), ergebnisse)]
 
 
 def notaus_aktiv(db: Session) -> bool:

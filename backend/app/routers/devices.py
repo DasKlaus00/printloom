@@ -129,6 +129,12 @@ async def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Ein Gerät mit diesem Namen gibt es schon")
     data = device.model_dump()
     data["model"] = _clean_model(data.get("model"), data.get("serial_number")) or None
+    if data.get("device_type") == PrinterType.MOONRAKER:
+        # Ein Moonraker-Drucker braucht ein Moonraker-Modell — sonst liefen Kamera und
+        # Fähigkeiten über die Bambu-Annahmen. Bisher gibt es genau eins: den U1.
+        from app.services import printer_models
+        if printer_models.driver(data["model"]) != "moonraker":
+            data["model"] = "u1"
     db_device = Device(id=device_settings.next_device_id(db), **data)
     db.add(db_device)
     db.commit()
@@ -275,6 +281,11 @@ async def test_device(device_id: int, db: Session = Depends(get_db)):
             "ftp": {"connected": ftp_ok, "message": ftp_msg},
             "message": "Verbindung erfolgreich" if success else "Verbindung teilweise oder vollständig fehlgeschlagen"
         }
+
+    elif device.device_type == PrinterType.MOONRAKER:
+        from app.services import moonraker_printer
+        res = await moonraker_printer.test(device)
+        return {"device_id": device_id, **res}
 
     elif device.device_type == PrinterType.KLIPPER:
         try:
