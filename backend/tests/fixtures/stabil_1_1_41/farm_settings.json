@@ -1,0 +1,70 @@
+{
+  "poll_interval": 20,
+  "min_print_minutes": 0,
+  "use_ams": true,
+  "hms_ignore": [
+    "0C00-0100-0001-0004"
+  ],
+  "power_price_eur_kwh": 0.42,
+  "machine_rate_eur_h": 0.0,
+  "filament_price_eur_kg": 20.0,
+  "idle_off_min": 0,
+  "move_timeout_s": 180,
+  "conn_alarm": true,
+  "progress_stall_min": 0,
+  "error_strategy": {
+    "ams_unmatched": "skip"
+  },
+  "failed_retries": 1,
+  "timezone": "Europe/Berlin",
+  "operating_hours_enabled": false,
+  "operating_schedule": [
+    {
+      "enabled": true,
+      "start": "22:00",
+      "end": "06:00"
+    },
+    {
+      "enabled": true,
+      "start": "22:00",
+      "end": "06:00"
+    },
+    {
+      "enabled": true,
+      "start": "22:00",
+      "end": "06:00"
+    },
+    {
+      "enabled": true,
+      "start": "22:00",
+      "end": "06:00"
+    },
+    {
+      "enabled": true,
+      "start": "22:00",
+      "end": "06:00"
+    },
+    {
+      "enabled": true,
+      "start": "22:00",
+      "end": "06:00"
+    },
+    {
+      "enabled": true,
+      "start": "22:00",
+      "end": "06:00"
+    }
+  ],
+  "operating_start": "22:00",
+  "operating_end": "06:00",
+  "operating_days": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "exact_color_only": false
+}

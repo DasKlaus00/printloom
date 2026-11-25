@@ -1,0 +1,32 @@
+{
+  "jobs": [
+    {
+      "id": 1,
+      "fileId": 1,
+      "fileName": "halter.gcode",
+      "slot": null,
+      "amsMap": "",
+      "objectHeight": 23.4,
+      "heightLoading": false,
+      "progress": 0,
+      "remaining": 0,
+      "status": "pending",
+      "note": "",
+      "estimatedMinutes": 42
+    },
+    {
+      "id": 2,
+      "fileId": 1,
+      "fileName": "halter.gcode",
+      "slot": null,
+      "amsMap": "",
+      "objectHeight": 23.4,
+      "heightLoading": false,
+      "progress": 0,
+      "remaining": 0,
+      "status": "pending",
+      "note": "",
+      "estimatedMinutes": 42
+    }
+  ]
+}

@@ -4,6 +4,17 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.84',
+    de: [
+      'Native Installation (Linux ohne Docker): Das Update-Paket wird jetzt zuverlässig veröffentlicht — erst das Paket, dann seine Prüfsumme, jeweils mit Wiederholung. Bei v1.1.83 war das Hochladen des Pakets abgebrochen; das Update-Skript hat das unpassende Paar zu Recht abgelehnt.',
+      'Geprüft: Ein Update vom stabilen Kanal (v1.1.41) übernimmt Warteschlange, Regal, Farm-Einstellungen und Geometrie unverändert. Der Test nutzt Dateien, die ein echtes v1.1.41 geschrieben hat.',
+    ],
+    en: [
+      'Native installation (Linux without Docker): the update package is now published reliably — first the package, then its checksum, each with retries. With v1.1.83 the package upload had been cut off; the update script rightly refused the mismatched pair.',
+      'Checked: an update from the stable channel (v1.1.41) keeps the queue, rack, farm settings and geometry unchanged. The test uses files written by a real v1.1.41.',
+    ],
+  },
+  {
     version: '1.1.83',
     de: [
       'NEU: SNAPMAKER U1. Unter Konfiguration → Geräte als „Snapmaker U1“ anlegen (IP, Port 7125; ein API-Schlüssel nur, wenn am Drucker eine Anmeldung eingerichtet ist). „Test“ prüft die Verbindung zu Moonraker und Klipper.',

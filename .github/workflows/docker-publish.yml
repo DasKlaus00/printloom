@@ -122,16 +122,31 @@ jobs:
           tar czf printloom-frontend-dist.tar.gz -C frontend dist
           sha256sum printloom-frontend-dist.tar.gz > printloom-frontend-dist.tar.gz.sha256
 
+      # Erst das Paket, ZULETZT die Prüfsumme — jede Datei mit Wiederholungen. Scheitert
+      # ein Upload, bleibt das alte, zusammenpassende Paar stehen. Bis v1.1.83 lud eine
+      # Fremd-Action beide Dateien; brach das Paket ab (v1.1.75, v1.1.83), lag eine neue
+      # Prüfsumme neben dem alten Paket, und update-native.sh lehnte jedes Update ab.
+      # `gh` liegt auf den GitHub-Runnern bereit, eine Fremd-Action ist nicht mehr nötig.
       - name: Publish rolling native release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-        with:
-          tag_name: native-${{ github.ref_name == 'main' && 'latest' || 'beta' }}
-          name: Native install assets (${{ github.ref_name == 'main' && 'latest' || 'beta' }})
-          prerelease: ${{ github.ref_name != 'main' }}
-          make_latest: false
-          body: |
-            Rolling asset for the native (no-Docker) installation — updated on every ${{ github.ref_name }} push.
-            Not meant for manual download; used by `scripts/install-native.sh` / `scripts/update-native.sh`.
-          files: |
-            printloom-frontend-dist.tar.gz
-            printloom-frontend-dist.tar.gz.sha256
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ github.ref_name == 'main' && 'latest' || 'beta' }}
+        run: |
+          set -euo pipefail
+          TAG="native-$CHANNEL"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            flags=(--latest=false)
+            if [ "$CHANNEL" = beta ]; then flags+=(--prerelease); fi
+            gh release create "$TAG" "${flags[@]}" --title "Native install assets ($CHANNEL)" \
+              --notes "Rolling asset for the native (no-Docker) installation, updated on every $GITHUB_REF_NAME push. Not meant for manual download; used by scripts/install-native.sh and scripts/update-native.sh."
+          fi
+          upload() {
+            for i in 1 2 3 4 5; do
+              if gh release upload "$TAG" "$1" --clobber; then return 0; fi
+              echo "Upload von $1 fehlgeschlagen (Versuch $i), neuer Versuch in $((i * 10)) s"
+              sleep $((i * 10))
+            done
+            return 1
+          }
+          upload printloom-frontend-dist.tar.gz
+          upload printloom-frontend-dist.tar.gz.sha256
