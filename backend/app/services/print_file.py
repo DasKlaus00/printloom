@@ -1045,3 +1045,88 @@ def object_height(file_path: str, file_type: str, plate=None, margin_pct: float 
     else:
         computed = 0.0
     return {**result, "computed_height_mm": computed}
+
+
+# ── Drucker mit Moonraker (Snapmaker U1, seit v1.1.87) ───────────────────────
+# Der U1 druckt G-code. Eine .3mf aus der Bibliothek geht, wenn sie eine geslicete
+# Platte enthält (Metadata/plate_N.gcode) — dann wird genau dieser G-code ausgepackt.
+_RE_SLICED_FOR = (re.compile(r';\s*printer_model\s*=\s*(.+)', re.IGNORECASE),
+                  re.compile(r';\s*printer_settings_id\s*=\s*(.+)', re.IGNORECASE))
+NO_GCODE_IN_3MF = ("Die .3mf enthält keinen G-code — im Slicer erst slicen und die Platte "
+                   "als G-code (oder .3mf mit G-code) exportieren")
+
+
+def moon_print_name(original: str) -> str:
+    """Dateiname auf dem Drucker: sicherer Stamm (max. 60 Zeichen) + .gcode, auch wenn
+    der G-code aus einer .3mf stammt ('Halter.gcode.3mf' → 'Halter.gcode')."""
+    stem = os.path.basename(str(original or "").replace("\\", "/"))
+    for ext in (".gcode.3mf", ".3mf", ".gcode"):
+        if stem.lower().endswith(ext):
+            stem = stem[:-len(ext)]
+            break
+    return (re.sub(r'[^a-zA-Z0-9_-]', '_', stem)[:60] or "druck") + ".gcode"
+
+
+def gcode_for_moonraker(path: str, file_type: str, plate=None) -> tuple:
+    """Was der U1 druckt → (pfad, temp_oder_None). Eine .gcode bleibt, wie sie ist;
+    aus einer .3mf wird der G-code der gewählten Platte in eine Temp-Datei gepackt
+    (der Aufrufer löscht sie). ValueError mit Grund, wenn es keinen G-code gibt."""
+    ft = (file_type or "").lower()
+    if ft == ".gcode":
+        return path, None
+    if ft != ".3mf":
+        raise ValueError(f"Kein Druckformat für den Drucker: {file_type!r}")
+    zip_guard(path)
+    with zipfile.ZipFile(path) as zf:
+        name = first_gcode(zf.namelist(), plate)
+        if not name:
+            raise ValueError(NO_GCODE_IN_3MF)
+        info = zf.getinfo(name)
+        if info.file_size > ZIP_MAX_TOTAL:
+            raise ValueError(f"{name}: zu groß ({info.file_size} Bytes)")
+        fd, tmp = tempfile.mkstemp(suffix=".gcode", prefix="printloom_moon_")
+        try:
+            with os.fdopen(fd, "wb") as out, zf.open(info) as src:
+                copied = 0
+                while True:
+                    chunk = src.read(1 << 20)
+                    if not chunk:
+                        break
+                    copied += len(chunk)
+                    if copied > max(info.file_size, 1):   # die Angabe lässt sich fälschen
+                        raise ValueError(f"{name}: größer als angegeben")
+                    out.write(chunk)
+        except BaseException:
+            os.remove(tmp)
+            raise
+    return tmp, tmp
+
+
+def sliced_for(path: str, file_type: str, plate=None) -> Optional[str]:
+    """Für welchen Drucker wurde gesliced? Aus `; printer_model = …` (sonst
+    `printer_settings_id`) — OrcaSlicer schreibt das ans Dateiende, Bambu Studio in
+    den Kopf, darum Kopf UND Fuß. None = steht nicht drin (z. B. Cura)."""
+    try:
+        if (file_type or "").lower() == ".3mf":
+            with zipfile.ZipFile(path) as zf:
+                name = first_gcode(zf.namelist(), plate)
+                if not name:
+                    return None
+                with zf.open(name) as gf:
+                    lines = _head_and_tail(io.TextIOWrapper(gf, encoding='utf-8', errors='ignore'))
+        else:
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = _head_and_tail(f)
+    except (OSError, zipfile.BadZipFile, KeyError) as e:
+        logger.warning(f"Drucker-Angabe in {path} nicht lesbar: {e}")
+        return None
+    found = [None, None]
+    for line in lines:
+        line = line.strip()
+        if not line.startswith(';'):
+            continue
+        for i, rx in enumerate(_RE_SLICED_FOR):
+            m = rx.match(line)
+            if m and found[i] is None:
+                found[i] = m.group(1).strip().strip('"')
+    return found[0] or found[1] or None

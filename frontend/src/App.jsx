@@ -74,6 +74,7 @@ import { tabTitle, farmTitleState } from './services/tabTitle'
 import { navCompact, NAV_KEY, NAV_AUTO_MAX } from './services/navState'
 import { VERSION } from './version'
 import { withBase, stripBase } from './services/basePath'
+import { isFarmPrinter } from './services/farmPrinter'
 
 /* Adressen, Titel und Seitenleiste kommen aus services/pages.js (eine Tabelle). */
 const pageFromPath = () => pageForPath(stripBase(window.location.pathname))
@@ -237,7 +238,7 @@ function App() {
     if (localStorage.getItem(SETUP_DONE_KEY)) return
     deviceService.listDevices()
       .then(r => {
-        const hasDevice = (r.data ?? []).some(d => d.device_type === 'bambu_lab')
+        const hasDevice = (r.data ?? []).some(isFarmPrinter)
         if (hasDevice) {
           localStorage.setItem(SETUP_DONE_KEY, '1')  // existing install → never nag
         } else if (['/', '/dashboard'].includes(stripBase(window.location.pathname))) {

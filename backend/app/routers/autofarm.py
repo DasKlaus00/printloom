@@ -22,9 +22,11 @@ from app.models.models import Device, PrinterType, UploadedFile
 from app.paths import db_path
 from app.routers.printer import capture_snapshot, publish_live_status
 from app.services import ams_match, bambu_manager, device_settings, farm_queue, farm_settings, hms
+from app.services import moonraker_printer, printer_link, printer_models
 from app.services.timestamps import aware_iso, as_aware, as_aware_iso, now_iso
 from app.services.farm_history import read as _read_history, record as _record_duration
 from app.services.homing_3mf import build_homing_3mf as _build_homing_3mf
+from app.services.homing_3mf import homing_gcode_klipper as _homing_gcode_klipper
 from app.services import crash_check, print_file, printer_guard, rack_store, storage
 from app.services import geometry_check as _geometry_check
 from app.services import ottoeject_motion as _motion
@@ -913,7 +915,7 @@ async def _send_print_cmd(cmd: str):
     db = SessionLocal()
     try:
         device = db.query(Device).filter(
-            Device.id == bid, Device.device_type == PrinterType.BAMBU_LAB).first()
+            Device.id == bid, Device.device_type.in_(printer_link.FARM_PRINTER_TYPES)).first()
     finally:
         db.close()
     if not device:
@@ -922,11 +924,11 @@ async def _send_print_cmd(cmd: str):
         return
     loop = asyncio.get_running_loop()
     try:
-        ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.print_command, device, cmd)
+        ok = await loop.run_in_executor(printer_link.executor, printer_link.print_command, device, cmd)
         if ok:
             _log(f"⏯ Drucker: {cmd} gesendet")
         else:
-            _log(f"⚠ Drucker-{cmd}: keine MQTT-Verbindung")
+            _log(f"⚠ Drucker-{cmd}: keine Verbindung zum Drucker")
     except Exception as e:
         _log(f"⚠ Drucker-{cmd} fehlgeschlagen: {e}")
 
@@ -1135,8 +1137,8 @@ async def _do_macro(name: str, _recover: bool = True):
 async def _do_bambu_gcode(gcode: str, device: Device):
     _assert_may_command_printer("Drucker-G-code")
     loop = asyncio.get_running_loop()
-    # Über die persistente Verbindung (bambu_manager) senden — kein eigener Connect.
-    sent = await loop.run_in_executor(bambu_manager.executor, bambu_manager.send_gcode, device, gcode)
+    # Bambu: über die persistente Verbindung; U1: Moonraker, kehrt nach der Ausführung zurück.
+    sent = await loop.run_in_executor(printer_link.executor, printer_link.send_gcode, device, gcode)
     await asyncio.sleep(1)
     if not sent:
         raise RuntimeError(f"GCode fehlgeschlagen: {gcode[:40]}")
@@ -1160,6 +1162,9 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool, book_bed: bool
         db.close()
     if not file:
         raise RuntimeError(f"Datei {job['fileId']} nicht gefunden")
+    if printer_link.is_moonraker(device):
+        await _do_send_file_moonraker(job, device, file, book_bed)
+        return
 
     print_name = print_file.make_print_name(file.original_filename, file.file_type)
     if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
@@ -1237,6 +1242,68 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool, book_bed: bool
     if book_bed:
         _set_bed("printing")
     _log(f"'{file.original_filename}' gestartet (AMS: {ams_mapping})")
+
+
+def moon_file_problem(device, path: str, file_type: str, plate=None) -> Optional[str]:
+    """Kann ein Moonraker-Drucker (Snapmaker U1) diese Datei drucken? None = ja, sonst
+    der Grund. Synchron (liest die Datei) — aus async-Code im Executor aufrufen.
+
+    Geprüft wird zweierlei: Es gibt G-code (eine .3mf nur mit geslicter Platte), und er
+    ist für DIESES Modell gesliced. Ein G-code für den Bambu bringt anderen Start-Code,
+    eine andere Bettgröße und keine Kopfwechsel mit; den druckt Printloom auf dem U1 nicht."""
+    ft = (file_type or "").lower()
+    if ft not in (".gcode", ".3mf"):
+        return moonraker_printer.ONLY_GCODE
+    if ft == ".3mf":
+        try:
+            import zipfile
+            with zipfile.ZipFile(path) as zf:
+                if not print_file.first_gcode(zf.namelist(), plate):
+                    return print_file.NO_GCODE_IN_3MF
+        except (OSError, zipfile.BadZipFile) as e:
+            return f"Datei nicht lesbar ({e})"
+    return printer_models.sliced_for_problem(getattr(device, "model", None),
+                                             print_file.sliced_for(path, ft, plate))
+
+
+async def _do_send_file_moonraker(job: dict, device: Device, file, book_bed: bool = True):
+    """Druckdatei an einen Drucker mit Moonraker (Snapmaker U1): G-code hochladen und
+    starten. Ein AMS-Mapping gibt es dort nicht — der G-code ruft seine Köpfe selbst
+    auf; ob das Filament passt, hat _ensure_tools_ready vorher geprüft."""
+    loop = asyncio.get_running_loop()
+    # Nie eine Datei in einen laufenden Druck starten (wie beim Bambu).
+    await _printer_gate(device, "Datei senden")
+    problem = await loop.run_in_executor(None, moon_file_problem, device, file.file_path,
+                                         file.file_type, job.get("plate"))
+    if problem:
+        raise RuntimeError(problem)
+    try:
+        path, tmp = await loop.run_in_executor(None, print_file.gcode_for_moonraker,
+                                               file.file_path, file.file_type, job.get("plate"))
+    except ValueError as e:
+        raise RuntimeError(str(e))
+    name = print_file.moon_print_name(file.original_filename)
+    try:
+        remote = await moonraker_printer.upload(device, path, name)
+    except (httpx.HTTPError, PermissionError, OSError) as e:
+        raise RuntimeError(f"Upload zum Drucker fehlgeschlagen ({type(e).__name__}: {e})")
+    finally:
+        if tmp:
+            try:
+                os.remove(tmp)
+            except OSError as e:
+                logger.warning(f"Temp-G-code {tmp} nicht gelöscht: {e}")
+    if tmp:
+        _log(f"📦 G-code aus der .3mf ausgepackt (Platte {job.get('plate') or 'erste'})")
+    # Kam während des Uploads Stopp oder Notaus, geht kein Druckstart mehr raus.
+    _assert_may_command_printer("Druck starten")
+    try:
+        await moonraker_printer.start_print(device, remote)
+    except (httpx.HTTPError, PermissionError) as e:
+        raise RuntimeError(f"Druckstart fehlgeschlagen ({type(e).__name__}: {e})")
+    if book_bed:
+        _set_bed("printing")
+    _log(f"'{file.original_filename}' gestartet (auf dem Drucker: {remote})")
 
 
 def _stack_vars_lazy(value) -> tuple:
@@ -1326,7 +1393,7 @@ async def _printer_gate(device, what: str, need_bed_empty: bool = False) -> None
     while True:
         if _farm["stopping"]:
             raise RuntimeError("Gestoppt")
-        state = await loop.run_in_executor(bambu_manager.executor, printer_guard.live_state, device)
+        state = await loop.run_in_executor(printer_link.executor, printer_guard.live_state, device)
         busy = printer_guard.busy_reason(state)
         bed = _farm.get("bed") or "empty"
         bed_busy = need_bed_empty and bed != "empty"
@@ -1449,14 +1516,14 @@ async def _read_live_print(device: Device, max_age: float = 8.0) -> dict:
     cache = _farm.get("_status_cache")
     if cache and (loop.time() - cache["t"]) < max_age:
         return cache["data"]
-    # Persistente Verbindung (bambu_manager) — kein eigener Connect.
-    connected = await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
+    # Persistente Verbindung (Bambu) bzw. frische HTTP-Abfrage (U1) — printer_link.
+    connected = await loop.run_in_executor(printer_link.executor, printer_link.ensure, device)
     if not connected:
         return (cache or {}).get("data", {})
     for _ in range(2):
-        await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
-        await asyncio.sleep(2.0)
-        raw = bambu_manager.last_status(device)
+        await loop.run_in_executor(printer_link.executor, printer_link.request_pushall, device)
+        await asyncio.sleep(0.2 if printer_link.is_moonraker(device) else 2.0)
+        raw = printer_link.last_status(device)
         p = (raw or {}).get("print", {})
         if p:
             _farm["_status_cache"] = {"t": loop.time(), "data": p}
@@ -1579,6 +1646,9 @@ async def _wait_bambu_finish(device: Device, label: str = "Bewegung", timeout: f
     silently until timeout). Logs progress every few seconds so it never *looks*
     frozen. Fail-safe: returns after `timeout` instead of hanging; raises only on
     farm stop."""
+    if printer_link.is_moonraker(device):
+        await _wait_moon_homing(device, label, timeout)
+        return
     loop = asyncio.get_running_loop()
     start = loop.time()
     seen_running = False
@@ -1641,10 +1711,124 @@ async def _wait_bambu_finish(device: Device, label: str = "Bewegung", timeout: f
     raise RuntimeError("Gestoppt")
 
 
+# Zeitlimit des Homings am U1 (G28 + Bett auf Ladeposition). Moonraker antwortet erst,
+# wenn es fertig ist; G28 mit Z-Fahrt dauert knapp eine Minute — das Limit lässt Luft.
+MOON_HOMING_TIMEOUT_S = 300.0
+
+
+async def _wait_moon_homing(device: Device, label: str, timeout: float) -> None:
+    """U1: Das Homing läuft als G-code im Executor (_start_homing_print), und Moonraker
+    antwortet erst, wenn es ausgeführt ist. Hier wird auf genau diese Antwort gewartet —
+    mit Stopp, Pause und Zeitlimit. Ohne laufendes Homing (Schritt einzeln genutzt):
+    warten, bis der Drucker keinen G-code mehr abarbeitet.
+
+    Zeitlimit wie beim Bambu: weiter mit Hinweis. Sicher bleibt das, weil vor jedem
+    Hineinfahren _printer_gate den Drucker frisch fragt — ein noch laufendes Homing
+    meldet er als belegt (PREPARE), und die Farm hält an."""
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    fut = _farm.pop("_moon_homing", None)
+    last_log = -999.0
+    while True:
+        while _farm["paused"] and not _farm["stopping"]:
+            await asyncio.sleep(0.5)
+        if _farm["stopping"]:
+            raise RuntimeError("Gestoppt")
+        elapsed = loop.time() - start
+        if fut is not None:
+            if fut.done():
+                exc = fut.exception()
+                if exc is not None:
+                    raise RuntimeError(f"{label} am Drucker fehlgeschlagen: {exc}")
+                _log(f"✓ {label} — Position erreicht")
+                return
+        else:
+            state = await loop.run_in_executor(printer_link.executor, printer_guard.live_state, device)
+            if state and state not in ("PREPARE", "RUNNING"):
+                _log(f"✓ {label} — Drucker bereit ({state})")
+                return
+        if elapsed > timeout:
+            _log(f"⚠ {label}: Zeitlimit ({timeout:.0f}s) — fahre fort, das Drucker-Tor prüft vor dem Hineinfahren")
+            return
+        if elapsed - last_log >= 10:
+            _log(f"… {label}: läuft ({elapsed:.0f}s)")
+            last_log = elapsed
+        await asyncio.sleep(0.5 if fut is not None else 3)
+
+
+async def _filament_unmatched(job: dict, what: str, desc: str, missing: list, notified: bool) -> bool:
+    """Filament passt nicht zur Datei: Strategie „ams_unmatched" (stop/skip/pause). Nach
+    dem Fortsetzen zurück, dann prüft der Aufrufer neu. → ob schon gemeldet wurde.
+    Eine Stelle für AMS (Bambu) und Köpfe (U1)."""
+    _log(f"⚠ {what}-Abgleich für {job['fileName']}: {desc} — manuelle Festlegung notwendig")
+    _set_job(job["id"], {"needs_ams": True, "ams_missing": missing})
+    action = _estrat("ams_unmatched")
+    if action == "stop":
+        _log(f"⚠ {what}-Abgleich fehlt — Farm wird gestoppt (Strategie)")
+        _farm["stopping"] = True
+        raise RuntimeError("Gestoppt")
+    if action == "skip":
+        _log(f"⚠ {what}-Abgleich fehlt — Job übersprungen (Strategie): {desc}")
+        await _notify(f"⚠ Printloom — {what} passt nicht, Job übersprungen\n{job['fileName']}\n{desc}")
+        raise RuntimeError(f"{what}-Abgleich fehlgeschlagen — {desc}")
+    _farm["paused"] = True
+    _farm["error"] = f"Manuelle {what}-Festlegung notwendig für {job['fileName']} — {desc}"
+    if not notified:
+        await _notify(f"⚠ Printloom — {what}-Festlegung nötig\n{job['fileName']}\n{desc}")
+        notified = True
+    while _farm["paused"] and not _farm["stopping"]:
+        await asyncio.sleep(0.5)
+    if _farm["stopping"]:
+        raise RuntimeError("Gestoppt")
+    _farm["error"] = None
+    return notified
+
+
+async def _ensure_tools_ready(job: dict, device: Device, use_ams: bool):
+    """U1: Passt das Filament in den Köpfen zur Datei? Filament N druckt Kopf T(N-1)
+    (ams_match.check_tools). Gleiche Strategie wie beim AMS. Meldet ein Kopf kein
+    Filament, lässt sich nichts prüfen — dann ein Hinweis im Log, gedruckt wird trotzdem
+    (unbekannt ist nicht falsch; falsches Material blockiert dagegen immer)."""
+    if not use_ams:
+        return
+    loop = asyncio.get_running_loop()
+    db = SessionLocal()
+    try:
+        file = db.query(UploadedFile).filter(UploadedFile.id == job["fileId"]).first()
+        fpath, ftype = (file.file_path, file.file_type) if file else (None, None)
+    finally:
+        db.close()
+    if not fpath:
+        return
+    usage = await loop.run_in_executor(None, print_file.filament_usage, fpath, ftype, job.get("plate"))
+    if not usage:
+        _log("ℹ Filamente der Datei nicht lesbar — kein Abgleich mit den Köpfen")
+        return
+    notified = False
+    while not _farm["stopping"]:
+        tools = await loop.run_in_executor(printer_link.executor, printer_link.moon_tools, device)
+        if not tools:
+            missing = [{"type": "", "color": "", "reason": "Köpfe des Druckers nicht lesbar"}]
+        else:
+            missing, unknown = ams_match.check_tools(usage, tools, _farm.get("exact_color_only", False))
+            if not missing:
+                if unknown:
+                    _log(f"ℹ Filament an {', '.join(unknown)} meldet der Drucker nicht — nicht geprüft")
+                _set_job(job["id"], {"needs_ams": False, "ams_missing": []})
+                _farm["error"] = None
+                return
+        desc = ", ".join(m["reason"] for m in missing)
+        notified = await _filament_unmatched(job, "Filament", desc, missing, notified)
+    raise RuntimeError("Gestoppt")
+
+
 async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
     """Block (pause the farm) until the job's filaments confidently match the live
     AMS, or the user has set a manual mapping. Guarantees a file whose filaments
     don't match what's loaded is never printed unattended ('manuelle Festlegung')."""
+    if printer_link.is_moonraker(device):
+        await _ensure_tools_ready(job, device, use_ams)
+        return
     if not use_ams:
         return
 
@@ -1685,28 +1869,8 @@ async def _ensure_ams_ready(job: dict, device: Device, use_ams: bool):
                 (f"{m['type'] or '?'} {m['color'] or ''}".strip() + f" ({m['reason']})")
                 for m in missing
             )
-        _log(f"⚠ AMS-Abgleich für {job['fileName']}: {desc} — manuelle Festlegung notwendig")
-        _set_job(job["id"], {"needs_ams": True, "ams_missing": missing})
-        action = _estrat("ams_unmatched")
-        if action == "stop":
-            _log("⚠ AMS-Abgleich fehlt — Farm wird gestoppt (Strategie)")
-            _farm["stopping"] = True
-            raise RuntimeError("Gestoppt")
-        if action == "skip":
-            _log(f"⚠ AMS-Abgleich fehlt — Job übersprungen (Strategie): {desc}")
-            await _notify(f"⚠ Printloom — AMS fehlt, Job übersprungen\n{job['fileName']}\n{desc}")
-            raise RuntimeError(f"AMS-Abgleich fehlgeschlagen — {desc}")
-        _farm["paused"] = True
-        _farm["error"] = f"Manuelle AMS-Festlegung notwendig für {job['fileName']} — {desc}"
-        if not notified:
-            await _notify(f"⚠ Printloom — AMS-Festlegung nötig\n{job['fileName']}\n{desc}")
-            notified = True
-        while _farm["paused"] and not _farm["stopping"]:
-            await asyncio.sleep(0.5)
-        if _farm["stopping"]:
-            raise RuntimeError("Gestoppt")
         # nach dem Fortsetzen erneut prüfen (Nutzer hat ggf. neu zugeordnet/getauscht)
-        _farm["error"] = None
+        notified = await _filament_unmatched(job, "AMS", desc, missing, notified)
     raise RuntimeError("Gestoppt")
 
 
@@ -2081,20 +2245,22 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                 break
 
             try:
-                # Über die EINE persistente Verbindung (bambu_manager) lesen — kein
-                # Connect/Disconnect pro Poll mehr über die gesamte Druckdauer.
-                if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
-                    raise ConnectionError("MQTT nicht erreichbar")
-                await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
+                # Bambu: über die EINE persistente Verbindung lesen — kein Connect/
+                # Disconnect pro Poll über die gesamte Druckdauer. U1: frische HTTP-Abfrage.
+                if not await loop.run_in_executor(printer_link.executor, printer_link.ensure, device):
+                    raise ConnectionError("Drucker nicht erreichbar")
+                await loop.run_in_executor(printer_link.executor, printer_link.request_pushall, device)
                 await asyncio.sleep(1.5)
-                raw = bambu_manager.last_status(device)
+                raw = printer_link.last_status(device)
 
                 if not raw:
-                    raise ConnectionError("Keine MQTT-Antwort")
+                    raise ConnectionError("Keine Antwort vom Drucker")
 
                 # Live-Status für die Steuerung/Dashboard cachen → die teilen sich die
-                # persistente Verbindung der Farm, statt eine eigene aufzubauen.
-                publish_live_status(raw, getattr(device, "id", None))
+                # persistente Verbindung der Farm, statt eine eigene aufzubauen. Der U1
+                # hat seinen eigenen Status-Weg (routers/printer.py, Moonraker).
+                if not printer_link.is_moonraker(device):
+                    publish_live_status(raw, getattr(device, "id", None))
 
                 p = raw.get("print", {})
                 state = p.get("gcode_state", "IDLE")
@@ -2438,17 +2604,19 @@ def farm_printer_id() -> Optional[int]:
     return int(did) if did is not None else None
 
 
-def farm_device(db):
+def farm_device(db, bambu_only: bool = False):
     """Das Gerät der Farm (farm_printer_id), sonst der erste Bambu. Eine Stelle für
-    Crash-Check (Bettbreite), OrcaSlicer-Plugin und Bibliothek."""
-    q = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB)
+    Crash-Check (Bettbreite), OrcaSlicer-Plugin und Bibliothek. Seit v1.1.87 kann es
+    ein Snapmaker U1 sein; das OrcaSlicer-Plugin spricht nur Bambu (bambu_only)."""
+    types = (PrinterType.BAMBU_LAB,) if bambu_only else printer_link.FARM_PRINTER_TYPES
+    q = db.query(Device).filter(Device.device_type.in_(types))
     fid = farm_printer_id()
     if fid is not None:
         d = q.filter(Device.id == fid).first()
         if d is not None:
             return d
         logger.warning(f"Farm-Drucker {fid} nicht in der Geräteliste — nehme den ersten")
-    return q.first()
+    return q.filter(Device.device_type == PrinterType.BAMBU_LAB).first() or q.first()
 
 
 async def _crash_gate(job: dict, device) -> None:
@@ -2536,6 +2704,61 @@ def _assert_printer_geometry(bambu_id) -> None:
         "Für diesen Drucker sind im Drucker-Tab noch keine Positionen hinterlegt. "
         "Bitte dort den Abschnitt dieses Druckers einmessen und testen — sonst würde "
         "die Farm die Positionen eines anderen Druckers fahren.")
+
+
+def moon_start_problems(geom: dict, block_id, steps: list, device_id=None) -> list:
+    """Was hindert die Farm, einen Snapmaker U1 zu fahren? → Liste von Gründen.
+
+    1. Er braucht einen EIGENEN Drucker-Block (block_id). Der Rückfall „erster Block"
+       ist für ihn nie richtig: Die Vorlage dort stammt vom Bambu, der Arm führe in den
+       U1 wie in einen X1C.
+    2. Seine Positionen sind am Gerät eingemessen und bestätigt (`confirmed_for` = dieses
+       Gerät). Ein neuer Block startet mit verschobenen Werten des Nachbarn — die wären
+       ohne Bestätigung nicht von eingemessenen zu unterscheiden.
+    3. Kein Sequenz-Schritt darf ein Geräte-Macro an den Drucker schicken, das nicht als
+       Printloom-G-code läuft: Die Macros im OTTOeject kennen nur Bambu-Positionen."""
+    if block_id is None:
+        return ["Für den Snapmaker U1 sind im Drucker-Tab noch keine eigenen Positionen "
+                "eingemessen. Dort den Abschnitt des U1 einmessen und testen — sonst führe der "
+                "Arm die Positionen eines anderen Druckers."]
+    block = _motion.printer_block(geom, block_id) or {}
+    if device_id is not None and block.get("confirmed_for") != device_id:
+        return ["Die Positionen des Snapmaker U1 sind noch nicht bestätigt. Im Drucker-Tab im "
+                "Abschnitt des U1 alle Positionen einmessen, mit „Test“ anfahren und dann "
+                "„Eingemessen und getestet“ drücken."]
+    out, seen = [], set()
+    for st in steps or []:
+        if not isinstance(st, dict) or st.get("type") != "macro" or st.get("disabled"):
+            continue
+        kind = _macro_kind(str(st.get("value") or ""))
+        if kind in _motion.PRINTER_OPS and kind not in seen and not _motion.op_uses_gcode(geom, kind, block_id):
+            seen.add(kind)
+            out.append(f"Sequenz-Schritt „{st.get('label') or st.get('value')}“ fährt ein Geräte-Macro "
+                       f"({kind}) — am U1 nur mit Printloom-Positionen. Im Drucker-Tab für den U1 "
+                       f"„{kind}“ auf Printloom-G-code stellen oder den Schritt als Printloom-Op anlegen.")
+    return out
+
+
+def _assert_moon_ready(bambu_id, seq_data: dict) -> None:
+    """Start mit einem U1 nur mit eigenen Positionen und ohne Bambu-Macros (siehe
+    moon_start_problems). Für einen Bambu ändert sich nichts."""
+    db = SessionLocal()
+    try:
+        device = db.query(Device).filter(Device.id == bambu_id).first()
+        moon = bool(device and printer_link.is_moonraker(device))
+    finally:
+        db.close()
+    if not moon:
+        return
+    try:
+        geom = _load_farm_geometry()
+    except storage.BrokenFile:
+        raise
+    block = _farm_printer_of(_motion.printer_list(geom), bambu_id)
+    steps = list(seq_data.get("seq_new") or []) + list(seq_data.get("seq_next") or [])
+    problems = moon_start_problems(geom, block, steps, device_id=int(bambu_id))
+    if problems:
+        raise HTTPException(400, " ".join(problems[:3]))
 
 
 def _farm_printer_of(blocks, bambu_id):
@@ -2660,7 +2883,19 @@ async def _start_homing_print(device: Device) -> None:
     Einstellungen „Erstellen" drückt. Eine alte Datei ist der Rückfall.
 
     Eigene Funktion, weil ausser dem Sequenzschritt auch der Stresstest das Bett auf
-    Z200 braucht — zwei Kopien wuerden beim naechsten Umbau auseinanderlaufen."""
+    Z200 braucht — zwei Kopien wuerden beim naechsten Umbau auseinanderlaufen.
+
+    U1 (Moonraker): kein Druckauftrag, sondern derselbe G-code direkt
+    (homing_gcode_klipper). Er läuft im Executor; _wait_bambu_finish wartet auf ihn."""
+    if printer_link.is_moonraker(device):
+        await _printer_gate(device, "Homing senden")
+        _assert_may_command_printer("Homing starten")
+        _log("[↑] Homing an den Drucker (G28 + Bett auf Ladeposition)…")
+        loop = asyncio.get_running_loop()
+        _farm["_moon_homing"] = loop.run_in_executor(
+            printer_link.executor, printer_link.run_gcode, device, _homing_gcode_klipper(),
+            MOON_HOMING_TIMEOUT_S)
+        return
     try:
         with open(HOMING_3MF_PATH, "wb") as f:
             f.write(_build_homing_3mf())
@@ -2823,6 +3058,11 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                 raise RuntimeError(f"Bewegung {val!r} nicht erzeugbar ({e}) — Geometrie prüfen")
             send_val, op_used = val, None
             logger.warning(f"use_gcode-Auswertung fehlgeschlagen ({e}) — Geräte-Macro {val!r}")
+        if op_used is None and kind in _motion.PRINTER_OPS and printer_link.is_moonraker(device):
+            # Die Geräte-Macros des OTTOeject kennen nur die Positionen des Bambu. Beim
+            # Start schon geprüft (_assert_moon_ready); hier die letzte Sperre.
+            raise RuntimeError(f"Geräte-Macro {val!r} am Snapmaker U1 — dort nur eingemessene "
+                               f"Printloom-Positionen (Drucker-Tab)")
         _log(f"▶ {val}" + (f"  →  Printloom-G-code ({op_used})" if op_used else ""))
         _mark_in_motion(kind)
         await _do_macro(send_val)
@@ -2929,7 +3169,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         _log(f"[↑] Bambu Position Z{z} (F{feed}) per G-Code…")
         # Über die persistente Verbindung (bambu_manager) senden — kein eigener Connect.
         _assert_may_command_printer("Bett-Fahrt")
-        ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.send_gcode, device, f"G90\nG1 Z{z} F{feed}")
+        ok = await loop.run_in_executor(printer_link.executor, printer_link.send_gcode, device, f"G90\nG1 Z{z} F{feed}")
         if not ok:
             raise RuntimeError("Z-Bewegung (G-Code) fehlgeschlagen")
         # Settle = worst-case Z travel / feed + buffer (capped). z.B. F3000 → ~8s.
@@ -2998,14 +3238,14 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             if _farm["stopping"]:
                 raise RuntimeError("Gestoppt")
             try:
-                # Persistente Verbindung (bambu_manager) — kein Connect pro Poll.
-                if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
-                    raise ConnectionError("MQTT nicht erreichbar")
-                await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
+                # Persistente Verbindung (Bambu) bzw. HTTP (U1) — printer_link.
+                if not await loop.run_in_executor(printer_link.executor, printer_link.ensure, device):
+                    raise ConnectionError("Drucker nicht erreichbar")
+                await loop.run_in_executor(printer_link.executor, printer_link.request_pushall, device)
                 await asyncio.sleep(1.5)
-                raw = bambu_manager.last_status(device)
+                raw = printer_link.last_status(device)
                 if not raw:
-                    raise ConnectionError("Keine MQTT-Antwort")
+                    raise ConnectionError("Keine Antwort vom Drucker")
                 p = raw.get("print", {})
                 state = p.get("gcode_state", "IDLE")
                 pct   = p.get("mc_percent", 0)
@@ -3038,16 +3278,16 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                     f"Crash-Schutz: Platte NICHT eingelegt"
                 )
             try:
-                # Persistente Verbindung (bambu_manager) — kein Connect pro Poll.
-                if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
+                # Persistente Verbindung (Bambu) bzw. HTTP (U1) — printer_link.
+                if not await loop.run_in_executor(printer_link.executor, printer_link.ensure, device):
                     conn_fails += 1
                     if conn_fails >= 5:
-                        raise RuntimeError(f"{label} — MQTT dauerhaft nicht erreichbar")
-                    _log(f"⚠ MQTT nicht erreichbar ({conn_fails}/5)…")
+                        raise RuntimeError(f"{label} — Drucker dauerhaft nicht erreichbar")
+                    _log(f"⚠ Drucker nicht erreichbar ({conn_fails}/5)…")
                     continue
-                await loop.run_in_executor(bambu_manager.executor, bambu_manager.request_pushall, device)
+                await loop.run_in_executor(printer_link.executor, printer_link.request_pushall, device)
                 await asyncio.sleep(1.5)
-                raw = bambu_manager.last_status(device)
+                raw = printer_link.last_status(device)
                 conn_fails = 0
                 if not raw:
                     continue
@@ -3080,6 +3320,10 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         label = step.get("label") or "Fehler quittieren"
         _log(f"[⚠] {label}…")
         loop = asyncio.get_running_loop()
+        if printer_link.is_moonraker(device):
+            # Klipper braucht kein Quittieren: Aus „error" startet der nächste Druck.
+            _log(f"✓ {label} — am Snapmaker nicht nötig")
+            return
         # Persistente Verbindung (bambu_manager); clear_error = stop-Befehl (FAILED → IDLE).
         if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
             raise RuntimeError("MQTT nicht erreichbar für clear_error")
@@ -3395,10 +3639,10 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
     try:
         device = db.query(Device).filter(
             Device.id == bambu_id,
-            Device.device_type == PrinterType.BAMBU_LAB,
+            Device.device_type.in_(printer_link.FARM_PRINTER_TYPES),
         ).first()
         if not device:
-            raise RuntimeError("Bambu Lab Gerät nicht gefunden")
+            raise RuntimeError("Drucker der Farm nicht gefunden")
     finally:
         db.close()
 
@@ -3411,6 +3655,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
     _old_task = _farm.pop("_homing_task", None)
     if _old_task is not None:
         _old_task.cancel()
+    _farm.pop("_moon_homing", None)   # Homing-Antwort eines früheren Laufs (U1)
 
     try:
         _log("═══ Auto Farm aktiv — wartet auf Jobs ═══")
@@ -3949,7 +4194,7 @@ async def _assert_printer_idle_for_start(bambu_id) -> None:
     db = SessionLocal()
     try:
         device = db.query(Device).filter(
-            Device.id == bambu_id, Device.device_type == PrinterType.BAMBU_LAB).first()
+            Device.id == bambu_id, Device.device_type.in_(printer_link.FARM_PRINTER_TYPES)).first()
         if device:
             _ = (device.serial_number, device.ip_address, device.access_code, device.id)
             db.expunge(device)
@@ -3958,7 +4203,7 @@ async def _assert_printer_idle_for_start(bambu_id) -> None:
     if not device:
         return   # _run_farm meldet das fehlende Gerät selbst
     loop = asyncio.get_running_loop()
-    state = await loop.run_in_executor(bambu_manager.executor, printer_guard.live_state, device)
+    state = await loop.run_in_executor(printer_link.executor, printer_guard.live_state, device)
     grund = printer_guard.busy_reason(state)
     if grund:
         raise HTTPException(409, f"{grund} — erst laufenden Druck beenden bzw. Drucker prüfen")
@@ -3999,6 +4244,7 @@ async def start_farm(req: StartRequest):
     # v1.1.9 gibt es mehrere; ein Gerät ohne eigenen Block würde sonst still die
     # Koordinaten des ersten Druckers fahren — also gegen den falschen Drucker.
     _assert_printer_geometry(req.bambu_id)
+    _assert_moon_ready(req.bambu_id, seq_data)
     _assert_overrides_absolute()
     _assert_bed_width_known(req.bambu_id, _settings)
     if _plate_left():
@@ -4079,9 +4325,33 @@ async def _job_height(job: dict) -> tuple:
     return float(result.get("computed_height_mm") or 0.0), float(lh)
 
 
+async def _assert_fits_farm_printer(file_id, plate) -> None:
+    """Eine Datei, die der Drucker der Farm nicht drucken kann, gar nicht erst einreihen.
+    Nötig ist das bisher nur beim Snapmaker U1 (G-code, für ihn gesliced, siehe
+    moon_file_problem) — sonst stünde der Job in der Warteschlange und scheiterte erst,
+    wenn schon eine leere Platte im Drucker liegt."""
+    from types import SimpleNamespace
+    db = SessionLocal()
+    try:
+        dev = farm_device(db)
+        moon = dev is not None and printer_link.is_moonraker(dev)
+        model = getattr(dev, "model", None)
+        f = db.query(UploadedFile).filter(UploadedFile.id == file_id).first() if moon else None
+        path, ftype = (f.file_path, f.file_type) if f else (None, None)
+    finally:
+        db.close()
+    if not moon or not path:
+        return
+    problem = await asyncio.get_running_loop().run_in_executor(
+        None, moon_file_problem, SimpleNamespace(model=model), path, ftype, plate)
+    if problem:
+        raise HTTPException(400, f"Nicht für den Farm-Drucker: {problem}")
+
+
 async def _prepare_job(job: EnqueueRequest) -> dict:
     """Job-Eintrag vorbereiten: Höhe aus der Datei (await). Angehängt wird getrennt
     (_append_jobs, ohne await), damit nichts zwischen Prüfen und Anhängen passiert."""
+    await _assert_fits_farm_printer(job.fileId, job.plate)
     # Analyze height server-side so runtime slot assignment has clearance data.
     # The slot is forced to "1-0" so the print picks a real free slot at start time
     # based on the LIVE rack state (handles slots freed while the farm is running).
@@ -4496,7 +4766,7 @@ def _stress_bambu(device_id=None) -> Device:
     Rückfall auf das einzige vorhandene."""
     db = SessionLocal()
     try:
-        q = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB)
+        q = db.query(Device).filter(Device.device_type.in_(printer_link.FARM_PRINTER_TYPES))
         if device_id is None:
             # _farm_printer liefert die ID des Drucker-Blocks (z. B. "p1"), nicht den
             # Block selbst — bis v1.1.36 stand hier ein `.get()` auf diese ID, und der
@@ -4517,7 +4787,7 @@ def _stress_bambu(device_id=None) -> Device:
             return d
         alle = q.all()
         if not alle:
-            raise HTTPException(400, "Kein Bambu-Drucker eingerichtet — "
+            raise HTTPException(400, "Kein Drucker eingerichtet — "
                                      "ohne Drucker geht der Umweg nicht.")
         if len(alle) > 1:
             raise HTTPException(
@@ -4708,6 +4978,8 @@ async def start_stress_test(body: Optional[StressStartBody] = None):
         raise HTTPException(409, STRESS_NOT_COMPACT)
     device = _stress_bambu(body.device_id) if body.include_printer else None
     if device is not None:
+        # Am U1 auch im Test nur eingemessene, bestätigte Positionen (wie beim Farm-Start).
+        _assert_moon_ready(device.id, {})
         await _assert_printer_idle_for_start(device.id)
     plan = _stress_plan(include_printer=body.include_printer)
     if not plan["plate_count"]:
@@ -4793,6 +5065,22 @@ def _printer_pool() -> list:
             "racks": sorted(legacy),
         })
     return out
+
+
+@router.get("/farm-printer")
+async def get_farm_printer():
+    """Welches Gerät fährt die Farm? Für die Oberfläche (Start, Kamera, Hinweise):
+    Bis v1.1.86 nahm sie „den ersten Bambu" — mit einem Snapmaker U1 als Farm-Drucker
+    der falsche. Im Lauf der gestartete, sonst der des Drucker-Blocks."""
+    db = SessionLocal()
+    try:
+        d = farm_device(db)
+        if d is None:
+            return {"device_id": None, "device_type": None, "name": None, "model": None}
+        return {"device_id": d.id, "device_type": getattr(d.device_type, "value", d.device_type),
+                "name": d.name, "model": d.model}
+    finally:
+        db.close()
 
 
 @router.get("/printers")

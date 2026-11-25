@@ -38,3 +38,17 @@ describe('Drucker-Blöcke abgleichen', () => {
     expect(reconcilePrinters(ps, [{ id: 5, name: 'X1C', model: 'x1c' }], seed).printers).toBe(ps)
   })
 })
+
+describe('Bestätigung der Positionen (Snapmaker U1)', () => {
+  it('jede Bewegungsänderung nimmt sie zurück, reine Anzeige nicht', async () => {
+    const { withConfirmReset } = await import('./printerBlocks')
+    expect(withConfirmReset({ eject: { x: 1, y: 2, z: 3 } })).toEqual({ eject: { x: 1, y: 2, z: 3 }, confirmed_for: null })
+    expect(withConfirmReset({ door: null }).confirmed_for).toBe(null)
+    expect(withConfirmReset({ use_gcode: { eject: true } }).confirmed_for).toBe(null)
+    expect(withConfirmReset({ __preset: 'x1c' }).confirmed_for).toBe(null)
+    expect(withConfirmReset({ speed_factors: { eject: 50 } })).toEqual({ speed_factors: { eject: 50 } })
+    expect(withConfirmReset({ name: 'U1' })).toEqual({ name: 'U1' })
+    // Die Bestätigung selbst bleibt, wie sie ist.
+    expect(withConfirmReset({ confirmed_for: 31 })).toEqual({ confirmed_for: 31 })
+  })
+})

@@ -204,6 +204,14 @@ async def capture_snapshot(device_id: int) -> Optional[str]:
         SNAP_DIR.mkdir(parents=True, exist_ok=True)
         if webcam_url:
             img_bytes = await asyncio.wait_for(_fetch_webcam_jpeg(webcam_url), SNAP_TIMEOUT_S)
+        elif device is not None and device.device_type == PrinterType.MOONRAKER:
+            # Snapmaker U1 (seit v1.1.87 auch in der Farm): Kamera über seine Weboberfläche.
+            # Ohne diesen Zweig lief ein U1 mit API-Schlüssel in die Bambu-Kamera.
+            from app.services import appsettings
+            if appsettings.camera_disabled():
+                return None
+            img_bytes = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(
+                None, moonraker_printer.snapshot, device), SNAP_TIMEOUT_S)
         elif ip and code:
             # Kamera global deaktiviert (Energiesparmodus) → kein ffmpeg-Snapshot,
             # auch das Kammerlicht nicht anfassen. Externe webcam_url oben bleibt.
@@ -773,6 +781,16 @@ async def send_file_to_printer(device_id: int, file_id: int, use_ams: bool = Tru
 @router.post("/gcode/{device_id}")
 async def send_gcode(device_id: int, gcode: str, db: Session = Depends(get_db)):
     """Direkte GCode-Zeilen an den Drucker senden (kein Datei-Upload nötig)."""
+    moon = _moonraker_device(device_id, db)
+    if moon is not None:
+        # Snapmaker U1 (seit v1.1.87): Bett fahren und homen im Drucker-Tab zum Einmessen.
+        # Dieselben Sperren wie beim Bambu (Notaus, laufende Farm, Drucker frisch frei).
+        await _assert_printer_may_move(db, moon)
+        try:
+            await moonraker_printer.run_gcode(moon, gcode)
+        except (RuntimeError, PermissionError, httpx.HTTPError) as e:
+            raise _moon_error(e)
+        return {"success": True, "gcode": gcode, "printer_response": None}
     device = _get_bambu_device(device_id, db)
     await _assert_printer_may_move(db, device)
     loop = asyncio.get_running_loop()

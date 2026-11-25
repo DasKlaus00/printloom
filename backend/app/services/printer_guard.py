@@ -23,8 +23,15 @@ BUSY_STATES = ("RUNNING", "PREPARE", "SLICING", "PAUSE")
 UNKNOWN = "Druckerstatus unbekannt — ist der Drucker erreichbar? Ohne frischen Status keine Befehle"
 
 
+NOT_READY = "Klipper am Drucker ist nicht bereit — am Drucker prüfen (Neustart/Fehler quittieren)"
+
+
 def live_state(device, max_age_s: float = 30.0, wait_s: float = 4.0) -> Optional[str]:
-    """gcode_state des Druckers, wenn der Status höchstens max_age_s alt ist, sonst None."""
+    """gcode_state des Druckers, wenn der Status höchstens max_age_s alt ist, sonst None.
+    Moonraker (Snapmaker U1): jedes Mal frisch über HTTP gelesen (seit v1.1.87)."""
+    from app.services import printer_link
+    if printer_link.is_moonraker(device):
+        return printer_link.moon_live_state(device)
     if not bambu_manager.ensure(device):
         return None
     bambu_manager.request_pushall(device)
@@ -47,6 +54,9 @@ def busy_reason(state: Optional[str], allow_pause: bool = False) -> Optional[str
     if not state:
         return UNKNOWN
     s = state.upper()
+    if s == "NOT_READY":
+        # Klipper im Shutdown: Motoren aus, Bettposition unbekannt — kein Arm hinein.
+        return NOT_READY
     if s == "PAUSE" and allow_pause:
         return None
     if s in BUSY_STATES:

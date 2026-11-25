@@ -289,7 +289,7 @@ export default function MoonrakerPrinterPanel({ device }) {
       {msg && <p className={`text-[11px] font-mono ${msg.err ? 'text-red-400' : 'text-emerald-400'}`}>{msg.text}</p>}
       {err && <p className="text-[11px] text-red-400">{err}</p>}
       <p className="text-[10px] text-surface-600">
-        {tr('Die Farm fährt den Snapmaker U1 noch nicht — verbinden, überwachen, einstellen und drucken geht schon. Werte, die der Drucker nicht meldet, stehen als „—“.')}
+        {tr('Die Farm fährt den Snapmaker U1 mit seinen eingemessenen Positionen (Abschnitt darüber). Werte, die der Drucker nicht meldet, stehen als „—“.')}
       </p>
     </div>
   )

@@ -65,7 +65,7 @@ def _printer(db, device_id: Optional[int] = None) -> Optional[Device]:
         return db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB,
                                        Device.id == device_id).first()
     from app.routers import autofarm
-    return autofarm.farm_device(db)
+    return autofarm.farm_device(db, bambu_only=True)   # das Plugin spricht nur Bambu
 
 
 def _dev_model(device: Device) -> str:

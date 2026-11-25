@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { deviceService, rackManagerService, autofarmService, healthService,
          controlService } from '../services/api'
 import { useLanguage } from '../services/i18n'
+import { isFarmPrinter } from '../services/farmPrinter'
 
 /* 2.9 — Health-Check / Einrichtungs-Checkliste: zeigt auf einen Blick, was
    konfiguriert/erreichbar ist und was noch fehlt. Holt sich die Daten selbst
@@ -24,7 +25,7 @@ export default function SetupHealth({ compact = false }) {
       controlService.checkGeometry().then(r => r.data?.check ?? null).catch(() => null),
       autofarmService.getSequences().then(r => r.data ?? {}).catch(() => ({})),
     ])
-    const bambu   = dev.find(d => d.device_type === 'bambu_lab')
+    const bambu   = dev.find(d => d.device_type === 'bambu_lab') || dev.find(isFarmPrinter)
     const klipper = dev.find(d => d.device_type === 'klipper')
     const onState = (t) => t?.status === 'online' ? 'ok' : (t?.status === 'unconfigured' ? 'fail' : 'warn')
     const noMag   = (rack.magazine_slot ?? 7) <= 0

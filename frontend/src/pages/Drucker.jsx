@@ -8,12 +8,13 @@ import { confirmDialog } from '../services/confirm'
 import { useMotionLock } from '../services/motionLock'
 import { saveGeometry } from '../services/geometryClient'
 import { numOrNull, invalidFields } from '../services/geometryDraft'
-import { reconcilePrinters, adoptBlock } from '../services/printerBlocks'
+import { withConfirmReset, reconcilePrinters, adoptBlock } from '../services/printerBlocks'
 import { findPrinter } from '../services/printers'
 import { PrinterBadge } from '../components/PrinterBadge'
 import TeachIn from '../components/TeachIn'
 import MoonrakerPrinterPanel from '../components/MoonrakerPrinterPanel'
 import FarmRail from '../components/FarmRail'
+import { isFarmPrinter } from '../services/farmPrinter'
 
 /* ── Drucker-Tab ────────────────────────────────────────────────────────────────
    Der ganze Aufbau auf EINER Seite, von oben nach unten: erst die Schiene (was steht
@@ -648,6 +649,22 @@ function PrinterSection({ p, index, dev, open, onToggle, onPatch,
       </>}
       subtitle={tr('Tür, Anfahrt, Auswerfen und Einlegen für diesen Drucker.')}>
 
+      {/* Snapmaker U1: Die Farm fährt ihn nur mit Positionen, die hier am Gerät
+          eingemessen und bestätigt sind (Backend: moon_start_problems). */}
+      {dev?.device_type === 'moonraker' && (p.confirmed_for === dev.id ? (
+        <div className="flex items-center gap-2 flex-wrap rounded-lg border border-emerald-800 bg-emerald-950/40 px-3 py-2 text-[11px] text-emerald-300">
+          <span>{tr('✓ Positionen am Snapmaker U1 eingemessen und getestet — die Farm darf ihn fahren.')}</span>
+          <button onClick={() => onPatch({ confirmed_for: null })}
+            className="ml-auto text-surface-400 hover:text-surface-100">{tr('Zurücknehmen')}</button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 flex-wrap rounded-lg border border-amber-800 bg-amber-950/40 px-3 py-2 text-[11px] text-amber-300">
+          <span className="min-w-0 flex-1">{tr('Die Farm fährt den Snapmaker U1 erst, wenn hier alle Positionen am Gerät eingemessen und mit „Test“ angefahren sind. Werte anderer Drucker passen nicht. Jede spätere Änderung nimmt die Bestätigung zurück.')}</span>
+          <button onClick={() => onPatch({ confirmed_for: dev.id })}
+            className="btn btn-secondary btn-sm shrink-0">{tr('Eingemessen und getestet')}</button>
+        </div>
+      ))}
+
       {/* Kopf: Name und Modell gehören dem GERÄT (Konfiguration → Geräte) — hier nur
           angezeigt, damit dieselbe Angabe nicht an zwei Stellen gepflegt wird. Ohne
           zugeordnetes Gerät (noch keins angelegt) sind beide hier änderbar. */}
@@ -762,10 +779,10 @@ function PrinterSection({ p, index, dev, open, onToggle, onPatch,
         </p>
       )}
 
-      {/* Druckbett fahren/homen + Drucker-Einstellungen — beides braucht die
-          MQTT-Verbindung, also ein zugeordnetes Bambu-Gerät. */}
+      {/* Druckbett fahren/homen (Bambu über MQTT, U1 über Moonraker) und die Bambu-
+          Einstellungen. Die Einstellungen des U1 stehen in seinem eigenen Abschnitt. */}
       {dev && <BedControls dev={dev} busy={busy} onGcode={onBedGcode} />}
-      {dev && <PrinterSettingsPanel deviceId={dev.id} printerName={p.name || dev.name}
+      {dev && dev.device_type !== 'moonraker' && <PrinterSettingsPanel deviceId={dev.id} printerName={p.name || dev.name}
         canCalibrate={model ? model.calibration : undefined} />}
     </Section>
   )
@@ -911,8 +928,9 @@ export default function Drucker() {
   const [rackCfg, setRackCfg] = useState({ num_racks: 3, slots_per_rack: 6, magazine_slot: 7 })
   const [rackReady, setRackReady] = useState(false)
   const [devices, setDevices] = useState([])
-  // Moonraker-Drucker (Snapmaker U1): eigene Abschnitte mit eigenem Panel. Nicht in
-  // `devices` — die füllen die Farm-Positionen, und die Farm fährt den U1 noch nicht.
+  // Moonraker-Drucker (Snapmaker U1): zusätzlich ein Abschnitt mit eigenem Panel (Zustand,
+  // Einstellungen). Seit v1.1.87 fährt die Farm ihn — also steht er auch in `devices`
+  // und bekommt seine eigenen Positionen.
   const [moonDevices, setMoonDevices] = useState([])
   const [devicesReady, setDevicesReady] = useState(false)
   const [models, setModels]   = useState([])
@@ -972,8 +990,10 @@ export default function Drucker() {
     }
   }
 
-  const patchPrinter = (id, patch) => setPrinters(ps => ps.map(p => {
+  const patchPrinter = (id, rawPatch) => setPrinters(ps => ps.map(p => {
     if (p.id !== id) return p
+    // Geänderte Positionen sind nicht mehr „eingemessen und getestet“ (U1-Freigabe).
+    const patch = withConfirmReset(rawPatch)
     // Modell-Vorlage: Y/Z und die Tür-Form übernehmen, die eingemessene X halten
     // (die Vorlage kennt den Standort dieser Anlage nicht).
     if (patch.__preset) {
@@ -981,7 +1001,7 @@ export default function Drucker() {
       if (!t) return p
       const off = num(p.eject?.x) - t.eject.x
       const sh = (n) => n ? { ...n, x: r1(n.x + off) } : null
-      return { ...p, enclosed: t.enclosed,
+      return { ...p, enclosed: t.enclosed, confirmed_for: null,
                eject: { ...t.eject, x: r1(num(p.eject?.x)) },
                load: sh(t.load), move: sh(t.move || t.eject),
                door: t.door ? { open: sh(t.door.open), close: sh(t.door.close) } : null }
@@ -1226,8 +1246,8 @@ export default function Drucker() {
   useEffect(() => {
     const load = () => deviceService.listDevices()
       .then(r => {
-        setDevices((r?.data || []).filter(d => d.device_type === 'bambu_lab')
-          .map(d => ({ id: d.id, name: d.name, model: d.model || '' })))
+        setDevices((r?.data || []).filter(isFarmPrinter)
+          .map(d => ({ id: d.id, name: d.name, model: d.model || '', device_type: d.device_type })))
         setMoonDevices((r?.data || []).filter(d => d.device_type === 'moonraker'))
         setDevicesReady(true)
       })
@@ -1474,8 +1494,8 @@ export default function Drucker() {
       <div className="flex items-center justify-between px-1">
         <p className="section-label">{tr('Drucker')}</p>
         <span className="text-[10px] text-surface-600">
-          {devices.length + moonDevices.length
-            ? tr('{0} Drucker — Anzahl in Konfiguration → Geräte', devices.length + moonDevices.length)
+          {devices.length
+            ? tr('{0} Drucker — Anzahl in Konfiguration → Geräte', devices.length)
             : tr('Noch kein Drucker angelegt — Konfiguration → Geräte')}
         </span>
       </div>
@@ -1499,7 +1519,7 @@ export default function Drucker() {
       )}
       {moonDevices.map(d => (
         <Section key={`moon-${d.id}`} id={`sec-moon-${d.id}`}
-          title={<>{d.name}<span className="badge">{tr('Snapmaker U1 · nicht in der Farm')}</span></>}
+          title={<>{d.name}<span className="badge">{tr('Snapmaker U1 · Zustand und Einstellungen')}</span></>}
           subtitle={`${d.ip_address}:${d.port}`}
           open={openSec === `moon-${d.id}`} onToggle={() => toggleSec(`moon-${d.id}`)}>
           <MoonrakerPrinterPanel device={d} />

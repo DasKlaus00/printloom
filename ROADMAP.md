@@ -18,10 +18,10 @@ Was der Code heute **nicht** kann:
   und eine Verteilung der Warteschlange (`job_dispatch`) gibt es schon. Gefahren wird
   trotzdem immer nur ein Job, weil die Farm nur einen Zustand kennt (`_farm` in
   `autofarm.py`).
-- **Die Farm steuert nur Bambu-Drucker.** Den Snapmaker U1 kann Printloom seit v1.1.83
-  verbinden, überwachen, einstellen und darauf drucken, aber noch nicht in der Farm
-  fahren. Für Creality K1C und Elegoo Centauri Carbon gibt es Geometrie-Vorlagen, aber
-  keinen Treiber.
+- **Die Farm fährt Bambu und den Snapmaker U1.** Den U1 fährt sie seit v1.1.87
+  (Moonraker hinter `services/printer_link.py`), an echter Hardware aber noch ungetestet.
+  Für Creality K1C und Elegoo Centauri Carbon gibt es Geometrie-Vorlagen, aber keinen
+  Treiber.
 - **Bei Fehlern hält die Farm fast immer an.** Fast jede Fehlerklasse steht auf
   „pausieren“. Das ist sicher, aber nachts steht die Farm auch dann still, wenn ein
   anderer Job weiterdrucken könnte.
@@ -104,14 +104,14 @@ Drucker B ab.
 
 ## 4 · Mehr als Bambu Lab 🏗
 
-1. 🏗 **Eine Schnittstelle für Druckertreiber:** verbinden, Status, Datei senden, Druck
-   starten und stoppen, Kamera, Zustand des Betts. Bambu (MQTT und FTP) wird der erste
-   Treiber dahinter und verhält sich danach genau wie vorher.
-2. 🏗 **Moonraker als zweiter Treiber in der Farm.** Seit v1.1.83 spricht Printloom mit
-   dem Snapmaker U1 über Moonraker (`services/moonraker_printer.py`): Status, vier Köpfe,
-   Einstellungen, Druck starten, Kamera. Für die Farm fehlen noch: der Treiber hinter
-   der Schnittstelle aus Punkt 1, eingemessene Arm-Positionen am U1 und die
-   Platten-Erkennung des U1 als Prüfung vor dem Einlegen.
+1. ✅ **Eine Schnittstelle für Druckertreiber** (v1.1.87): `services/printer_link.py`
+   bietet dem Farm-Zyklus verbinden, Status, G-code, Druck pausieren/stoppen; Bambu
+   (MQTT und FTP) verhält sich dahinter genau wie vorher. Datei senden und Homing haben
+   je Treiber einen eigenen Weg im Zyklus.
+2. ✅ **Moonraker als zweiter Treiber in der Farm** (v1.1.87): Der Snapmaker U1 druckt
+   G-code, der für ihn gesliced ist; Filament wird je Kopf geprüft; Homing und Bett-Fahrt
+   laufen als G-code. Start nur mit eigenen, bestätigten Arm-Positionen. Offen: Test an
+   echter Hardware und die Platten-Erkennung des U1 als Prüfung vor dem Einlegen.
 3. 🔬 **Drucker mit eigenem Protokoll** (etwa Elegoo) erst, wenn jemand mit so einem
    Drucker testen kann.
 

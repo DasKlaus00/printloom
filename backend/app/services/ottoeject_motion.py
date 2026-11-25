@@ -372,6 +372,10 @@ def _norm_printer(raw: dict, idx: int) -> dict:
         "use_gcode": dict(raw.get("use_gcode") or {}),
         "gcode_override": dict(raw.get("gcode_override") or {}),
         "speed_factors": dict(raw.get("speed_factors") or {}),
+        # Wer hat die Positionen am Gerät eingemessen und bestätigt? Geräte-ID (seit
+        # v1.1.87, Pflicht für den Snapmaker U1 in der Farm). Die Oberfläche nimmt sie bei
+        # jeder Änderung an Positionen zurück; wechselt der Block das Gerät, passt sie nicht mehr.
+        "confirmed_for": raw.get("confirmed_for"),
     }
     if isinstance(door, dict) and (door.get("open") or door.get("close")):
         out["door"] = {"open": _sub(door.get("open"), dp["door"]["open"]),

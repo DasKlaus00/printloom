@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.87',
+    de: [
+      'Die Farm fährt jetzt auch den Snapmaker U1: Warteschlange drucken, auswerfen, einlagern, nachlegen — wie beim Bambu. Gedruckt wird G-code, der für den U1 gesliced ist, oder eine .3mf mit geslicetem G-code darin. Eine Datei für einen anderen Drucker druckt Printloom auf dem U1 nicht und lehnt sie schon beim Einreihen ab.',
+      'Filament je Kopf: Die Farm prüft vor dem Druck, ob in T0–T3 das Material steckt, das die Datei braucht (Strategie wie beim AMS). Meldet ein Kopf kein Filament, gibt es einen Hinweis statt einer Sperre.',
+      'Homing und Bett-Fahrt gehen am U1 direkt als G-code; die Farm wartet auf die Rückmeldung von Klipper. Arbeitet der U1 gerade G-code ab oder ist Klipper nicht bereit, fährt der Arm nicht hinein.',
+      'Sicherheit: Die Farm startet mit dem U1 nur, wenn seine Positionen im Drucker-Tab eingemessen und mit „Eingemessen und getestet“ bestätigt sind. Jede spätere Änderung nimmt die Bestätigung zurück. Geräte-Macros des OTTOeject (Bambu-Positionen) sind am U1 gesperrt.',
+      'Der Drucker-Tab zeigt den U1 jetzt mit eigenen Positionen und Bett-Steuerung; die Farm-Seite fragt den Server, welcher Drucker die Farm fährt, statt den ersten Bambu zu nehmen.',
+      'Noch nicht an einem echten U1 getestet — bitte zuerst mit einem einzelnen Job und daneben stehen.',
+    ],
+    en: [
+      'The farm now also runs the Snapmaker U1: print the queue, eject, store, reload — like with the Bambu. It prints G-code sliced for the U1, or a .3mf with sliced G-code inside. Printloom does not print a file sliced for another printer on the U1 and already rejects it when it is queued.',
+      'Filament per toolhead: before printing, the farm checks that T0–T3 hold the material the file needs (same strategy as for the AMS). If a toolhead reports no filament, you get a note instead of a block.',
+      'Homing and bed moves go to the U1 directly as G-code; the farm waits for Klipper to confirm. While the U1 is executing G-code or Klipper is not ready, the arm does not move in.',
+      'Safety: the farm only starts with the U1 once its positions are measured in the Printer tab and confirmed with “Measured and tested”. Any later change withdraws the confirmation. OTTOeject device macros (Bambu positions) are blocked on the U1.',
+      'The Printer tab now shows the U1 with its own positions and bed controls; the farm page asks the server which printer runs the farm instead of taking the first Bambu.',
+      'Not yet tested on a real U1 — please start with a single job and stay next to it.',
+    ],
+  },
+  {
     version: '1.1.86',
     de: [
       'Startkonfiguration: Wer beim Drucker „Snapmaker U1“ wählt, gibt nur noch die IP-Adresse ein (Port und API-Schlüssel optional). Bisher verlangte der Schritt Seriennummer und Access-Code wie bei Bambu und legte den U1 als Bambu-Drucker an — so konnte er sich nie verbinden.',

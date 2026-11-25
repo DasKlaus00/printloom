@@ -50,3 +50,15 @@ export function adoptBlock(ps, { deviceId, deviceName, block, blockId }) {
   return ps.map(p => ((p === block || (blockId != null && p.id === blockId))
     ? { ...p, device_id: deviceId, name: deviceName } : p))
 }
+
+/* Bestätigung „am Gerät eingemessen und getestet" (seit v1.1.87, Pflicht für den
+   Snapmaker U1 in der Farm; das Backend vergleicht `confirmed_for` mit der Geräte-ID).
+   Jede Änderung an Positionen, Tür, Vorlage oder Bewegungsquelle nimmt sie zurück:
+   Bestätigt ist immer der Stand NACH der letzten Änderung. */
+export const MOTION_KEYS = ['eject', 'load', 'move', 'door', 'use_gcode', 'gcode_override',
+                            'enclosed', '__preset']
+
+export function withConfirmReset(patch) {
+  if (!patch || 'confirmed_for' in patch) return patch
+  return Object.keys(patch).some(k => MOTION_KEYS.includes(k)) ? { ...patch, confirmed_for: null } : patch
+}

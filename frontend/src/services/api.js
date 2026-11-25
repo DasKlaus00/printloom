@@ -248,6 +248,8 @@ export const onlineService = {
 
 export const autofarmService = {
   start:         (data)  => api.post('/autofarm/start', data),
+  // Welches Gerät fährt die Farm (seit v1.1.87 auch ein Snapmaker U1)?
+  getFarmPrinter: ()     => api.get('/autofarm/farm-printer'),
   getStatus:     (light) => api.get('/autofarm/status', light ? { params: { light: 1 } } : undefined),
   stop:          ()      => api.post('/autofarm/stop'),
   forceReset:    ()      => api.post('/autofarm/force-reset'),

@@ -5,6 +5,7 @@ import { fileService, projectService, autofarmService, deviceService } from '../
 import { useLanguage } from '../services/i18n'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { useAutoRefresh } from '../services/useAutoRefresh'
+import { loadFarmPrinter } from '../services/farmPrinter'
 
 const ACTIVE_KEY = 'printloom_active_project'
 const IN_FLIGHT  = ['pending', 'sending', 'running', 'printing']
@@ -162,9 +163,8 @@ function Projekt() {
       if (st.data?.running) {
         showFeedback(tr('{0} Objekt(e) zur Warteschlange hinzugefügt', added))
       } else {
-        const [devs, settings] = await Promise.all([deviceService.listDevices(), autofarmService.getSettings()])
-        const bambu = (devs.data ?? []).find(d => d.device_type === 'bambu_lab')
-        if (!bambu) { showFeedback(tr('Kein Bambu Lab Gerät konfiguriert — bitte erst unter Konfiguration → Geräte einrichten'), false); return }
+        const [bambu, settings] = await Promise.all([loadFarmPrinter(), autofarmService.getSettings()])
+        if (!bambu) { showFeedback(tr('Kein Drucker für die Farm konfiguriert — bitte erst unter Konfiguration → Geräte einrichten'), false); return }
         await autofarmService.start({
           bambu_id:          bambu.id,
           use_ams:           settings.data?.use_ams ?? true,

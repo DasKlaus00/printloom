@@ -31,3 +31,12 @@ def build_3mf(gcode: str) -> bytes:
 
 def build_homing_3mf() -> bytes:
     return build_3mf(_HOMING_GCODE)
+
+
+def homing_gcode_klipper() -> str:
+    """Dieselbe Homing-Fahrt für Drucker mit Klipper/Moonraker (Snapmaker U1, seit
+    v1.1.87): Sie bekommen den G-code direkt, nicht als Druckauftrag. G90 vorweg, weil
+    ein Druckende oder Makro Klipper relativ zurücklassen kann — dann führe „Z200"
+    200 mm weiter statt AUF 200. Z-Ziel und Vorschub bleiben in _HOMING_GCODE (eine
+    Quelle für beide Drucker)."""
+    return "G90\n" + _HOMING_GCODE

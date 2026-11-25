@@ -151,3 +151,26 @@ def public_list() -> list:
              "bed_mm": m["bed_mm"], "preset": m["preset"],
              "tools": m.get("tools"), "max_nozzle_c": m.get("max_nozzle_c")}
             for m in MODELS]
+
+
+def sliced_for_problem(model_id, sliced_for) -> str | None:
+    """Passt der G-code zum Drucker? `sliced_for` = Angabe aus der Datei
+    (print_file.sliced_for, z. B. „Snapmaker U1“ oder „Bambu Lab X1 Carbon“).
+    None = passt oder steht nicht drin (dann lässt sich nichts prüfen), sonst der Grund.
+
+    Seit v1.1.87 für den Snapmaker U1: Ein G-code für ein anderes Modell bringt dessen
+    Start-Code, Bettgröße und Köpfe mit. Erkennt Printloom die Angabe gar nicht, wird
+    auch nicht gedruckt — „vielleicht passend" reicht für einen unbeaufsichtigten Druck
+    nicht."""
+    if not sliced_for:
+        return None
+    want = normalize(model_id)
+    label = (by_id(want) or {}).get("label") or "diesen Drucker"
+    got = normalize(sliced_for)
+    if got and got == want:
+        return None
+    if got:
+        return (f"Gesliced für {(by_id(got) or {}).get('label', got)}, nicht für {label} — "
+                f"im Slicer das Profil „{label}“ wählen und neu slicen")
+    return (f"Gesliced für „{str(sliced_for)[:60]}“ — darin erkennt Printloom nicht den "
+            f"{label}; mit dessen Profil neu slicen")

@@ -660,7 +660,7 @@ export default function Setup({ setCurrentPage }) {
                   {tr('✓ Drucker bereits konfiguriert:')} <span className="font-mono">{printerDev.name}</span> ({printerDev.ip_address})
                 </div>
                 {printerDev.device_type === 'moonraker' && (
-                  <p className="text-xs text-amber-300">{tr('Die Farm fährt den U1 noch nicht. Für den Farm-Betrieb brauchst du derzeit einen Bambu-Lab-Drucker — den legst du unter Konfiguration → Geräte an.')}</p>
+                  <p className="text-xs text-amber-300">{tr('Die Farm fährt den U1, sobald seine Positionen im Drucker-Tab eingemessen und bestätigt sind.')}</p>
                 )}
               </>
             ) : (
@@ -724,7 +724,7 @@ export default function Setup({ setCurrentPage }) {
                         placeholder={`${tr('API-Schlüssel (optional)')} — ${tr('nur nötig, wenn am Drucker eine Anmeldung eingerichtet ist')}`}
                         onChange={e => setPForm(f => ({ ...f, access_code: e.target.value }))} />
                       <p className="text-[11px] text-surface-600">
-                        {tr('Verbindung über Moonraker im Heimnetz: Port 7125 (Standard) oder 80 (über die Weboberfläche des Druckers). Die Farm fährt den U1 noch nicht — verbinden, überwachen, einstellen und drucken geht im Drucker-Tab.')}
+                        {tr('Verbindung über Moonraker im Heimnetz: Port 7125 (Standard) oder 80 (über die Weboberfläche des Druckers). Die Farm fährt den U1, sobald seine Positionen im Drucker-Tab eingemessen und bestätigt sind.')}
                       </p>
                     </>
                   ) : (

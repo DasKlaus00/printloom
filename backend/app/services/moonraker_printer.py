@@ -1,8 +1,8 @@
 """Drucker mit Moonraker — zuerst der Snapmaker U1.
 
 Was hier steht: verbinden, Zustand lesen, Einstellungen setzen, Druck steuern,
-Kamerabild holen. Die Farm fährt diese Drucker (noch) nicht: Sie kennt bisher nur
-Bambu (MQTT + FTP), siehe ROADMAP.md Teil 4.
+Kamerabild holen. Seit v1.1.87 fährt auch die Farm diese Drucker; sie spricht sie
+über services/printer_link.py an (dort: Bambu und Moonraker hinter einer Schnittstelle).
 
 Snapmaker veröffentlicht für den U1 keine eigene API-Beschreibung. Der Drucker
 läuft mit Snapmakers Fork von Klipper und Moonraker (GPLv3, auf GitHub), also gilt
@@ -203,6 +203,9 @@ def normalize(st: dict) -> dict:
     sensors = [{"name": n.split(None, 1)[1], "temp": _num((o or {}).get("temperature"))}
                for n, o in st.items() if n.startswith("temperature_sensor ")]
     info = ps.get("info") or {}
+    # „Printing" heißt bei Klipper: es arbeitet gerade G-code ab — auch ohne Druck
+    # (G28 vom Display, Endskript, Kopfwechsel). Für die Farm ist der Drucker dann belegt.
+    idle_state = (st.get("idle_timeout") or {}).get("state")
 
     if klippy and klippy != "ready":
         status, gcode_state = klippy, "FAILED"
@@ -235,10 +238,78 @@ def normalize(st: dict) -> dict:
         "top_cover": top,
         "temperature_sensors": sensors,
         "message": (st.get("display_status") or {}).get("message") or "",
+        "executing_gcode": idle_state == "Printing",
         # Bambu-Felder, die es hier nicht gibt — leer statt fehlend, damit die
         # vorhandenen AMS-Anzeigen nicht stolpern.
         "ams_units": [], "ams": {}, "tray_active": 255,
     }
+
+
+# Zustand, solange Klipper selbst nicht bereit ist (startup, shutdown, error). Für die
+# Farm heißt das: unbekannt, nicht frei — printer_guard behandelt ihn wie „belegt".
+NOT_READY_STATE = "NOT_READY"
+
+
+def _int0(v) -> int:
+    n = _num(v)
+    return int(round(n)) if n is not None else 0
+
+
+def farm_print_status(s: dict) -> dict:
+    """Normalisierter Zustand → das `print`-Telegramm, das der Farm-Zyklus vom Bambu
+    kennt (gcode_state, mc_percent, mc_remaining_time, Temperaturen, Schichten).
+
+    Warum so: Der Zyklus wartet, prüft Bedingungen und kühlt anhand genau dieser
+    Felder ab. Statt ihn für jeden Drucker neu zu schreiben, sprechen beide Treiber
+    dieselbe Sprache. Zahlen, die der Drucker nicht meldet, werden 0, weil der Zyklus
+    sie nur vergleicht (`rem > 0`); unbekannte Temperaturen fehlen dagegen ganz — eine
+    0 °C würde ein Abkühlen sofort für erledigt halten.
+
+    Arbeitet Klipper G-code ab, ohne dass ein Druck läuft, heißt der Zustand PREPARE
+    (belegt): Sonst hielte die Farm einen Drucker für frei, dessen Kopf sich bewegt —
+    auch nach Druckende, solange das Endskript noch läuft."""
+    s = s if isinstance(s, dict) else {}
+    state = s.get("gcode_state") or "IDLE"
+    if s.get("klippy_state") and s["klippy_state"] != "ready":
+        state = "FAILED"
+    elif s.get("print_state") == "cancelled":
+        # Am Display abgebrochen: Für die Farm ist der Job gescheitert (wie beim Bambu, der
+        # dann FAILED meldet). Als IDLE wartete sie endlos auf ein Druckende — der
+        # Fortschritt springt nach dem Abbruch auf 0, „fertig" erkennt sie so nie.
+        # Frei für den Arm bleibt der Drucker trotzdem (FAILED ist nicht belegt).
+        state = "FAILED"
+    elif state in ("IDLE", "FINISH") and s.get("executing_gcode"):
+        state = "PREPARE"
+    out = {
+        "gcode_state": state,
+        "mc_percent": _int0(s.get("progress")),
+        "mc_remaining_time": _int0(s.get("remaining_min")),
+        "layer_num": _int0(s.get("layer")),
+        "total_layer_num": _int0(s.get("total_layers")),
+        "subtask_name": s.get("subtask_name") or "",
+        "hms": [],
+        "print_error": 0,
+    }
+    for key, src in (("nozzle_temper", "nozzle_temp"), ("bed_temper", "bed_temp")):
+        if _num(s.get(src)) is not None:
+            out[key] = s[src]
+    # Bauraum-Fühler: beim U1 heißt er „cavity", bei anderen Klipper-Druckern meist „chamber".
+    chamber = next((t.get("temp") for t in s.get("temperature_sensors") or []
+                    if any(k in str(t.get("name", "")).lower() for k in ("chamber", "cavity"))
+                    and _num(t.get("temp")) is not None), None)
+    if chamber is not None:
+        out["chamber_temper"] = chamber
+    return out
+
+
+def live_state_of(s: dict):
+    """gcode_state für Sicherheitsentscheidungen (printer_guard): Klipper nicht bereit
+    → NOT_READY, sonst wie farm_print_status."""
+    if not isinstance(s, dict) or s.get("online") is False:
+        return None
+    if s.get("klippy_state") and s["klippy_state"] != "ready":
+        return NOT_READY_STATE
+    return farm_print_status(s)["gcode_state"]
 
 
 def capabilities(objects, model_id=None) -> dict:
@@ -417,16 +488,20 @@ async def state(device) -> dict:
     return out
 
 
+def _error_text(e: httpx.HTTPStatusError) -> str:
+    try:
+        msg = ((e.response.json() or {}).get("error") or {}).get("message") or ""
+    except ValueError:                 # keine JSON-Antwort: dann ihr Text
+        msg = (e.response.text or "").strip()[:200]
+    return msg or f"Drucker lehnt ab (HTTP {e.response.status_code})"
+
+
 async def run_gcode(device, script: str) -> None:
     """G-code ausführen. Klipper meldet einen abgelehnten Befehl als Fehler (400)."""
     try:
         await _post(device, "/printer/gcode/script", json={"script": script}, timeout=15.0)
     except httpx.HTTPStatusError as e:
-        try:
-            msg = ((e.response.json() or {}).get("error") or {}).get("message") or ""
-        except ValueError:                 # keine JSON-Antwort: dann ihr Text
-            msg = (e.response.text or "").strip()[:200]
-        raise RuntimeError(msg or f"Drucker lehnt ab (HTTP {e.response.status_code})")
+        raise RuntimeError(_error_text(e))
 
 
 async def print_action(device, action: str) -> None:
@@ -461,19 +536,60 @@ async def start_print(device, filename: str) -> None:
     await _post(device, "/printer/print/start", json={"filename": filename}, timeout=15.0)
 
 
-async def upload_and_print(device, path: str, name: str) -> None:
-    """Datei auf den Drucker laden und starten (Standard-Moonraker-Upload)."""
+async def upload(device, path: str, name: str) -> str:
+    """Datei auf den Drucker laden (Standard-Moonraker-Upload) → Pfad dort."""
     if not str(name).lower().endswith(".gcode"):
         raise ValueError(ONLY_GCODE)
-    await assert_may_start(device)
     with open(path, "rb") as fh:
         async with httpx.AsyncClient(timeout=None) as c:
             resp = await c.post(base_url(device) + "/server/files/upload",
                                 files={"file": (name, fh, "application/octet-stream")},
                                 data={"root": "gcodes"}, headers=headers(device))
     item = (_result(resp) or {}).get("item") or {}
-    await _post(device, "/printer/print/start",
-                json={"filename": item.get("path") or name}, timeout=15.0)
+    return item.get("path") or name
+
+
+async def upload_and_print(device, path: str, name: str) -> None:
+    """Datei auf den Drucker laden und starten (Standard-Moonraker-Upload)."""
+    if not str(name).lower().endswith(".gcode"):
+        raise ValueError(ONLY_GCODE)
+    await assert_may_start(device)
+    remote = await upload(device, path, name)
+    await _post(device, "/printer/print/start", json={"filename": remote}, timeout=15.0)
+
+
+# ── Für die Farm: synchron (läuft im Executor des Farm-Zyklus, wie die Bambu-Seite) ──
+def query_sync(device, timeout: float = TIMEOUT_S) -> tuple:
+    """→ (Objektnamen, Status-Rohdaten), synchron. Fehler gehen nach oben."""
+    with httpx.Client(timeout=timeout) as c:
+        hit = _objects_cache.get(device.id)
+        if hit and time.monotonic() - hit[0] < _OBJECTS_TTL_S:
+            names = hit[1]
+        else:
+            res = _result(c.get(base_url(device) + "/printer/objects/list", headers=headers(device))) or {}
+            names = pick_objects(res.get("objects"))
+            _objects_cache[device.id] = (time.monotonic(), names)
+        res = _result(c.post(base_url(device) + "/printer/objects/query",
+                             json={"objects": {n: None for n in names}}, headers=headers(device))) or {}
+    return names, (res.get("status") or {})
+
+
+def run_gcode_sync(device, script: str, timeout: float = 15.0) -> None:
+    """G-code ausführen, synchron. Moonraker antwortet erst, wenn Klipper ihn
+    abgearbeitet hat: Die Rückkehr heißt also „Bewegung fertig" (wie beim Arm)."""
+    try:
+        with httpx.Client(timeout=timeout) as c:
+            _result(c.post(base_url(device) + "/printer/gcode/script",
+                           json={"script": script}, headers=headers(device)))
+    except httpx.HTTPStatusError as e:
+        raise RuntimeError(_error_text(e))
+
+
+def print_action_sync(device, action: str) -> None:
+    if action not in ("pause", "resume", "cancel"):
+        raise ValueError(f"Unbekannte Aktion: {action}")
+    with httpx.Client(timeout=10.0) as c:
+        _result(c.post(base_url(device) + f"/printer/print/{action}", headers=headers(device)))
 
 
 def snapshot(device):

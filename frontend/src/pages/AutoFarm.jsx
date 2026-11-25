@@ -22,6 +22,7 @@ import PrinterOverview from '../components/PrinterOverview'
 import { AmsPreview, AmsMapper } from '../components/farm/Ams'
 import { CameraPanel } from '../components/farm/Camera'
 import QueuePlanner from '../components/farm/QueuePlanner'
+import { pickFarmPrinter } from '../services/farmPrinter'
 
 /* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
    Webcam am Drucker → 404), statt ein kaputtes Bild-Icon zu zeigen. */
@@ -42,7 +43,7 @@ async function checkPreflight(bambuId, tr = (s) => s) {
     await printerService.getStatus(bambuId)
     // Printer may already be running — continuous mode handles that
   } catch {
-    errors.push(tr('Bambu X1C nicht erreichbar — Verbindung prüfen'))
+    errors.push(tr('Drucker nicht erreichbar — Verbindung prüfen'))
   }
   try {
     const r = await controlService.getKlipperInfo()
@@ -491,10 +492,11 @@ function AutoFarm({ setCurrentPage } = {}) {
 
   /* ── Load ────────────────────────────────────────────────── */
   const load = useCallback(async () => {
-    const [r, f, d] = await Promise.allSettled([
+    const [r, f, d, fp] = await Promise.allSettled([
       rackManagerService.getAll(),
       fileService.listFiles(),
       deviceService.listDevices(),
+      autofarmService.getFarmPrinter(),
     ])
     if (r.status === 'fulfilled') {
       const rd = r.value.data
@@ -513,7 +515,9 @@ function AutoFarm({ setCurrentPage } = {}) {
       setAddFileId(prev => prev ?? files[0]?.id ?? null)
     }
     if (d.status === 'fulfilled') {
-      const b = d.value.data.find(x => x.device_type === 'bambu_lab')
+      // Der Drucker der Farm (Server), nicht mehr „der erste Bambu“: seit v1.1.87
+      // kann es ein Snapmaker U1 sein.
+      const b = pickFarmPrinter(d.value.data, fp.status === 'fulfilled' ? fp.value.data?.device_id : null)
       if (b) {
         setBambuId(b.id)
         deviceSettingsService.getSettings(b.id)
@@ -910,7 +914,7 @@ function AutoFarm({ setCurrentPage } = {}) {
 
   /* ── Farm control ────────────────────────────────────────── */
   const startFarm = async () => {
-    if (!bambuId) return showFeedback(tr('Kein Bambu Lab Gerät konfiguriert'), false)
+    if (!bambuId) return showFeedback(tr('Kein Drucker für die Farm konfiguriert'), false)
     if (!queueLoaded) return showFeedback(tr('Warteschlange nicht geladen — erst neu laden'), false)
     // Frisch lesen: In der Konfiguration können sich Takt, Mindestdruckzeit und AMS
     // seit dem Öffnen dieser Seite geändert haben.
@@ -1098,7 +1102,7 @@ function AutoFarm({ setCurrentPage } = {}) {
           )}
           {!bambuId && (
             <div className="pointer-events-auto max-w-full min-w-0 flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/85 border border-amber-800 text-amber-300 text-sm shadow-xl backdrop-blur-md">
-              <span className="dot dot-amber shrink-0" /> <span className="truncate">{tr('Kein Bambu Lab Gerät konfiguriert — bitte erst unter Konfiguration → Geräte einrichten')}</span>
+              <span className="dot dot-amber shrink-0" /> <span className="truncate">{tr('Kein Drucker für die Farm konfiguriert — bitte erst unter Konfiguration → Geräte einrichten')}</span>
             </div>
           )}
           {paused && (

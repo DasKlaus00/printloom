@@ -223,3 +223,49 @@ def expand_to_slots(mapping: list, filepath: str, file_type: str, plate: int | N
         full[slot_id - 1] = tray
     logger.info(f"ams_mapping auf Slicer-Slots {ids} gehoben: {mapping} → {full}")
     return full
+
+
+def check_tools(usage: list, tools: list, exact_only: bool = False) -> tuple:
+    """Drucker mit festen Köpfen (Snapmaker U1, seit v1.1.87): Filament N der Datei
+    druckt Kopf T(N-1). Eine Zuordnung wie beim AMS gibt es nicht — der G-code ruft die
+    Köpfe selbst auf. Darum: passt, was in DIESEM Kopf steckt?
+
+    usage: print_file.filament_usage (nur benutzte Filamente, `slot` 1-basiert).
+    tools: normalisierte Köpfe (moonraker_printer.normalize → tools).
+    → (missing, unknown). missing: Kopf fehlt, ist leer oder trägt ein anderes Material
+    (mit exact_only auch: eine andere Farbe). unknown: Kopf meldet kein Filament — das
+    lässt sich nicht prüfen; unbekannt ist nicht „falsch", der Aufrufer entscheidet."""
+    by_idx = {t.get("index"): t for t in tools or [] if isinstance(t, dict)}
+    missing, unknown = [], []
+    for u in usage or []:
+        try:
+            i = int(u.get("slot")) - 1
+        except (TypeError, ValueError):
+            continue
+        want_t, want_c = (u.get("type") or "").strip(), (u.get("color") or "").strip()
+        label = f"T{i}"
+
+        def miss(reason):
+            missing.append({"index": i, "type": want_t, "color": want_c, "reason": reason})
+
+        tool = by_idx.get(i)
+        if tool is None:
+            miss(f"{label} gibt es an diesem Drucker nicht")
+            continue
+        fil = tool.get("filament") or {}
+        sensor = tool.get("sensor") or {}
+        if fil.get("loaded") in (False, 0) or (sensor.get("detected") is False and sensor.get("enabled") is not False):
+            miss(f"{label} ist leer")
+            continue
+        have_t = (fil.get("type") or "").strip()
+        if not have_t:
+            unknown.append(label)
+            continue
+        if want_t and material_base(have_t) != material_base(want_t):
+            miss(f"{label} hat {have_t}, die Datei braucht {want_t}")
+            continue
+        have_c = (fil.get("color") or "").lstrip("#")
+        if exact_only and want_c and have_c and \
+                color_dist(want_c.lstrip("#"), have_c) > EXACT_COLOR_THRESHOLD:
+            miss(f"{label}: keine exakte Farbe geladen")
+    return missing, unknown

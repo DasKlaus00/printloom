@@ -1263,7 +1263,7 @@ function Configuration() {
                     {models.filter(m => m.driver === 'moonraker').map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
                   </select>
                   <p className="text-[11px] text-surface-600 mt-1">
-                    {tr('Verbindung über Moonraker im Heimnetz: Port 7125 (Standard) oder 80 (über die Weboberfläche des Druckers). Die Farm fährt den U1 noch nicht — verbinden, überwachen, einstellen und drucken geht im Drucker-Tab.')}
+                    {tr('Verbindung über Moonraker im Heimnetz: Port 7125 (Standard) oder 80 (über die Weboberfläche des Druckers). Die Farm fährt den U1, sobald seine Positionen im Drucker-Tab eingemessen und bestätigt sind.')}
                   </p>
                 </div>
                 <div className="col-span-2">
