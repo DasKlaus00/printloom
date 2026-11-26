@@ -14,6 +14,7 @@ nichts hinter dem Rücken des Nutzers übernommen.
 import logging
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 from app.services import online
 
@@ -129,3 +130,28 @@ async def clear_cache():
     """Zwischengespeicherte Online-Daten löschen (Datenschutz / Fehlersuche)."""
     online.clear_cache()
     return {"success": True}
+
+
+# ── Sprachwunsch (seit v1.1.93) ──────────────────────────────────────────────
+# POST, damit der Wächter in main.py fremde Seiten aussperrt. Meldungen sind feste
+# Texte: Was der Printloom-Server antwortet, gelangt nie in die Oberfläche.
+class LanguageRequestIn(BaseModel):
+    code: str = Field(..., max_length=20)
+
+
+LANGUAGE_REQUEST_ERRORS = {
+    "invalid":  (400, "Ungültige Sprachkennung"),
+    "insecure": (400, "Server-Adresse ist nicht https — Anfrage nicht gesendet"),
+    "rate":     (429, "Zu viele Anfragen — bitte später erneut versuchen"),
+    "server":   (502, "Printloom-Server hat die Anfrage nicht angenommen"),
+    "network":  (502, "Printloom-Server nicht erreichbar — Anfrage nicht gesendet"),
+}
+
+
+@router.post("/language-request")
+async def language_request(body: LanguageRequestIn):
+    res = await online.send_language_request(body.code, _current_version())
+    if not res["ok"]:
+        status, text = LANGUAGE_REQUEST_ERRORS.get(res["reason"], LANGUAGE_REQUEST_ERRORS["server"])
+        raise HTTPException(status, text)
+    return {"ok": True, "already_sent": res["reason"] == "already_sent"}

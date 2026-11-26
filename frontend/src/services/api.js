@@ -249,6 +249,8 @@ export const onlineService = {
                                  : api.get('/online/library', { params: kind ? { kind } : {} }),
   getItem:      (id)        => api.get('/online/library/item', { params: { id } }),
   clearCache:   ()          => api.post('/online/cache/clear'),
+  // Sprachwunsch an den Printloom-Server (seit v1.1.93) — nur nach Bestätigung im Store
+  requestLanguage: (code)   => api.post('/online/language-request', { code }),
 }
 
 export const autofarmService = {

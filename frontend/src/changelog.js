@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.93',
+    de: [
+      'Sprache anfragen: Fehlt deine Sprache, wählst du sie im Sprachen-Store (Konfiguration → Allgemein oder Bibliothek) aus und schickst eine Anfrage. Vorher zeigt Printloom genau, was gesendet wird: nur der Sprachcode und die Printloom-Version, an den Printloom-Server — keine Geräte-, Datei- oder Nutzerdaten. Die Anfrage ist auf der Website nicht öffentlich sichtbar.',
+      'Vorhandene und ähnliche Sprachen (z. B. eine zweite Chinesisch-Variante) stehen nicht in der Auswahl — für sie kommt kein eigenes Paket. Neue Sprachen kommen mit einem der nächsten Updates.',
+      'Sicher gebaut: gesendet wird nur auf deinen Klick und nach Bestätigung, nur über https, ohne Weiterleitung, höchstens fünf Anfragen pro Stunde. Die Antwort des Servers wird nicht angezeigt, es erscheinen nur feste Meldungen.',
+    ],
+    en: [
+      'Request a language: if yours is missing, pick it in the language store (Configuration → General or Library) and send a request. Printloom first shows exactly what is sent: only the language code and the Printloom version, to the Printloom server — no device, file or user data. The request is not publicly visible on the website.',
+      'Existing and similar languages (e.g. a second Chinese variant) are not in the list — they will not get a pack of their own. New languages arrive with one of the next updates.',
+      'Built to be safe: sent only on your click and after confirmation, only over https, without redirects, at most five requests per hour. The server’s answer is never shown; only fixed messages appear.',
+    ],
+  },
+  {
     version: '1.1.92',
     de: [
       'Docker: Das Support-Log liegt jetzt im Daten-Volume (db/logs/printloom.log) und übersteht damit Updates. Bisher lag es im Container selbst und war nach jedem Update weg — gerade dann, wenn ein Update der Fehler war. Windows und Linux ohne Docker: unverändert im Datenordner (logs/printloom.log).',

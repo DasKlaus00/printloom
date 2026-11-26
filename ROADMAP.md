@@ -188,6 +188,9 @@ neuen Texte in alle Pakete mit, sonst wird der Test rot.
   ausgelieferten vor. Wer eins schickt, dessen Korrekturen wandern ins nächste Release.
 - **Grenze:** Jedes Paket verlängert jedes Release um die Übersetzung seiner neuen Texte.
   Ein Paket kommt deshalb erst, wenn es jemand benutzt, nicht auf Vorrat.
+- **Nachfrage kommt aus der App:** Seit v1.1.93 schickt der Sprachen-Store auf Wunsch eine
+  Anfrage (nur Sprachcode und Version, nicht öffentlich). Jedes Release prüft die Wünsche:
+  neue Sprache → Paket; vorhandene oder ähnliche (gleiche Grundsprache) → kein Paket.
 
 ---
 

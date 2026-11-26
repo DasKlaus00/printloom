@@ -316,6 +316,13 @@ unsichtbar, deshalb der Test.
 - Neues Paket: `services/lang/<code>.js` mit `export default { '<deutsch>': '…' }` für
   jeden Schlüssel aus `EN_STRINGS`, Eintrag in `catalog.js` (`load: () => import(…)`),
   Changelog. Geplante Sprachen: ROADMAP.md, Teil 9.
+- **Sprachwünsche (seit v1.1.93):** Im Store wählt ein Nutzer eine fehlende Sprache
+  (`services/lang/requestable.js`: ISO 639-1 ohne vorhandene und ähnliche, d. h. gleiche
+  Grundsprache). `POST /api/online/language-request` schickt nach Bestätigung genau
+  `{code, version}` an `<server_url>/api/v1/language-requests` (`online.send_language_request`:
+  nur https, keine Weiterleitung, Antwort ungelesen, 5/h, gleiche Sprache 1/h). Die einzige
+  Stelle, an der Printloom etwas nach draußen SCHICKT — `test_language_request.py` hält sie
+  so eng. Die Website speichert nicht öffentlich; neue Wünsche prüft der Release-Ablauf.
 
 **Backend-Meldungen**
 

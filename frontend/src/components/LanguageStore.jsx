@@ -1,9 +1,14 @@
-import React, { useRef, useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import { apiError } from '../services/apiError'
-import { systemService } from '../services/api'
+import { systemService, onlineService } from '../services/api'
+import { confirmDialog } from '../services/confirm'
 import { useLanguage, activePacks, customPacks, customOverridesFor, setLanguage, setPackActive,
          getTranslationTemplate, loadLangPacks } from '../services/i18n'
 import { PACKS, SOURCE } from '../services/lang/catalog'
+import { requestableLanguages, languageName } from '../services/lang/requestable'
+
+const REQUESTED_KEY = 'printloom_lang_requested'   // nur Anzeige „schon angefragt“ in diesem Browser
+const readRequested = () => { try { return JSON.parse(localStorage.getItem(REQUESTED_KEY) || '[]') } catch { return [] } }
 
 /* Sprachen-Store (seit v1.1.91): die mit Printloom ausgelieferten Sprachpakete
    aktivieren, deaktivieren und verwenden; dazu eigene Pakete (Datei-Import).
@@ -14,12 +19,50 @@ import { PACKS, SOURCE } from '../services/lang/catalog'
    aktiven Pakete speichert der Server für die ganze Installation.
    Steht in Konfiguration → Allgemein und in der Bibliothek (dort auch ohne Online-Freigabe). */
 export default function LanguageStore() {
-  const { lang, tr } = useLanguage()
+  const { lang, tr, locale } = useLanguage()
   const [active, setActive] = useState(() => activePacks())
   const [custom, setCustom] = useState(() => customPacks())
   const [busy, setBusy]     = useState('')
   const [status, setStatus] = useState(null)
   const fileRef = useRef()
+  const [wish, setWish]           = useState('')
+  const [requested, setRequested] = useState(readRequested)
+  const choices = useMemo(() => requestableLanguages(locale), [locale])
+
+  /* Sprachwunsch (seit v1.1.93): erst sagen, was wohin geht, dann senden. Vorhandene
+     und ähnliche Sprachen stehen gar nicht erst in der Auswahl (requestable.js). */
+  const sendWish = async () => {
+    if (!wish) return
+    setStatus(null)
+    // Der Dialog nennt den Server, an den das Backend WIRKLICH sendet. Ist der nicht
+    // lesbar, wird nicht gesendet (kein geratener Name — Sicherheitsprüfung 26.11.).
+    let host = ''
+    try { host = new URL((await onlineService.getSettings()).data?.server_url || '').hostname }
+    catch (e) { console.warn('Online-Einstellungen nicht gelesen:', e?.message || e) }
+    if (!host) {
+      setStatus({ ok: false, msg: tr('Online-Einstellungen nicht lesbar — Anfrage nicht gesendet') })
+      return
+    }
+    const ok = await confirmDialog({
+      title: tr('Sprache anfragen?'),
+      message: tr('Printloom sendet an {0} nur den Sprachcode „{1}“ und die Printloom-Version — keine Geräte-, Datei- oder Nutzerdaten. Die Website sieht dabei die öffentliche IP-Adresse deines Anschlusses (nur zum Begrenzen der Anfragen, nicht gespeichert). Die Anfrage ist auf der Website nicht öffentlich sichtbar.', host, wish),
+      confirmLabel: tr('Anfrage senden'),
+    })
+    if (!ok) return
+    setBusy('wish')
+    try {
+      const r = await onlineService.requestLanguage(wish)
+      const next = [...new Set([...requested, wish])]
+      try { localStorage.setItem(REQUESTED_KEY, JSON.stringify(next)) } catch (e) { console.warn('localStorage:', e?.message || e) }
+      setRequested(next)
+      setStatus({ ok: true, msg: r.data?.already_sent
+        ? tr('Diese Sprache wurde gerade schon angefragt — danke!')
+        : tr('Anfrage gesendet — danke! Neue Sprachen kommen mit einem der nächsten Updates.') })
+      setWish('')
+    } catch (e) {
+      setStatus({ ok: false, msg: apiError(e) })
+    } finally { setBusy('') }
+  }
 
   const toggle = async (code, on) => {
     setBusy(code); setStatus(null)
@@ -173,6 +216,27 @@ export default function LanguageStore() {
         <p className="text-[10px] text-surface-500 leading-relaxed">
           {tr('Eigene Pakete ergänzen die ausgelieferten: Ein Paket mit demselben Code (z. B. zh-cn) gilt als Korrektur und geht vor. Was einem Paket fehlt, erscheint auf Englisch, nie auf Deutsch. Das Template enthält alle deutschen Texte mit englischer Vorlage.')}
         </p>
+      </div>
+
+      {/* Sprache anfragen: geht nur auf Klick an den Printloom-Server, nicht öffentlich. */}
+      <div className="border-t border-surface-700 pt-3 space-y-2">
+        <p className="text-[11px] font-medium text-surface-300">{tr('Sprache anfragen')}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={wish} onChange={e => setWish(e.target.value)} className="text-sm" aria-label={tr('Sprache anfragen')}>
+            <option value="">{tr('— Sprache wählen —')}</option>
+            {choices.map(c => (
+              <option key={c.code} value={c.code}>
+                {c.name} ({c.code}){requested.includes(c.code) ? ` · ${tr('angefragt')}` : ''}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="btn btn-secondary btn-sm" disabled={!wish || !!busy}
+            onClick={sendWish}>{tr('Anfrage senden')}</button>
+        </div>
+        <p className="text-[10px] text-surface-500 leading-relaxed">
+          {tr('Fehlt deine Sprache? Wähle sie aus — Printloom schickt nach deiner Bestätigung nur den Sprachcode und die Version an den Printloom-Server. Vorhandene und ähnliche Sprachen (z. B. eine zweite Chinesisch-Variante) stehen nicht in der Liste: Für sie kommt kein eigenes Paket.')}
+        </p>
+        {wish && <p className="text-[10px] text-surface-500">{languageName(wish, 'en')}</p>}
       </div>
 
       {status && (

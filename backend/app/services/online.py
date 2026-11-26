@@ -13,6 +13,8 @@ Abgedeckte Funktionen (je einzeln schaltbar):
 Sicherheit/Datenschutz:
   • Nur LESENDE GET-Abfragen. Es werden keine Drucker-, Datei- oder Zugangsdaten
     gesendet — die Abfragen enthalten nur Pfad + Versionsnummer.
+  • EINE Ausnahme (seit v1.1.93): der Sprachwunsch, ein POST nur auf Klick mit
+    Bestätigung, Inhalt genau {code, version} — siehe send_language_request unten.
   • Der Abruf läuft über das BACKEND (nicht den Browser): same-origin für die UI,
     ein etwaiges Token bliebe serverseitig.
   • Alles wird lokal gecacht (db/online_cache.json). Kein Netz → letzter Stand,
@@ -22,6 +24,7 @@ Sicherheit/Datenschutz:
     bewusstes Übernehmen durch den Nutzer.
 """
 import json
+import re
 import time
 import logging
 from urllib.parse import urljoin, urlparse
@@ -313,3 +316,53 @@ def clean_library_item(kind: str, payload) -> dict:
                 "steps": steps}
 
     raise ValueError(f"Unbekannte Art: {kind!r}")
+
+
+# ── Sprachwunsch senden (seit v1.1.93) ───────────────────────────────────────
+# Die einzige Stelle, an der Printloom etwas an den Printloom-Server SCHICKT. Darum eng:
+#   • nur auf ausdrücklichen Klick; die Oberfläche fragt vorher und nennt genau, was
+#     gesendet wird — eine einmalige Aktion wie „Jetzt prüfen", keine Dauerverbindung,
+#     deshalb ohne den Online-Schalter;
+#   • gesendet wird GENAU {"code", "version"} — keine Geräte-, Datei-, Nutzer- oder
+#     Netzdaten, keine Cookies, kein Token;
+#   • nur https, keine Weiterleitung, die Antwort wird nicht gelesen (nur der Status);
+#   • höchstens LANG_REQUESTS_PER_HOUR je Installation, dieselbe Sprache einmal je Stunde.
+# Die Website speichert den Wunsch nicht öffentlich (website: api/v1/language-requests).
+LANGUAGE_REQUEST_PATH = "api/v1/language-requests"
+LANG_REQUESTS_PER_HOUR = 5
+LANG_REQUEST_REPEAT_S = 3600.0
+_VERSION_FORMAT = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,4}$")
+_lang_sent: dict = {}          # Sprachcode → Zeitpunkt (monotonic) des letzten Sendens
+
+
+async def send_language_request(code, version: str) -> dict:
+    """→ {"ok": bool, "reason": sent|already_sent|invalid|insecure|rate|server|network}."""
+    from app.services import appsettings
+    lang = appsettings.clean_lang_code(code)
+    if not lang:
+        return {"ok": False, "reason": "invalid"}
+    now = time.monotonic()
+    last = _lang_sent.get(lang)
+    if last is not None and now - last < LANG_REQUEST_REPEAT_S:
+        return {"ok": True, "reason": "already_sent"}
+    if sum(1 for t in _lang_sent.values() if now - t < 3600.0) >= LANG_REQUESTS_PER_HOUR:
+        return {"ok": False, "reason": "rate"}
+    server = read_settings()["server_url"]
+    if urlparse(server).scheme != "https" or not urlparse(server).hostname:
+        return {"ok": False, "reason": "insecure"}
+    ver = version if _VERSION_FORMAT.match(str(version or "")) else ""
+    url = f"{server}/{LANGUAGE_REQUEST_PATH}"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=False) as client:
+            async with client.stream("POST", url, json={"code": lang, "version": ver},
+                                     headers={"Accept": "application/json",
+                                              "User-Agent": f"Printloom/{ver or 'unknown'}"}) as r:
+                status = r.status_code
+    except httpx.HTTPError as e:
+        logger.info(f"Language request {lang} not sent: {type(e).__name__}")
+        return {"ok": False, "reason": "network"}
+    logger.info(f"Language request {lang} sent: HTTP {status}")
+    if status == 201:
+        _lang_sent[lang] = now
+        return {"ok": True, "reason": "sent"}
+    return {"ok": False, "reason": "rate" if status == 429 else "server"}
