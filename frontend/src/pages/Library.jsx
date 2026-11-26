@@ -4,6 +4,7 @@ import { apiError } from '../services/apiError'
 import { onlineService, systemService, profileService, autofarmService } from '../services/api'
 import { useLanguage } from '../services/i18n'
 import { timeAgo } from '../services/timeAgo'
+import LanguageStore from '../components/LanguageStore'
 
 /* ── Bibliothek ──────────────────────────────────────────────────────────────
    Eigener Tab für den Online-Katalog (Sprachpakete, Drucker-Profile, Sequenzen)
@@ -142,6 +143,8 @@ export default function Library({ setCurrentPage }) {
           <PageTitle className="mb-1">{tr('Bibliothek')}</PageTitle>
           <p className="text-sm text-surface-500 mt-1">{tr('Sprachpakete, Drucker-Profile und Sequenzen')}</p>
         </div>
+        {/* Mitgelieferte Sprachen gehen auch ohne Online-Freigabe (nichts wird geladen). */}
+        <LanguageStore />
         <div className="card p-5 space-y-3">
           <p className="text-sm text-surface-300">
             {tr('Die Bibliothek lädt Inhalte von einem Server außerhalb deines Netzwerks und ist deshalb standardmäßig aus.')}
@@ -172,6 +175,9 @@ export default function Library({ setCurrentPage }) {
           </button>
         </div>
       </div>
+
+      {/* Sprachen-Store: mitgelieferte Pakete (seit v1.1.91), offline. */}
+      <LanguageStore />
 
       {/* Filter + Suche */}
       <div className="card p-3 flex items-center gap-2 flex-wrap">

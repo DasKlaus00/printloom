@@ -220,6 +220,9 @@ export const systemService = {
   importBackup:     (data, password) => api.post('/system/backup/restore',
                       password ? { backup: data, password } : data),
   getLangInstalled: () => api.get('/system/lang/installed'),
+  // Sprache der Oberfläche für die ganze Installation + aktivierte Pakete (seit v1.1.91)
+  getUiLanguage:    () => api.get('/system/ui-language'),
+  setUiLanguage:    (body) => api.put('/system/ui-language', body),
   importLang:       (pack) => api.post('/system/lang/import', pack),
   deleteLang:       (code) => api.delete(`/system/lang/${code}`),
   // view: 'farm' (Auto-Farm) | 'home' (Startseite) — getrennte Layouts

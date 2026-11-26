@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.91',
+    de: [
+      'Sprachpakete: Deutsch, Englisch und Chinesisch (vereinfacht, 简体中文) kommen jetzt mit Printloom und sind von Anfang an aktiv. Unter Konfiguration → Allgemein und in der Bibliothek gibt es einen Sprachen-Store: Paket aktivieren oder deaktivieren, mit „Verwenden“ umstellen. Aktive Sprachen stehen im Umschalter unten in der Seitenleiste und im Setup.',
+      'Immer aktuell: Die Pakete kommen mit jedem Update und sind vollständig — ein Release mit einem unübersetzten Text kommt gar nicht erst heraus. Fehlt einem eigenen Paket etwas, erscheint es auf Englisch, nie mehr plötzlich auf Deutsch.',
+      'Die Sprache gilt jetzt für die ganze Installation und bleibt über Updates, neue Adressen (z. B. Windows-App auf anderem Port), andere Browser und Handys erhalten. Sie ist Teil des Backups. Wer bisher im Browser eine Sprache gewählt hatte, behält sie.',
+      'Eigene Sprachpakete gehen weiter (Datei-Import, Online-Bibliothek). Ein Paket mit demselben Code wie ein ausgeliefertes (z. B. zh-cn) gilt als Korrektur und hat Vorrang; was ihm fehlt, kommt aus dem ausgelieferten Paket.',
+      'Changelog und Operationsnamen im Sequenz-Editor erscheinen in jeder Sprache außer Deutsch auf Englisch (bisher bei Sprachpaketen deutsch).',
+      'Die chinesische Erstübersetzung stammt von Claude. Korrekturen von Muttersprachlern sind willkommen — als eigenes Paket mit dem Code zh-cn, das Template gibt es im Sprachen-Store.',
+    ],
+    en: [
+      'Language packs: German, English and Chinese (Simplified, 简体中文) now ship with Printloom and are active from the start. Configuration → General and the Library have a language store: enable or disable a pack, switch with “Use”. Active languages appear in the switcher at the bottom of the sidebar and in the setup.',
+      'Always up to date: the packs come with every update and are complete — a release with an untranslated text is never published. Whatever a custom pack lacks appears in English, never suddenly in German again.',
+      'The language now applies to the whole installation and survives updates, new addresses (e.g. the Windows app on another port), other browsers and phones. It is part of the backup. Anyone who picked a language in the browser keeps it.',
+      'Custom language packs still work (file import, online library). A pack with the same code as a shipped one (e.g. zh-cn) counts as a correction and takes precedence; whatever it lacks comes from the shipped pack.',
+      'The changelog and operation names in the sequence editor now appear in English in every language except German (with language packs they used to be German).',
+      'The initial Chinese translation was made by Claude. Corrections from native speakers are welcome — as a custom pack with the code zh-cn; the template is in the language store.',
+    ],
+  },
+  {
     version: '1.1.90',
     de: [
       'Support-Bericht: Unter System → Diagnose gibt es jetzt „Support-Bericht herunterladen (Englisch)“ — eine Textdatei zum Weitergeben bei Problemen oder wenn ein neuer Drucker eingebaut werden soll. Oben steht eine automatische Prüfung (Drucker erreichbar? Klipper bereit? OTTOeject eingerichtet? Notaus? Positionen bestätigt? Speicherplatz? Absturzschleifen?), dann Fehler und Warnungen gruppiert mit erstem und letztem Auftreten, Umgebung, ein Steckbrief je Gerät (beim Snapmaker/Klipper Versionen, Objekte und Kameras, beim Bambu die Felder des Status), der Farm-Zustand und das Log.',

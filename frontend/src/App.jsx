@@ -68,7 +68,7 @@ import PowerToggle from './components/PowerToggle'
 import EmergencyStop from './components/EmergencyStop'
 import ThemeToggle from './components/ThemeToggle'
 import { learnFromAms } from './services/amsLearn'
-import { loadLangPacks, useLanguage } from './services/i18n'
+import { useLanguage } from './services/i18n'
 import { useFarmStatusStream } from './services/useFarmStatusStream'
 import { tabTitle, farmTitleState } from './services/tabTitle'
 import { navCompact, NAV_KEY, NAV_AUTO_MAX } from './services/navState'
@@ -238,7 +238,7 @@ function App() {
   }, [])
 
   /* ── Load installed language packs once at startup ────────── */
-  useEffect(() => { loadLangPacks() }, [])
+  // Sprachpakete lädt initLanguage() schon vor dem ersten Bild (main.jsx).
 
   /* ── First-run: open the setup wizard if nothing is configured ── */
   useEffect(() => {

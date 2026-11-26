@@ -669,6 +669,8 @@ def _backup_files() -> list:
         # Globaler Kamera-Aus-Schalter (Energiesparmodus).
         (str(db_dir / "camera_settings.json"), "camera_settings"),
         (_langpacks_file(),          "langpacks"),
+        # Sprache der Oberfläche und aktivierte Sprachpakete (seit v1.1.91).
+        (str(db_dir / "ui_language.json"),     "ui_language"),
         (_dashboard_file("farm"),    "dashboard_layout"),
         (_dashboard_file("home"),    "dashboard_layout_home"),
     ]
@@ -698,6 +700,7 @@ def _data_file_rules() -> dict:
         "geometry":   (dict, lambda: {}),
         "queue":      (dict, lambda: {"jobs": []}),
         "filaments":  (list, lambda: []),
+        "ui_language": (dict, lambda: {}),
     }
 
 
@@ -1427,6 +1430,31 @@ async def lang_import(body: LangPackIn):
     packs[code] = entry
     storage.write_json(_langpacks_file(), packs)
     return {"success": True, "code": code, "installed": list(packs.keys())}
+
+
+class UiLanguageIn(BaseModel):
+    language: Optional[str] = None
+    active: Optional[list] = None
+
+
+@router.get("/ui-language")
+async def get_ui_language():
+    """Sprache der Oberfläche für die ganze Installation (seit v1.1.91) und die im
+    Store aktivierten Sprachpakete. None = noch nie gewählt (Browser-Wahl übernehmen)."""
+    from app.services import appsettings
+    return appsettings.read_ui_language()
+
+
+@router.put("/ui-language")
+async def put_ui_language(body: UiLanguageIn):
+    from app.services import appsettings
+    try:
+        res = appsettings.write_ui_language(language=body.language, active=body.active)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    logging.getLogger("printloom.ui").info(
+        f"Interface language set: language={res['language']} active={res['active']}")
+    return res
 
 
 @router.delete("/lang/{code}")

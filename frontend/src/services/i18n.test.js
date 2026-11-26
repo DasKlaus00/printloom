@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { getTranslationTemplate, tr, trProblem } from './i18n'
+import { getTranslationTemplate, tr, trProblem, lookup, resolveLang } from './i18n'
+import { PACKS, STANDARD, SOURCE, FALLBACK, normalizeCode, packOf } from './lang/catalog'
 
 /* Wächter gegen stillen Rückfall auf Deutsch.
    ──────────────────────────────────────────
@@ -26,7 +27,9 @@ function sourceFiles(dir) {
   const out = []
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name)
-    if (e.isDirectory()) { if (e.name !== 'node_modules') out.push(...sourceFiles(p)) }
+    // lang/: die Sprachpakete enthalten jeden deutschen Text wörtlich — sie sind Ziel,
+    // nicht Quelle (sonst gälte jeder englische Eintrag als „benutzt").
+    if (e.isDirectory()) { if (!['node_modules', 'lang'].includes(e.name)) out.push(...sourceFiles(p)) }
     else if (/\.jsx?$/.test(e.name) && !SKIP.has(e.name) && !/\.test\.jsx?$/.test(e.name)) out.push(p)
   }
   return out
@@ -106,7 +109,7 @@ function allSources() {
     if (!fs.existsSync(dir)) return
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, e.name)
-      if (e.isDirectory()) { if (!['node_modules', '__pycache__', 'tests'].includes(e.name)) walk(p, rx) }
+      if (e.isDirectory()) { if (!['node_modules', '__pycache__', 'tests', 'lang'].includes(e.name)) walk(p, rx) }
       else if (rx.test(e.name) && !/\.test\.jsx?$/.test(e.name) && e.name !== 'i18n.js') out.push(fs.readFileSync(p, 'utf8'))
     }
   }
@@ -179,5 +182,56 @@ describe('i18n', () => {
 
   it('nimmt bei einer Meldung ohne Vorlage den mitgelieferten Text', () => {
     expect(trProblem({ message: 'Alter Server ohne Vorlage' })).toBe('Alter Server ohne Vorlage')
+  })
+})
+
+/* ── Ausgelieferte Sprachpakete (seit v1.1.91) ──────────────────────────────
+   Ein Paket, das mit dem Release kommt, muss JEDEN Text haben, den es auch auf
+   Englisch gibt — sonst erschiene nach dem Update ein Teil der Oberfläche in einer
+   anderen Sprache. Dieser Test macht ein Release mit einer Lücke rot. */
+describe('ausgelieferte Sprachpakete', () => {
+  const en = getTranslationTemplate()
+  const PH = /\{[^{}\s]*\}/g
+  const placeholders = (s) => (String(s).match(PH) || []).sort().join(',')
+  const loadable = PACKS.filter(p => p.load)
+
+  it('Deutsch, Englisch und Chinesisch sind Standard, jeder Code einmal', () => {
+    expect(STANDARD).toEqual(expect.arrayContaining(['de', 'en', 'zh-cn']))
+    const codes = PACKS.map(p => p.code)
+    expect(new Set(codes).size).toBe(codes.length)
+    expect(codes[0]).toBe(SOURCE)
+    expect(codes).toContain(FALLBACK)
+    for (const p of PACKS) expect(p.locale && p.name && p.short, p.code).toBeTruthy()
+  })
+
+  for (const p of loadable) {
+    it(`${p.code}: jeder Text übersetzt, keine Waisen, gleiche Platzhalter`, async () => {
+      const dict = (await p.load()).default
+      const missing = Object.keys(en).filter(k => dict[k] == null || !String(dict[k]).trim())
+      const orphans = Object.keys(dict).filter(k => en[k] == null)
+      const badPh = Object.keys(dict).filter(k => en[k] != null && placeholders(k) !== placeholders(dict[k]))
+      expect(missing, `${missing.length} Text(e) fehlen in ${p.code}`).toEqual([])
+      expect(orphans, `${orphans.length} Einträge in ${p.code} ohne Verwendung`).toEqual([])
+      expect(badPh, `Platzhalter weichen ab in ${p.code}`).toEqual([])
+    })
+  }
+
+  it('Rückfall: eigenes Paket → ausgeliefertes → Englisch → Deutsch', () => {
+    const k = 'Testsatz'
+    expect(lookup(k, 'zh-cn', { custom: { [k]: 'c' }, pack: { [k]: 'p' }, en: { [k]: 'e' } })).toBe('c')
+    expect(lookup(k, 'zh-cn', { pack: { [k]: 'p' }, en: { [k]: 'e' } })).toBe('p')
+    expect(lookup(k, 'zh-cn', { pack: {}, en: { [k]: 'e' } })).toBe('e')     // nie Deutsch, wenn Englisch da ist
+    expect(lookup(k, 'zh-cn', { en: {} })).toBe(k)
+    expect(lookup(k, 'de', { custom: { [k]: 'c' }, en: { [k]: 'e' } })).toBe(k)
+  })
+
+  it('ältere Schreibweise → ausgeliefertes Paket, unbekannte Sprache → Englisch', () => {
+    expect(normalizeCode('zh_CN')).toBe('zh-cn')
+    expect(packOf('zh')?.code).toBe('zh-cn')
+    expect(resolveLang('zh')).toBe('zh-cn')
+    expect(resolveLang('ZH-CN')).toBe('zh-cn')
+    expect(resolveLang('fr')).toBe('en')
+    expect(resolveLang('de')).toBe('de')
+    expect(resolveLang('')).toBe('de')
   })
 })

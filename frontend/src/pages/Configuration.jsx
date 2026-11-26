@@ -3,131 +3,12 @@ import { TIMEZONES } from '../services/constants'
 import PageHeader from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { deviceService, deviceSettingsService, systemService, autofarmService, rackManagerService, printerService } from '../services/api'
-import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } from '../services/i18n'
+import { useLanguage } from '../services/i18n'
+import LanguageStore from '../components/LanguageStore'
 import { confirmDialog } from '../services/confirm'
 import { parseRackForm, rackSaveError } from '../services/rackForm'
 import { loadFarmPrinter } from '../services/farmPrinter'
 
-
-/* ─── Language & downloadable language packs ─────────────────────── */
-function LanguagePacks() {
-  const { lang, tr } = useLanguage()
-  const [installed, setInstalled] = useState({})
-  const [status, setStatus]       = useState(null)
-  const [busy, setBusy]           = useState(false)
-  const fileRef = useRef()
-
-  const loadInstalled = () => systemService.getLangInstalled()
-    .then(r => setInstalled(r.data || {})).catch(() => {})
-  useEffect(() => { loadInstalled() }, [])
-
-  const importFile = (e) => {
-    const file = e.target.files?.[0]; e.target.value = ''
-    if (!file) return
-    setStatus(null)
-    const reader = new FileReader()
-    reader.onload = async (ev) => {
-      try {
-        const pack = JSON.parse(ev.target.result)
-        const hasStrings = pack.strings && typeof pack.strings === 'object' && Object.keys(pack.strings).length > 0
-        const hasTranslations = pack.translations && typeof pack.translations === 'object' && Object.keys(pack.translations).length > 0
-        if (!pack.code || (!hasStrings && !hasTranslations))
-          throw new Error(tr('Pack braucht code + strings'))
-        await systemService.importLang({
-          code: pack.code, name: pack.name,
-          strings: hasStrings ? pack.strings : undefined,
-          translations: hasTranslations ? pack.translations : undefined,
-        })
-        await loadInstalled()
-        setStatus({ ok: true, msg: tr('Sprachpaket „{0}" importiert.', pack.code) })
-      } catch (e2) {
-        setStatus({ ok: false, msg: apiError(e2) })
-      }
-    }
-    reader.readAsText(file)
-  }
-
-  const exportTemplate = () => {
-    const template = {
-      code: 'xy',
-      name: 'Language Name',
-      strings: getTranslationTemplate(),
-    }
-    const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = 'printloom-lang-template.json'
-    document.body.appendChild(a); a.click(); document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }
-
-  const remove = async (code) => {
-    setBusy(true); setStatus(null)
-    try {
-      await systemService.deleteLang(code)
-      await loadInstalled()
-    } catch (e) {
-      setStatus({ ok: false, msg: apiError(e) })
-    } finally { setBusy(false) }
-  }
-
-  const langs = availableLanguages()
-
-  return (
-    <div className="card space-y-3">
-      <div>
-        <p className="section-label">{tr('Sprache & Sprachpakete')}</p>
-        <p className="text-[11px] text-surface-600 mt-0.5">
-          {tr('Standard ist Deutsch. Weitere Sprachen lassen sich aus dem Server-Katalog laden oder als Datei importieren.')}
-        </p>
-      </div>
-
-      {/* Active language */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] text-surface-600 mr-1">{tr('Aktiv:')}</span>
-        {langs.map(l => (
-          <button key={l.code} onClick={() => setLanguage(l.code)} title={l.name}
-            className={`text-xs font-mono px-2 py-0.5 rounded border transition-colors ${
-              lang === l.code ? 'bg-blue-600 border-blue-600 text-white'
-                              : 'bg-surface-800 border-surface-700 text-surface-400 hover:text-surface-200'}`}>
-            {l.code.toUpperCase()} {!l.builtin && '·'}
-          </button>
-        ))}
-      </div>
-
-      {/* Installed packs */}
-      {Object.keys(installed).length > 0 && (
-        <div className="space-y-1.5">
-          <p className="text-[10px] text-surface-600">{tr('Installierte Pakete')}</p>
-          {Object.entries(installed).map(([code, p]) => (
-            <div key={code} className="flex items-center gap-2 text-xs">
-              <span className="font-mono text-surface-300">{code.toUpperCase()}</span>
-              <span className="text-surface-500 flex-1 truncate">{p.name || code}</span>
-              <button onClick={() => remove(code)} className="text-surface-700 hover:text-red-400 px-1">×</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="flex items-center gap-2 flex-wrap border-t border-surface-700 pt-3">
-        <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={importFile} />
-        <button onClick={exportTemplate} className="btn btn-ghost btn-sm">{tr('Template exportieren')}</button>
-        <button onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm">{tr('Pack importieren')}</button>
-      </div>
-      <p className="text-[10px] text-surface-600 leading-relaxed">
-        {tr('Template exportieren lädt eine JSON-Vorlage mit allen deutschen Strings und englischen Referenz-Übersetzungen. Einfach einer KI geben: „Übersetze alle Werte auf Französisch" — dann code + name anpassen und importieren.')}
-      </p>
-
-      {status && (
-        <div className={`text-[11px] font-mono px-2 py-1 rounded border ${
-          status.ok ? 'text-emerald-400 border-emerald-900/50 bg-emerald-950/20'
-                    : 'text-red-400 border-red-900/50 bg-red-950/20'}`}>
-          {status.msg}
-        </div>
-      )}
-    </div>
-  )
-}
 
 /* ─── Farm-Einstellungen ─────────────────────────────────────────── */
 function FarmSettings() {
@@ -1511,7 +1392,7 @@ function Configuration() {
         </div>
       )}
 
-      {tab === 'general' && <LanguagePacks />}
+      {tab === 'general' && <LanguageStore />}
     </div>
   )
 }

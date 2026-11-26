@@ -29,7 +29,8 @@ Was der Code heute **nicht** kann:
   ihrer Buchführung oder wird von einem Menschen bestätigt. Kein Sensor und keine Kamera
   prüft es.
 - **Kompakt-Regal und Magnet-Greifer sind noch nie an echter Hardware gelaufen.**
-- **Der stabile Kanal (`:latest`) steht auf v1.1.41**, 40 Releases hinter Beta.
+- **Der stabile Kanal (`:latest`) steht auf v1.1.84**; neuere Releases gibt es nur im
+  Beta-Kanal.
 
 ## Wohin
 
@@ -171,6 +172,22 @@ kommen nur dazu, wenn sie zuverlässig arbeiten.
 - **Feste Werte mit WARUM-Kommentar,** zum Beispiel Armmaße und Wege, sobald der Autor
   der Hardware sie bestätigt hat.
 - **Das englische Wörterbuch erst bei Bedarf laden.**
+
+## 9 · Weitere Sprachen
+
+Seit v1.1.91 kommen Sprachpakete mit jedem Update, vollständig und im Store aktivierbar:
+Deutsch, Englisch, Chinesisch (vereinfacht). Ein neues Paket ist eine Datei plus ein
+Eintrag im Katalog (`frontend/src/services/lang/`). Ab dann übersetzt jedes Release seine
+neuen Texte in alle Pakete mit, sonst wird der Test rot.
+
+- **Nächste Pakete, nach Nachfrage aus der Community:** Spanisch, Französisch,
+  Italienisch, Polnisch, Japanisch, Portugiesisch (Brasilien), Niederländisch, Türkisch,
+  Koreanisch, Chinesisch (traditionell).
+- **Erstübersetzung durch Claude, Prüfung durch Muttersprachler:** Korrekturen kommen als
+  eigenes Paket mit demselben Code (Store → Eigene Sprachpakete) und gehen dem
+  ausgelieferten vor. Wer eins schickt, dessen Korrekturen wandern ins nächste Release.
+- **Grenze:** Jedes Paket verlängert jedes Release um die Übersetzung seiner neuen Texte.
+  Ein Paket kommt deshalb erst, wenn es jemand benutzt, nicht auf Vorrat.
 
 ---
 

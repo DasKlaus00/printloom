@@ -98,7 +98,8 @@ git push -u origin <name>/<thema>
 1. Version in `backend/version.txt` (ohne Zeilenumbruch am Ende) und
    `frontend/src/version.js`.
 2. Eintrag oben in `frontend/src/changelog.js`, `de` und `en`, für Nutzer geschrieben.
-3. Englische Fassung jedes neuen `tr('…')`-Textes in `frontend/src/services/i18n.js`.
+3. Englische Fassung jedes neuen `tr('…')`-Textes in `frontend/src/services/i18n.js`
+   und eine Übersetzung in jedem ausgelieferten Sprachpaket (`frontend/src/services/lang/`).
 4. Commit `vX.Y.Z — <Kurzbeschreibung>`, Stichpunkte darunter.
 5. Backend-Tests, Plugin-Tests (`python -m pytest -q orca-plugin/tests`),
    Frontend-Tests, `npm run lint:ci`, `npm run build` — alles grün.
@@ -296,6 +297,24 @@ unsichtbar, deshalb der Test.
 - Neue englische Einträge kommen in `EN_STRINGS` in
   `frontend/src/services/i18n.js`. **Keine doppelten Schlüssel** — bei einem
   Duplikat gewinnt still der letzte.
+
+**Sprachpakete (seit v1.1.91)**
+
+- Ausgeliefert werden Deutsch (Quelltext), Englisch (`EN_STRINGS`) und Chinesisch
+  (`services/lang/zh-cn.js`, eigener Chunk). Liste, Namen und Locale stehen EINMAL in
+  `services/lang/catalog.js`; Store (`components/LanguageStore.jsx`), Umschalter und
+  Setup lesen von dort.
+- `i18n.test.js` verlangt für jedes Paket mit `load()`: jeden englischen Schlüssel,
+  keine Waisen, dieselben Platzhalter (`{0}`, `{rack}` …). Ein Release mit Lücke ist rot.
+- Rückfall in `tr()`: eigenes Paket (Korrektur) → ausgeliefertes Paket → Englisch →
+  Deutsch. Fehlt einem Paket etwas, erscheint es nie deutsch.
+- Die gewählte Sprache und die im Store aktivierten Pakete speichert der Server
+  (`GET/PUT /api/system/ui-language`, `db/ui_language.json`, im Backup). Der
+  localStorage ist nur der Cache; `initLanguage()` gleicht in `main.jsx` vor dem ersten
+  Bild ab und lädt das Wörterbuch.
+- Neues Paket: `services/lang/<code>.js` mit `export default { '<deutsch>': '…' }` für
+  jeden Schlüssel aus `EN_STRINGS`, Eintrag in `catalog.js` (`load: () => import(…)`),
+  Changelog. Geplante Sprachen: ROADMAP.md, Teil 9.
 
 **Backend-Meldungen**
 

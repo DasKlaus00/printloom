@@ -5,6 +5,7 @@ import './index.css'
 import { initTheme } from './services/theme'
 import { reloadOnceForStaleChunk } from './services/reloadGuard'
 import { withBase } from './services/basePath'
+import { initLanguage } from './services/i18n'
 
 // Thema anwenden (index.html hat es schon vor dem ersten Bild gesetzt) und auf
 // Wechsel des Betriebssystems hören. Speichert nichts — siehe services/theme.js.
@@ -25,8 +26,12 @@ if ('serviceWorker' in navigator) {
   })
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
+// Sprache VOR dem ersten Bild: Wahl der Installation vom Server und das Wörterbuch
+// der Sprache (eigener Chunk). Antwortet der Server nicht, gilt der Browser-Stand.
+initLanguage().catch(e => console.warn('Sprache:', e?.message || e)).finally(() => {
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  )
+})

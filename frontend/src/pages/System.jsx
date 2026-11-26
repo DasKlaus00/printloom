@@ -728,7 +728,9 @@ docker compose up -d`}
                 <div key={entry.version} className="space-y-1">
                   <p className="text-sm font-mono font-semibold text-surface-300">v{entry.version}</p>
                   <ul className="list-disc list-inside space-y-0.5">
-                    {(lang === 'en' ? entry.en : entry.de).map((line, i) => (
+                    {/* Jede Sprache außer Deutsch liest den englischen Changelog (bis v1.1.90
+                        stand er für Sprachpakete deutsch da). */}
+                    {((lang === 'de' ? entry.de : entry.en) ?? entry.de).map((line, i) => (
                       <li key={i} className="text-xs text-surface-400 leading-snug">{line}</li>
                     ))}
                   </ul>

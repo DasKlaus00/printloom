@@ -58,7 +58,9 @@ cd frontend && npx vite --port 3000
 1. Version in `backend/version.txt` (OHNE Zeilenumbruch am Ende) und `frontend/src/version.js`.
 2. Eintrag oben in `frontend/src/changelog.js`, `de` und `en`, für Nutzer geschrieben.
 3. Jeder neue `tr('…')`-Text braucht die englische Fassung in `frontend/src/services/i18n.js`
-   (der Test `i18n.test.js` schlägt sonst fehl).
+   UND eine Übersetzung in jedem ausgelieferten Sprachpaket (`frontend/src/services/lang/`,
+   Liste in `lang/catalog.js`, heute `zh-cn.js`). Der Test `i18n.test.js` schlägt sonst fehl
+   — so ist kein Paket nach einem Update unvollständig. Entfernte Texte auch dort löschen.
 4. Commit-Nachricht: `vX.Y.Z — <Kurzbeschreibung>` auf Deutsch, Stichpunkte darunter.
 5. Backend-Tests, Plugin-Tests, Frontend-Tests, `lint:ci`, Build — alles grün, dann push
    auf `beta`.

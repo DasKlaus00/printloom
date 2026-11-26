@@ -179,7 +179,7 @@ function LanguageToggle() {
       {langs.map(l => (
         <button key={l.code} type="button" onClick={() => setLanguage(l.code)} title={l.name}
           className={lang === l.code ? 'active' : ''}>
-          {l.code.toUpperCase()}
+          {l.short || l.code.toUpperCase()}
         </button>
       ))}
     </div>

@@ -1,17 +1,30 @@
 import { systemService } from './api'
+import { PACKS, SOURCE, FALLBACK, STANDARD, normalizeCode, packOf } from './lang/catalog'
 
-/* ── Dynamic language packs (downloaded from the server catalog) ──────────
-   Built-in de/en above; installed packs are cached in localStorage and merged
-   on top so t() can resolve them synchronously after the first load. */
-const PACKS_KEY = 'ottomat3d_langpacks'
-const LANG_KEY  = 'ottomat3d_lang'
+/* ── Sprachen ─────────────────────────────────────────────────────────────
+   Ausgeliefert (seit v1.1.91, services/lang/catalog.js): Deutsch (Quelltext), Englisch
+   (EN_STRINGS unten, im Start-Bundle — es ist auch der Rückfall) und weitere Pakete
+   als eigene Chunks (zh-cn.js). Dazu eigene Pakete (Datei-Import, Online-Bibliothek),
+   im localStorage zwischengespeichert, damit tr() synchron bleibt.
+   Die Wahl gilt für die ganze Installation (Server), localStorage ist nur der Cache
+   für den synchronen Zugriff; initLanguage() gleicht beim Start ab. */
+const PACKS_KEY  = 'ottomat3d_langpacks'
+const LANG_KEY   = 'ottomat3d_lang'
+const ACTIVE_KEY = 'printloom_lang_active'
+
+const readStore = (key) => { try { return localStorage.getItem(key) } catch { return null } }
+const writeStore = (key, value) => {
+  try { localStorage.setItem(key, value) } catch (e) { console.warn('localStorage:', e?.message || e) }
+}
 
 let dynamicPacks = (() => {
-  try { return JSON.parse(localStorage.getItem(PACKS_KEY) || '{}') } catch { return {} }
+  try { return JSON.parse(readStore(PACKS_KEY) || '{}') || {} } catch { return {} }
 })()
+let packDict = null            // Wörterbuch des ausgelieferten Pakets der aktuellen Sprache
 
 // English overrides keyed by the exact German source string (see tr() below).
-// Filled in incrementally per page; missing entries fall back to German.
+// Jeder tr()-Text braucht hier einen Eintrag (i18n.test.js); er ist zugleich der
+// Rückfall für jedes andere Paket.
 const EN_STRINGS = {
   "ARM NICHT ANGEHALTEN — Klipper hat den Notaus nicht bestätigt. Strom des OTTOeject trennen!": "ARM NOT STOPPED — Klipper did not confirm the emergency stop. Cut power to the OTTOeject!",
   "Notaus: Arm angehalten, Abläufe gestoppt, Drucker pausiert": "Emergency stop: arm halted, routines stopped, printers paused",
@@ -715,7 +728,6 @@ const EN_STRINGS = {
   'Speichern fehlgeschlagen': 'Save failed',
   'Löschen fehlgeschlagen': 'Delete failed',
   '+ Neues Rack': '+ New rack',
-  'Aktiv:': 'Active:',
   '{0} Fächer': '{0} slots',
   '{0} Fach': '{0} slot',
   'Belegt durch „{0}" (ragt aus Fach {1})': 'Occupied by "{0}" (extends from slot {1})',
@@ -976,10 +988,6 @@ const EN_STRINGS = {
   'Kameras': 'Cameras',
   'Allgemein': 'General',
   'Sprachpaket „{0}" importiert.': 'Language pack "{0}" imported.',
-  'Sprache & Sprachpakete': 'Language & language packs',
-  'Standard ist Deutsch. Weitere Sprachen lassen sich aus dem Server-Katalog laden oder als Datei importieren.':
-    'German is the default. Additional languages can be loaded from the server catalog or imported as a file.',
-  'Installierte Pakete': 'Installed packs',
   'Pack importieren': 'Import pack',
   'Einstellungen gespeichert.': 'Settings saved.',
   'Homing-Datei erstellt.': 'Homing file created.',
@@ -1630,6 +1638,26 @@ const EN_STRINGS = {
   'Auto Farm oder Stresstest läuft — leere Platten erst nach dem Stopp eintragen': 'Auto Farm or stress test is running — enter empty plates after stopping',
   'Kamera in Printloom deaktiviert (Konfiguration → Kameras) — Energiesparmodus': 'Camera disabled in Printloom (Configuration → Cameras) — power-saving mode',
   'Diagnose': 'Diagnostics',
+  // v1.1.91: Sprachen-Store
+  'Sprache aktiviert — sie steht jetzt in der Auswahl.': 'Language enabled — it is now in the selection.',
+  'Sprache deaktiviert.': 'Language disabled.',
+  'Eigene Korrekturen entfernt — es gilt das ausgelieferte Paket.': 'Own corrections removed — the shipped pack applies.',
+  'Sprachpakete kommen mit jedem Update und sind immer vollständig. Aktivierte Sprachen stehen im Umschalter unten in der Seitenleiste und im Setup; die Wahl gilt für die ganze Installation.': 'Language packs come with every update and are always complete. Enabled languages appear in the switcher at the bottom of the sidebar and in the setup; the choice applies to the whole installation.',
+  'In Verwendung': 'In use',
+  'Aktiv': 'Active',
+  'Standardsprache': 'Standard language',
+  'Quelltext der Oberfläche — immer aktiv': 'Source language of the interface — always active',
+  'Vollständig · wird mit jedem Update aktualisiert': 'Complete · updated with every release',
+  '+ eigene Korrekturen: {0} Texte': '+ own corrections: {0} texts',
+  'Die verwendete Sprache bleibt aktiv': 'The language in use stays active',
+  'Aktivieren': 'Enable',
+  'Verwenden': 'Use',
+  'Eigene Sprachpakete': 'Own language packs',
+  'Keine eigenen Pakete installiert.': 'No own packs installed.',
+  '{0} von {1} Texten': '{0} of {1} texts',
+  'Eigene Pakete ergänzen die ausgelieferten: Ein Paket mit demselben Code (z. B. zh-cn) gilt als Korrektur und geht vor. Was einem Paket fehlt, erscheint auf Englisch, nie auf Deutsch. Das Template enthält alle deutschen Texte mit englischer Vorlage.': 'Own packs add to the shipped ones: a pack with the same code (e.g. zh-cn) counts as a correction and takes precedence. Whatever a pack lacks appears in English, never in German. The template contains all German texts with the English reference.',
+  'Ungültige Sprachkennung': 'Invalid language code',
+  'Ungültige Liste aktiver Sprachen': 'Invalid list of enabled languages',
   // v1.1.90: Support-Bericht
   'Support-Bericht herunterladen (Englisch)': 'Download support report (English)',
   'Eine Textdatei mit automatischer Fehlerprüfung, Geräte-Steckbrief und dem Log (Zeitstempel mit Zeitzone). Ohne Zugangsdaten; IP-Adressen und Seriennummern gekürzt. Printloom verschickt nichts — die Datei kannst du bei Problemen oder für einen neuen Drucker weitergeben.': 'A text file with automatic checks, a profile of each device and the log (timestamps with time zone). No credentials; IP addresses and serial numbers shortened. Printloom sends nothing — you can pass the file on when something goes wrong or for a new printer.',
@@ -1857,8 +1885,6 @@ const EN_STRINGS = {
   // ── Language packs ──
   'Pack braucht code + strings': 'Pack needs code + strings',
   'Template exportieren': 'Export template',
-  'Template exportieren lädt eine JSON-Vorlage mit allen deutschen Strings und englischen Referenz-Übersetzungen. Einfach einer KI geben: „Übersetze alle Werte auf Französisch" — dann code + name anpassen und importieren.':
-    'Export template downloads a JSON template with all German strings and English reference translations. Just hand it to an AI: "Translate all values to French" — then adjust code + name and import.',
 
   // ── Planer (B.3) ──
   '🗓 Planer': '🗓 Planner',
@@ -2372,38 +2398,91 @@ const EN_STRINGS = {
 
 }
 
-const BUILTIN_NAMES = { de: 'Deutsch', en: 'English' }
+/* ── Welche Sprachen gibt es, welche sind aktiv? ──────────────────────────── */
+const isBuiltin = (code) => !!packOf(code)
 
-export function availableLanguages() {
-  const codes = new Set(['de', 'en', ...Object.keys(dynamicPacks)])
-  return [...codes].map(code => ({
-    code,
-    name: dynamicPacks[code]?.name || BUILTIN_NAMES[code] || code.toUpperCase(),
-    builtin: code === 'de' || code === 'en',
-  }))
+/* Im Store aktivierte, ausgelieferte Pakete (Cache des Servers; ohne Wahl: Standard).
+   Deutsch ist als Quelltext immer dabei. */
+export function activePacks() {
+  let list = null
+  try { list = JSON.parse(readStore(ACTIVE_KEY) || 'null') } catch { list = null }
+  const codes = Array.isArray(list) ? list.map(normalizeCode) : STANDARD
+  return PACKS.filter(p => p.code === SOURCE || codes.includes(p.code)).map(p => p.code)
 }
 
-/* Refresh installed packs from the backend; call once at app startup. */
+/* Eigene Pakete (Datei-Import, Online-Bibliothek), die kein ausgeliefertes ergänzen. */
+export function customPacks() {
+  return Object.entries(dynamicPacks)
+    .filter(([code]) => !isBuiltin(code))
+    .map(([code, p]) => ({ code, name: p?.name || code.toUpperCase(),
+                           count: Object.keys(p?.strings || {}).length }))
+}
+
+/* Eigene Korrekturen zu einem ausgelieferten Paket (gleicher oder älterer Code). */
+export function customOverridesFor(code) {
+  const target = normalizeCode(code)
+  return Object.entries(dynamicPacks)
+    .filter(([c]) => normalizeCode(c) === target && isBuiltin(c))
+    .map(([c, p]) => ({ code: c, name: p?.name || c, count: Object.keys(p?.strings || {}).length }))
+}
+
+/* Sprachen für Umschalter und Setup: aktive ausgelieferte, dann eigene. */
+export function availableLanguages() {
+  const out = activePacks().map(code => {
+    const p = packOf(code)
+    return { code: p.code, name: p.name, short: p.short, builtin: true }
+  })
+  for (const c of customPacks()) out.push({ code: c.code, name: c.name, short: c.code.toUpperCase(), builtin: false })
+  return out
+}
+
+/* Eigene Texte für eine Sprache — alle eigenen Pakete mit diesem Code (auch ältere
+   Schreibweisen) zusammen. Sie gehen dem ausgelieferten Paket vor: So bleiben
+   Korrekturen eines Muttersprachlers erhalten, und was ihnen fehlt, kommt aus dem
+   ausgelieferten Paket. */
+let customCache = { lang: null, strings: null }
+function customStrings(lang) {
+  if (customCache.lang !== lang) {
+    const merged = {}
+    for (const [c, p] of Object.entries(dynamicPacks)) {
+      if (normalizeCode(c) === normalizeCode(lang)) Object.assign(merged, p?.strings || {})
+    }
+    customCache = { lang, strings: Object.keys(merged).length ? merged : null }
+  }
+  return customCache.strings
+}
+
+/* Eigene Pakete vom Server holen (sonst bleibt der Cache). */
 export async function loadLangPacks() {
   try {
     const r = await systemService.getLangInstalled()
     dynamicPacks = (r.data && typeof r.data === 'object') ? r.data : {}
-    localStorage.setItem(PACKS_KEY, JSON.stringify(dynamicPacks))
-  } catch { /* keep cached packs on failure */ }
+    customCache = { lang: null, strings: null }
+    writeStore(PACKS_KEY, JSON.stringify(dynamicPacks))
+  } catch (e) { console.warn('Sprachpakete nicht geladen:', e?.message || e) }
 }
 
 /* localStorage gibt es nicht überall (Tests, Service-Worker, „Cookies blockiert").
    tr() wird inzwischen auch aus reinen Service-Modulen gerufen — eine Ausnahme
    hier würde dort echte Logik mitreißen, deshalb still auf Deutsch zurückfallen. */
 export function currentLang() {
-  try { return localStorage.getItem(LANG_KEY) || 'de' } catch { return 'de' }
+  return readStore(LANG_KEY) || SOURCE
+}
+
+/* Eine Übersetzung nachschlagen: eigenes Paket → ausgeliefertes Paket → Englisch →
+   deutscher Quelltext. Englisch statt Deutsch als Rückfall (seit v1.1.91): Wer eine
+   andere Sprache gewählt hat, liest eher Englisch — bis dahin erschien jeder Text,
+   der einem Paket fehlte (nach jedem Update viele), plötzlich deutsch. */
+export function lookup(de, lang, { custom = null, pack = null, en = EN_STRINGS } = {}) {
+  if (lang === SOURCE) return de
+  if (custom && custom[de] != null) return custom[de]
+  if (pack && pack[de] != null) return pack[de]
+  if (en && en[de] != null) return en[de]
+  return de
 }
 
 /* tr(germanText, …args): the app is authored in German; pass the exact German
-   source string and get the translation for the active language.
-   Missing entries fall back to the German source verbatim — so a forgotten
-   string is never broken, just untranslated. Dynamic language packs may add a
-   "strings" map ({ "<de source>": "<translation>" }) for other languages.
+   source string and get the translation for the active language (Kette: lookup()).
 
    Diese Funktion steht bewusst AUSSERHALB von useLanguage(): Etliche Texte
    stehen in Modul-Konstanten (Status-Tabellen, Schritt-Namen, Fehlergründe) oder
@@ -2412,8 +2491,7 @@ export function currentLang() {
    deshalb ist ein Lesen zur Aufrufzeit immer aktuell. */
 export function tr(de, ...args) {
   const lang = currentLang()
-  const map = lang === 'en' ? EN_STRINGS : (dynamicPacks[lang]?.strings || null)
-  let out = (map && map[de] != null) ? map[de] : de
+  let out = lookup(de, lang, { custom: customStrings(lang), pack: packDict })
   args.forEach((a, i) => { out = out.replaceAll(`{${i}}`, String(a)) })
   return out
 }
@@ -2437,10 +2515,9 @@ export function trProblem(p) {
 
 /* BCP-47-Kennung für Datum/Uhrzeit/Zahlen. Ohne die stünde in der englischen
    Oberfläche weiter „24.07.2026" statt „07/24/2026". */
-const LOCALES = { de: 'de-DE', en: 'en-GB' }
 export function locale() {
   const lang = currentLang()
-  return LOCALES[lang] || dynamicPacks[lang]?.locale || lang
+  return packOf(lang)?.locale || dynamicPacks[lang]?.locale || lang
 }
 
 // Bis v1.1.75 lieferte useLanguage zusätzlich t('nav.…') aus einem zweiten, alten
@@ -2450,9 +2527,66 @@ export function useLanguage() {
   return { lang: currentLang(), tr, locale: locale() }
 }
 
-export function setLanguage(lang) {
-  try { localStorage.setItem(LANG_KEY, lang) } catch {}
+/* Gibt es die Sprache (noch)? Sonst Englisch — ein gelöschtes eigenes Paket soll nicht
+   auf Deutsch zurückwerfen, wer etwas anderes als Deutsch gewählt hatte. */
+export function resolveLang(code) {
+  const raw = String(code || '').trim()
+  if (!raw) return SOURCE
+  const p = packOf(raw)              // ausgeliefert (auch ältere Schreibweise wie „zh")
+  if (p) return p.code
+  if (dynamicPacks[raw]) return raw  // eigenes Paket
+  return raw.toLowerCase() === SOURCE ? SOURCE : FALLBACK
+}
+
+const withTimeout = (promise, ms) => Promise.race([
+  promise, new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout ${ms} ms`)), ms))])
+
+/* Beim Start, VOR dem ersten Bild (main.jsx): Wahl vom Server holen, eigene Pakete
+   laden, das Wörterbuch der Sprache nachladen. Antwortet der Server nicht, gilt der
+   Cache — die Oberfläche startet trotzdem. Hatte der Server noch keine Wahl (Update
+   von ≤ v1.1.90), wird die des Browsers übernommen statt auf Deutsch zu fallen. */
+export async function initLanguage({ timeoutMs = 2500 } = {}) {
+  let server = null
+  try { server = (await withTimeout(systemService.getUiLanguage(), timeoutMs)).data }
+  catch (e) { console.warn('Sprache vom Server nicht gelesen — nehme den Browser-Stand:', e?.message || e) }
+  await withTimeout(loadLangPacks(), timeoutMs).catch(e => console.warn('Sprachpakete:', e?.message || e))
+  const browser = readStore(LANG_KEY)
+  if (server && Array.isArray(server.active)) writeStore(ACTIVE_KEY, JSON.stringify(server.active))
+  let lang = server?.language || browser || SOURCE
+  if (server && !server.language && browser && browser !== SOURCE) {
+    systemService.setUiLanguage({ language: normalizeCode(browser) })
+      .catch(e => console.warn('Sprache nicht an den Server übertragen:', e?.message || e))
+  }
+  lang = resolveLang(lang)
+  writeStore(LANG_KEY, lang)
+  packDict = null
+  const pack = packOf(lang)
+  if (pack?.load) {
+    try { packDict = (await pack.load()).default }
+    catch (e) { console.warn(`Sprachpaket ${lang} nicht geladen — Englisch als Rückfall:`, e?.message || e) }
+  }
+  return lang
+}
+
+/* Sprache wählen: für die ganze Installation speichern, dann neu laden. */
+export async function setLanguage(lang) {
+  const code = resolveLang(lang)
+  writeStore(LANG_KEY, code)
+  try { await withTimeout(systemService.setUiLanguage({ language: code }), 4000) }
+  catch (e) { console.warn('Sprache nur in diesem Browser gespeichert:', e?.message || e) }
   window.location.reload()
+}
+
+/* Paket im Store aktivieren/deaktivieren (Deutsch und die gewählte Sprache bleiben). */
+export async function setPackActive(code, on) {
+  const c = normalizeCode(code)
+  const cur = activePacks()
+  if (!on && (c === SOURCE || c === resolveLang(currentLang()))) return cur
+  const next = on ? [...new Set([...cur, c])] : cur.filter(x => x !== c)
+  const r = await systemService.setUiLanguage({ active: next })
+  const saved = Array.isArray(r?.data?.active) ? r.data.active : next
+  writeStore(ACTIVE_KEY, JSON.stringify(saved))
+  return activePacks()
 }
 
 /* Returns all translateable German source strings with their English reference

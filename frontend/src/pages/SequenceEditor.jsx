@@ -37,7 +37,10 @@ function useAppOps() {
    andere Sprachen greift tr() auf den deutschen Quelltext als Schlüssel. */
 const opLabel = (o) => {
   if (!o) return ''
-  return (currentLang() === 'en' && o.label_en) ? o.label_en : translate(o.label_de || '')
+  if (currentLang() === 'de') return o.label_de || ''
+  // Ohne Eintrag im Sprachpaket die englische Bezeichnung des Backends, nie Deutsch.
+  const t = translate(o.label_de || '')
+  return (t === o.label_de && o.label_en) ? o.label_en : t
 }
 const appOpLabel = (ops, key) => opLabel(ops.find(o => o.key === key)) || key
 
