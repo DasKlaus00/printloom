@@ -352,3 +352,11 @@ def test_fehlertext_ohne_leeren_doppelpunkt():
     import httpx
     assert support_log.exc_text(httpx.ConnectTimeout("")) == "ConnectTimeout"
     assert support_log.exc_text(httpx.ConnectError("weg")) == "ConnectError: weg"
+
+
+def test_logfile_unter_docker_im_daten_volume(monkeypatch):
+    # /app gehört unter Docker zum Image — nur db/ und uploads/ überstehen ein Update.
+    monkeypatch.setattr(support_log.paths, "RUNTIME", "docker")
+    assert support_log.log_dir() == support_log.paths.DB_DIR / "logs"
+    monkeypatch.setattr(support_log.paths, "RUNTIME", "native")
+    assert support_log.log_dir() == support_log.paths.DATA_ROOT / "logs"

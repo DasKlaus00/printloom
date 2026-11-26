@@ -52,6 +52,11 @@ _HOME = str(Path.home())
 
 
 def log_dir() -> Path:
+    """Docker: im Daten-Volume (db/logs) — /app selbst gehört zum Image, ein Update
+    (neuer Container) hätte das Log gelöscht, gerade wenn das Update der Fehler war.
+    Bis v1.1.91 lag es dort. Sonst neben db/ im Datenordner (Windows: %APPDATA%\\Printloom)."""
+    if paths.RUNTIME == "docker":
+        return paths.DB_DIR / "logs"
     return paths.DATA_ROOT / "logs"
 
 

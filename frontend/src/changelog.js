@@ -4,6 +4,15 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.92',
+    de: [
+      'Docker: Das Support-Log liegt jetzt im Daten-Volume (db/logs/printloom.log) und übersteht damit Updates. Bisher lag es im Container selbst und war nach jedem Update weg — gerade dann, wenn ein Update der Fehler war. Windows und Linux ohne Docker: unverändert im Datenordner (logs/printloom.log).',
+    ],
+    en: [
+      'Docker: the support log now lives in the data volume (db/logs/printloom.log) and therefore survives updates. Until now it was inside the container and gone after every update — exactly when an update was the problem. Windows and Linux without Docker: unchanged in the data folder (logs/printloom.log).',
+    ],
+  },
+  {
     version: '1.1.91',
     de: [
       'Sprachpakete: Deutsch, Englisch und Chinesisch (vereinfacht, 简体中文) kommen jetzt mit Printloom und sind von Anfang an aktiv. Unter Konfiguration → Allgemein und in der Bibliothek gibt es einen Sprachen-Store: Paket aktivieren oder deaktivieren, mit „Verwenden“ umstellen. Aktive Sprachen stehen im Umschalter unten in der Seitenleiste und im Setup.',

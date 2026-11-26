@@ -168,7 +168,8 @@ Datei hochzählen — Nutzer müssen es in Orca neu installieren.
 - Keine Geheimnisse in Logs, Diagnose-Paket oder Backup ohne ausdrücklichen
   Wunsch. Was ein Geheimnis ist, entscheidet `services/credentials.py`.
 - Log-Texte sind englisch (seit v1.1.90): Alles landet im Support-Log
-  `<Datenordner>/logs/printloom.log` (`services/support_log.py`), das Nutzer als
+  `<Datenordner>/logs/printloom.log`, unter Docker `db/logs/` im Volume
+  (`services/support_log.py`), das Nutzer als
   Support-Bericht (System → Diagnose, `services/support_report.py`) verschicken.
   Farm-Meldungen schreiben beide Sprachen: `_log("deutsch", en="English")`.
   Zustände von Geräten nur als Wechsel loggen (`support_log.state_change`), nie
