@@ -42,6 +42,16 @@ VALID_MACROS = {
     "OTTOEJECT_HOME", "PARK_OTTOEJECT", "TEST_STORAGE_RACK_CONFIGURATION"
 }
 
+# Drucker-Macros mit den Positionen eines Bambu X1C (im OTTOeject hinterlegt). Ohne
+# Bambu-Drucker fährt der Arm damit an eine Stelle, an der kein solcher Drucker steht —
+# beim Snapmaker U1 in dessen Rahmen. Die Farm sperrte sie für den U1 seit v1.1.87,
+# die Steuerung erst seit v1.1.89.
+BAMBU_PRINTER_MACROS = {"OPEN_DOOR_BAMBU_X_ONE_C", "CLOSE_DOOR_BAMBU_X_ONE_C",
+                        "EJECT_FROM_BAMBULAB_X_ONE_C", "LOAD_ONTO_BAMBULAB_X_ONE_C"}
+NO_BAMBU_FOR_MACRO = ("Makro {0} fährt die Positionen eines Bambu-Druckers, es ist aber keiner "
+                      "eingerichtet. Für den Snapmaker U1 die Positionen im Drucker-Tab einmessen "
+                      "und dort testen.")
+
 
 # ── Klipper / Moonraker ──────────────────────────────────────────────────────
 def _klipper(db: Session, bewegt: bool = False) -> Device:
@@ -169,6 +179,9 @@ async def execute_macro(request: MacroExecutionRequest, db: Session = Depends(ge
     if request.macro_name not in VALID_MACROS:
         # Ohne die lange Liste: Sie stand bis v1.1.65 englisch im Hinweis der Steuerung.
         raise HTTPException(400, f"Makro {request.macro_name} ist für die Steuerung nicht freigegeben")
+    if (request.macro_name in BAMBU_PRINTER_MACROS
+            and db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB).first() is None):
+        raise HTTPException(409, NO_BAMBU_FOR_MACRO.format(request.macro_name))
     klipper = _klipper(db, bewegt=True)
 
     def antwort(ok: bool, msg: str):

@@ -4,6 +4,25 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.89',
+    de: [
+      'Snapmaker U1 als einziger Drucker: Die Kopfzeile zeigt ihn jetzt als verbunden. Bisher fragte die Pille „Drucker“ nur Bambu-Drucker ab und stand beim U1 grau, obwohl der Verbindungstest grün war.',
+      'Die Pille rechts daneben heißt jetzt „OTTOeject“ statt „Klipper“. Sie zeigt den Arm, nicht den Klipper im U1 — grau heißt: kein OTTOeject eingerichtet.',
+      'Steuerung: Mit dem U1 als Drucker der Farm zeigt die Seite sein Panel (Zustand, Einstellungen, Druck, Kamera) statt „Bambu Lab · offline“. Die Tasten „Auswerfen“, „Einlegen“, „Tür“ und „→ Dr./← Dr.“ sind beim U1 weg: Sie fahren Bambu-Positionen. Der Server lehnt diese Macros ab, solange kein Bambu-Drucker eingerichtet ist.',
+      'Farm-Kamera: Der U1 liefert jetzt ein Live-Bild aus seinem Kamerastrom (sonst ein Standbild je Sekunde). Bisher lehnte der Server den Live-Stream ab, das Bild blieb schwarz. Das Kammerlicht schaltet Printloom nur noch beim Bambu — beim U1 versuchte die Kamera eine Bambu-Verbindung.',
+      'Dashboard, Bibliothek („Sofort drucken“) und die Steckdose unter Konfiguration nehmen jetzt den Drucker der Farm statt den ersten Bambu.',
+      'Verbindungstest und Statusmeldungen erscheinen in der gewählten Sprache (bisher deutsch, auch in Sprachpaketen).',
+    ],
+    en: [
+      'Snapmaker U1 as the only printer: the header now shows it as connected. Until now the “Printer” pill only checked Bambu printers and stayed grey for a U1 even though the connection test was green.',
+      'The pill next to it is now called “OTTOeject” instead of “Klipper”. It shows the arm, not the Klipper inside the U1 — grey means: no OTTOeject set up.',
+      'Control: with the U1 as the farm printer the page shows its panel (state, settings, print, camera) instead of “Bambu Lab · offline”. The “Eject”, “Load”, “Door” and “→ Pr./← Pr.” buttons are gone for the U1: they drive Bambu positions. The server rejects these macros while no Bambu printer is set up.',
+      'Farm camera: the U1 now delivers a live image from its camera stream (otherwise one still per second). Until now the server rejected the live stream and the image stayed black. Printloom only switches the chamber light on Bambu printers — for the U1 the camera tried a Bambu connection.',
+      'Dashboard, library (“Print now”) and the smart plug under Configuration now use the farm printer instead of the first Bambu.',
+      'Connection test and status messages appear in the chosen language (until now German, also with language packs).',
+    ],
+  },
+  {
     version: '1.1.88',
     de: [
       'Sicherheit: Die Home-Assistant-Kamera reicht nur noch Kamerabilder (JPEG/MJPEG) durch. Bisher ging jede Antwort der eingetragenen Adresse mit ihrem Inhaltstyp an den Browser — eine Adresse, die HTML lieferte, lief damit als Seite auf Printloom selbst, mit Skript im Namen des Nutzers. Zusätzlich läuft die Antwort in einer Sandbox.',

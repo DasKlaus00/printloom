@@ -1292,34 +1292,55 @@ async def _import_backup(body: dict):
 # ─── Multi-target health (printer · klipper) ─────────────────────────────────
 
 async def _health_printer() -> dict:
-    """Best-effort: is a Bambu printer reachable via MQTT? Short timeout, never raises."""
+    """Best-effort: Ist der Drucker der Farm erreichbar? Kurzer Timeout, wirft nie.
+
+    Bambu über die persistente MQTT-Verbindung, der Snapmaker U1 über Moonraker.
+    Bis v1.1.88 fragte die Kopfzeile nur Bambu-Drucker: Ein U1 allein stand grau als
+    „kein Drucker", obwohl der Verbindungstest grün war (Meldung eines Nutzers)."""
+    from app.routers import autofarm
+    from app.services import printer_link
     db = SessionLocal()
     try:
-        device = db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB).first()
+        device = autofarm.farm_device(db)
         if not device:
             return {"status": "unconfigured", "detail": "Kein Drucker konfiguriert"}
-        name = device.name
-        try:
-            loop = asyncio.get_running_loop()
-            # Persistente Verbindung (bambu_manager) — kein eigener Connect/Disconnect pro Health-Poll.
-            connected = await loop.run_in_executor(
-                bambu_manager.executor, lambda: bambu_manager.ensure(device, wait_timeout=3.0))
-            if connected:
-                return {"status": "online", "detail": name}
-            return {"status": "offline", "detail": "Keine MQTT-Verbindung"}
-        except Exception:
-            return {"status": "offline", "detail": "Verbindungsfehler"}
+        # Losgelöst lesbar halten: Die Abfrage unten läuft im Executor, ohne offene Session.
+        db.expunge(device)
     finally:
         db.close()
+    name = device.name
+    loop = asyncio.get_running_loop()
+    try:
+        if printer_link.is_moonraker(device):
+            # Frischer Zustand aus dem Farm-Takt reicht; sonst einmal nachfragen.
+            age = printer_link.status_age(device)
+            fresh = age is not None and age <= printer_link.MOON_FRESH_S
+            if not fresh and not await loop.run_in_executor(
+                    printer_link.executor, printer_link.ensure, device):
+                return {"status": "offline", "detail": "Moonraker nicht erreichbar"}
+            klippy = ((printer_link.last_status(device) or {}).get("moonraker") or {}).get("klippy_state")
+            if klippy and klippy != "ready":
+                return {"status": "stale", "detail": f"{name}: Klipper {klippy}"}
+            return {"status": "online", "detail": name}
+        # Persistente Verbindung (bambu_manager) — kein eigener Connect/Disconnect pro Health-Poll.
+        connected = await loop.run_in_executor(
+            bambu_manager.executor, lambda: bambu_manager.ensure(device, wait_timeout=3.0))
+        if connected:
+            return {"status": "online", "detail": name}
+        return {"status": "offline", "detail": "Keine MQTT-Verbindung"}
+    except Exception as e:
+        logger.info(f"Drucker-Status für die Kopfzeile nicht lesbar ({name}): {type(e).__name__}: {e}")
+        return {"status": "offline", "detail": "Verbindungsfehler"}
 
 
 async def _health_klipper() -> dict:
-    """Best-effort: Moonraker /printer/info reachable + state ready?"""
+    """Best-effort: Ist der OTTOeject (Klipper/Moonraker des Arms) bereit?
+    Nur der Arm — der Klipper im Snapmaker U1 zählt zum Drucker (_health_printer)."""
     db = SessionLocal()
     try:
         k = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).first()
         if not k:
-            return {"status": "unconfigured", "detail": "Kein Klipper konfiguriert"}
+            return {"status": "unconfigured", "detail": "Kein OTTOeject konfiguriert"}
         url = f"http://{k.ip_address}:{k.port}/printer/info"
     finally:
         db.close()

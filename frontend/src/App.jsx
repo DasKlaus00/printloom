@@ -100,13 +100,20 @@ const STATUS_STYLES = {
   unknown:      { dot: 'dot-gray',  cls: '' },
 }
 
+// Zustand im Tooltip in der Sprache der Oberfläche (bis v1.1.88 das rohe Wort).
+const STATUS_TEXT = {
+  online: 'verbunden', stale: 'nicht bereit', unauth: 'nicht angemeldet', offline: 'nicht erreichbar',
+  unconfigured: 'nicht eingerichtet', unknown: 'unbekannt',
+}
+
 function StatusPill({ label, target }) {
+  const { tr } = useLanguage()
   const status = target?.status || 'unknown'
   const st = STATUS_STYLES[status] || STATUS_STYLES.unknown
-  const detail = target?.detail ? ` — ${target.detail}` : ''
+  const detail = target?.detail ? ` — ${tr(target.detail)}` : ''
   return (
     <div
-      title={`${label}: ${status}${detail}`}
+      title={`${label}: ${tr(STATUS_TEXT[status] || STATUS_TEXT.unknown)}${detail}`}
       className={`pill ${st.cls}`}
     >
       <span className={`dot ${st.dot}`} />
@@ -413,7 +420,9 @@ function App() {
               eingerichtete Steckdose rendert die Komponente nichts. */}
           <PowerToggle farmRunning={!!farmStatus?.running} />
           <StatusPill label={tr('Drucker')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.printer} />
-          <StatusPill label={tr('Klipper')} target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.klipper} />
+          {/* Der Arm. Hieß bis v1.1.88 „Klipper" — mit einem U1 (auch Klipper) las man
+              das als Zustand des Druckers. */}
+          <StatusPill label="OTTOeject" target={online === false ? { status: 'offline', detail: tr('Backend offline') } : targets?.klipper} />
           <span className="hidden sm:inline text-xs text-surface-400 tabular-nums select-none px-1" title={tr('Uhrzeit')}>
             {clock.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>

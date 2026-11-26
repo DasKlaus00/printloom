@@ -5,9 +5,11 @@ import PageHeader from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { printerState } from '../services/printerState'
 import { amsClimate } from '../services/amsUtils'
-import { controlService, printerService, deviceService, deviceSettingsService, klipperConfigService } from '../services/api'
+import { controlService, printerService, deviceSettingsService, klipperConfigService } from '../services/api'
 import { useLanguage, locale } from '../services/i18n'
 import EmergencyStop from '../components/EmergencyStop'
+import MoonrakerPrinterPanel from '../components/MoonrakerPrinterPanel'
+import { loadFarmPrinter } from '../services/farmPrinter'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
 import { usePageActive, useAutoRefresh } from '../services/useAutoRefresh'
 
@@ -250,6 +252,7 @@ export default function Steuerung() {
   const { tr } = useLanguage()
   /* Drucker */
   const [bambuDevice,   setBambuDevice]   = useState(null)
+  const [moonDevice,    setMoonDevice]    = useState(null)   // Snapmaker U1 als Drucker der Farm
   const [status,        setStatus]        = useState(null)
   const [webcamUrl,     setWebcamUrl]     = useState('')
   const [autoRefresh,   setAutoRefresh]   = useState(true)
@@ -313,10 +316,14 @@ export default function Steuerung() {
   const busy = executing !== null || macroRunning !== null || jogBusy
 
   /* ── Drucker laden ─────────────────────────────────── */
+  // Der Drucker der Farm (seit v1.1.89). Bis v1.1.88 nahm die Seite den ersten Bambu:
+  // Mit einem Snapmaker U1 stand hier „Bambu Lab · offline", und die Drucker-Macros
+  // (Bambu-Positionen) waren bedienbar.
   const loadDevices = useCallback(async () => {
     try {
-      const r = await deviceService.listDevices()
-      const b = r.data.find(d => d.device_type === 'bambu_lab')
+      const b = await loadFarmPrinter()
+      if (b?.device_type === 'moonraker') { setMoonDevice(b); setBambuDevice(null); return }
+      setMoonDevice(null)
       if (b) {
         setBambuDevice(b)
         const s = await deviceSettingsService.getSettings(b.id)
@@ -324,7 +331,7 @@ export default function Steuerung() {
         setWebcamUrl(url)
         setEditWebcamUrl(url)
       }
-    } catch {}
+    } catch (e) { console.warn('Drucker nicht geladen:', e?.message || e) }
   }, [])
 
   const fetchStatus = useCallback(async (deviceId) => {
@@ -508,8 +515,14 @@ export default function Steuerung() {
       {/* ── Hauptlayout: Links Bambu Lab, Rechts OTTOeject ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 items-start">
 
-        {/* ── Linke Spalte: Bambu Lab ──────────────────────── */}
+        {/* ── Linke Spalte: Drucker der Farm (Bambu oder U1) ── */}
         <div className="space-y-3">
+          {moonDevice ? (
+            <div className="card space-y-3">
+              <p className="section-label">{moonDevice.name}</p>
+              <MoonrakerPrinterPanel device={moonDevice} />
+            </div>
+          ) : (<>
 
           {/* Status-Header */}
           <div className="card">
@@ -688,6 +701,7 @@ export default function Steuerung() {
               <button onClick={() => macro(activePrinter.load)}  disabled={busy} className="btn btn-ghost btn-sm">{tr('Einlegen')}</button>
             </div>
           </div>
+          </>)}
         </div>
 
         {/* ── Rechte Spalte: OTTOeject + Kalibrierung ─────── */}
@@ -763,20 +777,25 @@ export default function Steuerung() {
               <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-900 border border-blue-900/40">
                 <span className="text-xs text-surface-400 w-16 shrink-0">{tr('Magazin')}</span>
                 <button onClick={() => runMacro('GRAB_FROM_SLOT_7', tr('Aus Magazin holen'))} disabled={busy} className="btn btn-ghost btn-sm text-xs">{tr('Holen')}</button>
+                {/* → Dr./← Dr. sind Bambu-Macros (Positionen im OTTOeject) — beim U1 nicht. */}
+                {!moonDevice && (
                 <div className="flex gap-1 ml-auto">
                   <button onClick={() => runMacro(activePrinter.load,  tr('In Drucker'))}  disabled={busy} className="btn btn-ghost btn-sm text-xs">→ Dr.</button>
                   <button onClick={() => runMacro(activePrinter.eject, tr('Aus Drucker'))} disabled={busy} className="btn btn-ghost btn-sm text-xs">← Dr.</button>
                 </div>
+                )}
               </div>
               {/* Lager-Fächer 1–6: nur Einlagern (fertige Drucke), kein Holen. */}
               {[1,2,3,4,5,6].map(slot => (
                 <div key={slot} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface-900 border border-surface-700/50">
                   <span className="text-xs text-surface-400 w-16 shrink-0">{tr('Fach {0}', slot)}</span>
                   <button onClick={() => runMacro(`STORE_TO_SLOT_${slot}`, tr('Fach {0} einlagern', slot))} disabled={busy} className="btn btn-ghost btn-sm text-xs">{tr('Einlagern')}</button>
+                  {!moonDevice && (
                   <div className="flex gap-1 ml-auto">
                     <button onClick={() => runMacro(activePrinter.load,  tr('In Drucker'))}  disabled={busy} className="btn btn-ghost btn-sm text-xs">→ Dr.</button>
                     <button onClick={() => runMacro(activePrinter.eject, tr('Aus Drucker'))} disabled={busy} className="btn btn-ghost btn-sm text-xs">← Dr.</button>
                   </div>
+                  )}
                 </div>
               ))}
             </div>

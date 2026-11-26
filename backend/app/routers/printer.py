@@ -280,6 +280,10 @@ def camera_light(device_id: int, db: Session = Depends(get_db)):
     from app.services import appsettings
     if appsettings.camera_disabled() or not _camera_enabled(db, device_id):
         return {"success": False, "reason": "camera_off"}
+    if device.device_type != PrinterType.BAMBU_LAB:
+        # Das Licht schaltet nur der Bambu-Weg (MQTT). Beim U1 hätte der Aufruf eine
+        # Bambu-Verbindung zu einem Gerät ohne MQTT aufgebaut (bis v1.1.88).
+        return {"success": False, "reason": "not_supported"}
     # Spalten laden und vom Session lösen: Der Thread läuft nach dem Request weiter.
     _ = (device.serial_number, device.use_tls, device.mqtt_port, device.id,
          device.ip_address, device.access_code)
@@ -303,10 +307,10 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
         raise HTTPException(503, appsettings.CAMERA_DISABLED_TEXT)
     if not _camera_enabled(db, device_id):
         raise HTTPException(503, CAMERA_OFF_FOR_DEVICE)
-    if device.device_type == PrinterType.MOONRAKER:
-        # Der U1 liefert Einzelbilder (/frame); den Bambu-Weg (RTSP/Port 6000) hat er nicht.
-        raise HTTPException(400, "Für den Snapmaker U1 gibt es Einzelbilder (…/frame), keinen Live-Stream")
-    settings = device_settings.get(db, device_id)
+    # Der U1 hat keinen Bambu-Weg (RTSP/Port 6000), aber einen MJPEG-Strom über
+    # Moonraker (seit v1.1.89, vorher HTTP 400 → schwarze Farm-Kamera).
+    moon = device.device_type == PrinterType.MOONRAKER
+    settings = None if moon else device_settings.get(db, device_id)
     boundary = "ottoframe"
 
     # DB-Sitzung JETZT freigeben. Bei einer StreamingResponse räumt FastAPI die
@@ -328,7 +332,7 @@ def camera_stream(device_id: int, db: Session = Depends(get_db)):
     # Otherwise StreamingResponse would already be committed and a failed camera would
     # just stream nothing → a silent black box with no error.
     try:
-        frame_iter = camera.stream(device, settings)
+        frame_iter = moonraker_printer.stream_frames(device) if moon else camera.stream(device, settings)
         first = next(frame_iter)
     except StopIteration:
         raise HTTPException(502, "Kamera lieferte kein Bild (LAN-Modus am Drucker aktiv?)")

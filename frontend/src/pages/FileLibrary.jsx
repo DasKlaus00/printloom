@@ -5,7 +5,8 @@ import ColorDot from '../components/ColorDot'
 import PageHeader from '../components/PageHeader'
 import { apiError } from '../services/apiError'
 import { useServerField } from '../services/dirtyField'
-import { fileService, folderService, printerService, deviceService, filamentService, autofarmService } from '../services/api'
+import { fileService, folderService, printerService, filamentService, autofarmService } from '../services/api'
+import { loadFarmPrinter } from '../services/farmPrinter'
 import { useAutoRefresh, usePageActive } from '../services/useAutoRefresh'
 import { useLanguage, locale } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
@@ -351,7 +352,7 @@ function PlateList({ file, onQueuePlate, onSendPlate, bambuId, enqueuing, sendin
             title={tr('Nur diese Platte in die Auto-Farm-Queue legen')}>{tr('+ Queue')}</button>
           <button onClick={() => onSendPlate(file, p.plate)} disabled={!bambuId || sending === file.id || !!printLock}
             className="btn btn-ghost btn-sm text-xs text-cyan-400 disabled:opacity-50"
-            title={printLock || (bambuId ? tr('Nur diese Platte sofort drucken') : tr('Kein Bambu-Gerät konfiguriert'))}>{tr('▶ Drucken')}</button>
+            title={printLock || (bambuId ? tr('Nur diese Platte sofort drucken') : tr('Kein Drucker für die Farm konfiguriert'))}>{tr('▶ Drucken')}</button>
         </div>
       ))}
     </div>
@@ -502,7 +503,7 @@ function FileRow({ file, meta, folderOptions, folderById, searching, selected, o
           )}
           {isPrintable && (
             <button onClick={() => onSend(file)} disabled={sending === file.id || !bambuId || !!printLock}
-              className="btn btn-cyan btn-sm" title={printLock || (bambuId ? tr('Sofort an Drucker senden (ohne Queue)') : tr('Kein Bambu-Gerät konfiguriert'))}>
+              className="btn btn-cyan btn-sm" title={printLock || (bambuId ? tr('Sofort an Drucker senden (ohne Queue)') : tr('Kein Drucker für die Farm konfiguriert'))}>
               {sending === file.id ? tr('Sende…') : tr('Drucken')}
             </button>
           )}
@@ -619,9 +620,10 @@ function FileLibrary() {
   // Initial: folders + device
   useEffect(() => {
     loadFolders()
-    deviceService.listDevices()
-      .then(d => { const b = d.data.find(x => x.device_type === 'bambu_lab'); if (b) setBambuId(b.id) })
-      .catch(() => {})
+    // „Sofort drucken" geht an den Drucker der Farm — seit v1.1.89 auch an einen U1.
+    loadFarmPrinter()
+      .then(b => { if (b) setBambuId(b.id) })
+      .catch(e => console.warn('Drucker nicht geladen:', e?.message || e))
   }, [loadFolders])
 
   // Files: reload on folder/search change (search debounced)

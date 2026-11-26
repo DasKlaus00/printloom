@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { fmtEur, fmtKwh } from '../services/format'
 import { costBreakdown } from '../services/costs'
 import { PageTitle } from '../components/PageHeader'
-import { deviceService, printerService, rackManagerService, autofarmService,
+import { printerService, rackManagerService, autofarmService,
          systemService } from '../services/api'
+import { loadFarmPrinter } from '../services/farmPrinter'
 import { useQueueEta, fmtDur } from '../services/useQueueEta'
 import { slotForRow } from '../services/rackUtils'
 import { useFarmStatusStream } from '../services/useFarmStatusStream'
@@ -199,15 +200,15 @@ export default function Dashboard() {
     try {
       // Status kommt live per WebSocket (useFarmStatusStream) — hier nur noch
       // Regal/Geräte/Statistik/Kosten, die der WS-Kanal nicht abdeckt.
-      const [rd, dd] = await Promise.all([
+      // Drucker der Farm (seit v1.1.89; vorher nur Bambu — beim U1 blieb die Karte leer).
+      const [rd, b] = await Promise.all([
         rackManagerService.getAll(),
-        deviceService.listDevices(),
+        loadFarmPrinter(),
       ])
       setRackData(rd.data)
       autofarmService.getStats().then(r => setStats(r.data)).catch(() => {})
       autofarmService.getTimeline(24).then(r => setTimeline(r.data)).catch(() => {})
       autofarmService.getSettings().then(r => setCostCfg(r.data)).catch(() => {})
-      const b = dd.data.find(x => x.device_type === 'bambu_lab')
       if (b) setBambuId(b.id)
 
       if (!farmStatusRef.current?.running) {

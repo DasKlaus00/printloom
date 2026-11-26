@@ -592,18 +592,90 @@ def print_action_sync(device, action: str) -> None:
         _result(c.post(base_url(device) + f"/printer/print/{action}", headers=headers(device)))
 
 
+def _camera_targets(c: httpx.Client, device) -> tuple:
+    """(snapshot_url, stream_url) des U1 — aus Moonrakers Kameraliste, sonst Standard."""
+    try:
+        r = c.get(base_url(device) + "/server/webcams/list", headers=headers(device))
+        cams = ((r.json() or {}).get("result") or {}).get("webcams") if r.status_code == 200 else None
+    except (httpx.HTTPError, ValueError) as e:
+        logger.info(f"U1-Kameraliste {device.name}: {type(e).__name__} — nehme die Standard-Pfade")
+        cams = None
+    return camera_urls(device, cams)
+
+
+# Live-Bild: so viel Puffer ohne Bildende, dann verwerfen; Standbild-Takt als Ersatz.
+STREAM_MAX_BUF = 4_000_000
+STILL_INTERVAL_S = 1.0
+STILL_MAX_MISSES = 5
+
+
+def split_jpeg(buf: bytes) -> tuple:
+    """(erstes vollständiges JPEG oder None, Rest des Puffers). Ohne Bildanfang bleibt
+    nur das letzte Byte — ein 0xFF kann der Anfang des nächsten Markers sein."""
+    start = buf.find(b"\xff\xd8")
+    if start < 0:
+        return None, buf[-1:]
+    end = buf.find(b"\xff\xd9", start + 2)
+    if end < 0:
+        return None, buf[start:]
+    return buf[start:end + 2], buf[end + 2:]
+
+
+def stream_frames(device):
+    """Live-Bild des U1 als Folge einzelner JPEGs (synchroner Generator).
+
+    Liest den MJPEG-Strom der Kamera und gibt nur vollständige JPEGs weiter; der
+    Aufrufer verpackt sie neu. Der Browser bekommt so nie die Antwort des Druckers
+    selbst, nur Bilder (dieselbe Regel wie bei der HA-Kamera seit v1.1.88). Ohne Strom
+    oder wenn er abreißt: jede STILL_INTERVAL_S ein Standbild. Bis v1.1.88 lehnte der
+    Server den Live-Stream für den U1 ab — die Farm-Kamera blieb schwarz."""
+    with httpx.Client(timeout=TIMEOUT_S) as c:
+        snap, stream = _camera_targets(c, device)
+        if stream:
+            try:
+                with c.stream("GET", stream) as r:
+                    if r.status_code == 200:
+                        buf = b""
+                        for chunk in r.iter_bytes():
+                            buf += chunk
+                            while True:
+                                img, buf = split_jpeg(buf)
+                                if img is None:
+                                    break
+                                yield img
+                            if len(buf) > STREAM_MAX_BUF:
+                                logger.info(f"U1-Kamera {device.name}: {len(buf)} Bytes ohne Bildende — verworfen")
+                                buf = b""
+                    else:
+                        logger.info(f"U1-Kamera-Stream {device.name}: HTTP {r.status_code} — weiter mit Standbildern")
+            except httpx.HTTPError as e:
+                logger.info(f"U1-Kamera-Stream {device.name}: {type(e).__name__} — weiter mit Standbildern")
+        if not snap:
+            return
+        misses = 0
+        while misses < STILL_MAX_MISSES:
+            try:
+                r = c.get(snap)
+                img = r.content if r.status_code == 200 and r.content[:2] == b"\xff\xd8" else None
+            except httpx.HTTPError as e:
+                logger.info(f"U1-Standbild {device.name}: {type(e).__name__}")
+                img = None
+            if img:
+                misses = 0
+                yield img
+            else:
+                misses += 1
+            time.sleep(STILL_INTERVAL_S)
+        logger.info(f"U1-Kamera {device.name}: {STILL_MAX_MISSES} Standbilder ohne Bild — Stream beendet")
+
+
 def snapshot(device):
     """Ein Kamerabild (JPEG) oder None. Zuerst ein Bild aus dem Stream: Das weckt
     die U1-Kamera, die sonst einschläft und ein altes Standbild liefert (laut
     Home-Assistant-Integration); danach das Standbild als Ersatz."""
     try:
         with httpx.Client(timeout=TIMEOUT_S) as c:
-            try:
-                r = c.get(base_url(device) + "/server/webcams/list", headers=headers(device))
-                cams = ((r.json() or {}).get("result") or {}).get("webcams") if r.status_code == 200 else None
-            except (httpx.HTTPError, ValueError):
-                cams = None
-            snap, stream = camera_urls(device, cams)
+            snap, stream = _camera_targets(c, device)
             if stream:
                 try:
                     buf = b""
@@ -634,9 +706,11 @@ async def test(device) -> dict:
     except PermissionError as e:
         return {"success": False, "message": str(e)}
     except (httpx.HTTPError, ValueError) as e:
-        return {"success": False, "message": f"Moonraker nicht erreichbar ({type(e).__name__})"}
+        return {"success": False, "message": "Moonraker nicht erreichbar", "error": type(e).__name__}
     klippy = info.get("state") or "?"
     ok = klippy == "ready"
+    # Feste Meldungen, Zustand als eigenes Feld: So übersetzt die Oberfläche den Text
+    # (bis v1.1.88 stand er auch in Englisch/Sprachpaketen deutsch da).
     return {"success": ok, "klippy_state": klippy, "hostname": info.get("hostname"),
             "message": ("Moonraker erreichbar, Klipper bereit" if ok
-                        else f"Moonraker erreichbar, Klipper: {klippy}")}
+                        else "Moonraker erreichbar, Klipper nicht bereit")}

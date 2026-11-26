@@ -6,6 +6,7 @@ import { deviceService, deviceSettingsService, systemService, autofarmService, r
 import { availableLanguages, setLanguage, useLanguage, getTranslationTemplate } from '../services/i18n'
 import { confirmDialog } from '../services/confirm'
 import { parseRackForm, rackSaveError } from '../services/rackForm'
+import { loadFarmPrinter } from '../services/farmPrinter'
 
 
 /* ─── Language & downloadable language packs ─────────────────────── */
@@ -519,7 +520,12 @@ const INITIAL_FORM = {
 }
 
 function TestResultBar({ result }) {
+  const { tr } = useLanguage()
   if (!result) return null
+  // Feste Meldungen des Servers laufen durch tr() (Englisch, Sprachpakete); Zustand
+  // und Fehlerart stehen getrennt daneben und bleiben, wie sie sind.
+  const extra = [result.klippy_state && result.klippy_state !== 'ready' ? `Klipper: ${result.klippy_state}` : '',
+                 result.error || ''].filter(Boolean).join(' · ')
   return (
     <div className={`mt-3 px-4 py-3 rounded-lg border text-sm space-y-1 ${
       result.success
@@ -528,7 +534,8 @@ function TestResultBar({ result }) {
     }`}>
       <div className="flex items-center gap-2 font-medium">
         <span className={`dot ${result.success ? 'dot-green' : 'dot-red'}`} />
-        {result.message}
+        {tr(result.message)}
+        {extra && <span className="font-mono text-xs opacity-80">({extra})</span>}
       </div>
       {result.mqtt && (
         <div className="flex gap-4 text-xs font-mono mt-1 pl-4">
@@ -555,8 +562,8 @@ function PowerSettings() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    deviceService.listDevices().then(async d => {
-      const b = d.data.find(x => x.device_type === 'bambu_lab')
+    // Steckdose gehört zum Drucker der Farm — die Farm liest sie dort (auch beim U1).
+    loadFarmPrinter().then(async b => {
       if (!b) return
       setBambuId(b.id)
       try {
@@ -586,7 +593,7 @@ function PowerSettings() {
   const isHttp = cfg.plug_type === 'tasmota' || cfg.plug_type === 'shelly'
 
   const save = async () => {
-    if (!bambuId) { setStatus({ ok: false, msg: tr('Kein Bambu-Gerät konfiguriert') }); return }
+    if (!bambuId) { setStatus({ ok: false, msg: tr('Kein Drucker für die Farm konfiguriert') }); return }
     setSaving(true); setStatus(null)
     try {
       const payload = {
