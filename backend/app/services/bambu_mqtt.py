@@ -5,8 +5,15 @@ import threading
 import time
 from typing import Callable, Optional
 from app.models.models import Device
+from app.services import hms, support_log
 
 logger = logging.getLogger(__name__)
+
+# MQTT CONNACK-Codes (Paho, MQTT 3.1.1) — im Log als Klartext, damit ein falscher
+# Access-Code (5) nicht wie ein Netzwerkfehler aussieht.
+MQTT_CONNECT_RC = {1: "incorrect protocol version", 2: "invalid client id",
+                   3: "server unavailable", 4: "bad user name or password",
+                   5: "not authorised — wrong access code or LAN mode off?"}
 
 
 def _deep_merge(a: dict, b: dict) -> dict:
@@ -107,14 +114,14 @@ class BambuLabMQTT:
             topic = f"device/{self.device.serial_number}/request"
             result = self.client.publish(topic, json.dumps(command), qos=1)
             if result.rc != mqtt.MQTT_ERR_SUCCESS:
-                logger.error(f"Befehl nicht gesendet ({topic}): rc={result.rc}")
+                logger.error(f"Command not sent ({topic}): rc={result.rc}")
                 self._drop_unconfirmed(result.mid)
                 return False
             result.wait_for_publish(timeout=5.0)
             # paho ≥ 2 kehrt nach dem Zeitlimit OHNE Fehler zurück. Bis v1.1.43 galt
             # ein Befehl darum auch dann als gesendet, wenn der Drucker ihn nie bekam.
             if not result.is_published():
-                logger.error(f"Befehl nach 5 s nicht vom Drucker bestätigt ({topic})")
+                logger.error(f"Command not acknowledged by the printer after 5 s ({topic})")
                 self._drop_unconfirmed(result.mid)
                 return False
             logger.info(f"Published to {topic}: {command}")
@@ -135,7 +142,7 @@ class BambuLabMQTT:
             with self.client._out_message_mutex:
                 self.client._out_messages.pop(mid, None)
         except AttributeError as e:
-            logger.warning(f"Unbestätigten MQTT-Befehl nicht zurückgenommen (paho-Version?): {e}")
+            logger.warning(f"Unacknowledged MQTT command not withdrawn (paho version?): {e}")
 
     def start_print(self, remote_filename: str, use_ams: bool = True, ams_mapping: list = None, plate_param: str = None) -> bool:
         """
@@ -275,7 +282,8 @@ class BambuLabMQTT:
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             self.connected = True
-            logger.info(f"Bambu Lab MQTT connected to {self.device.ip_address}")
+            logger.info(f"{getattr(self.device, 'name', '?')}: Bambu Lab MQTT connected to "
+                        f"{self.device.ip_address}")
             self.subscribe()
             # Direkt nach (Re-)Connect einen Vollreport anfordern, damit Status/AMS
             # sofort frisch sind (fire-and-forget — kein wait_for_publish im Loop-Thread).
@@ -287,13 +295,34 @@ class BambuLabMQTT:
                 logger.debug(f"pushall on connect failed: {e}")
         else:
             self.connected = False
-            logger.error(f"Bambu Lab MQTT connection failed, rc={rc}")
+            logger.error(f"{getattr(self.device, 'name', '?')}: Bambu Lab MQTT connection failed, "
+                         f"rc={rc} ({MQTT_CONNECT_RC.get(rc, 'unknown reason')})")
         self._connected_event.set()
 
     def _on_disconnect(self, client, userdata, rc):
         self.connected = False
         if rc != 0:
-            logger.warning(f"Unexpected MQTT disconnection: rc={rc}")
+            logger.warning(f"{getattr(self.device, 'name', '?')}: unexpected MQTT disconnection: rc={rc}")
+
+    def _log_state(self) -> None:
+        """Zustandswechsel ins Support-Log — nur Wechsel, nicht jede Nachricht (der X1C
+        schickt im Druck jede Sekunde eine). Fehlercodes hexadezimal wie in Bambus Wiki."""
+        p = (self.last_message or {}).get("print") if isinstance(self.last_message, dict) else None
+        if not isinstance(p, dict):
+            return
+        err = p.get("print_error")
+        codes = sorted(hms.code_str(int(h.get("attr", 0)), int(h.get("code", 0)))
+                       for h in (p.get("hms") or []) if isinstance(h, dict))
+        support_log.state_change("printer.bambu", ("bambu", getattr(self.device, "id", None)),
+                                 getattr(self.device, "name", "?"), {
+            "gcode_state": p.get("gcode_state"),
+            "stage": p.get("mc_print_stage"),
+            "stg_cur": p.get("stg_cur"),
+            "print_error": (f"0x{int(err):08X}" if isinstance(err, int) and err else
+                            (0 if err == 0 else None)),
+            "hms": codes or None,
+            "file": p.get("subtask_name") or None,
+        })
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -307,6 +336,7 @@ class BambuLabMQTT:
                 self.last_message = payload
             if "print_progress" in self.callbacks:
                 self.callbacks["print_progress"](self.last_message)   # gemergter Vollzustand
+            self._log_state()
             logger.debug(f"Received from Bambu Lab: {payload}")
         except Exception as e:
             logger.error(f"Error processing Bambu Lab message: {e}")

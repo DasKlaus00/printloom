@@ -135,8 +135,8 @@ def match_live(types: list, colors: list, ams_raw: dict) -> list:
         fcolor_clean = fcolor.lstrip('#').upper()
         candidates = _candidates(slots, ftype)
         if not candidates:
-            logger.warning(f"  Filament {i}: {ftype} #{fcolor_clean[:6]} → KEIN passendes Material "
-                           f"im AMS — kein Cross-Material-Mapping")
+            logger.warning(f"  Filament {i}: {ftype} #{fcolor_clean[:6]} → NO matching material "
+                           f"in the AMS — no cross-material mapping")
             mapping.append(i)
             continue
         best = pick_slot(candidates, fcolor_clean)
@@ -221,7 +221,7 @@ def expand_to_slots(mapping: list, filepath: str, file_type: str, plate: int | N
     full = [-1] * max(ids)
     for slot_id, tray in zip(ids, mapping):
         full[slot_id - 1] = tray
-    logger.info(f"ams_mapping auf Slicer-Slots {ids} gehoben: {mapping} → {full}")
+    logger.info(f"ams_mapping lifted to slicer slots {ids}: {mapping} → {full}")
     return full
 
 

@@ -448,7 +448,7 @@ async def ha_camera_stream(device_id: int, db: Session = Depends(get_db)):
             async for chunk in resp.aiter_raw():
                 yield chunk
         except Exception as e:
-            logger.info(f"HA-Kamera-Stream beendet (device {device_id}): {scrub(e)}")
+            logger.info(f"HA camera stream ended (device {device_id}): {scrub(e)}")
         finally:
             await resp.aclose()
             await client.aclose()

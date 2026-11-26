@@ -136,5 +136,5 @@ def _write_unlocked(path: str, data: Any) -> None:
             if os.path.exists(tmp):
                 os.remove(tmp)
         except OSError as e:
-            logger.warning(f"Temp-Datei {tmp} nicht entfernt: {e}")
+            logger.warning(f"Temp file {tmp} not removed: {e}")
         raise

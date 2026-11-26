@@ -25,6 +25,9 @@ def _client():
     return docker.from_env()
 
 
+_docker_missing_logged = False
+
+
 def docker_available() -> bool:
     """True if the Docker socket is reachable (channel switching possible)."""
     try:
@@ -32,7 +35,10 @@ def docker_available() -> bool:
         c.ping()
         return True
     except Exception as e:
-        logger.info(f"Docker-Socket nicht verfügbar: {e}")
+        global _docker_missing_logged
+        if not _docker_missing_logged:
+            _docker_missing_logged = True
+            logger.info(f"Docker socket not available (logged once): {e}")
         return False
 
 
@@ -105,7 +111,7 @@ def spawn_helper(target_image: str, container_name: str) -> None:
         detach=True,
         remove=True,
     )
-    logger.info(f"Update-Helfer gestartet: {target_image} → {container_name}")
+    logger.info(f"Update helper started: {target_image} → {container_name}")
 
 
 def _own_env(container_env, image_env) -> list:
@@ -178,7 +184,7 @@ def recreate(new_image: str, name: str) -> None:
     old = client.containers.get(name)
     # Vor dem Pull merken: Danach zeigt der Tag schon auf das neue Image.
     old_image_id = getattr(getattr(old, "image", None), "id", None)
-    logger.info(f"Ziehe Image {new_image} …")
+    logger.info(f"Pulling image {new_image} …")
     client.images.pull(new_image)
 
     info = old.attrs
@@ -188,7 +194,7 @@ def recreate(new_image: str, name: str) -> None:
     try:
         image_cfg = client.images.get(old_image_id).attrs.get("Config") or {} if old_image_id else {}
     except Exception as e:   # altes Image schon weg → alles als eigene Einstellung behandeln
-        logger.warning(f"Altes Image {old_image_id} nicht lesbar ({e}) — übernehme die ganze Konfiguration")
+        logger.warning(f"Old image {old_image_id} not readable ({e}) — taking over the whole configuration")
         image_cfg = {}
 
     # ports: {"8000/tcp": [{"HostIp":"", "HostPort":"8000"}]} → {"8000/tcp": "8000"}
@@ -233,24 +239,24 @@ def recreate(new_image: str, name: str) -> None:
     # kaputte (bis v1.1.60).
     old_image = old_image_id or cfg.get("Image")
 
-    logger.info(f"Stoppe & entferne alten Container {name} …")
+    logger.info(f"Stopping & removing old container {name} …")
     try:
         old.stop(timeout=20)
     except Exception as e:
-        logger.warning(f"Alter Container hielt nicht sauber an ({e}) — wird entfernt")
+        logger.warning(f"Old container did not stop cleanly ({e}) — removing it")
     old.remove(force=True)
 
-    logger.info(f"Starte neuen Container {name} aus {new_image} …")
+    logger.info(f"Starting new container {name} from {new_image} …")
     try:
         client.containers.run(**run_kwargs)
     except Exception as e:
         # Neuer Container startet nicht → App wäre offline. Auf altes Image
         # zurückrollen, damit der Dienst wieder läuft, dann den Fehler melden.
-        logger.error(f"Neuer Container startete nicht ({e}) — Rollback auf {old_image}")
+        logger.error(f"New container did not start ({e}) — rolling back to {old_image}")
         run_kwargs["image"] = old_image
         client.containers.run(**run_kwargs)
         raise
-    logger.info("Recreate abgeschlossen.")
+    logger.info("Recreate finished.")
 
 
 if __name__ == "__main__":
@@ -265,5 +271,5 @@ if __name__ == "__main__":
         recreate(image, cname)
     except Exception as e:
         logging.basicConfig(level=logging.INFO)
-        logger.error(f"Update fehlgeschlagen: {e}")
+        logger.error(f"Update failed: {e}")
         sys.exit(1)

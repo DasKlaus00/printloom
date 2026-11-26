@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: '1.1.90',
+    de: [
+      'Support-Bericht: Unter System → Diagnose gibt es jetzt „Support-Bericht herunterladen (Englisch)“ — eine Textdatei zum Weitergeben bei Problemen oder wenn ein neuer Drucker eingebaut werden soll. Oben steht eine automatische Prüfung (Drucker erreichbar? Klipper bereit? OTTOeject eingerichtet? Notaus? Positionen bestätigt? Speicherplatz? Absturzschleifen?), dann Fehler und Warnungen gruppiert mit erstem und letztem Auftreten, Umgebung, ein Steckbrief je Gerät (beim Snapmaker/Klipper Versionen, Objekte und Kameras, beim Bambu die Felder des Status), der Farm-Zustand und das Log.',
+      'Neues Logfile <Datenordner>/logs/printloom.log, englisch, rotierend (höchstens etwa 25 MB). Jede Zeile mit Datum, Uhrzeit auf die Millisekunde samt Zeitzone und der Zeit seit dem Start; Fehler mit vollständigem Traceback. Es steht drin, was die Farm tut, jeder Zustandswechsel der Drucker (verbunden/getrennt, IDLE → RUNNING, Fehlercodes und HMS), jede Bedienung mit Antwort und Dauer, Notaus und unerwartete Abstürze.',
+      'Ohne Geheimnisse: keine Access-Codes, Passwörter oder Tokens; IP-Adressen enden auf .x, Seriennummern sind gekürzt, der Benutzerordner heißt „~“. Printloom verschickt nichts — du entscheidest, wem du die Datei gibst. Das Diagnose-Paket enthält das Logfile ebenfalls.',
+      'Das Farm-Log erscheint in jeder Sprache außer Deutsch jetzt auf Englisch (bisher immer deutsch).',
+    ],
+    en: [
+      'Support report: System → Diagnostics now has “Download support report (English)” — a text file to pass on when something goes wrong or when a new printer should be added. It starts with automatic checks (printer reachable? Klipper ready? OTTOeject set up? emergency stop? positions confirmed? disk space? crash loops?), then errors and warnings grouped with first and last occurrence, the environment, a profile of each device (versions, objects and cameras for Snapmaker/Klipper, the status fields for Bambu), the farm state and the log.',
+      'New log file <data folder>/logs/printloom.log, in English, rotating (about 25 MB at most). Every line has the date, the time to the millisecond with time zone and the time since start; errors come with the full traceback. It records what the farm does, every printer state change (connected/disconnected, IDLE → RUNNING, error codes and HMS), every action with response and duration, emergency stops and unexpected crashes.',
+      'No secrets: no access codes, passwords or tokens; IP addresses end in .x, serial numbers are shortened, the user folder is “~”. Printloom sends nothing — you decide who gets the file. The diagnostics package includes the log file too.',
+      'The farm log now appears in English in every language except German (until now always German).',
+    ],
+  },
+  {
     version: '1.1.89',
     de: [
       'Snapmaker U1 als einziger Drucker: Die Kopfzeile zeigt ihn jetzt als verbunden. Bisher fragte die Pille „Drucker“ nur Bambu-Drucker ab und stand beim U1 grau, obwohl der Verbindungstest grün war.',

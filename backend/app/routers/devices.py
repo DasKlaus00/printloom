@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import Device, PrinterType
 from app.schemas.schemas import DeviceCreate, DeviceUpdate, DeviceResponse
-from app.services import bambu_manager, device_settings
+from app.services import bambu_manager, device_settings, support_log
 from app.services.bambu_ftp import BambuFTP
 
 router = APIRouter()
@@ -153,6 +153,11 @@ async def create_device(device: DeviceCreate, db: Session = Depends(get_db)):
     db.add(db_device)
     db.commit()
     db.refresh(db_device)
+    # Support-Log: Seriennummer/Code ab sofort verbergen, Gerät mit Typ und Modell nennen.
+    support_log.hide_device(db_device)
+    logger.info(f"Device added: id={db_device.id} name={db_device.name!r} "
+                f"type={getattr(db_device.device_type, 'value', db_device.device_type)} "
+                f"model={db_device.model} address={db_device.ip_address}:{db_device.port}")
     return db_device
 
 
@@ -177,6 +182,9 @@ async def update_device(device_id: int, device: DeviceUpdate, db: Session = Depe
     db.add(db_device)
     db.commit()
     db.refresh(db_device)
+    support_log.hide_device(db_device)
+    # Nur die Namen geänderter Felder — Werte wie der Access-Code gehören nicht ins Log.
+    logger.info(f"Device {device_id} ({db_device.name!r}) changed: {', '.join(sorted(fields)) or 'nothing'}")
     return db_device
 
 
@@ -191,15 +199,16 @@ async def delete_device(device_id: int, db: Session = Depends(get_db)):
     try:
         bambu_manager.drop(db_device)
     except Exception as e:
-        logger.warning(f"MQTT-Verbindung von Gerät {device_id} nicht geschlossen: {e}")
+        logger.warning(f"MQTT connection of device {device_id} not closed: {e}")
     try:
         from app.services import camera_hub
         camera_hub.drop_for_device(ip, code)
     except Exception as e:
-        logger.warning(f"Kamera-Hub von Gerät {device_id} nicht beendet: {e}")
+        logger.warning(f"Camera hub of device {device_id} not stopped: {e}")
     device_settings.delete(db, device_id)
     db.delete(db_device)
     db.commit()
+    logger.info(f"Device {device_id} deleted")
     return {"message": "Device deleted successfully"}
 
 

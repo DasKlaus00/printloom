@@ -1,5 +1,7 @@
+import asyncio
 import html
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -8,9 +10,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from app.routers import (files, devices, control, printer, rack_manager, system, autofarm,
                          project, profiles, filaments, push, folders, online, slicer)
-from app.db.database import init_db
+from app.db.database import init_db, SessionLocal
 from app import paths
-from app.services import credentials, request_guard
+from app.services import credentials, request_guard, support_log
 
 # Datenordner (db/, uploads/) früh sicherstellen — nativ liegen sie im
 # Nutzerverzeichnis, in Docker unter /app (siehe app.paths).
@@ -27,6 +29,8 @@ for _noisy in ("uvicorn.access", "httpx", "httpcore", "paho", "paho.mqtt", "watc
 # Keine Zugangsdaten im Log (seit v1.1.73): jede Zeile läuft durch credentials.scrub.
 # Deckt auch die Windows-App ab, deren Log-Handler vor diesem Import entsteht.
 credentials.install_log_scrub()
+# Englisches Support-Log im Datenordner (seit v1.1.90), siehe services/support_log.py.
+support_log.install()
 
 # Kamera-Default festlegen BEVOR init_db() die Datenbank anlegt: nur eine echte
 # Neuinstallation (keine printloom.db) bekommt den neuen Default „Kamera aus";
@@ -43,11 +47,29 @@ from app.services import rack_store as _rack_store  # noqa: E402
 try:
     _rack_store.ensure_file()
 except OSError as _e:
-    logging.getLogger(__name__).error(f"Regal-Datei nicht angelegt: {_e}")
+    logging.getLogger(__name__).error(f"Rack file not created: {_e}")
+
+
+def _hide_device_secrets() -> None:
+    """Seriennummern und Access-Codes aller Geräte im Support-Log ersetzen — auch
+    dort, wo eine Bibliothek sie nennt (MQTT-Topic device/<serial>/report)."""
+    from app.models.models import Device
+    db = SessionLocal()
+    try:
+        for d in db.query(Device).all():
+            support_log.hide_device(d)
+    finally:
+        db.close()
 
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    # Verlorene Ausnahmen in asyncio-Tasks mit Traceback ins Support-Log.
+    asyncio.get_running_loop().set_exception_handler(support_log.asyncio_handler)
+    try:
+        _hide_device_secrets()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Device secrets not registered for the log: {e}")
     # Bauraumlüfter-Guard: hält bei aktivierter Geräte-Option die Bauraumlüftung aus
     # (nutzt die persistente MQTT-Verbindung, ~5-s-Takt). Idempotent.
     try:
@@ -56,6 +78,7 @@ async def _lifespan(_app: FastAPI):
     except Exception as e:
         logging.getLogger(__name__).warning(f"chamber_fan_guard start failed: {e}")
     yield
+    logging.getLogger("printloom.app").info("=== Printloom shutting down ===")
 
 
 # Kein CORS-Middleware: Die Oberfläche kommt vom selben Server (im Dev über den
@@ -124,8 +147,8 @@ class _NoForeignWrites:
             if (reason == request_guard.UNKNOWN_HOST and host not in _logged_hosts
                     and len(_logged_hosts) < _LOG_HOSTS_MAX):
                 _logged_hosts.add(host)
-                _log.warning("Anfrage an unbekannte Adresse %r abgelehnt. Ist das die eigene "
-                             "Adresse, gehört sie in PRINTLOOM_ALLOWED_HOSTS.", host)
+                _log.warning("Request to unknown address %r rejected. If this is Printloom's own "
+                             "address, add it to PRINTLOOM_ALLOWED_HOSTS.", host)
             if kind == "websocket":
                 # Erst websocket.connect annehmen, dann ablehnen (HTTP 403 beim Handshake).
                 await receive()
@@ -155,6 +178,72 @@ class _NoForeignWrites:
 
 
 app.add_middleware(_NoForeignWrites)
+
+
+# ── Support-Log: Bedienungen, Fehlerantworten, langsame Anfragen (seit v1.1.90) ──
+_req_log = logging.getLogger("printloom.api")
+SLOW_REQUEST_S = 5.0
+REPEAT_QUIET_S = 60.0           # dieselbe Fehlerantwort höchstens einmal je Minute
+_MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
+_req_seen: dict = {}            # (Methode, Pfad, Status) → [zuletzt geloggt, unterdrückt]
+
+
+def request_log_line(method: str, path: str, code: int, seconds: float, now: float):
+    """→ (Stufe, Zeile) oder None. Jede Bedienung (POST/PUT/PATCH/DELETE), jede Antwort
+    ab 400 und jede langsame Anfrage; reine Abfragen (GET 2xx/3xx) nicht — sie pollen
+    im Sekundentakt und fluteten das Log. Kamera-Streams laufen absichtlich lange."""
+    if method == "GET" and "/camera/" in path and code < 400:
+        return None
+    if not (method in _MUTATING or code >= 400 or seconds >= SLOW_REQUEST_S):
+        return None
+    note = ""
+    if method not in _MUTATING:           # Abfragen: Fehler und Langsamkeit gebremst
+        key = (method, path, code)
+        last = _req_seen.get(key)
+        if last and now - last[0] < REPEAT_QUIET_S:
+            last[1] += 1
+            return None
+        if last and last[1]:
+            note = f" (+{last[1]} identical in the last minutes)"
+        _req_seen[key] = [now, 0]
+        if len(_req_seen) > 500:                    # Pfade mit IDs: nicht endlos wachsen
+            _req_seen.clear()
+    level = logging.WARNING if code >= 500 else logging.INFO
+    return level, f"{method} {path} → {code} ({seconds * 1000:.0f} ms){note}"
+
+
+class _RequestLog:
+    """Reines ASGI (wie _NoForeignWrites): Status und Dauer jeder Anfrage; unerwartete
+    Ausnahmen mit Traceback, bevor Starlette sie in eine 500 verwandelt."""
+
+    def __init__(self, app):
+        self.inner = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.inner(scope, receive, send)
+            return
+        t0, status = time.monotonic(), {}
+
+        async def send_status(message):
+            if message["type"] == "http.response.start":
+                status["code"] = message.get("status", 0)
+            await send(message)
+
+        method, path = scope.get("method", "?"), scope.get("path", "?")
+        try:
+            await self.inner(scope, receive, send_status)
+        except Exception:
+            _req_log.error(f"{method} {path} → unhandled exception after "
+                           f"{(time.monotonic() - t0) * 1000:.0f} ms", exc_info=True)
+            raise
+        if "code" in status:
+            hit = request_log_line(method, path, status["code"], time.monotonic() - t0, time.monotonic())
+            if hit:
+                _req_log.log(*hit)
+
+
+app.add_middleware(_RequestLog)
 
 # Include routers
 app.include_router(devices.router,       prefix="/api/devices",       tags=["Devices"])

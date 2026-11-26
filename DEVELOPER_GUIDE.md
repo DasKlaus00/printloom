@@ -166,6 +166,12 @@ Datei hochzählen — Nutzer müssen es in Orca neu installieren.
   Hardware.
 - Keine Geheimnisse in Logs, Diagnose-Paket oder Backup ohne ausdrücklichen
   Wunsch. Was ein Geheimnis ist, entscheidet `services/credentials.py`.
+- Log-Texte sind englisch (seit v1.1.90): Alles landet im Support-Log
+  `<Datenordner>/logs/printloom.log` (`services/support_log.py`), das Nutzer als
+  Support-Bericht (System → Diagnose, `services/support_report.py`) verschicken.
+  Farm-Meldungen schreiben beide Sprachen: `_log("deutsch", en="English")`.
+  Zustände von Geräten nur als Wechsel loggen (`support_log.state_change`), nie
+  bei jeder Abfrage. `test_support_log.py` verbietet deutsche Log-Texte.
 - Printloom hat keine eigene Anmeldung (Reverse-Proxy mit Anmeldung davor, z. B.
   authentik). Deshalb: kein CORS, Oberfläche und API vom selben Server. Der Wächter
   in `main.py` (Regeln in `services/request_guard.py`) lässt nur Heimnetz-Adressen
@@ -232,6 +238,7 @@ oder Zusagen bricht**, nicht die Menge an Code:
 | `test_online.py`         | OHNE Zustimmung + Schalter geht KEIN Request nach außen |
 | `test_backup.py`         | Backup vollständig; Zugangsdaten nur auf Wunsch, verschlüsselt; Einspielen löscht keine |
 | `test_diagnostics.py`    | keine Geheimnisse im Diagnose-ZIP |
+| `test_support_log.py`    | Log-Texte englisch, jede Farm-Meldung mit `en=`; Zeitstempel mit Zeitzone und Laufzeit; keine Geheimnisse/Adressen/Seriennummern; nur Zustandswechsel; Bericht mit Befunden und Geräte-Steckbrief |
 | `test_http_safety.py` / `test_request_guard.py` | keine CORS-Freigabe, fremde Seiten dürfen nicht schreiben, fremde Adressen (DNS-Rebinding) gesperrt, kein Einbetten |
 | `test_get_ohne_nebenwirkung.py` | GETs ändern nichts: kein Internet ohne Freigabe, kein Netzscan, kein Kammerlicht |
 | `test_native_update.py`  | Windows-Update lädt nur den Installer aus dem eigenen Release, ohne Token |

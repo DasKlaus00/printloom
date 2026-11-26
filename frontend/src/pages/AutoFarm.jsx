@@ -23,6 +23,7 @@ import { AmsPreview, AmsMapper } from '../components/farm/Ams'
 import { CameraPanel } from '../components/farm/Camera'
 import QueuePlanner from '../components/farm/QueuePlanner'
 import { pickFarmPrinter } from '../services/farmPrinter'
+import { farmLogFor } from '../services/farmLog'
 
 /* Snapshot eines Jobs — blendet sich aus, wenn kein Bild da ist (z. B. keine
    Webcam am Drucker → 404), statt ein kaputtes Bild-Icon zu zeigen. */
@@ -155,7 +156,7 @@ function FarmViz({ farmStatus, jobs, curJobId }) {
 const HIDE_CAM2_KEY    = 'printloom_autofarm_hide_cam2'  // untere (hochkant) Kamera ausblenden
 
 function AutoFarm({ setCurrentPage } = {}) {
-  const { tr } = useLanguage()
+  const { tr, lang } = useLanguage()
   const [gcodeFiles,      setGcodeFiles]      = useState([])
   const [rackData,        setRackData]        = useState(null)
   const [bambuId,         setBambuId]         = useState(null)
@@ -222,7 +223,8 @@ function AutoFarm({ setCurrentPage } = {}) {
   const running  = farmStatus?.running  ?? false
   const [recoveryPing, setRecoveryPing] = useState(0)
   const paused   = farmStatus?.paused   ?? false
-  const farmLog  = farmStatus?.log      ?? []
+  // Farm-Log: deutsch, in jeder anderen Sprache die englische Fassung (seit v1.1.90).
+  const farmLog  = farmLogFor(farmStatus, lang)
   // Use current_job_id from backend; fall back to finding any active job
   const curJobId = farmStatus?.current_job_id
     ?? farmStatus?.jobs?.find(j => ['running', 'printing', 'sending'].includes(j.status))?.id

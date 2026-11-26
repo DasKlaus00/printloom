@@ -124,12 +124,12 @@ async def _read_tasmota(s: dict) -> dict:
             out["watts"]      = _f(energy.get("Power"))
             out["energy_kwh"] = _f(energy.get("Total"))   # Tasmota Total = kWh
         except Exception as e:   # Messung fehlt → bleibt None (unbekannt, nicht 0)
-            logger.debug(f"Tasmota-Messwerte nicht lesbar: {scrub(e)}")
+            logger.debug(f"Tasmota readings not readable: {scrub(e)}")
         try:
             sts = await _tasmota_cmd(s, client, "Power")
             out["on"] = str(sts.get("POWER", "")).upper() == "ON"
         except Exception as e:
-            logger.debug(f"Tasmota-Schaltzustand nicht lesbar: {scrub(e)}")
+            logger.debug(f"Tasmota switch state not readable: {scrub(e)}")
     return out
 
 
@@ -153,7 +153,7 @@ async def _read_shelly(s: dict) -> dict:
             out["energy_kwh"] = round(wh / 1000.0, 4) if wh is not None else None
             out["on"] = bool(d.get("output"))
         except Exception as e:   # Werte bleiben None (unbekannt, nicht 0)
-            logger.debug(f"Shelly nicht lesbar: {scrub(e)}")
+            logger.debug(f"Shelly not readable: {scrub(e)}")
     return out
 
 

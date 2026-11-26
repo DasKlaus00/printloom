@@ -141,7 +141,7 @@ def test_farm_log_in_der_zeitzone_aus_den_einstellungen(pfade, monkeypatch):
     monkeypatch.setitem(af._farm, "log", [])
     monkeypatch.setattr(af, "datetime", Fest)
 
-    af._log("Test")
+    af._log("Test", en="Test")
     assert af._farm["log"][0] == "12:00:00 — Test"
     assert (pfade / "log_path.json").read_text(encoding="utf-8").startswith("2026-07-01 12:00:00 — Test")
 
@@ -153,6 +153,6 @@ def test_farm_log_ohne_zeitzone_nimmt_serverzeit(pfade, monkeypatch):
     monkeypatch.setitem(af._USER_TZ, "mtime", None)
     monkeypatch.setitem(af._farm, "log", [])
     vorher = datetime.now().replace(microsecond=0)
-    af._log("Ohne Zone")
+    af._log("Ohne Zone", en="No zone")
     zeit = datetime.strptime(af._farm["log"][0].split(" — ")[0], "%H:%M:%S").time()
     assert abs(datetime.combine(vorher.date(), zeit) - vorher) < timedelta(seconds=5)

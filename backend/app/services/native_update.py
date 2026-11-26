@@ -167,7 +167,7 @@ async def _sha256_for(assets, asset) -> Optional[str]:
         first = (r.text[:200].split() or [""])[0].lower()
         return first if _HEX64.fullmatch(first) else None
     except (ValueError, httpx.HTTPError) as e:
-        logger.warning("Prüfsumme zu %s nicht lesbar: %s", name, e)
+        logger.warning("Checksum for %s not readable: %s", name, e)
         return None
 
 
@@ -226,8 +226,8 @@ def download_and_launch(download_url: str, asset_name: Optional[str] = None,
                              "Installer nicht gestartet")
     else:
         # Übergang: ältere Releases haben keine Prüfsumme. Starten, aber vermerken.
-        logger.warning("Release ohne Prüfsumme — Installer %s ungeprüft (sha256 %s)", name, got)
-    logger.info("Installer geladen: %s", target)
+        logger.warning("Release without checksum — installer %s unverified (sha256 %s)", name, got)
+    logger.info("Installer downloaded: %s", target)
     _launch_installer(target)
     return {"success": True, "installer": str(target)}
 

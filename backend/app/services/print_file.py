@@ -232,7 +232,7 @@ def repack_single_plate(src_path: str, plate: int) -> str:
                     new_root.append(keep)
                     slice_info = ET.tostring(new_root, encoding="unicode")
             except Exception as e:
-                logger.warning(f"repack: slice_info umschreiben fehlgeschlagen: {e}")
+                logger.warning(f"repack: rewriting slice_info failed: {e}")
 
         model_settings = (
             '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <plate>\n'
@@ -279,9 +279,19 @@ def repack_single_plate(src_path: str, plate: int) -> str:
             except OSError:
                 pass
             raise
-    logger.info(f"Multi-Plate repack: Platte {plate} aus {os.path.basename(src_path)} "
-                f"→ {os.path.getsize(out_path) / 1e6:.1f} MB Einzel-Platten-.3mf")
+    logger.info(f"Multi-plate repack: plate {plate} from {os.path.basename(src_path)} "
+                f"→ {os.path.getsize(out_path) / 1e6:.1f} MB single-plate .3mf")
     return out_path
+
+
+class Note(str):
+    """Deutscher Hinweis (Farm-Log der Oberfläche) mit englischer Fassung in `.en`
+    für das Support-Log (seit v1.1.90). Bleibt ein str: Vergleiche gehen weiter."""
+
+    def __new__(cls, de: str, en: str):
+        obj = super().__new__(cls, de)
+        obj.en = en
+        return obj
 
 
 def upload_plan(file_path: str, file_type: str, plate=None) -> tuple:
@@ -290,7 +300,7 @@ def upload_plan(file_path: str, file_type: str, plate=None) -> tuple:
     Multi-Plate-.3mf: die gewählte Platte (sonst die erste) als eigene Datei —
     der X1C parst sonst das GESAMTE Projekt und hängt minutenlang in „Vorbereitung".
     Scheitert das Umpacken, geht die Originaldatei mit dem Platten-Pfad raus.
-    `note` beschreibt, was passiert ist (für Log/Diagnose), sonst ""."""
+    `note` beschreibt, was passiert ist (für Log/Diagnose, Note mit `.en`), sonst ""."""
     if file_type != '.3mf':
         return file_path, None, "", ""
     plates = list_plates(file_path)
@@ -301,10 +311,14 @@ def upload_plan(file_path: str, file_type: str, plate=None) -> tuple:
         tmp = repack_single_plate(file_path, target)
     except Exception as e:
         return (file_path, None, plate_gcode_param(file_path, target),
-                f"Umpacken fehlgeschlagen ({e}) — sende Originaldatei")
+                Note(f"Umpacken fehlgeschlagen ({e}) — sende Originaldatei",
+                     f'Repacking failed ("{e}") — sending the original file'))
+    mb_new, mb_old = os.path.getsize(tmp) / 1e6, os.path.getsize(file_path) / 1e6
     return (tmp, tmp, "Metadata/plate_1.gcode",
-            f"{len(plates)} Platten in der Datei → Platte {target} einzeln umgepackt "
-            f"({os.path.getsize(tmp) / 1e6:.1f} statt {os.path.getsize(file_path) / 1e6:.1f} MB)")
+            Note(f"{len(plates)} Platten in der Datei → Platte {target} einzeln umgepackt "
+                 f"({mb_new:.1f} statt {mb_old:.1f} MB)",
+                 f"{len(plates)} plates in the file → plate {target} repacked on its own "
+                 f"({mb_new:.1f} instead of {mb_old:.1f} MB)"))
 
 
 def make_print_name(original: str, file_type: str) -> str:
@@ -1118,7 +1132,7 @@ def sliced_for(path: str, file_type: str, plate=None) -> Optional[str]:
             with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = _head_and_tail(f)
     except (OSError, zipfile.BadZipFile, KeyError) as e:
-        logger.warning(f"Drucker-Angabe in {path} nicht lesbar: {e}")
+        logger.warning(f"Printer info in {path} not readable: {e}")
         return None
     found = [None, None]
     for line in lines:

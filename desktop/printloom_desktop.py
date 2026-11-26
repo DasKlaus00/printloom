@@ -184,7 +184,7 @@ def main() -> int:
     if lock is None:
         # Es läuft bereits eine Instanz → nur Browser öffnen und beenden.
         url = _read_url()
-        log.info("Printloom läuft bereits — öffne %s", url)
+        log.info("Printloom is already running — opening %s", url)
         webbrowser.open(url)
         return 0
 
@@ -193,10 +193,10 @@ def main() -> int:
     _write_url(url)
 
     server = _Server(port)
-    log.info("Starte Printloom-Backend auf %s …", url)
+    log.info("Starting Printloom backend on %s …", url)
     server.start()
     if not server.wait_healthy():
-        log.error("Backend wurde nicht rechtzeitig gesund — trotzdem Tray anzeigen.")
+        log.error("Backend did not become healthy in time — showing the tray anyway.")
 
     # Erststart: Browser automatisch öffnen (per PRINTLOOM_NO_BROWSER unterdrückbar,
     # z. B. für automatisierte Tests).

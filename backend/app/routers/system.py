@@ -105,10 +105,10 @@ async def _ghcr_image(tag: str) -> Optional[dict]:
             try:
                 info["version"] = await _image_version(client, path, headers, r.json())
             except Exception as e:
-                logger.info(f"Versions-Label von :{tag} nicht lesbar: {e}")
+                logger.info(f"Version label of :{tag} not readable: {e}")
             return info
     except Exception as e:
-        logger.info(f"ghcr nicht erreichbar ({tag}): {e}")
+        logger.info(f"ghcr not reachable ({tag}): {e}")
         return None
 
 
@@ -145,7 +145,7 @@ async def _branch_version(branch: str) -> Optional[str]:
         if r.status_code == 200:
             return r.text.strip()
     except Exception as e:
-        logger.info(f"version.txt in {branch} nicht lesbar: {e}")
+        logger.info(f"version.txt in {branch} not readable: {e}")
     return None
 
 
@@ -206,7 +206,7 @@ async def _last_build(branch: str) -> Optional[dict]:
             if runs:
                 return {"status": runs[0].get("status"), "conclusion": runs[0].get("conclusion")}
     except Exception as e:
-        logger.info(f"Build-Status für {branch} nicht lesbar: {e}")
+        logger.info(f"Build status for {branch} not readable: {e}")
     return None
 
 
@@ -262,7 +262,7 @@ def _remember_channel(channel) -> None:
     try:
         appsettings.write_update_channel((channel or "latest").lower())
     except OSError as e:
-        logger.warning(f"Update-Kanal nicht gespeichert: {e}")
+        logger.warning(f"Update channel not saved: {e}")
 
 
 def _running_channel() -> str:
@@ -327,7 +327,7 @@ def _write_update_marker(data: dict) -> None:
     try:
         storage.write_json(_update_marker_path(), data)
     except OSError as e:
-        logger.warning(f"Update-Marker nicht geschrieben: {e}")
+        logger.warning(f"Update marker not written: {e}")
 
 
 def _clear_update_marker() -> None:
@@ -336,7 +336,7 @@ def _clear_update_marker() -> None:
     except FileNotFoundError:
         pass
     except OSError as e:
-        logger.warning(f"Update-Marker nicht gelöscht: {e}")
+        logger.warning(f"Update marker not deleted: {e}")
 
 
 def update_result(current: str) -> Optional[dict]:
@@ -595,7 +595,7 @@ async def _trigger_update_docker(body: "UpdateIn"):
         updater.spawn_helper(target_image, CONTAINER_NAME)
     except Exception as e:
         _clear_update_marker()
-        logger.exception("Update-Helfer nicht gestartet")
+        logger.exception("Update helper not started")
         raise HTTPException(502, f"Update-Helfer nicht gestartet: {e}")
     _remember_channel(channel)
     return {"success": True, "method": "docker", "switching": True, "image": target_image}
@@ -716,10 +716,34 @@ def _file_state(path: str, key: str) -> dict:
             "resettable": key in _data_file_rules()}
 
 
+def _data_files_states() -> list:
+    """Zustand jeder Datendatei (lesbar/kaputt) — für die Seite und den Support-Bericht."""
+    return [_file_state(p, k) for p, k in _data_files()]
+
+
 @router.get("/data-files")
 async def data_files():
-    files = [_file_state(p, k) for p, k in _data_files()]
+    files = _data_files_states()
     return {"files": files, "broken": sum(1 for f in files if f["broken"])}
+
+
+@router.get("/support-report")
+async def support_report():
+    """Support-Bericht (englisch, eine Textdatei) zum Herunterladen und Verschicken.
+    Fragt die Geräte live ab (nur lesen), enthält keine Zugangsdaten; Adressen und
+    Seriennummern gekürzt. Siehe services/support_report.py."""
+    from app.services import support_report as report
+    logging.getLogger("printloom.support").info("Support report requested")
+    db = SessionLocal()
+    try:
+        text = await report.build(db, _get_current_version())
+    finally:
+        db.close()
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return Response(content=text.encode("utf-8"), media_type="text/plain",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="printloom-support-{stamp}.txt"',
+                             "Cache-Control": "no-store"})
 
 
 @router.post("/data-files/{key}/reset")
@@ -738,7 +762,7 @@ async def reset_data_file(key: str):
         raise HTTPException(400, "Die Datei ist lesbar — kein Zurücksetzen nötig")
     backup = storage.backup_broken(path)
     storage.write_json(path, rules[1]())
-    logger.warning(f"Datendatei {key} zurückgesetzt, Kopie: {backup}")
+    logger.warning(f"Data file {key} reset, copy: {backup}")
     if key == "queue":
         autofarm.reload_queue()      # die Farm hält die Liste im Speicher
     return {"success": True, "backup": os.path.basename(backup)}
@@ -752,20 +776,9 @@ async def reset_data_file(key: str):
 # entscheidet `credentials` — dieselbe Regel wie beim Backup.
 _REDACTED = "***entfernt***"
 
-# Adressen: Das NETZ bleibt erkennbar (192.168.1.x oder Docker-Netz 172.17.0.x — genau
-# das braucht man bei „Drucker nicht erreichbar"), das einzelne Gerät nicht. Rechnernamen
-# in URLs (oft mit Personen- oder Ortsnamen) und Zugangsdaten darin fallen ganz weg.
-# Bis v1.1.34 standen die Adressen vollständig im Paket.
-_IPV4 = re.compile(r"\b((?:\d{1,3}\.){3})\d{1,3}\b")
-_URL_HOST = re.compile(r"\b([a-z][a-z0-9+.-]*://)(?:[^@/\s]*@)?([^/\s:]+)", re.IGNORECASE)
-
-
-def _mask_hosts(text: str) -> str:
-    """Letzte Stelle von IP-Adressen und Rechnernamen in URLs unkenntlich machen."""
-    def host(m):
-        h = m.group(2)
-        return m.group(1) + (h if _IPV4.fullmatch(h) else "<host>")
-    return _IPV4.sub(r"\1x", _URL_HOST.sub(host, text))
+# Adressen: letzte Stelle unkenntlich, Rechnernamen in URLs weg — die Regel steht seit
+# v1.1.90 in credentials.mask_hosts (dieselbe für Diagnose-Paket und Support-Log).
+_mask_hosts = credentials.mask_hosts
 
 
 def _redact(value, _depth: int = 0):
@@ -860,6 +873,13 @@ async def download_diagnostics():
                 included.append("farm_log (letzte 500 Zeilen)")
         except Exception:
             pass
+
+        # Support-Log (englisch, seit v1.1.90) — die jüngsten 5 MB.
+        from app.services import support_log as _slog
+        tail = _slog.read_tail(5_000_000)
+        if tail:
+            z.writestr("support_log.txt", _slog.clean(tail))
+            included.append("support_log (englisch, letzte 5 MB)")
 
         from app.services import online as _online
         env = {
@@ -968,7 +988,7 @@ async def export_backup():
     try:
         return _build_backup(False, None)
     except Exception as e:
-        logger.exception("Backup-Export fehlgeschlagen")
+        logger.exception("Backup export failed")
         raise HTTPException(500, f"Backup-Export fehlgeschlagen: {e}")
 
 
@@ -981,7 +1001,7 @@ async def export_backup_with_options(body: BackupExportIn):
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Backup-Export fehlgeschlagen")
+        logger.exception("Backup export failed")
         raise HTTPException(500, f"Backup-Export fehlgeschlagen: {e}")
 
 
@@ -1329,7 +1349,7 @@ async def _health_printer() -> dict:
             return {"status": "online", "detail": name}
         return {"status": "offline", "detail": "Keine MQTT-Verbindung"}
     except Exception as e:
-        logger.info(f"Drucker-Status für die Kopfzeile nicht lesbar ({name}): {type(e).__name__}: {e}")
+        logger.info(f"Printer state for the header not readable ({name}): {type(e).__name__}: {e}")
         return {"status": "offline", "detail": "Verbindungsfehler"}
 
 

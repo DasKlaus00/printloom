@@ -1630,6 +1630,9 @@ const EN_STRINGS = {
   'Auto Farm oder Stresstest läuft — leere Platten erst nach dem Stopp eintragen': 'Auto Farm or stress test is running — enter empty plates after stopping',
   'Kamera in Printloom deaktiviert (Konfiguration → Kameras) — Energiesparmodus': 'Camera disabled in Printloom (Configuration → Cameras) — power-saving mode',
   'Diagnose': 'Diagnostics',
+  // v1.1.90: Support-Bericht
+  'Support-Bericht herunterladen (Englisch)': 'Download support report (English)',
+  'Eine Textdatei mit automatischer Fehlerprüfung, Geräte-Steckbrief und dem Log (Zeitstempel mit Zeitzone). Ohne Zugangsdaten; IP-Adressen und Seriennummern gekürzt. Printloom verschickt nichts — die Datei kannst du bei Problemen oder für einen neuen Drucker weitergeben.': 'A text file with automatic checks, a profile of each device and the log (timestamps with time zone). No credentials; IP addresses and serial numbers shortened. Printloom sends nothing — you can pass the file on when something goes wrong or for a new printer.',
   'AMS-Diagnose: was beim Senden an den Drucker passiert ist. Datei-Analyse: Inhalt einer Druckdatei (Filamente, Platten, Zeiten).': 'AMS diagnostics: what happened when sending to the printer. File analysis: contents of a print file (filaments, plates, times).',
   'Auto Farm': 'Auto Farm',
   'Installiertes Image: {0}': 'Installed image: {0}',

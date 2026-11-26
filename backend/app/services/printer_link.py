@@ -25,7 +25,7 @@ from typing import Optional
 import httpx
 
 from app.models.models import PrinterType
-from app.services import bambu_manager, moonraker_printer
+from app.services import bambu_manager, moonraker_printer, support_log
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +56,26 @@ def _key(device):
 
 
 def _moon_refresh(device) -> Optional[dict]:
-    """Zustand des U1 frisch lesen und als Telegramm ablegen. None = nicht lesbar."""
+    """Zustand des U1 frisch lesen und als Telegramm ablegen. None = nicht lesbar.
+
+    Support-Log: nur WECHSEL (erreichbar ↔ nicht erreichbar, Klipper-/Druckzustand) —
+    bis v1.1.89 stand bei einem ausgeschalteten U1 jede Abfrage im Log."""
+    name = getattr(device, "name", "?")
     try:
         _, st = moonraker_printer.query_sync(device)
     except (PermissionError, httpx.HTTPError, ValueError, OSError) as e:
-        logger.info(f"Moonraker {getattr(device, 'name', '?')}: Zustand nicht lesbar ({type(e).__name__}: {e})")
+        support_log.state_change("printer.moonraker", ("moon-link", _key(device)), f"{name} (Moonraker)",
+                                 {"reachable": False, "error": support_log.exc_text(e)[:200]},
+                                 level=logging.WARNING)
         return None
+    support_log.state_change("printer.moonraker", ("moon-link", _key(device)), f"{name} (Moonraker)",
+                             {"reachable": True, "error": None})
     norm = moonraker_printer.normalize(st)
+    support_log.state_change("printer.moonraker", ("moon-state", _key(device)), name, {
+        "klippy": norm.get("klippy_state"), "print_state": norm.get("print_state"),
+        "executing_gcode": norm.get("executing_gcode"), "file": norm.get("subtask_name") or None,
+        "klippy_message": (norm.get("klippy_message") or "")[:200] or None,
+        "display": (norm.get("message") or "")[:120] or None})
     raw = {"print": moonraker_printer.farm_print_status(norm), "moonraker": norm}
     with _moon_lock:
         _moon[_key(device)] = {"t": time.monotonic(), "raw": raw}
@@ -116,7 +129,7 @@ def send_gcode(device, gcode: str) -> bool:
             moonraker_printer.run_gcode_sync(device, gcode, timeout=GCODE_TIMEOUT_S)
             return True
         except (RuntimeError, PermissionError, httpx.HTTPError, OSError) as e:
-            logger.warning(f"G-code an {getattr(device, 'name', '?')} fehlgeschlagen: {e}")
+            logger.warning(f"G-code to {getattr(device, 'name', '?')} failed: {e}")
             return False
     return bambu_manager.send_gcode(device, gcode)
 
@@ -145,7 +158,7 @@ def print_command(device, cmd: str) -> bool:
             moonraker_printer.print_action_sync(device, action)
             return True
         except (PermissionError, httpx.HTTPError, ValueError, OSError) as e:
-            logger.warning(f"Druck-{cmd} an {getattr(device, 'name', '?')} fehlgeschlagen: {e}")
+            logger.warning(f"Print {cmd} to {getattr(device, 'name', '?')} failed: {e}")
             return False
     return bambu_manager.print_command(device, cmd)
 

@@ -71,6 +71,22 @@ _URL_CRED_ANYWHERE = re.compile(r"\b([a-z][a-z0-9+.-]*://)[^/@\s'\"]*:[^/@\s'\"]
 _PARAM = re.compile(r"(^|[?&;\s,(])([A-Za-z0-9_.-]+)=([^&\s'\",)]*)")
 _BEARER = re.compile(r"(\bBearer\s+)[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
 
+# Adressen: Das NETZ bleibt erkennbar (192.168.1.x oder Docker-Netz 172.17.0.x — genau
+# das braucht man bei „Drucker nicht erreichbar"), das einzelne Gerät nicht. Rechnernamen
+# in URLs (oft mit Personen- oder Ortsnamen) und Zugangsdaten darin fallen ganz weg.
+# Bis v1.1.34 standen die Adressen vollständig im Diagnose-Paket; bis v1.1.89 stand die
+# Regel in routers/system.py.
+_IPV4 = re.compile(r"\b((?:\d{1,3}\.){3})\d{1,3}\b")
+_URL_HOST = re.compile(r"\b([a-z][a-z0-9+.-]*://)(?:[^@/\s]*@)?([^/\s:]+)", re.IGNORECASE)
+
+
+def mask_hosts(text) -> str:
+    """Letzte Stelle von IP-Adressen und Rechnernamen in URLs unkenntlich machen."""
+    def host(m):
+        h = m.group(2)
+        return m.group(1) + (h if _IPV4.fullmatch(h) else "<host>")
+    return _IPV4.sub(r"\1x", _URL_HOST.sub(host, str(text)))
+
 
 def scrub(text) -> str:
     """Geheimnisse aus einem Fehler- oder Logtext entfernen (seit v1.1.73).

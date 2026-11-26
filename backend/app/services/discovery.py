@@ -65,7 +65,7 @@ def discover_bambu(timeout: float = 4.0) -> list[dict]:
             mreq = struct.pack("=4sl", socket.inet_aton(_MCAST_GRP), socket.INADDR_ANY)
             sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         except OSError as e:
-            logger.debug(f"SSDP multicast join failed (weiter mit Broadcast): {e}")
+            logger.debug(f"SSDP multicast join failed (continuing with broadcast): {e}")
         # M-SEARCH senden, um sofortige Antworten zu provozieren (Drucker broadcasten
         # zwar von selbst alle paar Sekunden, aber so geht es schneller).
         for port in _SSDP_PORTS:

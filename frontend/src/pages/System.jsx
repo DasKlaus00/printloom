@@ -431,6 +431,16 @@ export default function System({ onUpdateAvailable, onUpdatePhase, setCurrentPag
         <p className="text-[11px] text-surface-500">
           {tr('AMS-Diagnose: was beim Senden an den Drucker passiert ist. Datei-Analyse: Inhalt einer Druckdatei (Filamente, Platten, Zeiten).')}
         </p>
+        {/* Support-Bericht (seit v1.1.90): eine englische Textdatei mit Auswertung,
+            Geräte-Steckbrief und Log — zum Verschicken bei Fehlern oder neuen Druckern. */}
+        <div className="pt-2 border-t border-surface-700 space-y-1.5">
+          <a href={systemService.supportReportUrl()} download className="btn btn-primary btn-sm">
+            {tr('Support-Bericht herunterladen (Englisch)')}
+          </a>
+          <p className="text-[11px] text-surface-500">
+            {tr('Eine Textdatei mit automatischer Fehlerprüfung, Geräte-Steckbrief und dem Log (Zeitstempel mit Zeitzone). Ohne Zugangsdaten; IP-Adressen und Seriennummern gekürzt. Printloom verschickt nichts — die Datei kannst du bei Problemen oder für einen neuen Drucker weitergeben.')}
+          </p>
+        </div>
       </div>
 
       {/* OrcaSlicer-Plugin — kommt vom Server, damit Plugin und Printloom zusammenpassen */}

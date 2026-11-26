@@ -30,7 +30,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from app.services import printer_models
+from app.services import printer_models, support_log
 
 logger = logging.getLogger(__name__)
 
@@ -480,9 +480,15 @@ async def state(device) -> dict:
     except PermissionError as e:
         return {"online": False, "driver": "moonraker", "status": "offline", "message": str(e)}
     except (httpx.HTTPError, ValueError) as e:
-        logger.info(f"Moonraker {device.name}: nicht erreichbar ({type(e).__name__})")
+        # Nur Wechsel ins Support-Log — die Oberfläche fragt alle 5 s.
+        support_log.state_change("printer.moonraker", ("moon-link", getattr(device, "id", None)),
+                                 f"{device.name} (Moonraker)",
+                                 {"reachable": False, "error": support_log.exc_text(e)[:200]},
+                                 level=logging.WARNING)
         return {"online": False, "driver": "moonraker", "status": "offline",
                 "message": "Keine Verbindung zum Drucker"}
+    support_log.state_change("printer.moonraker", ("moon-link", getattr(device, "id", None)),
+                             f"{device.name} (Moonraker)", {"reachable": True, "error": None})
     out = normalize(st)
     out["capabilities"] = capabilities(names, device.model)
     return out
@@ -598,7 +604,7 @@ def _camera_targets(c: httpx.Client, device) -> tuple:
         r = c.get(base_url(device) + "/server/webcams/list", headers=headers(device))
         cams = ((r.json() or {}).get("result") or {}).get("webcams") if r.status_code == 200 else None
     except (httpx.HTTPError, ValueError) as e:
-        logger.info(f"U1-Kameraliste {device.name}: {type(e).__name__} — nehme die Standard-Pfade")
+        logger.info(f"U1 camera list {device.name}: {type(e).__name__} — using the default paths")
         cams = None
     return camera_urls(device, cams)
 
@@ -644,12 +650,12 @@ def stream_frames(device):
                                     break
                                 yield img
                             if len(buf) > STREAM_MAX_BUF:
-                                logger.info(f"U1-Kamera {device.name}: {len(buf)} Bytes ohne Bildende — verworfen")
+                                logger.info(f"U1 camera {device.name}: {len(buf)} bytes without image end — discarded")
                                 buf = b""
                     else:
-                        logger.info(f"U1-Kamera-Stream {device.name}: HTTP {r.status_code} — weiter mit Standbildern")
+                        logger.info(f"U1 camera stream {device.name}: HTTP {r.status_code} — continuing with stills")
             except httpx.HTTPError as e:
-                logger.info(f"U1-Kamera-Stream {device.name}: {type(e).__name__} — weiter mit Standbildern")
+                logger.info(f"U1 camera stream {device.name}: {type(e).__name__} — continuing with stills")
         if not snap:
             return
         misses = 0
@@ -658,7 +664,7 @@ def stream_frames(device):
                 r = c.get(snap)
                 img = r.content if r.status_code == 200 and r.content[:2] == b"\xff\xd8" else None
             except httpx.HTTPError as e:
-                logger.info(f"U1-Standbild {device.name}: {type(e).__name__}")
+                logger.info(f"U1 still image {device.name}: {type(e).__name__}")
                 img = None
             if img:
                 misses = 0
@@ -666,7 +672,7 @@ def stream_frames(device):
             else:
                 misses += 1
             time.sleep(STILL_INTERVAL_S)
-        logger.info(f"U1-Kamera {device.name}: {STILL_MAX_MISSES} Standbilder ohne Bild — Stream beendet")
+        logger.info(f"U1 camera {device.name}: {STILL_MAX_MISSES} stills without an image — stream ended")
 
 
 def snapshot(device):
@@ -689,13 +695,13 @@ def snapshot(device):
                                 if len(buf) > 4_000_000:     # kein Bild in 4 MB: aufgeben
                                     break
                 except httpx.HTTPError as e:
-                    logger.info(f"U1-Kamera-Stream {device.name}: {type(e).__name__}")
+                    logger.info(f"U1 camera stream {device.name}: {type(e).__name__}")
             if snap:
                 r = c.get(snap)
                 if r.status_code == 200 and r.content[:2] == b"\xff\xd8":
                     return r.content
     except httpx.HTTPError as e:
-        logger.info(f"U1-Kamera {device.name}: {type(e).__name__}")
+        logger.info(f"U1 camera {device.name}: {type(e).__name__}")
     return None
 
 

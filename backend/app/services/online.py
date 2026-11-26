@@ -192,7 +192,7 @@ async def fetch(path: str, feature: str, *, force: bool = False,
             raise RuntimeError(f"HTTP {status}")
         payload = json.loads(body)
     except Exception as e:
-        logger.info(f"Online-Abruf {url} fehlgeschlagen: {e}")
+        logger.info(f"Online request {url} failed: {e}")
         return {"ok": data is not None, "data": data, "fetched_at": ts,
                 "from_cache": True, "disabled": False, "error": str(e)}
 

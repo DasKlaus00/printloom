@@ -83,7 +83,7 @@ def _enforce_one(dev) -> None:
         return   # gerade erst ausgeschaltet — Status hinkt nach, nicht spammen
     if bambu_manager.send_gcode(dev, _CHAMBER_FAN_GCODE):
         _last_off_sent[dev.id] = now
-        logger.info(f"Bauraumlüfter an Drucker {dev.id} war an → ausgeschaltet")
+        logger.info(f"Chamber fan on printer {dev.id} was on → switched off")
 
 
 async def _loop():
@@ -108,4 +108,4 @@ def start() -> None:
     if _task is not None and not _task.done():
         return
     _task = asyncio.create_task(_loop())
-    logger.info("chamber_fan_guard gestartet")
+    logger.info("chamber_fan_guard started")

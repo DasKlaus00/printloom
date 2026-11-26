@@ -114,7 +114,7 @@ def _drain_stderr(proc, lines: deque) -> threading.Thread:
             for raw in iter(proc.stderr.readline, b""):
                 lines.append(raw.decode("utf-8", "ignore").strip())
         except (OSError, ValueError) as e:   # Pipe beim Beenden geschlossen
-            logger.debug(f"ffmpeg-stderr beendet: {e}")
+            logger.debug(f"ffmpeg stderr ended: {e}")
     t = threading.Thread(target=run, daemon=True)
     t.start()
     return t
@@ -139,13 +139,13 @@ def _end_process(proc) -> None:
     try:
         proc.wait(timeout=2)
     except subprocess.TimeoutExpired:
-        logger.warning("ffmpeg beendet sich nicht (2 s nach kill)")
+        logger.warning("ffmpeg does not exit (2 s after kill)")
     for pipe in (proc.stdout, proc.stderr):
         try:
             if pipe:
                 pipe.close()
         except OSError as e:
-            logger.debug(f"ffmpeg-Pipe nicht geschlossen: {e}")
+            logger.debug(f"ffmpeg pipe not closed: {e}")
 
 
 # ── ffmpeg-Producer (X1-Serie, RTSPS) ────────────────────────────────────────
@@ -227,7 +227,7 @@ def _single_frame_oneshot(ip: str, access_code: str,
             try:
                 proc.kill()
             except OSError as e:   # schon beendet
-                logger.debug(f"ffmpeg kill (Zeitlimit): {e}")
+                logger.debug(f"ffmpeg kill (time limit): {e}")
     threading.Thread(target=_watchdog, daemon=True).start()
     result: list = []
     try:

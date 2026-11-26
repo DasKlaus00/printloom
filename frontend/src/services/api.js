@@ -229,6 +229,8 @@ export const systemService = {
   saveCameraSettings:  (data) => api.post('/system/camera', data),
   // Diagnose-Paket (ZIP, ohne Zugangsdaten) — direkter Download-Link
   diagnosticsUrl:      () => withBase('/api/system/diagnostics'),
+  // Support-Bericht (englische Textdatei mit Auswertung und Log, seit v1.1.90)
+  supportReportUrl:    () => withBase('/api/system/support-report'),
 }
 
 /* Online-Dienste — ALLE opt-in. Ohne Zustimmung + Schalter macht das Backend

@@ -155,7 +155,7 @@ def test_falsche_pruefsumme_ueber_den_endpunkt_ergibt_400(monkeypatch, geladen):
 def test_ohne_pruefsumme_startet_mit_warnung(geladen, caplog):
     native_update.download_and_launch(GOOD_URL, "Printloom-Setup-1.1.42.exe")
     assert len(geladen["started"]) == 1
-    assert "ohne Prüfsumme" in caplog.text
+    assert "without checksum" in caplog.text   # Log englisch seit v1.1.90
 
 
 def _release(assets):

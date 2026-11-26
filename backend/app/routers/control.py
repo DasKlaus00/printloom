@@ -90,7 +90,7 @@ def _moonraker_reason(r) -> str:
     """Warum Moonraker abgelehnt hat — als ein Satz. Moonraker antwortet mit
     {"error": {"code", "message"}}; bis v1.1.65 stand die ganze Antwort (JSON) in der
     Meldung. Die volle Antwort geht ins Log."""
-    logger.warning(f"Moonraker antwortet {r.status_code}: {r.text[:2000]}")
+    logger.warning(f"Moonraker answers {r.status_code}: {r.text[:2000]}")
     try:
         msg = ((r.json() or {}).get("error") or {}).get("message")
     except ValueError:
@@ -169,6 +169,10 @@ async def _send_script(db: Session, script: str) -> tuple:
     klipper = _klipper(db, bewegt=True)
     script = _mirror_for_device(script)
     running = await _fire_moonraker_script(f"{_base(klipper)}/printer/gcode/script", script)
+    # Support-Log: was der Arm von Hand bekam (G-code enthält keine Geheimnisse).
+    lines = [ln.strip() for ln in script.splitlines() if ln.strip()]
+    logger.info(f"OTTOeject script sent ({len(lines)} lines, still running={running}): "
+                + " ⏎ ".join(lines)[:600])
     return script, running
 
 
@@ -183,8 +187,11 @@ async def execute_macro(request: MacroExecutionRequest, db: Session = Depends(ge
             and db.query(Device).filter(Device.device_type == PrinterType.BAMBU_LAB).first() is None):
         raise HTTPException(409, NO_BAMBU_FOR_MACRO.format(request.macro_name))
     klipper = _klipper(db, bewegt=True)
+    logger.info(f"Device macro {request.macro_name} requested (manual control)")
 
     def antwort(ok: bool, msg: str):
+        (logger.info if ok else logger.warning)(
+            f"Device macro {request.macro_name}: {'done' if ok else 'failed'} — \"{msg}\"")
         return MacroExecutionResponse(success=ok, macro_name=request.macro_name,
                                       message=msg, timestamp=datetime.now(timezone.utc))
     try:
@@ -253,7 +260,7 @@ async def _pause_printers(db: Session) -> list:
                                    timeout=PRINTER_PAUSE_TIMEOUT_S)
             return True
         except Exception as e:
-            logger.warning(f"Notaus: {d.name} nicht pausiert: {type(e).__name__}")
+            logger.warning(f"Emergency stop: {d.name} not paused: {type(e).__name__}")
             return False
 
     ergebnisse = await asyncio.gather(*(eins(d) for d in drucker),
@@ -293,10 +300,11 @@ async def emergency_stop(db: Session = Depends(get_db)):
     # sofort los (sleep(0) lässt die Anfrage starten), gewartet wird erst nach der
     # Sperre: Bis v1.1.44 liefen Farm und Stresstest bis zu 5 s (Klipper-Timeout)
     # ohne Sperre weiter, gerade wenn Klipper nicht antwortet.
+    logger.warning("EMERGENCY STOP triggered")
     try:
         arm_geraete, estops = _klipper_estop_start(db)
     except Exception as e:
-        logger.error(f"Notaus: Klipper nicht erreichbar: {e}")
+        logger.error(f"Emergency stop: Klipper not reachable: {e}")
         arm_geraete, estops = [], []
     await asyncio.sleep(0)
 
@@ -309,7 +317,7 @@ async def emergency_stop(db: Session = Depends(get_db)):
         # referenziert werden (Phase 3.7).
         autofarm.mark_position_unknown("Notaus")
     except Exception as e:
-        logger.warning(f"Notaus: Abläufe nicht angehalten: {e}")
+        logger.warning(f"Emergency stop: runs not stopped: {e}")
 
     # 3. Geräte sperren — hält jede Bewegung bis „Fortsetzen" zurück. VOR dem ersten
     # await: Dort kommen Farm und Stresstest zum Zug und laufen in ihren finally
@@ -322,12 +330,12 @@ async def emergency_stop(db: Session = Depends(get_db)):
             db.add(device)
         db.commit()
     except Exception as e:
-        logger.warning(f"Notaus: Geräte nicht gesperrt: {e}")
+        logger.warning(f"Emergency stop: devices not locked: {e}")
 
     try:
         arme = await _klipper_estop_result(arm_geraete, estops)
     except Exception as e:
-        logger.error(f"Notaus: Klipper nicht erreichbar: {e}")
+        logger.error(f"Emergency stop: Klipper not reachable: {e}")
         arme = []
     arm_ok = bool(arme) and all(a["ok"] for a in arme)
 
@@ -335,7 +343,7 @@ async def emergency_stop(db: Session = Depends(get_db)):
     try:
         drucker = await _pause_printers(db)
     except Exception as e:
-        logger.warning(f"Notaus: Drucker nicht pausiert: {e}")
+        logger.warning(f"Emergency stop: printer not paused: {e}")
         drucker = []
 
     if not arme:
@@ -363,6 +371,7 @@ async def resume_operations(db: Session = Depends(get_db)):
     keinen Befehl an — ohne diesen Schritt bliebe der Arm nach „Fortsetzen" trotzdem
     stumm. Die Farm startet NICHT von selbst wieder: wer nach einem Notaus weitermacht,
     soll das bewusst tun. Die erste Bewegung referenziert automatisch (needs_home)."""
+    logger.warning("Resume after emergency stop requested (firmware restart of the arm)")
     from app.services.moonraker import MoonrakerAPI
     arme = db.query(Device).filter(Device.device_type == PrinterType.KLIPPER).all()
     neu = await asyncio.gather(*(MoonrakerAPI(d).firmware_restart() for d in arme),
@@ -653,6 +662,9 @@ async def run_ottoeject_op(request: dict, db: Session = Depends(get_db)):
         # Bewegung würde die Achse verlassen → NICHT senden. Klipper würde sie mitten
         # im Ablauf abbrechen; hier kommt stattdessen eine Meldung mit Achse und Wert.
         raise HTTPException(400, str(e))
+    logger.info(f"OTTOeject op {op!r} requested (rack={request.get('rack')}, slot={request.get('slot')}, "
+                f"printer={request.get('printer')}, force={bool(request.get('force'))}, "
+                f"unsaved geometry={'geometry' in request})")
     # Falls ein gcode_override ein Geräte-Macro mit RACK=… aufruft: Nummer spiegeln.
     script, running = await _send_script(db, script)
     return {"success": True, "op": op, "script": script, "running": running}

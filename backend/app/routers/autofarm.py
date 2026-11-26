@@ -92,6 +92,7 @@ _farm: dict = {
     "seq_step_total":   0,
     "seq_step_label":   "",
     "log":              [],
+    "log_en":           [],     # dieselben Zeilen englisch (Oberfläche in anderen Sprachen)
     "jobs":             [],
     "error":            None,
     "started_at":       None,
@@ -268,7 +269,7 @@ async def _idle_shutdown_after(device_id: int, minutes: int):
             return  # Farm wieder aktiv → nicht abschalten
         s = _device_settings(device_id)
         if power.plug_configured(s) and await power.set_plug(s, False):
-            _log(f"⏻ Auto-Abschaltung: Steckdose nach {minutes} min Leerlauf ausgeschaltet")
+            _log(f"⏻ Auto-Abschaltung: Steckdose nach {minutes} min Leerlauf ausgeschaltet", en=f"⏻ Auto power-off: smart plug switched off after {minutes} min idle")
     except asyncio.CancelledError:
         pass
     except Exception as e:
@@ -380,7 +381,7 @@ def _set_arm(holding: str, from_slot: str = "", job_id=None):
     if holding not in ARM_STATES:
         # Bis v1.1.46 buchte der Stresstest „full"; der Hinweis nach einem Abbruch
         # sagte dann „Der Greifer war leer". Unbekannte Werte sind „unbekannt".
-        logger.warning(f"Unbekannter Greifer-Zustand {holding!r} — gespeichert als 'unknown'")
+        logger.warning(f"Unknown gripper state {holding!r} — stored as 'unknown'")
         holding = "unknown"
     _farm["arm"] = {"holding": holding, "from": from_slot or "", "job_id": job_id}
     _persist_state()
@@ -397,7 +398,7 @@ def _settle_after_run() -> None:
         _persist_state()
         _farm["recovery"] = _load_recovery()
         _log("✋ Laut letztem Stand liegt noch eine Platte im Greifer oder Drucker — "
-             "vor dem nächsten Start im Hinweis bestätigen")
+             "vor dem nächsten Start im Hinweis bestätigen", en="✋ According to the last state a plate is still in the gripper or printer — confirm it in the notice before the next start")
     else:
         _clear_state()           # sauberes Ende → nichts zu bergen
     _farm["_current_job_name"] = ""
@@ -417,7 +418,7 @@ def mark_position_unknown(reason: str = ""):
     _persist_state()
     if reason:
         _log(f"⌂ {reason}: Position des OTTOeject gilt als unbekannt — "
-             f"vor der nächsten Bewegung wird referenziert.")
+             f"vor der nächsten Bewegung wird referenziert.", en=f'⌂ "{reason}": OTTOeject position counts as unknown — it homes before the next move.')
 
 
 def halt_all(reason: str = "Notaus") -> list:
@@ -443,7 +444,7 @@ def halt_all(reason: str = "Notaus") -> list:
     if _stress_task is not None and not _stress_task.done():
         _stress_task.cancel()
     _log(f"🛑 {reason}: " + (", ".join(angehalten) + " angehalten" if angehalten
-                            else "kein laufender Ablauf"))
+                            else "kein laufender Ablauf"), en=f'🛑 {reason}: ' + (', '.join(angehalten) + ' stopped' if angehalten else 'nothing was running'))
     return angehalten
 
 
@@ -481,7 +482,7 @@ def _init_recovery():
     bed = rec.get("bed") or "empty"
     _farm["bed"] = bed if bed in BED_STATES else "printing"   # unbekannt ≠ leer
     _farm["needs_home"] = True      # Position nach dem Abbruch unbekannt
-    logger.warning("Unterbrochener Farm-Lauf gefunden: %s (Schritt: %s)",
+    logger.warning("Interrupted farm run found: %s (step: %s)",
                    rec.get("job_name") or "?", rec.get("step_label") or "?")
 
 
@@ -519,23 +520,31 @@ def _record_completed(job: dict, status: str, started_at, ended_at,
         logger.warning(f"completed-history write failed: {e}")
 
 
-def _log(msg: str):
+_farm_log = logging.getLogger("printloom.farm")   # → Support-Log (englisch)
+FARM_LOG_LINES = 200
+
+
+def _log(msg: str, en: str):
+    """Eine Zeile ins Farm-Log: `msg` deutsch (Oberfläche, farm.log), `en` englisch
+    (Support-Log und Oberfläche in anderen Sprachen). Seit v1.1.90 Pflicht — der Test
+    test_support_log prüft, dass jeder Aufruf `en` mitgibt."""
     # Uhrzeit in der Zeitzone des Nutzers (Einstellung „timezone", sonst Serverzeit).
     # Bis v1.1.71 Serverzeit — im Docker meist UTC, im Sommer zwei Stunden daneben.
     now = _now_in_tz(_user_tz())
     ts  = now.strftime("%H:%M:%S")
     day = now.strftime("%Y-%m-%d")
     entry = f"{ts} — {msg}"
-    _farm["log"].insert(0, entry)
-    if len(_farm["log"]) > 200:
-        _farm["log"] = _farm["log"][:200]
-    logger.info(f"[AutoFarm] {msg}")
+    for key, line in (("log", entry), ("log_en", f"{ts} — {en}")):
+        _farm.setdefault(key, []).insert(0, line)
+        if len(_farm[key]) > FARM_LOG_LINES:
+            _farm[key] = _farm[key][:FARM_LOG_LINES]
+    _farm_log.info(en)
     try:
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(f"{day} {entry}\n")
     except OSError as e:
         # Das Live-Log oben hat den Eintrag; nur die Datei fehlt.
-        logger.debug(f"farm.log nicht schreibbar: {e}")
+        logger.debug(f"farm.log not writable: {e}")
 
 
 # ── Warteschlange: immer geladen, jede Änderung sofort in der Datei (seit v1.1.58) ──
@@ -555,14 +564,14 @@ def reload_queue() -> None:
     except storage.BrokenFile as e:
         # Nie über die kaputte Datei schreiben: Die Liste bleibt leer und gesperrt,
         # bis sie unter System → Datenspeicher zurückgesetzt ist.
-        logger.error(f"Warteschlange unlesbar: {e}")
+        logger.error(f"Queue unreadable: {e}")
         _farm["jobs"], _farm["_queue_next_id"], _farm["_queue_broken"] = [], 1, str(e)
         return
     _farm.pop("_queue_broken", None)
     recovered = farm_queue.recover_after_restart(jobs)
     _farm["jobs"], _farm["_queue_next_id"] = recovered, nid
     if recovered != jobs:
-        logger.warning("Warteschlange nach Neustart: unterbrochene Jobs als Fehler markiert")
+        logger.warning("Queue after restart: interrupted jobs marked as error")
         _jobs_changed()
 
 
@@ -586,7 +595,7 @@ def _jobs_changed(progress_only: bool = False) -> None:
         _farm["_queue_saved_at"] = now
     except OSError as e:
         # Nicht still: Die Farm läuft weiter, aber nach einem Neustart fehlte die Änderung.
-        logger.error(f"Warteschlange nicht gespeichert: {e}")
+        logger.error(f"Queue not saved: {e}")
 
 
 def _queue_etag() -> str:
@@ -649,7 +658,7 @@ async def _hold_for_file(reason: str) -> None:
 
 def _pause_for_file(reason: str) -> None:
     """Farm anhalten, weil eine Datendatei nicht stimmt (nur wenn sie läuft)."""
-    _log(f"🛑 {reason} — Farm pausiert (System → Datenspeicher)")
+    _log(f"🛑 {reason} — Farm pausiert (System → Datenspeicher)", en=f'🛑 "{reason}" — farm paused (System → Data storage)')
     if _farm.get("running") and not _farm.get("paused"):
         _farm["paused"] = True
         _farm["error"] = f"{reason} — System → Datenspeicher prüfen, dann fortsetzen"
@@ -684,7 +693,7 @@ def _magazine_count() -> int:
     if not d:
         # Bis v1.1.48 hier 4: Ohne Regal-Daten griff die Farm in ein Magazin, von dem
         # sie nichts wusste. 0 heißt: Magazin-Tor parkt und fragt nach.
-        _log("⚠ Keine Regal-Daten — Magazin-Bestand gilt als 0")
+        _log("⚠ Keine Regal-Daten — Magazin-Bestand gilt als 0", en="⚠ No rack data — magazine stock counts as 0")
         return 0
     if d.get("magazine_counts") or _rack_logic.uses_marks(d):
         return max(0, _rack_logic.empty_plate_count(d))
@@ -812,7 +821,7 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
         fit = _rack_logic.storable(height_mm, data)
         rack_max = fit["max_height_mm"]
         if not fit["ok"]:
-            _log(f"⚠ Objekt {height_mm:.0f}mm zu hoch (max {rack_max:.0f}mm/Rack) — Farm pausiert")
+            _log(f"⚠ Objekt {height_mm:.0f}mm zu hoch (max {rack_max:.0f}mm/Rack) — Farm pausiert", en=f"⚠ Object {height_mm:.0f}mm too tall (max {rack_max:.0f}mm/rack) — farm paused")
             _farm["paused"] = True
             _farm["error"]  = (f"Objekt {height_mm:.0f}mm zu hoch — im Drucker lassen, "
                                 "manuell entnehmen, dann fortsetzen")
@@ -826,7 +835,7 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
         try:
             new_slot = _find_slot_for_height(height_mm, exclude_job_id=job.get("id"))
         except _SlotLookupError as e:
-            _log(f"🛑 {e} — Farm pausiert (Regal im Rack Manager prüfen)")
+            _log(f"🛑 {e} — Farm pausiert (Regal im Rack Manager prüfen)", en=f'🛑 "{e}" — farm paused (check the rack in the Rack Manager)')
             _farm["paused"] = True
             _farm["error"] = f"{e} — Regal prüfen, dann fortsetzen"
             await _wait_while_paused()
@@ -834,11 +843,11 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
         if new_slot is None:
             action = _estrat("no_slot")
             if action == "stop":
-                _log(f"⚠ Kein freies Fach für {height_mm:.0f}mm — Farm wird gestoppt (Strategie)")
+                _log(f"⚠ Kein freies Fach für {height_mm:.0f}mm — Farm wird gestoppt (Strategie)", en=f"⚠ No free slot for {height_mm:.0f}mm — farm stops (strategy)")
                 _farm["stopping"] = True
                 raise RuntimeError("Gestoppt")
             if action == "skip":
-                _log(f"⚠ Kein freies Fach für {height_mm:.0f}mm — Job übersprungen (Strategie)")
+                _log(f"⚠ Kein freies Fach für {height_mm:.0f}mm — Job übersprungen (Strategie)", en=f"⚠ No free slot for {height_mm:.0f}mm — job skipped (strategy)")
                 raise RuntimeError(f"Kein freies Fach für {height_mm:.0f}mm")
             # Standard: Regal voll → die fertige Platte WARTET IM DRUCKER, bis genug
             # zusammenhängende Fächer übereinander frei sind. Sobald Platz da ist,
@@ -846,7 +855,8 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
             boeden = _slots_needed(height_mm, slot_h)
             if not _farm.get("_no_slot_logged"):
                 _log(f"📦 Regal voll — {height_mm:.0f}mm braucht {boeden} freie Fächer übereinander. "
-                     f"Druck wartet im Drucker, bis Platz frei ist…")
+                     f"Druck wartet im Drucker, bis Platz frei ist…", en=f"📦 Rack full — {height_mm:.0f}mm needs {boeden} free slots stacked. "
+                     f"The print waits in the printer until there is space…")
                 _farm["_no_slot_logged"] = True
             _farm["error"] = (f"Regal voll — {boeden} freie Fächer übereinander nötig "
                               f"({height_mm:.0f}mm). Platz schaffen — der Druck wartet im Drucker.")
@@ -864,7 +874,7 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
             try:
                 if data.get("slots", {}).get(str(old_slot), {}).get("status") == "printing":
                     _rack_update(old_slot, "free")
-                    _log(f"♻ Platzhalter-Fach {old_slot} freigegeben")
+                    _log(f"♻ Platzhalter-Fach {old_slot} freigegeben", en=f"♻ Placeholder slot {old_slot} released")
             except Exception:
                 pass
 
@@ -873,7 +883,7 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
             _farm.pop("_no_slot_logged", None)
             if (_farm.get("error") or "").startswith("Regal voll"):
                 _farm["error"] = None
-            _log("✓ Platz im Regal frei geworden — fahre fort")
+            _log("✓ Platz im Regal frei geworden — fahre fort", en="✓ Space in the rack became free — continuing")
 
         # Reserve actual slot as 'printing' + store height for clearance blocking
         _rack_update(new_slot, "printing", job.get("fileName", ""), object_height_mm=height_mm)
@@ -882,7 +892,7 @@ async def _assign_slot_for_height(job: dict, height_mm: float):
             _farm["_current_job_slot"] = new_slot
             _persist_state()
         boeden = _slots_needed(height_mm, slot_h)
-        _log(f"📏 Objekt {height_mm:.0f}mm → Fach {new_slot} reserviert ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
+        _log(f"📏 Objekt {height_mm:.0f}mm → Fach {new_slot} reserviert ({boeden} {'Boden' if boeden == 1 else 'Böden'})", en=f"📏 Object {height_mm:.0f}mm → slot {new_slot} reserved ({boeden} {'level' if boeden == 1 else 'levels'})")
         return
     raise RuntimeError("Gestoppt")
 
@@ -926,11 +936,11 @@ async def _send_print_cmd(cmd: str):
     try:
         ok = await loop.run_in_executor(printer_link.executor, printer_link.print_command, device, cmd)
         if ok:
-            _log(f"⏯ Drucker: {cmd} gesendet")
+            _log(f"⏯ Drucker: {cmd} gesendet", en=f"⏯ Printer: {cmd} sent")
         else:
-            _log(f"⚠ Drucker-{cmd}: keine Verbindung zum Drucker")
+            _log(f"⚠ Drucker-{cmd}: keine Verbindung zum Drucker", en=f"⚠ Printer {cmd}: no connection to the printer")
     except Exception as e:
-        _log(f"⚠ Drucker-{cmd} fehlgeschlagen: {e}")
+        _log(f"⚠ Drucker-{cmd} fehlgeschlagen: {e}", en=f'⚠ Printer {cmd} failed: "{e}"')
 
 
 # ── Step implementations ─────────────────────────────────────
@@ -959,7 +969,7 @@ class arm_access:
         global _arm_holder
         if _arm_lock.locked() and _arm_holder != self.who:
             _arm_waiting.append(self.who)
-            _log(f"⏳ {self.who} wartet auf den OTTOeject (belegt von {_arm_holder})")
+            _log(f"⏳ {self.who} wartet auf den OTTOeject (belegt von {_arm_holder})", en=f"⏳ {self.who} waits for the OTTOeject (held by {_arm_holder})")
         await _arm_lock.acquire()
         if self.who in _arm_waiting:
             _arm_waiting.remove(self.who)
@@ -1053,7 +1063,7 @@ async def _do_macro(name: str, _recover: bool = True):
         # Stopp, auch bei optionalen Schritten. Eine Quelle: control.notaus_aktiv.
         from app.routers import control as _control
         if _control.notaus_aktiv(db):
-            _log(f"⛔ {name[:40]}: Notaus aktiv — keine Bewegung bis „Betrieb fortsetzen“")
+            _log(f"⛔ {name[:40]}: Notaus aktiv — keine Bewegung bis „Betrieb fortsetzen“", en=f'⛔ {name[:40]}: emergency stop active — no movement until "Resume operation"')
             raise RuntimeError("Gestoppt")
     finally:
         db.close()
@@ -1062,7 +1072,7 @@ async def _do_macro(name: str, _recover: bool = True):
     # nächsten Bewegung referenzieren — sonst fährt der erste Move von einer falschen
     # Annahme aus los (Phase 3.7). Homing selbst räumt das Flag ab.
     if _farm.get("needs_home") and "OTTOEJECT_HOME" not in name.upper():
-        _log("⌂ Position unbekannt (Notaus/Abbruch) — referenziere zuerst…")
+        _log("⌂ Position unbekannt (Notaus/Abbruch) — referenziere zuerst…", en="⌂ Position unknown (emergency stop/abort) — homing first…")
         _farm["needs_home"] = False
         try:
             await _do_macro("OTTOEJECT_HOME", _recover=False)
@@ -1082,10 +1092,10 @@ async def _do_macro(name: str, _recover: bool = True):
     except storage.BrokenFile:
         raise
     except Exception as e:
-        _log(f"⚠ RACK=-Spiegelung fehlgeschlagen ({e})")
+        _log(f"⚠ RACK=-Spiegelung fehlgeschlagen ({e})", en=f'⚠ RACK= mirroring failed ("{e}")')
         raise RuntimeError(f"{name[:40]}: Regal-Zählung nicht spiegelbar ({e})") from e
     if send != name:
-        _log(f"↔ Geräte-Zählung (Regal 1 = Homing rechts): {send}")
+        _log(f"↔ Geräte-Zählung (Regal 1 = Homing rechts): {send}", en=f"↔ Device numbering (rack 1 = homing side right): {send}")
 
     # Absolute Positionierung erzwingen: Die Geräte-Macros (EJECT_FROM…/GRAB_FROM_RACK…)
     # setzen selbst KEIN G90 — steht der OTTOeject nach Homing/Jog relativ (G91), fahren
@@ -1127,7 +1137,7 @@ async def _do_macro(name: str, _recover: bool = True):
     # kein abgebrochener Job. (OTTOEJECT_HOME selbst niemals rekursiv wiederholen.)
     if (_recover and "must home axis first" in body.lower()
             and "OTTOEJECT_HOME" not in name.upper()):
-        _log("⚠ OTTOeject war nicht referenziert (Motoren nach Leerlauf aus) — homen und erneut versuchen…")
+        _log("⚠ OTTOeject war nicht referenziert (Motoren nach Leerlauf aus) — homen und erneut versuchen…", en="⚠ OTTOeject was not homed (motors off after idle) — homing and retrying…")
         await _do_macro("OTTOEJECT_HOME", _recover=False)
         await _do_macro(name, _recover=False)
         return
@@ -1176,27 +1186,27 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool, book_bed: bool
     ams_mapping: list = []
     ams_map_str = _job_manual_map(job)   # Job-Map oder pro-Datei im Browser gewählt
     if not use_ams:
-        _log("AMS deaktiviert")
+        _log("AMS deaktiviert", en="AMS disabled")
     elif ams_map_str:
         ams_mapping = ams_match.parse_manual(ams_map_str)
         if ams_mapping:
-            _log(f"AMS-Mapping: {ams_mapping} (manuell)")
+            _log(f"AMS-Mapping: {ams_mapping} (manuell)", en=f"AMS mapping: {ams_mapping} (manual)")
         else:
-            _log(f"⚠ AMS-Mapping '{ams_map_str}' ungültig — Auto-Matching")
+            _log(f"⚠ AMS-Mapping '{ams_map_str}' ungültig — Auto-Matching", en=f"⚠ AMS mapping '{ams_map_str}' invalid — auto matching")
     if use_ams and not ams_mapping:
-        _log("AMS-Status abfragen…")
+        _log("AMS-Status abfragen…", en="Reading AMS status…")
         ams_raw = await bambu_manager.fresh_ams(device)
         fil_types, fil_colors = await loop.run_in_executor(
             None, print_file.read_filament_info, file.file_path, file.file_type, job.get("plate"))
-        _log(f"Filamente in Datei: {list(zip(fil_types, fil_colors))}")
+        _log(f"Filamente in Datei: {list(zip(fil_types, fil_colors))}", en=f"Filaments in file: {list(zip(fil_types, fil_colors))}")
         if ams_raw.get("ams"):
             ams_mapping = ams_match.match_live(fil_types, fil_colors, ams_raw)
-            _log(f"AMS-Match (Live): {ams_mapping}")
+            _log(f"AMS-Match (Live): {ams_mapping}", en=f"AMS match (live): {ams_mapping}")
         else:
-            _log("⚠ Kein Live-AMS — Fallback aus Datei")
+            _log("⚠ Kein Live-AMS — Fallback aus Datei", en="⚠ No live AMS — fallback from file")
             ams_mapping = await loop.run_in_executor(
                 None, print_file.file_ams_mapping, file.file_path, file.file_type, None)
-            _log(f"AMS-Mapping (Datei): {ams_mapping}")
+            _log(f"AMS-Mapping (Datei): {ams_mapping}", en=f"AMS mapping (file): {ams_mapping}")
 
     if use_ams and ams_mapping:
         # Auf Slicer-Slot-Positionen heben: druckt die Datei z. B. nur mit
@@ -1204,7 +1214,7 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool, book_bed: bool
         expanded = await loop.run_in_executor(
             None, ams_match.expand_to_slots, ams_mapping, file.file_path, file.file_type, job.get("plate"))
         if expanded != ams_mapping:
-            _log(f"AMS-Mapping auf Slicer-Slots gehoben (unbenutzte = -1): {expanded}")
+            _log(f"AMS-Mapping auf Slicer-Slots gehoben (unbenutzte = -1): {expanded}", en=f"AMS mapping lifted to slicer slots (unused = -1): {expanded}")
             ams_mapping = expanded
 
     # Multi-Plate: gewählte Platte als Einzel-Platten-.3mf — der Drucker parst sonst
@@ -1212,7 +1222,8 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool, book_bed: bool
     upload_path, repack_tmp, plate_param, note = await loop.run_in_executor(
         None, print_file.upload_plan, file.file_path, file.file_type, job.get("plate"))
     if note:
-        _log(("📦 " if repack_tmp else "⚠ ") + note)
+        note_en = getattr(note, "en", note)
+        _log(("📦 " if repack_tmp else "⚠ ") + note, en=("📦 " if repack_tmp else "⚠ ") + note_en)
 
     ftp = BambuFTP(device.ip_address, device.access_code)
     try:
@@ -1225,7 +1236,7 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool, book_bed: bool
                 pass
     if not up:
         raise RuntimeError("FTP-Upload fehlgeschlagen")
-    _log(f"Plate-GCode: {plate_param or 'n/a'}")
+    _log(f"Plate-GCode: {plate_param or 'n/a'}", en=f"Plate G-code: {plate_param or 'n/a'}")
 
     await asyncio.sleep(5)
     # Kam während des Uploads Stopp oder Notaus, geht kein Druckstart mehr raus.
@@ -1241,7 +1252,7 @@ async def _do_send_file(job: dict, device: Device, use_ams: bool, book_bed: bool
     # Skip oder Neustart sagten „leere Platte", obwohl ein Druck darauf lag).
     if book_bed:
         _set_bed("printing")
-    _log(f"'{file.original_filename}' gestartet (AMS: {ams_mapping})")
+    _log(f"'{file.original_filename}' gestartet (AMS: {ams_mapping})", en=f"'{file.original_filename}' started (AMS: {ams_mapping})")
 
 
 def moon_file_problem(device, path: str, file_type: str, plate=None) -> Optional[str]:
@@ -1292,9 +1303,9 @@ async def _do_send_file_moonraker(job: dict, device: Device, file, book_bed: boo
             try:
                 os.remove(tmp)
             except OSError as e:
-                logger.warning(f"Temp-G-code {tmp} nicht gelöscht: {e}")
+                logger.warning(f"Temp G-code {tmp} not deleted: {e}")
     if tmp:
-        _log(f"📦 G-code aus der .3mf ausgepackt (Platte {job.get('plate') or 'erste'})")
+        _log(f"📦 G-code aus der .3mf ausgepackt (Platte {job.get('plate') or 'erste'})", en=f"📦 G-code unpacked from the .3mf (plate {job.get('plate') or 'first'})")
     # Kam während des Uploads Stopp oder Notaus, geht kein Druckstart mehr raus.
     _assert_may_command_printer("Druck starten")
     try:
@@ -1303,7 +1314,7 @@ async def _do_send_file_moonraker(job: dict, device: Device, file, book_bed: boo
         raise RuntimeError(f"Druckstart fehlgeschlagen ({type(e).__name__}: {e})")
     if book_bed:
         _set_bed("printing")
-    _log(f"'{file.original_filename}' gestartet (auf dem Drucker: {remote})")
+    _log(f"'{file.original_filename}' gestartet (auf dem Drucker: {remote})", en=f"'{file.original_filename}' started (on the printer: {remote})")
 
 
 def _stack_vars_lazy(value) -> tuple:
@@ -1350,7 +1361,7 @@ def _stack_vars() -> tuple[str, str]:
             mag_slot = str(_magazine_slot_cfg(d) or 1)
             return str(d.get("stack_rack", "1")), str(d.get("stack_slot", mag_slot))
     except (TypeError, ValueError, KeyError, AttributeError) as e:
-        _log(f"⚠ Quelle der leeren Platte nicht bestimmbar: {e}")
+        _log(f"⚠ Quelle der leeren Platte nicht bestimmbar: {e}", en=f'⚠ Source of the empty plate not determinable: "{e}"')
         raise RuntimeError(f"Quelle der leeren Platte nicht bestimmbar ({e})") from e
     # Bis v1.1.48 hier still „Regal 1, Fach 7": ein Griff an eine geratene Stelle.
     raise RuntimeError("Keine Regal-Daten — Quelle der leeren Platte unbekannt")
@@ -1370,7 +1381,7 @@ async def _hold_until_resumed(error: str, push: str) -> None:
         raise RuntimeError(error)
     _farm["paused"] = True
     _farm["error"] = error
-    _log(f"⏸ {error}")
+    _log(f"⏸ {error}", en=f'⏸ Paused: "{error}"')
     _persist_state()
     await _notify(push)
     while _farm["paused"] and not _farm["stopping"]:
@@ -1414,7 +1425,7 @@ async def _printer_gate(device, what: str, need_bed_empty: bool = False) -> None
             f"⏸ Printloom — {what} angehalten\n{grund}")
         if bed_busy:
             _set_bed("empty")
-            _log("✓ Fortgesetzt — Druckbett gilt als leer")
+            _log("✓ Fortgesetzt — Druckbett gilt als leer", en="✓ Resumed — print bed counts as empty")
         deadline = loop.time() + GATE_GRACE_S
 
 
@@ -1430,7 +1441,7 @@ async def _gripper_gate(what: str) -> None:
         f"{what}: Der Greifer hält laut Printloom noch {text} — abnehmen, dann fortsetzen",
         f"⏸ Printloom — {what} angehalten\nGreifer hält noch {text}")
     _set_arm("none")
-    _log("✓ Fortgesetzt — Greifer gilt als leer")
+    _log("✓ Fortgesetzt — Greifer gilt als leer", en="✓ Resumed — gripper counts as empty")
 
 
 async def _magazine_gate() -> tuple:
@@ -1446,11 +1457,14 @@ async def _magazine_gate() -> tuple:
         _log("📦 Magazin leer — OTTOeject parkt. Platten auffüllen, Magazin-Zähler setzen, dann fortsetzen."
              if with_mag else
              "📦 Keine leeren Platten mehr in den Fächern — OTTOeject parkt. Platten einlegen, "
-             "die Fächer im Regal-Panel mit ▭ als bestückt markieren, dann fortsetzen.")
+             "die Fächer im Regal-Panel mit ▭ als bestückt markieren, dann fortsetzen.", en="📦 Magazine empty — OTTOeject parks. Refill plates, set the magazine counter, then resume."
+             if with_mag else
+             "📦 No empty plates left in the slots — OTTOeject parks. Insert plates, mark the slots "
+             "as stocked with ▭ in the rack panel, then resume.")
         try:
             await _do_macro("PARK_OTTOEJECT")
         except Exception as e:
-            _log(f"⚠ Parken fehlgeschlagen ({e}) — pausiere trotzdem")
+            _log(f"⚠ Parken fehlgeschlagen ({e}) — pausiere trotzdem", en=f'⚠ Parking failed ("{e}") — pausing anyway')
         _farm["paused"] = True
         _farm["error"]  = ("Magazin leer — Platten auffüllen, Zähler anpassen, dann fortsetzen"
                            if with_mag else
@@ -1465,7 +1479,7 @@ async def _magazine_gate() -> tuple:
                            else "Keine leeren Platten in den Fächern — abgebrochen")
     _farm["error"] = None
     if was_empty:
-        _log("📦 Nachschub da — Referenzfahrt vor dem Griff…")
+        _log("📦 Nachschub da — Referenzfahrt vor dem Griff…", en="📦 Plates refilled — homing before the grab…")
         await _do_macro("OTTOEJECT_HOME")
     return _stack_vars()
 
@@ -1479,7 +1493,7 @@ def _decrement_magazine(rack: int = None, slot: int = None):
     eben gegriffene (der Bestand ist noch unverändert)."""
     if not rack_store.exists():
         return
-    meldung = None
+    meldung = meldung_en = None
     try:
         with rack_store.edit() as d:
             if _rack_logic.magazine_slot_of(d) <= 0:
@@ -1489,19 +1503,21 @@ def _decrement_magazine(rack: int = None, slot: int = None):
                 s = (d.get("slots") or {}).get(key)
                 if isinstance(s, dict) and s.get("empty_plate"):
                     s["empty_plate"] = False
-                    meldung = (f"📥 Leerplatte aus Fach {key} entnommen — "
-                               f"{_rack_logic.empty_plate_count(d)} verbleibend")
+                    left = _rack_logic.empty_plate_count(d)
+                    meldung = f"📥 Leerplatte aus Fach {key} entnommen — {left} verbleibend"
+                    meldung_en = f"📥 Empty plate taken from slot {key} — {left} left"
             else:
                 counts = d.get("magazine_counts") or []
                 for i, cnt in enumerate(counts):
                     if int(cnt) > 0:
                         counts[i] = max(0, int(cnt) - 1)
                         meldung = f"📦 Magazin R{i+1}: {counts[i]} Platten verbleibend"
+                        meldung_en = f"📦 Magazine R{i+1}: {counts[i]} plates left"
                         break
     except Exception as e:
         logger.warning(f"_decrement_magazine failed: {e}")
     if meldung:
-        _log(meldung)
+        _log(meldung, en=meldung_en)
 
 
 async def _read_live_ams(device: Device) -> dict:
@@ -1618,20 +1634,24 @@ async def _await_bed_cool(device: Device, ziel: float = COOL_DEFAULT_C,
         except (TypeError, ValueError):
             # Ohne Messwert nicht blockieren: dieselbe Fail-open-Regel wie bei den
             # Schritt-Bedingungen — ein Lesefehler darf keinen Zyklus anhalten.
-            _log(f"❄ {label}: Bett-Temperatur nicht lesbar — es geht ohne Warten weiter")
+            _log(f"❄ {label}: Bett-Temperatur nicht lesbar — es geht ohne Warten weiter", en=f"❄ {label}: bed temperature not readable — continuing without waiting")
             return
         if ist <= ziel:
             _log(f"❄ {label}: Bett auf {ist:.0f} °C — weiter" if gemeldet
-                 else f"❄ {label}: Bett schon auf {ist:.0f} °C — kein Warten nötig")
+                 else f"❄ {label}: Bett schon auf {ist:.0f} °C — kein Warten nötig", en=f"❄ {label}: bed at {ist:.0f} °C — continuing" if gemeldet
+                 else f"❄ {label}: bed already at {ist:.0f} °C — no wait needed")
             return
         if timeout_s and (loop.time() - start) >= timeout_s:
             _log(f"❄ ⚠ {label}: nach {timeout_s / 60:g} min noch {ist:.0f} °C "
                  f"(Ziel {ziel:.0f} °C) — es geht trotzdem weiter. Der Magnet könnte "
-                 f"die Platte liegen lassen.")
+                 f"die Platte liegen lassen.", en=f"❄ ⚠ {label}: after {timeout_s / 60:g} min still {ist:.0f} °C "
+                 f"(target {ziel:.0f} °C) — continuing anyway. The magnet might "
+                 f"leave the plate behind.")
             return
         if not gemeldet:
             _log(f"❄ {label}: Bett {ist:.0f} °C — warte auf {ziel:.0f} °C "
-                 f"(der Magnet hält eine warme Platte nicht)")
+                 f"(der Magnet hält eine warme Platte nicht)", en=f"❄ {label}: bed {ist:.0f} °C — waiting for {ziel:.0f} °C "
+                 f"(the magnet does not hold a warm plate)")
             gemeldet = True
         _farm["seq_step_label"] = f"{label} — Bett {ist:.0f} °C / Ziel {ziel:.0f} °C"
         await asyncio.sleep(COOL_POLL_S)
@@ -1664,12 +1684,12 @@ async def _wait_bambu_finish(device: Device, label: str = "Bewegung", timeout: f
 
         elapsed = loop.time() - start
         if elapsed > timeout:
-            _log(f"⚠ {label}: FINISH-Timeout ({timeout:.0f}s) — fahre fort")
+            _log(f"⚠ {label}: FINISH-Timeout ({timeout:.0f}s) — fahre fort", en=f"⚠ {label}: FINISH timeout ({timeout:.0f}s) — continuing")
             return
 
         if not bambu_manager.is_connected(device):
             if elapsed - last_log >= 5:
-                _log(f"… {label}: warte auf Drucker-Verbindung ({elapsed:.0f}s)")
+                _log(f"… {label}: warte auf Drucker-Verbindung ({elapsed:.0f}s)", en=f"… {label}: waiting for the printer connection ({elapsed:.0f}s)")
                 last_log = elapsed
             await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device)
             await asyncio.sleep(3)
@@ -1688,7 +1708,7 @@ async def _wait_bambu_finish(device: Device, label: str = "Bewegung", timeout: f
             seen_running = True
 
         if elapsed - last_log >= 5:
-            _log(f"… {label}: warte auf FINISH (Status: {state or '—'}, {elapsed:.0f}s)")
+            _log(f"… {label}: warte auf FINISH (Status: {state or '—'}, {elapsed:.0f}s)", en=f"… {label}: waiting for FINISH (state: {state or '—'}, {elapsed:.0f}s)")
             last_log = elapsed
 
         # A homing/move-only .3mf has no real print body, so the X1C marks it
@@ -1698,13 +1718,14 @@ async def _wait_bambu_finish(device: Device, label: str = "Bewegung", timeout: f
         # move the bed back off Z200, and a new print starts fine from FAILED.
         if state == "FAILED" and seen_running:
             _log(f"✓ {label} — Bewegung abgeschlossen (Bambu wertet den reinen "
-                 f"Homing/Move-Druck als FAILED — harmlos, Position erreicht)")
+                 f"Homing/Move-Druck als FAILED — harmlos, Position erreicht)", en=f"✓ {label} — move done (Bambu reports a pure "
+                 f"homing/move print as FAILED — harmless, position reached)")
             return
 
         # Done once we see FINISH/IDLE — either after having seen it run, or
         # after a short settle for very fast moves that skipped RUNNING.
         if state in ("FINISH", "IDLE") and (seen_running or elapsed > 12):
-            _log(f"✓ {label} — Position erreicht (FINISH)")
+            _log(f"✓ {label} — Position erreicht (FINISH)", en=f"✓ {label} — position reached (FINISH)")
             return
 
         await asyncio.sleep(1)
@@ -1740,18 +1761,18 @@ async def _wait_moon_homing(device: Device, label: str, timeout: float) -> None:
                 exc = fut.exception()
                 if exc is not None:
                     raise RuntimeError(f"{label} am Drucker fehlgeschlagen: {exc}")
-                _log(f"✓ {label} — Position erreicht")
+                _log(f"✓ {label} — Position erreicht", en=f"✓ {label} — position reached")
                 return
         else:
             state = await loop.run_in_executor(printer_link.executor, printer_guard.live_state, device)
             if state and state not in ("PREPARE", "RUNNING"):
-                _log(f"✓ {label} — Drucker bereit ({state})")
+                _log(f"✓ {label} — Drucker bereit ({state})", en=f"✓ {label} — printer ready ({state})")
                 return
         if elapsed > timeout:
-            _log(f"⚠ {label}: Zeitlimit ({timeout:.0f}s) — fahre fort, das Drucker-Tor prüft vor dem Hineinfahren")
+            _log(f"⚠ {label}: Zeitlimit ({timeout:.0f}s) — fahre fort, das Drucker-Tor prüft vor dem Hineinfahren", en=f"⚠ {label}: time limit ({timeout:.0f}s) — continuing, the printer gate checks before moving in")
             return
         if elapsed - last_log >= 10:
-            _log(f"… {label}: läuft ({elapsed:.0f}s)")
+            _log(f"… {label}: läuft ({elapsed:.0f}s)", en=f"… {label}: running ({elapsed:.0f}s)")
             last_log = elapsed
         await asyncio.sleep(0.5 if fut is not None else 3)
 
@@ -1760,15 +1781,15 @@ async def _filament_unmatched(job: dict, what: str, desc: str, missing: list, no
     """Filament passt nicht zur Datei: Strategie „ams_unmatched" (stop/skip/pause). Nach
     dem Fortsetzen zurück, dann prüft der Aufrufer neu. → ob schon gemeldet wurde.
     Eine Stelle für AMS (Bambu) und Köpfe (U1)."""
-    _log(f"⚠ {what}-Abgleich für {job['fileName']}: {desc} — manuelle Festlegung notwendig")
+    _log(f"⚠ {what}-Abgleich für {job['fileName']}: {desc} — manuelle Festlegung notwendig", en=f'⚠ {what} match for {job["fileName"]}: "{desc}" — needs a manual assignment')
     _set_job(job["id"], {"needs_ams": True, "ams_missing": missing})
     action = _estrat("ams_unmatched")
     if action == "stop":
-        _log(f"⚠ {what}-Abgleich fehlt — Farm wird gestoppt (Strategie)")
+        _log(f"⚠ {what}-Abgleich fehlt — Farm wird gestoppt (Strategie)", en=f"⚠ {what} match missing — farm stops (strategy)")
         _farm["stopping"] = True
         raise RuntimeError("Gestoppt")
     if action == "skip":
-        _log(f"⚠ {what}-Abgleich fehlt — Job übersprungen (Strategie): {desc}")
+        _log(f"⚠ {what}-Abgleich fehlt — Job übersprungen (Strategie): {desc}", en=f'⚠ {what} match missing — job skipped (strategy): "{desc}"')
         await _notify(f"⚠ Printloom — {what} passt nicht, Job übersprungen\n{job['fileName']}\n{desc}")
         raise RuntimeError(f"{what}-Abgleich fehlgeschlagen — {desc}")
     _farm["paused"] = True
@@ -1802,7 +1823,7 @@ async def _ensure_tools_ready(job: dict, device: Device, use_ams: bool):
         return
     usage = await loop.run_in_executor(None, print_file.filament_usage, fpath, ftype, job.get("plate"))
     if not usage:
-        _log("ℹ Filamente der Datei nicht lesbar — kein Abgleich mit den Köpfen")
+        _log("ℹ Filamente der Datei nicht lesbar — kein Abgleich mit den Köpfen", en="ℹ Filaments of the file not readable — no check against the toolheads")
         return
     notified = False
     while not _farm["stopping"]:
@@ -1813,7 +1834,7 @@ async def _ensure_tools_ready(job: dict, device: Device, use_ams: bool):
             missing, unknown = ams_match.check_tools(usage, tools, _farm.get("exact_color_only", False))
             if not missing:
                 if unknown:
-                    _log(f"ℹ Filament an {', '.join(unknown)} meldet der Drucker nicht — nicht geprüft")
+                    _log(f"ℹ Filament an {', '.join(unknown)} meldet der Drucker nicht — nicht geprüft", en=f"ℹ The printer reports no filament at {', '.join(unknown)} — not checked")
                 _set_job(job["id"], {"needs_ams": False, "ams_missing": []})
                 _farm["error"] = None
                 return
@@ -1893,7 +1914,8 @@ def _estrat(key: str) -> str:
         if not _farm.get("_conn_skip_logged"):
             _farm["_conn_skip_logged"] = True
             _log("⚠ „Verbindung verloren → überspringen“ gibt es nicht mehr: Der Druck "
-                 "läuft am Gerät weiter. Die Farm pausiert stattdessen.")
+                 "läuft am Gerät weiter. Die Farm pausiert stattdessen.", en="⚠ \"Connection lost → skip\" no longer exists: the print "
+                 "keeps running on the machine. The farm pauses instead.")
         return "pause"
     return action
 
@@ -1938,7 +1960,7 @@ def _now_in_tz(tz: str) -> datetime:
             from zoneinfo import ZoneInfo
             return datetime.now(ZoneInfo(tz)).replace(tzinfo=None)
         except Exception as e:   # ungültiger Name oder fehlende tzdata
-            logger.debug(f"Zeitzone {tz!r} unbekannt, nehme Serverzeit: {e}")
+            logger.debug(f"Time zone {tz!r} unknown, using server time: {e}")
     return datetime.now()
 
 
@@ -2059,7 +2081,7 @@ async def _wait_operating_window():
     nxt = _next_operating_start()
     when = f"{_WD_ABBR[nxt.weekday()]} {nxt:%H:%M}" if nxt else "nächstem Zeitfenster"
     msg = f"Außerhalb der Betriebszeit — Start ab {when}"
-    _log(f"🕒 {msg}")
+    _log(f"🕒 {msg}", en=f"🕒 Outside operating hours — start from {when}")
     _farm["error"] = msg
     try:
         while not _farm["stopping"] and not _now_in_operating_window():
@@ -2068,7 +2090,7 @@ async def _wait_operating_window():
         if (_farm.get("error") or "").startswith("Außerhalb der Betriebszeit"):
             _farm["error"] = None
     if not _farm["stopping"]:
-        _log("🕒 Betriebszeit aktiv — fahre fort")
+        _log("🕒 Betriebszeit aktiv — fahre fort", en="🕒 Inside operating hours — continuing")
 
 
 # ── Start-Countdown nach Leerlauf ────────────────────────────
@@ -2079,7 +2101,7 @@ async def _prestart_countdown(seconds: int = PRESTART_COUNTDOWN_SEC) -> bool:
     (im Header sichtbar via _farm['start_countdown']). Pause friert den Countdown
     ein. Rückgabe True = abgelaufen → starten; False = abgebrochen (gestoppt oder
     letzter Job aus der Warteschlange entfernt)."""
-    _log(f"⏳ Nächster Job startet in {seconds}s…")
+    _log(f"⏳ Nächster Job startet in {seconds}s…", en=f"⏳ Next job starts in {seconds}s…")
     remaining = seconds
     while remaining > 0 and not _farm["stopping"]:
         while _farm["paused"] and not _farm["stopping"]:
@@ -2088,7 +2110,7 @@ async def _prestart_countdown(seconds: int = PRESTART_COUNTDOWN_SEC) -> bool:
         if _farm["stopping"]:
             break
         if not any(j["status"] == "pending" for j in _farm["jobs"]):
-            _log("⏳ Countdown abgebrochen — kein Job mehr in der Warteschlange")
+            _log("⏳ Countdown abgebrochen — kein Job mehr in der Warteschlange", en="⏳ Countdown cancelled — no job left in the queue")
             break
         _farm["start_countdown"] = remaining
         await asyncio.sleep(1.0)
@@ -2113,7 +2135,7 @@ async def _handle_hms(hms_list: list):
         action = _estrat("hms")
         if action == "ignore" or hms.normalize_code(cs) in soft:
             why = "Soft-Liste" if hms.normalize_code(cs) in soft else "Strategie: ignorieren"
-            _log(f"ℹ HMS {sev} (ignoriert, {why}): {cs} — {text}")
+            _log(f"ℹ HMS {sev} (ignoriert, {why}): {cs} — {text}", en=f'ℹ HMS {sev} (ignored, {why}): {cs} — "{text}"')
             _record_hms(cs, sev, text, f"ignoriert ({why})")
             await _notify(f"ℹ Printloom — Drucker-Hinweis (unkritisch)\nHMS {cs} ({sev})\n{text}")
             continue
@@ -2121,16 +2143,16 @@ async def _handle_hms(hms_list: list):
         _record_event("error", "", f"HMS {cs} ({sev})")
         _record_hms(cs, sev, text, action)
         if action == "stop":
-            _log(f"🛑 HMS {sev}: {cs} — Farm wird gestoppt (Strategie)")
+            _log(f"🛑 HMS {sev}: {cs} — Farm wird gestoppt (Strategie)", en=f"🛑 HMS {sev}: {cs} — farm stops (strategy)")
             await _notify(f"🛑 Printloom — Drucker-Fehler, Farm gestoppt\nHMS {cs} ({sev})\n{text}")
             _farm["stopping"] = True
             return
         if action == "skip":
-            _log(f"🛑 HMS {sev}: {cs} — Job wird übersprungen (Strategie)")
+            _log(f"🛑 HMS {sev}: {cs} — Job wird übersprungen (Strategie)", en=f"🛑 HMS {sev}: {cs} — job is skipped (strategy)")
             await _notify(f"🛑 Printloom — Drucker-Fehler, Job übersprungen\nHMS {cs} ({sev})\n{text}")
             raise RuntimeError(f"HMS {cs}: {text}")
         sev_de = hms.HMS_SEVERITY_DE.get(sev, sev)
-        _log(f"🛑 HMS {sev}: {cs} — {text} ({hms.wiki_url(cs)})")
+        _log(f"🛑 HMS {sev}: {cs} — {text} ({hms.wiki_url(cs)})", en=f'🛑 HMS {sev}: {cs} — "{text}" ({hms.wiki_url(cs)})')
         _farm["paused"] = True
         # Code im Unterstrich-Format lassen → das Frontend macht daraus einen
         # klickbaren Bambu-Wiki-Link mit der genauen Beschreibung.
@@ -2150,11 +2172,11 @@ async def _run_prep(steps: list, slot: str, device: Device):
         try:
             t = step.get("type", "")
             if t == "macro":
-                _log(f"▶ {val}")
+                _log(f"▶ {val}", en=f"▶ {val}")
                 await _do_macro(val)
             elif t in ("klipper_gcode",):
                 _assert_klipper_gcode_ok(val)
-                _log(f"▶ {step.get('label', val[:30])}")
+                _log(f"▶ {step.get('label', val[:30])}", en=f"▶ {step.get('label', val[:30])}")
                 await _do_macro(val)   # Klipper HTTP blocks until movement complete
             elif t == "app_op":
                 # Printloom-Op auch im Vorstart (z. B. move_to_printer ⏱) — wie im
@@ -2165,11 +2187,11 @@ async def _run_prep(steps: list, slot: str, device: Device):
                     rk, sl = (int(stack_rack), int(stack_slot)) if op in ("grab", "grab_magazine") else \
                              (int(rack_num), int(slot_num)) if op == "store" else (1, 1)
                     geom = _farm.get("geometry") or _load_farm_geometry()
-                    _log(f"▶ Printloom-Op: {op}")
+                    _log(f"▶ Printloom-Op: {op}", en=f"▶ Printloom op: {op}")
                     await _do_macro(_motion.build_op(geom, op, rack=rk, slot=sl,
                                                      printer=_farm_printer(geom)))
                 else:
-                    _log(f"Warnung Vorstart: unbekannte Printloom-Op {op!r}")
+                    _log(f"Warnung Vorstart: unbekannte Printloom-Op {op!r}", en=f"Warning pre-start: unknown Printloom op {op!r}")
             elif t == "gcode":
                 await _do_bambu_gcode(val, device)
             elif t == "delay":
@@ -2178,24 +2200,24 @@ async def _run_prep(steps: list, slot: str, device: Device):
             # Eine hängende Vorstart-Fahrt ist kein Warnfall: Der Arm steht an
             # unbekannter Stelle. Keine weiteren Fahrten; _wait_print wirft das am
             # Druckende weiter, damit die Strategie „Bewegung hängt" greift.
-            _log("⏱ Vorstart-Bewegung hängt — keine weiteren Vorstart-Fahrten")
+            _log("⏱ Vorstart-Bewegung hängt — keine weiteren Vorstart-Fahrten", en="⏱ Pre-start move hangs — no further pre-start moves")
             raise
         except Exception as e:
-            _log(f"Warnung Vorstart: {e}")
-    _log("⚡ Vorstart fertig.")
+            _log(f"Warnung Vorstart: {e}", en=f'Warning pre-start: "{e}"')
+    _log("⚡ Vorstart fertig.", en="⚡ Pre-start done.")
 
 
 async def _stop_print_for_skip() -> None:
     """Einen Druck, den die Farm überspringt, am Drucker auch abbrechen."""
     await _send_print_cmd("stop")
-    _log("⏹ Druck am Drucker abgebrochen — Platte vor dem nächsten Job entnehmen")
+    _log("⏹ Druck am Drucker abgebrochen — Platte vor dem nächsten Job entnehmen", en="⏹ Print cancelled on the printer — remove the plate before the next job")
 
 
 async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                        prep_steps: list, fail_steps: list = []) -> bool:
     _set_job(job["id"], {"status": "printing"})
     _record_event("print_start", job.get("fileName", ""), f"Fach {job.get('slot', '')}")
-    _log(f"Warte auf Druckende (Poll alle {poll_sec}s)…")
+    _log(f"Warte auf Druckende (Poll alle {poll_sec}s)…", en=f"Waiting for the print to finish (poll every {poll_sec}s)…")
     _farm["_hms_seen"] = set()  # reset HMS dedupe per print
 
     loop = asyncio.get_running_loop()
@@ -2268,7 +2290,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                 rem   = p.get("mc_remaining_time", 0)
 
                 _set_job(job["id"], {"progress": pct, "remaining": rem})
-                _log(f"Drucker: {state}  {pct}%{f'  ~{rem} min' if rem > 0 else ''}")
+                _log(f"Drucker: {state}  {pct}%{f'  ~{rem} min' if rem > 0 else ''}", en=f"Printer: {state}  {pct}%{f'  ~{rem} min' if rem > 0 else ''}")
                 reconn_fails = 0
                 conn_alarmed = False
                 await _handle_hms(p.get("hms", []) or [])
@@ -2297,17 +2319,17 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                                       f"Kein Fortschritt seit {stall_min} min bei {pct}% — mögliche Verstopfung")
                         action = _estrat("progress_stall")
                         if action == "stop":
-                            _log(f"🛑 Watchdog: Stillstand bei {pct}% — Farm wird gestoppt (Strategie)")
+                            _log(f"🛑 Watchdog: Stillstand bei {pct}% — Farm wird gestoppt (Strategie)", en=f"🛑 Watchdog: stalled at {pct}% — farm stops (strategy)")
                             _farm["stopping"] = True
                         elif action == "skip":
-                            _log(f"🛑 Watchdog: Stillstand bei {pct}% — Job übersprungen (Strategie)")
+                            _log(f"🛑 Watchdog: Stillstand bei {pct}% — Job übersprungen (Strategie)", en=f"🛑 Watchdog: stalled at {pct}% — job skipped (strategy)")
                             # Ohne Stopp druckte der Drucker weiter, während die Farm schon
                             # den nächsten Job vorbereitete. Das Bett bleibt „printing":
                             # Das Einlege-Tor hält den nächsten Job an, bis die Platte raus ist.
                             await _stop_print_for_skip()
                             raise RuntimeError(f"Stillstand seit {stall_min} min bei {pct}% — mögliche Verstopfung")
                         else:
-                            _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — pausiert")
+                            _log(f"🛑 Watchdog: kein Druckfortschritt seit {stall_min} min bei {pct}% — pausiert", en=f"🛑 Watchdog: no print progress for {stall_min} min at {pct}% — paused")
                             _farm["paused"] = True
                             _farm["error"] = (f"Kein Druckfortschritt seit {stall_min} min ({pct}%) — "
                                               "Düse/Filament prüfen (mögliche Verstopfung), dann fortsetzen")
@@ -2334,7 +2356,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                                 _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=actual_h)
                                 _sh = float(_rack_data().get("slot_height_mm", 50) or 50)
                                 boeden = _slots_needed(actual_h, _sh)
-                                _log(f"📏 Fach {job['slot']}: {actual_h:.0f}mm ({boeden} {'Boden' if boeden == 1 else 'Böden'})")
+                                _log(f"📏 Fach {job['slot']}: {actual_h:.0f}mm ({boeden} {'Boden' if boeden == 1 else 'Böden'})", en=f"📏 Slot {job['slot']}: {actual_h:.0f}mm ({boeden} {'level' if boeden == 1 else 'levels'})")
                         elif total_layers == 0 and rem > 0:
                             # total_layer_num not yet available — wait for next poll
                             pass
@@ -2353,20 +2375,20 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                                 await _assign_slot_for_height(job, pre_h)
                             elif job.get("object_height_mm"):
                                 _rack_update(job["slot"], "printing", job.get("fileName", ""), object_height_mm=pre_h)
-                                _log(f"📏 Fach {job['slot']}: {pre_h:.0f}mm (aus Planung)")
+                                _log(f"📏 Fach {job['slot']}: {pre_h:.0f}mm (aus Planung)", en=f"📏 Slot {job['slot']}: {pre_h:.0f}mm (from planning)")
                 else:
                     if state != "FAILED":
                         fail_count = 0
 
                 if not prep_started and state == "RUNNING" and rem > 0 and rem <= 1:
                     prep_started = True
-                    _log("⚡ ~1 min — Vorstart-Sequenz…")
+                    _log("⚡ ~1 min — Vorstart-Sequenz…", en="⚡ ~1 min — pre-start sequence…")
                     prep_task = asyncio.create_task(_run_prep(prep_steps, job["slot"], device))
 
                 idle_done = state == "IDLE" and was_running and (max_pct >= 90 or pct >= 99)
                 if state == "FINISH" or idle_done:
                     if state != "FINISH":
-                        _log(f"Druck fertig erkannt ({state} {pct}%, max {max_pct}%)")
+                        _log(f"Druck fertig erkannt ({state} {pct}%, max {max_pct}%)", en=f"Print end detected ({state} {pct}%, max {max_pct}%)")
                     _set_bed("printed")
                     # Spätestens jetzt ein Fach: Ein kurzer Druck ohne Restzeit-Meldung kam
                     # bis v1.1.48 mit „1-0" hier an, und der Arm legte in Fach 0 ab. Ohne
@@ -2379,36 +2401,36 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         snap = await asyncio.wait_for(capture_snapshot(device.id), 20)
                     except asyncio.TimeoutError:
                         snap = None
-                        _log("📷 Snapshot übersprungen (Zeitlimit)")
+                        _log("📷 Snapshot übersprungen (Zeitlimit)", en="📷 Snapshot skipped (time limit)")
                     if snap:
                         _set_job(job["id"], {"snapshot": snap})
-                        _log("📷 Snapshot gespeichert")
+                        _log("📷 Snapshot gespeichert", en="📷 Snapshot saved")
                     if prep_task:
                         if not prep_task.done():
-                            _log("Warte auf Vorstart-Sequenz…")
+                            _log("Warte auf Vorstart-Sequenz…", en="Waiting for the pre-start sequence…")
                         try:
                             await prep_task
                         except _MoveTimeout:
                             raise
                         except Exception as e:
-                            _log(f"Warnung Vorstart: {e}")
+                            _log(f"Warnung Vorstart: {e}", en=f'Warning pre-start: "{e}"')
                     return prep_started
 
                 if state == "FAILED":
                     fail_count += 1
                     if fail_count < 2:
-                        _log(f"⚠ FAILED ({fail_count}/2) — warte…")
+                        _log(f"⚠ FAILED ({fail_count}/2) — warte…", en=f"⚠ FAILED ({fail_count}/2) — waiting…")
                         continue
                     max_retries = int(_farm.get("failed_retries",
                                                 farm_settings.DEFAULTS["failed_retries"]) or 0)
                     # Nur wiederholen, solange noch nichts gedruckt wurde: Sonst druckt der
                     # zweite Versuch auf den Resten des ersten (Düse rammt das Teil).
                     if retries < max_retries and (was_running or max_pct > 0):
-                        _log("⚠ Wiederholung übersprungen — die Platte ist nicht mehr leer")
+                        _log("⚠ Wiederholung übersprungen — die Platte ist nicht mehr leer", en="⚠ Retry skipped — the plate is no longer empty")
                         retries = max_retries
                     if retries < max_retries:
                         retries += 1
-                        _log(f"⚠ Retry {retries}/{max_retries}…")
+                        _log(f"⚠ Retry {retries}/{max_retries}…", en=f"⚠ Retry {retries}/{max_retries}…")
                         _set_job(job["id"], {"status": "sending", "progress": 0, "remaining": 0})
                         # Bis v1.1.33 stand hier fest `True`: jeder neue Versuch nach einem
                         # Druckfehler lief MIT AMS — auch wenn „AMS verwenden" aus war.
@@ -2418,12 +2440,12 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         continue
                     action = _estrat("print_failed")
                     if action == "stop":
-                        _log("🔴 Druck fehlgeschlagen — Farm wird gestoppt (Strategie)")
+                        _log("🔴 Druck fehlgeschlagen — Farm wird gestoppt (Strategie)", en="🔴 Print failed — farm stops (strategy)")
                         await _notify(f"🔴 Printloom — Druck fehlgeschlagen, Farm gestoppt\n{job['fileName']}")
                         _farm["stopping"] = True
                         raise RuntimeError("Gestoppt")
                     if action == "pause":
-                        _log("🔴 Druck fehlgeschlagen — pausiert (Strategie)")
+                        _log("🔴 Druck fehlgeschlagen — pausiert (Strategie)", en="🔴 Print failed — paused (strategy)")
                         _farm["paused"] = True
                         _farm["error"] = "Druck fehlgeschlagen — prüfen, dann fortsetzen (neuer Versuch)"
                         await _notify(f"🔴 Printloom — Druck fehlgeschlagen, pausiert\n{job['fileName']}")
@@ -2446,7 +2468,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                         # und ins vorgesehene Fach einlagern — dann weiter mit dem nächsten Job.
                         # Ohne diese Bergung würde der nächste Zyklus blind auf die alte Platte
                         # laden (Kollision) — genau der gemeldete Fehler.
-                        _log("🔴 Druck fehlgeschlagen — Auswurf-Sequenz (Platte bergen)…")
+                        _log("🔴 Druck fehlgeschlagen — Auswurf-Sequenz (Platte bergen)…", en="🔴 Print failed — eject sequence (recovering the plate)…")
                         await _notify(f"🔴 Printloom — Druck fehlgeschlagen\n{job['fileName']}\n"
                                       "Platte wird ausgeworfen & eingelagert, dann weiter.")
                         # Bergung nach der JETZT gespeicherten Sequenz — wurde während des
@@ -2468,7 +2490,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                             if isinstance(fe, RuntimeError) and str(fe) == "Gestoppt":
                                 raise
                             # Auswurf misslungen → NICHT blind weiterfahren (Kollisionsgefahr) → pausieren.
-                            _log(f"🛑 Auswurf-Sequenz fehlgeschlagen: {fe} — pausiert")
+                            _log(f"🛑 Auswurf-Sequenz fehlgeschlagen: {fe} — pausiert", en=f'🛑 Eject sequence failed: "{fe}" — paused')
                             _farm["paused"] = True
                             _farm["error"] = (f"Auswurf nach Druckfehler misslungen ({fe}) — Platte "
                                               "manuell entnehmen, dann fortsetzen")
@@ -2482,7 +2504,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                             # hielte die Farm grundlos noch einmal an.
                             _set_arm("none")
                             _set_bed("empty")
-                            _log("✓ Fortgesetzt — Platte gilt als entnommen")
+                            _log("✓ Fortgesetzt — Platte gilt als entnommen", en="✓ Resumed — plate counts as removed")
                             raise RuntimeError("Druck fehlgeschlagen (FAILED)")
                         raise _EjectRecovered(
                             "Druck fehlgeschlagen (FAILED) — Platte ausgeworfen & eingelagert")
@@ -2495,7 +2517,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                     idle_grace += 1
                     if idle_grace >= 3:
                         raise RuntimeError("Drucker dauerhaft IDLE — abgebrochen")
-                    _log(f"⚠ Drucker noch IDLE — warte auf Druckstart ({idle_grace}/3)…")
+                    _log(f"⚠ Drucker noch IDLE — warte auf Druckstart ({idle_grace}/3)…", en=f"⚠ Printer still IDLE — waiting for the print to start ({idle_grace}/3)…")
 
             except RuntimeError:
                 raise
@@ -2504,11 +2526,11 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                 if reconn_fails >= 5:
                     action = _estrat("connection_lost")
                     if action == "stop":
-                        _log("⚠ Verbindung dauerhaft unterbrochen — Farm wird gestoppt (Strategie)")
+                        _log("⚠ Verbindung dauerhaft unterbrochen — Farm wird gestoppt (Strategie)", en="⚠ Connection lost for good — farm stops (strategy)")
                         _farm["stopping"] = True
                         raise RuntimeError("Gestoppt")
                     if action == "pause":
-                        _log("⚠ Verbindung dauerhaft unterbrochen — pausiert (Strategie)")
+                        _log("⚠ Verbindung dauerhaft unterbrochen — pausiert (Strategie)", en="⚠ Connection lost for good — paused (strategy)")
                         _farm["paused"] = True
                         _farm["error"] = "Verbindung zum Drucker verloren — prüfen, dann fortsetzen"
                         while _farm["paused"] and not _farm["stopping"]:
@@ -2527,7 +2549,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
                     conn_alarmed = True
                     await _notify("⚠ Printloom — Verbindung zum Drucker verloren\n"
                                   f"{job.get('fileName','')}\nReconnect läuft — Drucker/Netzwerk prüfen")
-                _log(f"⚠ Verbindung unterbrochen ({reconn_fails}/5: {e}) — retry…")
+                _log(f"⚠ Verbindung unterbrochen ({reconn_fails}/5: {e}) — retry…", en=f'⚠ Connection interrupted ({reconn_fails}/5: "{e}") — retry…')
 
         raise RuntimeError("Gestoppt")
     finally:
@@ -2538,7 +2560,7 @@ async def _wait_print(job: dict, device: Device, poll_sec: int, min_min: int,
         if prep_task is not None and not prep_task.done():
             prep_task.cancel()
             await asyncio.gather(prep_task, return_exceptions=True)
-            _log("⚡ Vorstart abgebrochen")
+            _log("⚡ Vorstart abgebrochen", en="⚡ Pre-start cancelled")
 
 
 # ── OTTOeject-Geometrie (opt-in: Farm sendet App-G-code statt Geräte-Macro) ──
@@ -2555,7 +2577,7 @@ def _load_farm_geometry() -> dict:
         # Sonst führe die Farm mit Regalzahl/Fächern aus den Vorgaben statt der eigenen.
         raise
     except (OSError, ValueError, TypeError, KeyError) as e:
-        logger.warning(f"Regal-Konfiguration nicht auf die Geometrie anwendbar: {e}")
+        logger.warning(f"Rack configuration not applicable to the geometry: {e}")
     # Seit v1.1.8 gibt es keine zweite X-Quelle mehr: das Farm-Layout wird aus
     # genau dieser Geometrie abgeleitet, statt sie zu überlagern. Damit fahren
     # Test-Knopf (Drucker-Tab) und Farm garantiert dieselben Positionen.
@@ -2598,7 +2620,7 @@ def farm_printer_id() -> Optional[int]:
         geom = _load_farm_geometry()
         block = _motion.printer_block(geom, _farm_printer(geom)) or {}
     except (storage.BrokenFile, RuntimeError) as e:
-        logger.warning(f"Farm-Drucker nicht bestimmbar: {e}")
+        logger.warning(f"Farm printer not determinable: {e}")
         return None
     did = block.get("device_id")
     return int(did) if did is not None else None
@@ -2615,7 +2637,7 @@ def farm_device(db, bambu_only: bool = False):
         d = q.filter(Device.id == fid).first()
         if d is not None:
             return d
-        logger.warning(f"Farm-Drucker {fid} nicht in der Geräteliste — nehme den ersten")
+        logger.warning(f"Farm printer {fid} not in the device list — taking the first one")
     return q.filter(Device.device_type == PrinterType.BAMBU_LAB).first() or q.first()
 
 
@@ -2634,10 +2656,10 @@ async def _crash_gate(job: dict, device) -> None:
              else f"Kollisions-Check nicht möglich ({res.get('error') or 'kein G-code'})")
     action = _estrat("crash_risk")
     if action == "ignore":
-        _log(f"⚠ {job['fileName']}: {grund} — wird trotzdem gedruckt (Strategie „ignorieren“)")
+        _log(f"⚠ {job['fileName']}: {grund} — wird trotzdem gedruckt (Strategie „ignorieren“)", en=f'⚠ {job["fileName"]}: "{grund}" — printed anyway (strategy "ignore")')
         return
     if action == "stop":
-        _log(f"🛑 {job['fileName']}: {grund} — Farm wird gestoppt (Strategie)")
+        _log(f"🛑 {job['fileName']}: {grund} — Farm wird gestoppt (Strategie)", en=f'🛑 {job["fileName"]}: "{grund}" — farm stops (strategy)')
         _farm["stopping"] = True
         raise RuntimeError("Gestoppt")
     if action == "pause":
@@ -2655,7 +2677,7 @@ def _assert_overrides_absolute() -> None:
     try:
         errors = _geometry_check.check_geometry(_load_farm_geometry()).get("errors") or []
     except (storage.BrokenFile, RuntimeError, ValueError) as e:
-        logger.warning(f"Geometrie-Prüfung beim Start nicht möglich: {e}")
+        logger.warning(f"Geometry check at start not possible: {e}")
         return
     rel = [e for e in errors if e.get("code") == "relative_move_unchecked"]
     if rel:
@@ -2824,7 +2846,7 @@ def _release_reserved(slot) -> None:
     if status == "printing":
         _rack_update(slot, "free")
     elif status not in (None, "free"):
-        _log(f"⚠ Fach {slot} bleibt „{status}“ (war nicht für diesen Job reserviert)")
+        _log(f"⚠ Fach {slot} bleibt „{status}“ (war nicht für diesen Job reserviert)", en=f'⚠ Slot {slot} stays "{status}" (was not reserved for this job)')
 
 
 def _assert_store_slot(job: dict) -> None:
@@ -2890,7 +2912,7 @@ async def _start_homing_print(device: Device) -> None:
     if printer_link.is_moonraker(device):
         await _printer_gate(device, "Homing senden")
         _assert_may_command_printer("Homing starten")
-        _log("[↑] Homing an den Drucker (G28 + Bett auf Ladeposition)…")
+        _log("[↑] Homing an den Drucker (G28 + Bett auf Ladeposition)…", en="[↑] Homing on the printer (G28 + bed to loading position)…")
         loop = asyncio.get_running_loop()
         _farm["_moon_homing"] = loop.run_in_executor(
             printer_link.executor, printer_link.run_gcode, device, _homing_gcode_klipper(),
@@ -2902,12 +2924,12 @@ async def _start_homing_print(device: Device) -> None:
     except Exception as e:
         if not os.path.exists(HOMING_3MF_PATH):
             raise RuntimeError(f"Homing-Datei konnte nicht erstellt werden: {e}")
-        logger.warning(f"Homing-Datei nicht erneuerbar ({e}) — nutze vorhandene")
+        logger.warning(f"Homing file not renewable ({e}) — using the existing one")
     homing_name = "printloom_homing.3mf"
     loop = asyncio.get_running_loop()
     # Die Homing-Datei ist ein Druckauftrag: Sie würde einen laufenden Druck ersetzen.
     await _printer_gate(device, "Homing senden")
-    _log("[↑] Homing senden (G28+Z200)…")
+    _log("[↑] Homing senden (G28+Z200)…", en="[↑] Sending homing (G28+Z200)…")
     ftp = BambuFTP(device.ip_address, device.access_code)
     up = await loop.run_in_executor(bambu_manager.executor, ftp.upload_file, HOMING_3MF_PATH, homing_name)
     if not up:
@@ -2948,7 +2970,7 @@ def _plate_ready_skip() -> bool:
     Zyklus-Griff des ersten Jobs entfällt, sonst würde doppelt gegriffen. Die
     Buchhaltung lief bereits beim Griff im First Start."""
     if not _farm.get("_in_first_start") and _farm.pop("_plate_ready", False):
-        _log("⏭ Platte schon im Greifer (im First Start geholt) — Griff übersprungen")
+        _log("⏭ Platte schon im Greifer (im First Start geholt) — Griff übersprungen", en="⏭ Plate already in the gripper (fetched during first start) — grab skipped")
         return True
     return False
 
@@ -2963,9 +2985,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
     if cond and cond.get("check"):
         passed, text = await _eval_condition(cond, device)
         if not passed:
-            _log(f"⏭ Bedingung nicht erfüllt ({text}) — '{step.get('label', step.get('type', '?'))}' übersprungen")
+            _log(f"⏭ Bedingung nicht erfüllt ({text}) — '{step.get('label', step.get('type', '?'))}' übersprungen", en=f"⏭ Condition not met (\"{text}\") — '{step.get('label', step.get('type', '?'))}' skipped")
             return
-        _log(f"✓ Bedingung erfüllt ({text})")
+        _log(f"✓ Bedingung erfüllt ({text})", en=f'✓ Condition met ("{text}")')
 
     rack_num, slot_num = _slot_vars(job["slot"])
     stack_rack, stack_slot = _stack_vars_lazy(step.get("value"))
@@ -2973,7 +2995,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
     t = step.get("type", "")
 
     if t == "gcode":
-        _log(f"[GCode] {step.get('label', val[:40])}")
+        _log(f"[GCode] {step.get('label', val[:40])}", en=f"[GCode] {step.get('label', val[:40])}")
         await _do_bambu_gcode(val, device)
         # Record when this gcode was sent so wait_bambu_idle can compute elapsed time
         _farm["_last_gcode_time"] = asyncio.get_running_loop().time()
@@ -2981,9 +3003,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
     elif t == "klipper_gcode":
         _assert_klipper_gcode_ok(val)
         label = step.get("label") or val.replace("\n", " · ")[:40]
-        _log(f"[Klipper] {label}")
+        _log(f"[Klipper] {label}", en=f"[Klipper] {label}")
         await _do_macro(val)   # Klipper HTTP blocks until movement is complete
-        _log(f"✓ {label} — Position erreicht")
+        _log(f"✓ {label} — Position erreicht", en=f"✓ {label} — position reached")
 
     elif t == "wait_bambu_idle":
         # gcode_state ändert sich bei manuellen Befehlen (G28) nicht zuverlässig.
@@ -2998,10 +3020,10 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         if gcode_time is not None:
             elapsed = loop.time() - gcode_time
             remaining = max(0.0, min_duration - elapsed)
-            _log(f"[⏳] {label} — G28 vor {elapsed:.0f}s gesendet, noch {remaining:.0f}s…")
+            _log(f"[⏳] {label} — G28 vor {elapsed:.0f}s gesendet, noch {remaining:.0f}s…", en=f"[⏳] {label} — G28 sent {elapsed:.0f}s ago, {remaining:.0f}s left…")
         else:
             remaining = float(min_duration)
-            _log(f"[⏳] {label} — {remaining:.0f}s warten…")
+            _log(f"[⏳] {label} — {remaining:.0f}s warten…", en=f"[⏳] {label} — waiting {remaining:.0f}s…")
 
         interval = 0.5
         waited = 0.0
@@ -3009,7 +3031,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             await asyncio.sleep(interval)
             waited += interval
 
-        _log(f"✓ {label} — Z200 erreicht")
+        _log(f"✓ {label} — Z200 erreicht", en=f"✓ {label} — Z200 reached")
 
     elif t == "macro":
         kind = _macro_kind(val)
@@ -3051,19 +3073,19 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                 g2 = _farm.get("geometry") or _load_farm_geometry()
                 uses = bool(op_map and _motion.op_uses_gcode(g2, op_map[0], _farm_printer(g2)))
             except Exception as e2:
-                logger.warning(f"use_gcode nicht prüfbar: {e2}")
+                logger.warning(f"use_gcode not checkable: {e2}")
                 uses = True
             if uses:
-                _log(f"⚠ Printloom-G-code für {val!r} nicht erzeugbar: {e}")
+                _log(f"⚠ Printloom-G-code für {val!r} nicht erzeugbar: {e}", en=f'⚠ Printloom G-code for {val!r} could not be built: "{e}"')
                 raise RuntimeError(f"Bewegung {val!r} nicht erzeugbar ({e}) — Geometrie prüfen")
             send_val, op_used = val, None
-            logger.warning(f"use_gcode-Auswertung fehlgeschlagen ({e}) — Geräte-Macro {val!r}")
+            logger.warning(f"use_gcode evaluation failed ({e}) — device macro {val!r}")
         if op_used is None and kind in _motion.PRINTER_OPS and printer_link.is_moonraker(device):
             # Die Geräte-Macros des OTTOeject kennen nur die Positionen des Bambu. Beim
             # Start schon geprüft (_assert_moon_ready); hier die letzte Sperre.
             raise RuntimeError(f"Geräte-Macro {val!r} am Snapmaker U1 — dort nur eingemessene "
                                f"Printloom-Positionen (Drucker-Tab)")
-        _log(f"▶ {val}" + (f"  →  Printloom-G-code ({op_used})" if op_used else ""))
+        _log(f"▶ {val}" + (f"  →  Printloom-G-code ({op_used})" if op_used else ""), en=f"▶ {val}" + (f"  →  Printloom G-code ({op_used})" if op_used else ""))
         _mark_in_motion(kind)
         await _do_macro(send_val)
         _book_op(kind, job, stack_rack, stack_slot)
@@ -3098,12 +3120,12 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             # (grab_magazine greift flach/NOLIFT für einen Stapel, das passt hier nicht).
             if op == "grab_magazine" and _magazine_slot_cfg() <= 0:
                 op = "grab"
-                _log("📥 Kein Magazin konfiguriert — greife die leere Platte aus dem Lagerfach")
+                _log("📥 Kein Magazin konfiguriert — greife die leere Platte aus dem Lagerfach", en="📥 No magazine configured — grabbing the empty plate from the storage slot")
         rk, sl = (int(stack_rack), int(stack_slot)) if is_grab else \
                  (int(rack_num), int(slot_num)) if is_store else (1, 1)
         geom = _farm.get("geometry") or _load_farm_geometry()
         script = _motion.build_op(geom, op, rack=rk, slot=sl, printer=_farm_printer(geom))
-        _log(f"▶ Printloom-Op: {op}" + (f" (Regal {rk} Fach {sl})" if (is_grab or is_store) else ""))
+        _log(f"▶ Printloom-Op: {op}" + (f" (Regal {rk} Fach {sl})" if (is_grab or is_store) else ""), en=f"▶ Printloom op: {op}" + (f" (rack {rk} slot {sl})" if (is_grab or is_store) else ""))
         _mark_in_motion(op)
         await _do_macro(script)   # Klipper HTTP blocks until movement is complete
         # Gegriffenes Fach ausdrücklich mitgeben — ohne Magazin wird genau dessen
@@ -3112,7 +3134,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
 
     elif t == "delay":
         secs = int(step.get("seconds", 0))
-        _log(f"⏱ {step.get('label', '')} — {secs}s…")
+        _log(f"⏱ {step.get('label', '')} — {secs}s…", en=f"⏱ {step.get('label', '')} — {secs}s…")
         for _ in range(secs):
             if _farm["stopping"]:
                 raise RuntimeError("Gestoppt")
@@ -3138,9 +3160,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             # „Auf Z200 warten" (wait_homing) holt das Ergebnis später ab.
             _farm["_homing_task"] = asyncio.create_task(
                 _wait_bambu_finish(device, label="Homing (G28+Z200)", timeout=timeout))
-            _log("✓ Homing gesendet — läuft im Hintergrund (OTTOeject arbeitet parallel weiter)")
+            _log("✓ Homing gesendet — läuft im Hintergrund (OTTOeject arbeitet parallel weiter)", en="✓ Homing sent — runs in the background (OTTOeject keeps working in parallel)")
         else:
-            _log("✓ Homing gesendet — warte auf FINISH…")
+            _log("✓ Homing gesendet — warte auf FINISH…", en="✓ Homing sent — waiting for FINISH…")
             # Position-confirmed: wait until the printer reports the homing print done.
             await _wait_bambu_finish(device, label="Homing (G28+Z200)", timeout=timeout)
 
@@ -3150,7 +3172,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         label = step.get("label") or "Auf Z200 warten"
         task = _farm.pop("_homing_task", None)
         if task is not None:
-            _log(f"[⏳] {label} — Homing läuft noch…" if not task.done() else f"[⏳] {label}…")
+            _log(f"[⏳] {label} — Homing läuft noch…" if not task.done() else f"[⏳] {label}…", en=f"[⏳] {label} — homing still running…" if not task.done() else f"[⏳] {label}…")
             await task
         else:
             # Ohne vorheriges nowait-Homing (Schritt einzeln verwendet): direkt warten.
@@ -3166,7 +3188,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         z    = int(step.get("z", 200) or 200)
         feed = int(step.get("feed", 3000) or 3000)
         loop = asyncio.get_running_loop()
-        _log(f"[↑] Bambu Position Z{z} (F{feed}) per G-Code…")
+        _log(f"[↑] Bambu Position Z{z} (F{feed}) per G-Code…", en=f"[↑] Bambu position Z{z} (F{feed}) via G-code…")
         # Über die persistente Verbindung (bambu_manager) senden — kein eigener Connect.
         _assert_may_command_printer("Bett-Fahrt")
         ok = await loop.run_in_executor(printer_link.executor, printer_link.send_gcode, device, f"G90\nG1 Z{z} F{feed}")
@@ -3174,14 +3196,14 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             raise RuntimeError("Z-Bewegung (G-Code) fehlgeschlagen")
         # Settle = worst-case Z travel / feed + buffer (capped). z.B. F3000 → ~8s.
         wait_s = min(30.0, max(5.0, 256.0 / max(1.0, feed / 60.0) + 3.0))
-        _log(f"… Z{z}: G-Code gesendet, warte {wait_s:.0f}s bis Position erreicht…")
+        _log(f"… Z{z}: G-Code gesendet, warte {wait_s:.0f}s bis Position erreicht…", en=f"… Z{z}: G-code sent, waiting {wait_s:.0f}s until the position is reached…")
         waited = 0.0
         while waited < wait_s and not _farm["stopping"]:
             await asyncio.sleep(0.5)
             waited += 0.5
         if _farm["stopping"]:
             raise RuntimeError("Gestoppt")
-        _log(f"✓ Z{z} — Position erreicht (G-Code + {wait_s:.0f}s)")
+        _log(f"✓ Z{z} — Position erreicht (G-Code + {wait_s:.0f}s)", en=f"✓ Z{z} — position reached (G-code + {wait_s:.0f}s)")
 
     elif t == "send_file":
         _set_job(job["id"], {"status": "sending"})
@@ -3189,7 +3211,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
         use_ams = bool(_live("use_ams", use_ams))
         # Block printing until filaments confidently match the live AMS (or manual map set).
         await _ensure_ams_ready(job, device, use_ams)
-        _log(f"[↑] Datei senden: {job['fileName']}")
+        _log(f"[↑] Datei senden: {job['fileName']}", en=f"[↑] Sending file: {job['fileName']}")
         await _do_send_file(job, device, use_ams)
 
     elif t == "send_file_fixed":
@@ -3210,7 +3232,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                 "slot":     job["slot"],
                 "amsMap":   "",
             }
-            _log(f"[↑] Feste Datei senden: {fixed_file.original_filename} (ID {fixed_id})")
+            _log(f"[↑] Feste Datei senden: {fixed_file.original_filename} (ID {fixed_id})", en=f"[↑] Sending fixed file: {fixed_file.original_filename} (ID {fixed_id})")
             # AMS aus; eine Hilfsdatei (Homing o. Ä.) bucht keinen Druck aufs Bett — sonst
             # hielte das Einlege-Tor vor jedem Einlegen an (bis v1.1.64).
             await _do_send_file(fixed_job, device, False, book_bed=False)
@@ -3218,16 +3240,16 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
             db.close()
 
     elif t == "wait_print":
-        _log("[⏳] Warte auf Druckende…")
+        _log("[⏳] Warte auf Druckende…", en="[⏳] Waiting for the print to finish…")
         prep_started = await _wait_print(job, device, poll_sec, min_min, prep_steps, fail_steps)
         if not prep_started and prep_steps:
-            _log("Vorstart-Fallback…")
+            _log("Vorstart-Fallback…", en="Pre-start fallback…")
             await _run_prep(prep_steps, job["slot"], device)
-        _log(f"✓ Druck fertig: {job['fileName']}")
+        _log(f"✓ Druck fertig: {job['fileName']}", en=f"✓ Print done: {job['fileName']}")
 
     elif t == "wait_print_failed":
         label = step.get("label") or "Warte auf Druckfehler"
-        _log(f"[✗] {label} — warte auf FAILED…")
+        _log(f"[✗] {label} — warte auf FAILED…", en=f"[✗] {label} — waiting for FAILED…")
         loop = asyncio.get_running_loop()
         while not _farm["stopping"]:
             while _farm["paused"] and not _farm["stopping"]:
@@ -3249,19 +3271,19 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                 p = raw.get("print", {})
                 state = p.get("gcode_state", "IDLE")
                 pct   = p.get("mc_percent", 0)
-                _log(f"Drucker: {state}  {pct}%")
+                _log(f"Drucker: {state}  {pct}%", en=f"Printer: {state}  {pct}%")
                 if state == "FAILED":
-                    _log(f"✓ {label} — Drucker FAILED {pct}% erkannt — weiter")
+                    _log(f"✓ {label} — Drucker FAILED {pct}% erkannt — weiter", en=f"✓ {label} — printer FAILED {pct}% detected — continuing")
                     break
             except RuntimeError:
                 raise
             except Exception as e:
-                _log(f"⚠ Verbindungsfehler: {e}")
+                _log(f"⚠ Verbindungsfehler: {e}", en=f'⚠ Connection error: "{e}"')
 
     elif t == "wait_pause":
         label = step.get("label") or "Warte auf PAUSE"
         timeout_sec = max(30, int(step.get("seconds") or 120))
-        _log(f"[⏸] {label} — warte auf PAUSE (Timeout {timeout_sec}s)…")
+        _log(f"[⏸] {label} — warte auf PAUSE (Timeout {timeout_sec}s)…", en=f"[⏸] {label} — waiting for PAUSE (timeout {timeout_sec}s)…")
         loop = asyncio.get_running_loop()
         elapsed = 0.0
         conn_fails = 0
@@ -3283,7 +3305,7 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                     conn_fails += 1
                     if conn_fails >= 5:
                         raise RuntimeError(f"{label} — Drucker dauerhaft nicht erreichbar")
-                    _log(f"⚠ Drucker nicht erreichbar ({conn_fails}/5)…")
+                    _log(f"⚠ Drucker nicht erreichbar ({conn_fails}/5)…", en=f"⚠ Printer not reachable ({conn_fails}/5)…")
                     continue
                 await loop.run_in_executor(printer_link.executor, printer_link.request_pushall, device)
                 await asyncio.sleep(1.5)
@@ -3294,9 +3316,9 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                 p     = raw.get("print", {})
                 state = p.get("gcode_state", "IDLE")
                 pct   = p.get("mc_percent", 0)
-                _log(f"Drucker: {state}  {pct}%")
+                _log(f"Drucker: {state}  {pct}%", en=f"Printer: {state}  {pct}%")
                 if state == "PAUSE":
-                    _log(f"✓ {label} — Drucker auf PAUSE (Z200) — Platte einlegen")
+                    _log(f"✓ {label} — Drucker auf PAUSE (Z200) — Platte einlegen", en=f"✓ {label} — printer on PAUSE (Z200) — insert the plate")
                     break
                 if state == "FAILED":
                     raise RuntimeError(
@@ -3314,22 +3336,22 @@ async def _exec_step(step: dict, job: dict, device: Device, use_ams: bool,
                 raise
             except Exception as e:
                 conn_fails += 1
-                _log(f"⚠ Verbindungsfehler: {e}")
+                _log(f"⚠ Verbindungsfehler: {e}", en=f'⚠ Connection error: "{e}"')
 
     elif t == "clear_error":
         label = step.get("label") or "Fehler quittieren"
-        _log(f"[⚠] {label}…")
+        _log(f"[⚠] {label}…", en=f"[⚠] {label}…")
         loop = asyncio.get_running_loop()
         if printer_link.is_moonraker(device):
             # Klipper braucht kein Quittieren: Aus „error" startet der nächste Druck.
-            _log(f"✓ {label} — am Snapmaker nicht nötig")
+            _log(f"✓ {label} — am Snapmaker nicht nötig", en=f"✓ {label} — not needed on the Snapmaker")
             return
         # Persistente Verbindung (bambu_manager); clear_error = stop-Befehl (FAILED → IDLE).
         if not await loop.run_in_executor(bambu_manager.executor, bambu_manager.ensure, device):
             raise RuntimeError("MQTT nicht erreichbar für clear_error")
         ok = await loop.run_in_executor(bambu_manager.executor, bambu_manager.print_command, device, "stop")
         await asyncio.sleep(2)
-        _log(f"{'✓' if ok else '⚠'} {label}{'​' if ok else ' — Befehl nicht bestätigt'}")
+        _log(f"{'✓' if ok else '⚠'} {label}{'​' if ok else ' — Befehl nicht bestätigt'}", en=f"{'✓' if ok else '⚠'} {label}{'' if ok else ' — command not confirmed'}")
 
     else:
         # Bis v1.1.45 nur geloggt und übersprungen: Ein Tippfehler im Typ ließ so etwa
@@ -3389,7 +3411,7 @@ def _split_prep(steps: list) -> tuple:
             label = s.get("label") or s.get("type") or "?"
             if label not in warned:
                 warned.add(label)
-                _log(f"⏱ bei „{label}“ ignoriert — läuft nach dem Druckende")
+                _log(f"⏱ bei „{label}“ ignoriert — läuft nach dem Druckende", en=f'⏱ ignored at "{label}" — runs after the print ends')
         normal.append(s)
     return normal, prep
 
@@ -3422,7 +3444,7 @@ def _handover_trim(steps: list) -> list:
             return steps
         _farm.pop("_plate_ready", None)
         skipped = [x.get("label", x.get("type", "?")) for x in steps[:i + 1] if not x.get("disabled")]
-        _log("⏭ Übergabe vom First Start (Platte schon im Greifer) — übersprungen: " + " · ".join(skipped))
+        _log("⏭ Übergabe vom First Start (Platte schon im Greifer) — übersprungen: " + " · ".join(skipped), en="⏭ Handover from first start (plate already in the gripper) — skipped: " + " · ".join(skipped))
         return steps[i + 1:]
     return steps
 
@@ -3451,7 +3473,7 @@ def _read_sequences() -> Optional[dict]:
     except storage.BrokenFile as e:
         if not _farm.get("_seq_broken_logged"):
             _farm["_seq_broken_logged"] = True
-            _log(f"⚠ {e} — fahre mit der Sequenz weiter, mit der dieser Lauf begann")
+            _log(f"⚠ {e} — fahre mit der Sequenz weiter, mit der dieser Lauf begann", en=f'⚠ "{e}" — continuing with the sequence this run started with')
         return None
     if not isinstance(d, dict) or d.get("schema_version") != SEQ_SCHEMA_VERSION:
         return None
@@ -3484,7 +3506,9 @@ def _fresh_cycle_tail(started_with: list) -> Optional[list]:
     if len(wps) != 1:
         _log("↻ Sequenz wurde während des Drucks geändert, aber ohne eindeutiges "
              "„Auf Druckende warten“ — der Rest dieses Zyklus läuft nach der alten "
-             "Fassung, ab dem nächsten Job gilt die neue.")
+             "Fassung, ab dem nächsten Job gilt die neue.", en="↻ The sequence was changed during the print, but without a unique "
+             "\"Wait for print end\" step — the rest of this cycle runs on the old "
+             "version, the new one applies from the next job.")
         return None
     return normal[wps[0] + 1:]
 
@@ -3507,7 +3531,7 @@ async def _run_step_checked(st: dict, job: dict, device: Device, use_ams: bool, 
     except RuntimeError as e:
         if str(e) == "Gestoppt" or not st.get("optional"):
             raise
-        _log(f"⚠ '{label}' fehlgeschlagen (optional) — als fertig gewertet")
+        _log(f"⚠ '{label}' fehlgeschlagen (optional) — als fertig gewertet", en=f"⚠ '{label}' failed (optional) — counted as done")
     except (ValueError, TypeError, KeyError) as e:
         raise RuntimeError(f"Schritt '{label}': ungültiger Wert ({e})") from e
 
@@ -3580,7 +3604,7 @@ async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
             await _hold_for_file(str(e))
             continue
         except Exception as e:
-            logger.warning(f"Geometrie nicht geladen: {e}")
+            logger.warning(f"Geometry not loaded: {e}")
             _farm["geometry"] = None
 
         label = " + ".join(s.get("label", s.get("type", "?")) for s in group)
@@ -3591,7 +3615,7 @@ async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
         # Bei JEDEM Schritt mitschreiben: bricht die App hier ab, weiß man danach
         # genau, wo es aufgehört hat (Phase 3.1).
         _persist_state()
-        _log(f"▸ {label}")
+        _log(f"▸ {label}", en=f"▸ {label}")
 
         if len(group) == 1:
             await _run_step_checked(group[0], job, device, use_ams, poll_sec, min_min,
@@ -3606,7 +3630,8 @@ async def _exec_sequence(steps: list, job: dict, device: Device, use_ams: bool,
             if tail is not None:
                 groups = groups[:gi + 1] + _group_steps(tail)
                 _log("↻ Sequenz wurde während des Drucks geändert — der Rest dieses "
-                     "Zyklus läuft bereits nach der neuen Fassung.")
+                     "Zyklus läuft bereits nach der neuen Fassung.", en="↻ The sequence was changed during the print — the rest of this "
+                     "cycle already runs on the new version.")
         gi += 1
 
     _farm["seq_step_idx"] = 0
@@ -3623,7 +3648,7 @@ async def _wait_for_slot(slot: str, poll_sec: int):
             status = data.get("slots", {}).get(str(slot), {}).get("status", "free")
             if status in ("free", "ready"):
                 return
-            _log(f"⏳ Fach {slot} ist '{status}' — warte auf Freigabe…")
+            _log(f"⏳ Fach {slot} ist '{status}' — warte auf Freigabe…", en=f"⏳ Slot {slot} is '{status}' — waiting for release…")
         while _farm["paused"] and not _farm["stopping"]:
             await asyncio.sleep(0.5)
         if _farm["stopping"]:
@@ -3658,7 +3683,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
     _farm.pop("_moon_homing", None)   # Homing-Antwort eines früheren Laufs (U1)
 
     try:
-        _log("═══ Auto Farm aktiv — wartet auf Jobs ═══")
+        _log("═══ Auto Farm aktiv — wartet auf Jobs ═══", en="═══ Auto Farm active — waiting for jobs ═══")
 
         while not _farm["stopping"]:
             # Geänderte Einstellungen übernehmen (nur bei geänderter Datei).
@@ -3670,7 +3695,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             _neu = _read_sequences()
             if _neu is not None and (_neu["seq_next"] != seq_next or _neu["seq_new"] != seq_new):
                 seq_new, seq_next = _neu["seq_new"], _neu["seq_next"]
-                _log("↻ Sequenzen neu geladen — gelten ab diesem Job")
+                _log("↻ Sequenzen neu geladen — gelten ab diesem Job", en="↻ Sequences reloaded — they apply from this job")
 
             # Respect pause
             while _farm["paused"] and not _farm["stopping"]:
@@ -3688,17 +3713,17 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                     # Nur parken, wenn schon einmal gehomt wurde (First Start lief) — sonst
                     # ist die Maschine ungehomt und PARK wäre unsicher.
                     if first_start_done:
-                        _log("⏸ Warteschlange leer — OTTOeject parkt, warte auf neue Jobs…")
+                        _log("⏸ Warteschlange leer — OTTOeject parkt, warte auf neue Jobs…", en="⏸ Queue empty — OTTOeject parks, waiting for new jobs…")
                         # Arm PARKEN, statt vor dem Regal stehen zu bleiben. Beim nächsten
                         # Job wird neu gehomt: Klipper schaltet in der Wartezeit die Motoren
                         # per idle_timeout ab → Referenz geht verloren.
                         try:
                             await _do_macro("PARK_OTTOEJECT")
                         except Exception as e:
-                            _log(f"⚠ Parken beim Leerlauf fehlgeschlagen: {e}")
+                            _log(f"⚠ Parken beim Leerlauf fehlgeschlagen: {e}", en=f'⚠ Parking on idle failed: "{e}"')
                         _farm["_parked_idle"] = True   # → nächster Job homt zuerst
                     else:
-                        _log("⏸ Warteschlange leer — warte auf neue Jobs…")
+                        _log("⏸ Warteschlange leer — warte auf neue Jobs…", en="⏸ Queue empty — waiting for new jobs…")
                 _farm["current_job_id"] = None
                 _farm["current_job_idx"] = -1
                 _farm["_current_job_name"] = ""
@@ -3724,11 +3749,11 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 # per idle_timeout die Motoren abgeschaltet haben (verlorene Referenz).
                 # Danach läuft der Zyklus normal weiter.
                 if _farm.pop("_parked_idle", False) and first_start_done:
-                    _log("↑ Referenzfahrt nach Leerlauf (OTTOeject homen)…")
+                    _log("↑ Referenzfahrt nach Leerlauf (OTTOeject homen)…", en="↑ Homing after idle (OTTOeject)…")
                     try:
                         await _do_macro("OTTOEJECT_HOME")
                     except Exception as e:
-                        _log(f"⚠ Homing nach Leerlauf fehlgeschlagen: {e}")
+                        _log(f"⚠ Homing nach Leerlauf fehlgeschlagen: {e}", en=f'⚠ Homing after idle failed: "{e}"')
                 # WICHTIG: Während des Countdowns kann der Nutzer die Reihenfolge
                 # ändern (Drag/↑↓ → /jobs/reorder). Deshalb den jetzt obersten
                 # wartenden Job NEU bestimmen — sonst startet trotz Umsortieren der
@@ -3745,7 +3770,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
 
             _farm["current_job_id"] = job["id"]
             cur_slot = job["slot"]
-            _log(f"── Job: {job['fileName']} ──")
+            _log(f"── Job: {job['fileName']} ──", en=f"── Job: {job['fileName']} ──")
 
             # Name und Fach stehen im gesicherten Zustand: Bricht die App ab, sagt der
             # Hinweis danach, welcher Job wo stand (bis v1.1.46 immer leer).
@@ -3775,7 +3800,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 # (one-time homing + Z200). `seq_new` = First Start, `seq_next` = cycle.
                 if not first_start_done:
                     if _filter_disabled(seq_new):
-                        _log("▶ First Start (einmaliges Homing)…")
+                        _log("▶ First Start (einmaliges Homing)…", en="▶ First start (one-time homing)…")
                         _farm["_in_first_start"] = True
                         try:
                             await _exec_sequence(seq_new, job, device, use_ams, poll_sec, min_min, [], [])
@@ -3824,7 +3849,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 _record_completed(job, "done", job_started_at, datetime.now(), actual_min)
                 cur_slot = None
                 _farm["current_job_id"] = None
-                _log(f"✓ Fertig: {job['fileName']}")
+                _log(f"✓ Fertig: {job['fileName']}", en=f"✓ Done: {job['fileName']}")
                 await _notify(
                     f"✅ Printloom — Druck fertig\n{job['fileName']}\nFach {job['slot']}"
                 )
@@ -3834,7 +3859,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 # Fach bleibt BELEGT (Platte liegt drin), nächster Job lädt eine frische
                 # Platte und startet. Kein blockierender Fehlerzustand.
                 msg = str(e)
-                _log(f"🔴 {msg}")
+                _log(f"🔴 {msg}", en=f'🔴 "{msg}"')
                 _record_failure(msg)
                 _record_event("error", job.get("fileName", ""), msg[:70])
                 _record_completed(job, "ejected", job_started_at, datetime.now(),
@@ -3869,7 +3894,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 # der eingestellten Strategie reagieren.
                 msg = str(e)
                 action = _estrat("move_timeout")
-                _log(f"⏱ {msg} — Strategie: {action}")
+                _log(f"⏱ {msg} — Strategie: {action}", en=f'⏱ "{msg}" — strategy: {action}')
                 _record_failure(msg)
                 _record_event("error", job.get("fileName", ""), msg[:70])
                 await _notify(f"⏱ Printloom — Bewegung hängt\n{job['fileName']}\n{msg}")
@@ -3903,7 +3928,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                 if msg == "Gestoppt":
                     _farm["stopping"] = True
                     break
-                _log(f"FEHLER: {msg}")
+                _log(f"FEHLER: {msg}", en=f'ERROR: "{msg}"')
                 _record_failure(msg)
                 _record_event("error", job.get("fileName", ""), msg[:70])
                 _record_completed(job, "error", job_started_at, datetime.now(),
@@ -3919,7 +3944,7 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
 
     except Exception as e:
         _farm["error"] = str(e)
-        _log(f"FEHLER (unhandled, {type(e).__name__}): {e}")
+        _log(f"FEHLER (unhandled, {type(e).__name__}): {e}", en=f'ERROR (unhandled, {type(e).__name__}): "{e}"')
         for j in _farm["jobs"]:
             if j["status"] in ("running", "sending", "printing"):
                 j["status"] = "error"
@@ -3933,13 +3958,13 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
             _left_task.cancel()
         if completed > 0 and _farm.get("stop_reason") == "Notaus":
             # Nach dem Notaus bewegt sich nichts mehr, auch kein Aufräumen.
-            _log("Abschluss: nach Notaus kein Parken")
+            _log("Abschluss: nach Notaus kein Parken", en="Finish: no parking after emergency stop")
         elif completed > 0:
-            _log("Abschluss: OTTOeject parken…")
+            _log("Abschluss: OTTOeject parken…", en="Finish: parking the OTTOeject…")
             try:
                 await _do_macro("PARK_OTTOEJECT")
             except Exception as e:
-                _log(f"Warnung PARK_OTTOEJECT: {e}")
+                _log(f"Warnung PARK_OTTOEJECT: {e}", en=f'Warning PARK_OTTOEJECT: "{e}"')
 
         # Reset any slots still reserved as 'printing' — plate was grabbed, farm
         # stopped before store. Diese Fächer haben normalerweise noch KEINE
@@ -3956,7 +3981,8 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
                             freed.append(key)
             if freed:
                 _log(f"⚠ Reservierte Fächer beim Stopp freigegeben: {', '.join(freed)} "
-                     f"— falls dort doch eine Platte liegt, im Rack Manager prüfen")
+                     f"— falls dort doch eine Platte liegt, im Rack Manager prüfen", en=f"⚠ Reserved slots released on stop: {', '.join(freed)} "
+                     f"— if a plate is there after all, check in the Rack Manager")
         except Exception as e:
             logger.warning(f"slot cleanup on stop failed: {e}")
 
@@ -3979,14 +4005,14 @@ async def _run_farm(bambu_id: int, use_ams: bool, poll_sec: int, min_min: int,
         # stop_reason intentionally kept — frontend reads it once after running→False
         _settle_after_run()
         _record_event("farm_stop", "", _farm.get("stop_reason") or "")
-        _log("═══ Auto Farm beendet ═══")
+        _log("═══ Auto Farm beendet ═══", en="═══ Auto Farm finished ═══")
 
         # Auto-Abschaltung (3.2): nach Leerlauf die Steckdose abschalten, sofern
         # konfiguriert und die Farm regulär (nicht manuell) durchgelaufen ist.
         try:
             idle_min = int(_read_config(SETTINGS_PATH, _DEFAULT_SETTINGS).get("idle_off_min", 0) or 0)
             if idle_min > 0 and completed > 0 and _device_settings(bambu_id).get("plug_type", "none") != "none":
-                _log(f"⏻ Auto-Abschaltung in {idle_min} min geplant (sofern kein neuer Job startet)")
+                _log(f"⏻ Auto-Abschaltung in {idle_min} min geplant (sofern kein neuer Job startet)", en=f"⏻ Auto power-off scheduled in {idle_min} min (unless a new job starts)")
                 asyncio.create_task(_idle_shutdown_after(bambu_id, idle_min))
         except Exception as e:
             logger.warning(f"idle shutdown scheduling failed: {e}")
@@ -4095,9 +4121,9 @@ def _resume_after_move_timeout(job: dict, cur_slot, job_started_at,
     status = next((j.get("status") for j in _farm["jobs"] if j.get("id") == job["id"]), None)
     if status == "running":
         _set_job(job["id"], {"status": "pending", "progress": 0, "remaining": 0})
-        _log("↻ Fortgesetzt — der Job beginnt neu")
+        _log("↻ Fortgesetzt — der Job beginnt neu", en="↻ Resumed — the job starts over")
     else:
-        _log(f"🔴 {fehler}")
+        _log(f"🔴 {fehler}", en=f'🔴 "{fehler}"')
         _record_completed(job, "error", job_started_at, datetime.now(),
                           (datetime.now() - job_started_at).total_seconds() / 60.0, fehler)
         _set_job(job["id"], {"status": "error"})
@@ -4153,7 +4179,7 @@ def _validate_sequences(seq_data: dict) -> list:
         try:
             geom = _load_farm_geometry()
         except (storage.BrokenFile, RuntimeError, ValueError) as e:
-            logger.warning(f"Geometrie für die Sequenz-Prüfung nicht lesbar: {e}")
+            logger.warning(f"Geometry for the sequence check not readable: {e}")
             geom = None
         for st in scripts if geom else []:
             problems += [p for p in _geometry_check.check_script(str(st.get("value") or ""), geom,
@@ -4181,7 +4207,7 @@ async def _assert_arm_idle_for_start() -> None:
             r = await client.get(url)
         state = (((r.json().get("result") or {}).get("status") or {}).get("idle_timeout") or {}).get("state")
     except (httpx.HTTPError, ValueError, AttributeError) as e:
-        logger.info(f"Klipper-Zustand vor dem Start nicht lesbar: {e}")
+        logger.info(f"Klipper state before start not readable: {e}")
         return
     if state == "Printing":
         raise HTTPException(409, "OTTOeject fährt gerade (Handfahrt) — warten, bis die Bewegung fertig ist")
@@ -4279,6 +4305,7 @@ async def start_farm(req: StartRequest):
         "seq_step_label":  "",
         "started_at":      now_iso(),
         "log":             [],
+        "log_en":          [],
         # Startwerte über dieselbe Funktion, die sie später nachzieht — sonst laufen
         # Schnappschuss und Nachziehen mit der Zeit auseinander (siehe _live_settings).
         **_live_settings(_settings),
@@ -4398,7 +4425,7 @@ def _append_jobs(prepared: list) -> list:
         _farm["jobs"].append(pj)
         ids.append(pj["id"])
         platte = f" (Platte {pj.get('plate')})" if pj.get("plate") else ""
-        _log(f"[+] {pj['fileName']}{platte} → Fach wird bei Ausführung zugewiesen")
+        _log(f"[+] {pj['fileName']}{platte} → Fach wird bei Ausführung zugewiesen", en=f"[+] {pj['fileName']}{platte} → slot is assigned when it runs")
     _farm["_queue_next_id"] = nid
     _jobs_changed()
     return ids
@@ -4445,7 +4472,7 @@ async def reorder_jobs(payload: ReorderPayload):
     # bei der LAUFENDEN Farm angekommen ist (und nicht nur in der UI).
     order = " → ".join(
         (j.get("fileName", "?") + (f" P{j['plate']}" if j.get("plate") else "")) for j in new_pending[:5])
-    _log(f"↕ Warteschlange umsortiert: {order}" + (" …" if len(new_pending) > 5 else ""))
+    _log(f"↕ Warteschlange umsortiert: {order}" + (" …" if len(new_pending) > 5 else ""), en=f"↕ Queue reordered: {order}" + (" …" if len(new_pending) > 5 else ""))
     _jobs_changed()
     return _queue_reply()
 
@@ -4483,7 +4510,7 @@ async def remove_job_from_farm(job_id: int):
         raise HTTPException(404, "Job nicht gefunden")
     except ValueError:
         raise HTTPException(400, "Laufende Jobs können nicht entfernt werden")
-    _log(f"[-] {job['fileName']} entfernt")
+    _log(f"[-] {job['fileName']} entfernt", en=f"[-] {job['fileName']} removed")
     _jobs_changed()
     return _queue_reply()
 
@@ -4579,6 +4606,7 @@ async def get_status(light: bool = False):
             if not k.startswith("_") and k not in _WS_SKIP_KEYS}
     if light:
         data.pop("log", None)
+        data.pop("log_en", None)
     return data
 
 
@@ -4606,9 +4634,10 @@ def _ws_snapshot() -> str:
     Log auf die jüngsten Zeilen gekappt (kleinere Push-Pakete)."""
     data = {k: v for k, v in _farm.items()
             if not k.startswith("_") and k not in _WS_SKIP_KEYS}
-    log = data.get("log")
-    if isinstance(log, list) and len(log) > _WS_LOG_LIMIT:
-        data["log"] = log[:_WS_LOG_LIMIT]   # Log ist neueste-zuerst → erste N = aktuellste
+    for key in ("log", "log_en"):
+        log = data.get(key)
+        if isinstance(log, list) and len(log) > _WS_LOG_LIMIT:
+            data[key] = log[:_WS_LOG_LIMIT]   # Log ist neueste-zuerst → erste N = aktuellste
     return json.dumps(data, default=str, ensure_ascii=False)
 
 
@@ -4715,6 +4744,7 @@ async def force_reset():
     _persist_state()
     _farm["recovery"] = _load_recovery() if _plate_left() else None
     _log("⚠ Farm-State force-reset" + (" — Platte laut letztem Stand noch im Greifer/Drucker"
+                                       if _plate_left() else ""), en="⚠ Farm state force-reset" + (" — according to the last state a plate is still in the gripper/printer"
                                        if _plate_left() else ""))
     return {"success": True}
 
@@ -4752,7 +4782,7 @@ def _magazine_take(rack: int) -> None:
     except Exception as e:
         logger.warning(f"stress magazine take failed: {e}")
     if rest is not None:
-        _log(f"📦 Magazin R{rack}: {rest} Platten verbleibend")
+        _log(f"📦 Magazin R{rack}: {rest} Platten verbleibend", en=f"📦 Magazine R{rack}: {rest} plates left")
 
 
 def _stress_bambu(device_id=None) -> Device:
@@ -4805,7 +4835,7 @@ def _assert_may_command_printer(what: str) -> None:
     gerade lief, startete bis v1.1.44 danach trotzdem den Druck (Bett homet, der Arm
     steht womöglich noch im Bauraum). Die Sperre in _do_macro deckt nur Klipper ab."""
     if _notaus_aktiv() or (_farm.get("running") and _farm.get("stopping")):
-        _log(f"⛔ {what}: Stopp/Notaus — nicht gesendet")
+        _log(f"⛔ {what}: Stopp/Notaus — nicht gesendet", en=f"⛔ {what}: stop/emergency stop — not sent")
         raise RuntimeError("Gestoppt")
 
 
@@ -4817,7 +4847,7 @@ def _notaus_aktiv() -> bool:
     try:
         return _control.notaus_aktiv(db)
     except Exception as e:
-        _log(f"Notaus-Zustand nicht lesbar ({e}) — behandle als Notaus")
+        _log(f"Notaus-Zustand nicht lesbar ({e}) — behandle als Notaus", en=f'Emergency stop state not readable ("{e}") — treated as emergency stop')
         return True
     finally:
         db.close()
@@ -4845,13 +4875,14 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
                     "step": "", "started_at": now_iso(),
                     "include_printer": bool(include_printer)})
     _log(f"🏋 Stresstest: {len(moves)} Platte(n) aus den Magazinen verteilen"
-         + (" — mit Umweg über den Drucker" if include_printer else ""))
+         + (" — mit Umweg über den Drucker" if include_printer else ""), en=f"🏋 Stress test: distributing {len(moves)} plate(s) from the magazines"
+         + (" — via the printer" if include_printer else ""))
     try:
         if include_printer:
             # Erst das Bett auf Z200, DANN die Tür: solange das Bett fährt, hat der
             # Arm im Gehäuse nichts zu suchen.
             _stress["step"] = "Drucker auf Z200"
-            _log("🏋 Drucker homen (G28 + Bett auf Z200)…")
+            _log("🏋 Drucker homen (G28 + Bett auf Z200)…", en="🏋 Homing the printer (G28 + bed to Z200)…")
             await _start_homing_print(device)
             await _wait_bambu_finish(device, label="Homing (G28+Z200)", timeout=300)
             if tuer:
@@ -4860,11 +4891,11 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
                 tuer_offen = True
         for i, m in enumerate(moves):
             if not _stress["running"]:
-                _log("🏋 Stresstest abgebrochen")
+                _log("🏋 Stresstest abgebrochen", en="🏋 Stress test aborted")
                 break
             _stress["step"] = f"{m['from']} → {m['to']}"
             _stress["done"] = i
-            _log(f"🏋 {i + 1}/{len(moves)}: {m['from']} → {m['to']}")
+            _log(f"🏋 {i + 1}/{len(moves)}: {m['from']} → {m['to']}", en=f"🏋 {i + 1}/{len(moves)}: {m['from']} → {m['to']}")
 
             # Aus dem Stapel wird FLACH gegriffen (grab_magazine, ohne Anheben);
             # eine einzeln liegende Leerplatte dagegen normal.
@@ -4880,7 +4911,7 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
 
             for op in umweg:
                 _stress["step"] = f"{m['from']} → Drucker ({op})"
-                _log(f"🏋 … {op} am Drucker")
+                _log(f"🏋 … {op} am Drucker", en=f"🏋 … {op} at the printer")
                 _mark_in_motion(op)
                 await _do_macro(_motion.build_op(geom, op, printer=printer))
                 # Zwischen Auflegen und Herunternehmen liegt die Platte WIRKLICH auf
@@ -4903,14 +4934,14 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
             _set_arm("none")
             _stress["done"] = i + 1
         else:
-            _log("🏋 Stresstest abgeschlossen — Magazine leer, Platten verteilt")
+            _log("🏋 Stresstest abgeschlossen — Magazine leer, Platten verteilt", en="🏋 Stress test finished — magazines empty, plates distributed")
     except Exception as e:
         _stress["error"] = str(e)
-        _log(f"🏋 ⚠ Stresstest abgebrochen: {e}")
+        _log(f"🏋 ⚠ Stresstest abgebrochen: {e}", en=f'🏋 ⚠ Stress test aborted: "{e}"')
     finally:
         if tuer_offen and _notaus_aktiv():
             # Nach dem Notaus bewegt sich nichts mehr; die Tür schließt man von Hand.
-            _log("🏋 Tür bleibt offen (Notaus)")
+            _log("🏋 Tür bleibt offen (Notaus)", en="🏋 Door stays open (emergency stop)")
         elif tuer_offen:
             # Auch nach Abbruch oder Fehler: eine offene Tür ist ein offener Drucker.
             # Aber nur, wenn sie wirklich offen ist — „Tür zu" auf eine geschlossene
@@ -4919,7 +4950,7 @@ async def _run_stress_test(moves: list, include_printer: bool = False,
                 _stress["step"] = "Tür schließen"
                 await _do_macro(_motion.build_op(geom, "close_door", printer=printer))
             except Exception as e:
-                _log(f"🏋 ⚠ Tür schließen fehlgeschlagen: {e}")
+                _log(f"🏋 ⚠ Tür schließen fehlgeschlagen: {e}", en=f'🏋 ⚠ Closing the door failed: "{e}"')
         _stress["running"] = False
         _stress["step"] = ""
 
@@ -5026,7 +5057,7 @@ def _printer_pool() -> list:
     try:
         lay = farm_layout.load()
     except Exception as e:
-        logger.warning(f"Farm-Layout nicht ableitbar: {e}")
+        logger.warning(f"Farm layout not derivable: {e}")
         return []
     if not lay.get("modules"):
         return []
@@ -5112,7 +5143,7 @@ async def dispatch_queue(body: dict = None):
             if pid and jid in by_id:
                 by_id[jid]["printer"] = pid
         _jobs_changed()
-        _log(f"⇉ Warteschlange verteilt: {len([p for p in plan.values() if p])} Job(s) zugewiesen")
+        _log(f"⇉ Warteschlange verteilt: {len([p for p in plan.values() if p])} Job(s) zugewiesen", en=f"⇉ Queue distributed: {len([p for p in plan.values() if p])} job(s) assigned")
 
     return {
         "success": True,
@@ -5177,11 +5208,11 @@ async def dismiss_recovery(body: dict = None):
     if _plate_left():
         _persist_state()
         _farm["recovery"] = _load_recovery()
-        _log("↩ Hinweis quittiert — laut letztem Stand liegt noch eine Platte im Greifer/Drucker.")
+        _log("↩ Hinweis quittiert — laut letztem Stand liegt noch eine Platte im Greifer/Drucker.", en="↩ Notice acknowledged — according to the last state a plate is still in the gripper/printer.")
         return {"success": True, "pending": True}
     _farm["recovery"] = None
     _clear_state()
-    _log("↩ Unterbrochener Lauf quittiert — vor der nächsten Bewegung wird referenziert.")
+    _log("↩ Unterbrochener Lauf quittiert — vor der nächsten Bewegung wird referenziert.", en="↩ Interrupted run acknowledged — the arm homes before the next move.")
     return {"success": True, "pending": False}
 
 
@@ -5436,7 +5467,7 @@ async def setup_homing_file():
     data = _build_homing_3mf()
     with open(HOMING_3MF_PATH, "wb") as f:
         f.write(data)
-    logger.info(f"[AutoFarm] Homing-Datei erstellt: {HOMING_3MF_PATH}")
+    logger.info(f"[farm] Homing file created: {HOMING_3MF_PATH}")
     return {"success": True, "filename": "Printloom Homing.3mf"}
 
 
@@ -5449,6 +5480,7 @@ async def get_homing_file_info():
 @router.post("/clear_log")
 async def clear_log():
     _farm["log"] = []
+    _farm["log_en"] = []
     return {"success": True}
 
 

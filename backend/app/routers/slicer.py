@@ -131,7 +131,7 @@ def _analyze(path: str, ftype: str, plate, ams_raw: dict, x_max: Optional[float]
         try:
             crash = crash_check.scan_file(path, ftype, plate, x_max)
         except (OSError, zipfile.BadZipFile, ValueError) as e:
-            logger.warning(f"Crash-Check nicht möglich ({os.path.basename(path)}): {e}")
+            logger.warning(f"Crash check not possible ({os.path.basename(path)}): {e}")
     # Kein G-code gefunden oder Datei unlesbar: „nicht geprüft", nicht „ok". Bis
     # v1.1.54 meldete das Plugin dann „keine Kollisionsgefahr".
     crash = crash or crash_check.not_checked()
@@ -205,7 +205,7 @@ async def check(request: Request):
         try:
             os.remove(tmp)
         except OSError as e:
-            logger.warning(f"Prüf-Datei nicht gelöscht: {e}")
+            logger.warning(f"Check file not deleted: {e}")
 
 
 def _hold_reason(checks: list) -> Optional[str]:

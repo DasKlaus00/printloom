@@ -153,7 +153,7 @@ def _count(value, fallback: int) -> int:
     try:
         return max(0, int(value))
     except (TypeError, ValueError):
-        logger.warning(f"rack_slots.json: ungültige Platten-Zahl {value!r} — nehme {fallback}")
+        logger.warning(f"rack_slots.json: invalid plate count {value!r} — using {fallback}")
         return fallback
 
 
